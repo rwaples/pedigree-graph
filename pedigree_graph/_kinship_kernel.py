@@ -14,6 +14,7 @@ __all__ = [
     "_assemble_csc",
     "_build_kinship_csc",
     "_compute_depth",
+    "_compute_eqg",
     "_dp_kinship",
 ]
 
@@ -52,6 +53,36 @@ def _compute_depth(m_idx: np.ndarray, f_idx: np.ndarray, n: int) -> np.ndarray:
         if depth[j] < 0:
             depth[j] = 0
     return depth
+
+
+@numba.njit(cache=True)
+def _compute_eqg(m_idx: np.ndarray, f_idx: np.ndarray, n: int) -> np.ndarray:
+    """Maignel 1996 equivalent complete generations.
+
+    ``EqG_i = Σ over ancestors a of (1/2)^k`` where k is the meiotic
+    distance from i to a.  Founders return 0; an individual with two
+    known founder parents returns 1; with two known parents who each
+    have two known founder parents returns 2; etc.
+
+    Recursion: ``EqG_i = (n_known_parents/2) + 0.5 · Σ EqG_p`` over
+    known parents.  Implemented as a generation-ordered sweep keyed on
+    :func:`_compute_depth`.
+    """
+    eqg = np.zeros(n, dtype=np.float64)
+    depth = _compute_depth(m_idx, f_idx, n)
+    max_depth = depth.max()
+    for d in range(1, max_depth + 1):
+        for i in range(n):
+            if depth[i] != d:
+                continue
+            m, f = m_idx[i], f_idx[i]
+            v = 0.0
+            if m >= 0:
+                v += 0.5 + 0.5 * eqg[m]
+            if f >= 0:
+                v += 0.5 + 0.5 * eqg[f]
+            eqg[i] = v
+    return eqg
 
 
 # -- DP storage: flat global buffer with per-row (start, count, cap) tracking.
