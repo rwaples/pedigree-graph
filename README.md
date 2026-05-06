@@ -84,6 +84,62 @@ Codes follow the convention `up_down_n_anc`:
 
 See `REL_REGISTRY` for the complete list.
 
+## Experimental engines
+
+The package ships an alternate relationship-counting engine in
+`pedigree_graph.experimental` for exploring large-pedigree scaling:
+
+```python
+from pedigree_graph import PedigreeGraph
+from pedigree_graph.experimental import count_pairs_bfs
+
+pg = PedigreeGraph(df)
+counts = count_pairs_bfs(pg)        # dict[str, int] over 23 codes
+```
+
+`count_pairs_bfs` uses boolean sparse matmul (set-union semantics) plus
+a parallel numba kernel for cousin-style codes.  It is **counts-only**;
+there is no pair-array equivalent of `extract_pairs`.
+
+The submodule is **not** re-exported at the top level — callers must
+import explicitly via `pedigree_graph.experimental`.  First call emits
+a `FutureWarning`.
+
+### Caveats — read before using
+
+1. **Experimental contract.**  API, signature, and semantics may
+   change or the function may be removed in any minor release.  No
+   deprecation cycle is owed.
+
+2. **Inbred-pedigree counting differs from the matrix engine.**
+   On non-inbred pedigrees the BFS counts equal `PedigreeGraph.count_pairs`
+   exactly.  On inbred pedigrees, BFS counts *distinct shared
+   ancestors* at depth ≥ 2 while the matrix engine counts *paths*
+   (multiplicity); the four cousin-style codes
+   (`1C1R`, `H1C1R`, `1C2R`, `2C`) may diverge.  See
+   `tests/test_experimental.py::test_inbred_with_cousins_cousin_codes_diverge`
+   for a hand-built fixture pinning the exact divergence.
+
+3. **`max_degree=5` only.**  Lower values raise `NotImplementedError` —
+   use `PedigreeGraph.count_pairs(max_degree=k)` for partial extractions.
+
+4. **No subsample support.**  `PedigreeGraph.from_subsample(...)` graphs
+   raise `NotImplementedError`.  Construct directly or use the matrix
+   engine.
+
+5. **Threading.**  The numba kernel uses `prange` for cousin-style
+   enumeration.  Numba reads `NUMBA_NUM_THREADS` at first JIT
+   compilation; the optional `n_threads` kwarg only takes effect on
+   the first call in a process.  Set `NUMBA_NUM_THREADS=N` in the
+   environment to control threading on all calls.
+
+6. **Performance.**  Scaling claims (BFS faster than matrix above
+   ~5M individuals, where the matrix engine OOMs) are unverified at
+   the time of v0.2.0.  The matrix engine is faster at n=2M
+   (head-to-head benchmark in `external/pedsum/STATUS.md`).  Treat
+   this engine as an experimental scalability spike, not a tuned
+   alternative.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
