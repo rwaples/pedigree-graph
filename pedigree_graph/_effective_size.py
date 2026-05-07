@@ -117,71 +117,85 @@ def _sex_specific_family_table(
     sex: np.ndarray,
     generation: np.ndarray,
 ) -> dict[int, dict[str, np.ndarray]]:
-    """Per-transition counts of male/female offspring per parent.
+    """Per-parent-generation counts of male/female offspring per parent.
 
-    For each transition ``g − 1 → g`` (g ≥ 1), partition offspring by
-    sex and tally offspring counts for each parent in cohort g − 1.
+    For each parent generation ``p`` (0 ≤ p < g_max), tally the lifetime
+    offspring of every parent in cohort ``p``, partitioned by offspring
+    sex.  Offspring may live in any later generation, so the table
+    correctly attributes skip-gen children (where a child's generation
+    exceeds the parent's by more than 1) to the parent's own cohort.
+    Under strictly layered pedigrees this collapses to the standard
+    one-transition-per-cohort decomposition.
 
     Returns:
-        Dict keyed on ``g`` (transition target generation).  Each entry
-        is a dict with arrays:
+        Dict keyed on parent generation ``p``.  Each entry is a dict
+        with arrays:
 
-        * ``males_in_parent_gen`` — row indices of males in g − 1
-        * ``females_in_parent_gen`` — row indices of females in g − 1
-        * ``k_mm`` — per-male count of male offspring at gen g
-        * ``k_mf`` — per-male count of female offspring at gen g
-        * ``k_fm`` — per-female count of male offspring at gen g
-        * ``k_ff`` — per-female count of female offspring at gen g
+        * ``males_in_parent_gen`` — row indices of males in cohort p
+        * ``females_in_parent_gen`` — row indices of females in cohort p
+        * ``k_mm`` — per-male count of male offspring (any later gen)
+        * ``k_mf`` — per-male count of female offspring
+        * ``k_fm`` — per-female count of male offspring
+        * ``k_ff`` — per-female count of female offspring
     """
     g_max = int(generation.max())
     n = len(generation)
     sex = np.asarray(sex, dtype=np.int8)
-    out: dict[int, dict[str, np.ndarray]] = {}
-    for g in range(1, g_max + 1):
-        parent_mask = generation == g - 1
-        offspring_mask = generation == g
-        males_in_parent = np.where(parent_mask & (sex == 1))[0]
-        females_in_parent = np.where(parent_mask & (sex == 0))[0]
-        # Map parent row → local index in males/females arrays.
-        parent_to_male_local = np.full(n, -1, dtype=np.int32)
-        parent_to_female_local = np.full(n, -1, dtype=np.int32)
-        parent_to_male_local[males_in_parent] = np.arange(len(males_in_parent), dtype=np.int32)
-        parent_to_female_local[females_in_parent] = np.arange(len(females_in_parent), dtype=np.int32)
 
-        k_mm = np.zeros(len(males_in_parent), dtype=np.int64)
-        k_mf = np.zeros(len(males_in_parent), dtype=np.int64)
-        k_fm = np.zeros(len(females_in_parent), dtype=np.int64)
-        k_ff = np.zeros(len(females_in_parent), dtype=np.int64)
+    # Per-cohort parent arrays + global parent → local index maps.
+    cohort_males: dict[int, np.ndarray] = {}
+    cohort_females: dict[int, np.ndarray] = {}
+    parent_to_male_local = np.full(n, -1, dtype=np.int32)
+    parent_to_female_local = np.full(n, -1, dtype=np.int32)
+    for p in range(g_max):
+        in_p = generation == p
+        m_arr = np.where(in_p & (sex == 1))[0]
+        f_arr = np.where(in_p & (sex == 0))[0]
+        cohort_males[p] = m_arr
+        cohort_females[p] = f_arr
+        parent_to_male_local[m_arr] = np.arange(len(m_arr), dtype=np.int32)
+        parent_to_female_local[f_arr] = np.arange(len(f_arr), dtype=np.int32)
 
-        offs_idx = np.where(offspring_mask)[0]
-        for i in offs_idx:
-            o_sex = sex[i]
-            f = father[i]
-            m = mother[i]
-            if f >= 0:
-                lf = parent_to_male_local[f]
-                if lf >= 0:
-                    if o_sex == 1:
-                        k_mm[lf] += 1
-                    else:
-                        k_mf[lf] += 1
-            if m >= 0:
-                lm = parent_to_female_local[m]
-                if lm >= 0:
-                    if o_sex == 1:
-                        k_fm[lm] += 1
-                    else:
-                        k_ff[lm] += 1
+    k_mm: dict[int, np.ndarray] = {p: np.zeros(len(cohort_males[p]), dtype=np.int64) for p in range(g_max)}
+    k_mf: dict[int, np.ndarray] = {p: np.zeros(len(cohort_males[p]), dtype=np.int64) for p in range(g_max)}
+    k_fm: dict[int, np.ndarray] = {p: np.zeros(len(cohort_females[p]), dtype=np.int64) for p in range(g_max)}
+    k_ff: dict[int, np.ndarray] = {p: np.zeros(len(cohort_females[p]), dtype=np.int64) for p in range(g_max)}
 
-        out[g] = {
-            "males_in_parent_gen": males_in_parent,
-            "females_in_parent_gen": females_in_parent,
-            "k_mm": k_mm,
-            "k_mf": k_mf,
-            "k_fm": k_fm,
-            "k_ff": k_ff,
+    # Single pass over all offspring (gen > 0); attribute each to its
+    # parent's cohort regardless of skip-gen edges.
+    offs_idx = np.where(generation > 0)[0]
+    for i in offs_idx:
+        o_sex = sex[i]
+        f = int(father[i])
+        m = int(mother[i])
+        if f >= 0:
+            fp = int(generation[f])
+            lf = int(parent_to_male_local[f])
+            if lf >= 0:
+                if o_sex == 1:
+                    k_mm[fp][lf] += 1
+                else:
+                    k_mf[fp][lf] += 1
+        if m >= 0:
+            mp = int(generation[m])
+            lm = int(parent_to_female_local[m])
+            if lm >= 0:
+                if o_sex == 1:
+                    k_fm[mp][lm] += 1
+                else:
+                    k_ff[mp][lm] += 1
+
+    return {
+        p: {
+            "males_in_parent_gen": cohort_males[p],
+            "females_in_parent_gen": cohort_females[p],
+            "k_mm": k_mm[p],
+            "k_mf": k_mf[p],
+            "k_fm": k_fm[p],
+            "k_ff": k_ff[p],
         }
-    return out
+        for p in range(g_max)
+    }
 
 
 def _regress_log_one_minus(values: np.ndarray, t: np.ndarray) -> tuple[float, float]:
@@ -271,7 +285,11 @@ class NeVarianceResult:
     variance built from the sex-of-offspring decomposition; symmetrically
     for females.
 
-    Aggregate Ne is the harmonic mean across transitions.
+    Per-transition arrays (``ne_per_transition``, ``v_mm``, …) are
+    indexed by **parent generation** ``p ∈ [0, g_max)``: entry ``p``
+    summarises the lifetime reproduction of cohort ``p``, which under
+    skip-gen pedigrees may include offspring spread across multiple
+    descendant generations.  Aggregate Ne is the harmonic mean.
     """
 
     ne: float | None
@@ -419,18 +437,22 @@ def ne_coancestry(pg: PedigreeGraph, K: sp.csc_matrix | None = None) -> NeCoance
 def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     """Variance-of-family-size Ne (Ne_V) — Caballero 1994 eq. 6.
 
-    For each transition g−1 → g, decompose offspring counts per parent
-    by offspring sex (``k_mm, k_mf, k_fm, k_ff``).  ``V(k_m) = V(k_mm)
-    + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the per-male total-offspring
-    variance built from this decomposition.  Discrete-generation Ne for
-    the transition is
+    For each parent generation p, decompose lifetime offspring counts per
+    parent by offspring sex (``k_mm, k_mf, k_fm, k_ff``).  Skip-gen
+    children (offspring at gen > p+1) are attributed to the parent's own
+    cohort, so a parent's k-totals reflect their full reproductive
+    output even when offspring span multiple generations.
+
+    ``V(k_m) = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the per-male
+    total-offspring variance built from this decomposition.  Discrete-
+    generation Ne for the transition is
 
         ``ΔF = (V(k_m)/k̄_m) / (4 · N_m · k̄_m) +
                   (V(k_f)/k̄_f) / (4 · N_f · k̄_f)``,
 
-    with ``Ne_t = 1/(2·ΔF)``.  When ``V(k)/k̄ → 1`` (Poisson) and
+    with ``Ne_p = 1/(2·ΔF)``.  When ``V(k)/k̄ → 1`` (Poisson) and
     ``N_m = N_f``, this reduces to Wright's ``4 N_m N_f / (N_m + N_f)``.
-    Aggregate Ne is the harmonic mean across transitions.
+    Aggregate Ne is the harmonic mean across parent generations.
     """
     table = _sex_specific_family_table(
         np.asarray(pg.mother),
@@ -439,16 +461,17 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
         np.asarray(pg.generation),
     )
     g_max = int(np.asarray(pg.generation).max())
-    n_trans = g_max  # transitions g=1..g_max
-    ne_per_t = np.full(n_trans + 1, np.nan, dtype=np.float64)
-    v_mm = np.full(n_trans + 1, np.nan, dtype=np.float64)
-    v_mf = np.full(n_trans + 1, np.nan, dtype=np.float64)
-    v_fm = np.full(n_trans + 1, np.nan, dtype=np.float64)
-    v_ff = np.full(n_trans + 1, np.nan, dtype=np.float64)
-    cov_m = np.full(n_trans + 1, np.nan, dtype=np.float64)
-    cov_f = np.full(n_trans + 1, np.nan, dtype=np.float64)
+    # Indexed by parent generation p ∈ [0, g_max).  Slot p = g_max is
+    # absent because g_max individuals have no offspring in the pedigree.
+    ne_per_t = np.full(g_max, np.nan, dtype=np.float64)
+    v_mm = np.full(g_max, np.nan, dtype=np.float64)
+    v_mf = np.full(g_max, np.nan, dtype=np.float64)
+    v_fm = np.full(g_max, np.nan, dtype=np.float64)
+    v_ff = np.full(g_max, np.nan, dtype=np.float64)
+    cov_m = np.full(g_max, np.nan, dtype=np.float64)
+    cov_f = np.full(g_max, np.nan, dtype=np.float64)
 
-    for g, entry in table.items():
+    for p, entry in table.items():
         kmm = entry["k_mm"]
         kmf = entry["k_mf"]
         kfm = entry["k_fm"]
@@ -457,24 +480,23 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
         n_f = len(kfm)
         if n_m < 2 or n_f < 2:
             continue
-        # Per-male totals.
         k_m_total = kmm + kmf
         k_f_total = kfm + kff
         kbar_m = float(k_m_total.mean())
         kbar_f = float(k_f_total.mean())
         if kbar_m <= 0 or kbar_f <= 0:
             continue
-        v_mm[g] = float(kmm.var(ddof=1))
-        v_mf[g] = float(kmf.var(ddof=1))
-        v_fm[g] = float(kfm.var(ddof=1))
-        v_ff[g] = float(kff.var(ddof=1))
-        cov_m[g] = float(np.cov(kmm, kmf, ddof=1)[0, 1])
-        cov_f[g] = float(np.cov(kfm, kff, ddof=1)[0, 1])
-        var_km_total = v_mm[g] + v_mf[g] + 2.0 * cov_m[g]
-        var_kf_total = v_fm[g] + v_ff[g] + 2.0 * cov_f[g]
+        v_mm[p] = float(kmm.var(ddof=1))
+        v_mf[p] = float(kmf.var(ddof=1))
+        v_fm[p] = float(kfm.var(ddof=1))
+        v_ff[p] = float(kff.var(ddof=1))
+        cov_m[p] = float(np.cov(kmm, kmf, ddof=1)[0, 1])
+        cov_f[p] = float(np.cov(kfm, kff, ddof=1)[0, 1])
+        var_km_total = v_mm[p] + v_mf[p] + 2.0 * cov_m[p]
+        var_kf_total = v_fm[p] + v_ff[p] + 2.0 * cov_f[p]
         df = (var_km_total / kbar_m) / (4.0 * n_m * kbar_m) + (var_kf_total / kbar_f) / (4.0 * n_f * kbar_f)
         if df > 0:
-            ne_per_t[g] = 1.0 / (2.0 * df)
+            ne_per_t[p] = 1.0 / (2.0 * df)
 
     return NeVarianceResult(
         ne=_harmonic_mean(ne_per_t) if np.isfinite(ne_per_t).any() else None,

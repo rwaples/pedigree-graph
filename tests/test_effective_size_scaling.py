@@ -26,12 +26,19 @@ from pedigree_graph import (
     PedigreeGraph,
     compute_all_ne,
     ne_caballero_toro,
+    ne_coancestry,
+    ne_hill_overlapping,
+    ne_inbreeding,
+    ne_individual_delta_f,
     ne_long_term_contributions,
+    ne_sex_ratio,
+    ne_variance_family_size,
 )
 from pedigree_graph._effective_size import (
     _caballero_toro_accumulators,
     _founder_idx,
     _per_gen_founder_means,
+    _sex_specific_family_table,
 )
 
 # ---------------------------------------------------------------------------
@@ -303,6 +310,131 @@ def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> No
         assert res_ct_new.ne is res_ct_ref.ne
     else:
         assert res_ct_new.ne == pytest.approx(res_ct_ref.ne, abs=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Skip-gen coverage for the remaining six estimators
+# ---------------------------------------------------------------------------
+
+
+def test_sex_specific_family_table_attributes_skip_gen_offspring() -> None:
+    """Parent-keyed family table captures children at any later generation.
+
+    In the skip-gen fixture, founder female 3 has two children: 7 (gen 1)
+    and 8 (gen 3, via father=6 at gen 2 — the gen-3 child is a skip-gen
+    edge from her perspective).  Her lifetime offspring count must be 2.
+
+    Under the previous (transition-keyed) algorithm the gen-3 child was
+    silently dropped because the transition g=3's parent_mask excluded
+    gen-0 individuals.  This test pins the corrected attribution.
+    """
+    df = _build_skip_gen_pedigree()
+    pg = PedigreeGraph(df)
+    table = _sex_specific_family_table(
+        np.asarray(pg.mother),
+        np.asarray(pg.father),
+        np.asarray(pg.sex),
+        np.asarray(pg.generation),
+    )
+
+    # Parent gen 0: females are individuals 1 and 3 (in that order).
+    gen0 = table[0]
+    np.testing.assert_array_equal(gen0["females_in_parent_gen"], np.array([1, 3]))
+    # Female 1 (idx 0): children 4 (M, gen 1) + 5 (F, gen 1) → k_fm=1, k_ff=1.
+    # Female 3 (idx 1): children 7 (F, gen 1) + 8 (M, gen 3 SKIP) → k_fm=1, k_ff=1.
+    np.testing.assert_array_equal(gen0["k_fm"], np.array([1, 1]))
+    np.testing.assert_array_equal(gen0["k_ff"], np.array([1, 1]))
+
+    # Parent gen 0: males are individuals 0 and 2.  Male 0 sires 4+5;
+    # male 2 sires only 7.
+    np.testing.assert_array_equal(gen0["males_in_parent_gen"], np.array([0, 2]))
+    np.testing.assert_array_equal(gen0["k_mm"], np.array([1, 0]))
+    np.testing.assert_array_equal(gen0["k_mf"], np.array([1, 1]))
+
+    # Parent gen 2: only individual 6 (M).  Sires children 8 (M, gen 3)
+    # and 9 (F, gen 3) — both via skip-gen mothers.  Captured here at
+    # the parent's own cohort.
+    gen2 = table[2]
+    np.testing.assert_array_equal(gen2["males_in_parent_gen"], np.array([6]))
+    np.testing.assert_array_equal(gen2["k_mm"], np.array([1]))
+    np.testing.assert_array_equal(gen2["k_mf"], np.array([1]))
+
+
+@pytest.fixture
+def skip_gen_pedigree() -> PedigreeGraph:
+    return PedigreeGraph(_build_skip_gen_pedigree())
+
+
+def test_ne_inbreeding_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
+    """Ne_I uses cohort-mean F (kinship-recursion based) — skip-gen safe."""
+    res = ne_inbreeding(skip_gen_pedigree)
+    assert res.mean_f_per_gen.shape == (4,)  # g_max + 1 = 4
+    # All founders have F = 0; gen-1 children of unrelated founders also F=0.
+    assert res.mean_f_per_gen[0] == 0.0
+    assert res.mean_f_per_gen[1] == 0.0
+    # Result is well-formed even if asymptote / Ne aren't meaningful at this scale.
+    assert np.isfinite(res.mean_f_per_gen).all()
+
+
+def test_ne_coancestry_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
+    """Ne_C reduces to per-cohort kinship means; skip-gen edges are inert."""
+    res = ne_coancestry(skip_gen_pedigree)
+    # Founders: every off-diagonal pair is unrelated → mean θ at gen 0 == 0.
+    assert res.mean_theta_per_gen[0] == 0.0
+    # Some downstream cohorts have non-trivial pairs; just assert they're finite or NaN
+    # (cohorts with <2 members produce NaN per the existing _per_gen_mean_kinship rules).
+    assert all(np.isnan(v) or np.isfinite(v) for v in res.mean_theta_per_gen)
+
+
+def test_ne_individual_delta_f_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
+    """Ne_iΔF computes per-individual ΔF via EqG; generation gap is irrelevant."""
+    res = ne_individual_delta_f(skip_gen_pedigree)
+    # Founders contribute 0 to n_used (EqG=0); gen ≥ 1 individuals enter the count.
+    assert res.n_used_per_gen[0] == 0
+    assert res.n_used_per_gen.sum() > 0
+
+
+def test_ne_sex_ratio_skip_gen(skip_gen_pedigree: PedigreeGraph) -> None:
+    """Ne_sr is purely cohort sex counts — generation gaps don't apply."""
+    res = ne_sex_ratio(skip_gen_pedigree)
+    # gen 0: 2 M (0, 2) + 2 F (1, 3) → Ne = 4·2·2 / 4 = 4.
+    assert res.ne_per_gen[0] == pytest.approx(4.0, abs=1e-12)
+    # gen 1: 1 M (4) + 2 F (5, 7) → Ne = 4·1·2 / 3 = 8/3.
+    assert res.ne_per_gen[1] == pytest.approx(8.0 / 3.0, abs=1e-12)
+
+
+def test_ne_variance_family_size_skip_gen_captures_lifetime_offspring(
+    skip_gen_pedigree: PedigreeGraph,
+) -> None:
+    """Ne_V at parent-gen 0 reflects lifetime offspring counts including skip-gen children.
+
+    Hand-derived per-parent k-totals at gen 0:
+        males [0, 2]:    k_total = [2, 1]   →  k̄_m = 1.5
+        females [1, 3]:  k_total = [2, 2]   →  k̄_f = 2.0  (was [2, 1] → 1.5 under old algo)
+
+    Female 3's gen-3 son (skip-gen) is now correctly attributed; her
+    total = 2, not 1.  The k̄_f shift from 1.5 → 2.0 changes the
+    variance contribution and thus Ne_V — precisely the regression this
+    fix prevents.
+    """
+    res = ne_variance_family_size(skip_gen_pedigree)
+    # ne_per_transition is now indexed by parent generation 0..g_max-1.
+    assert res.ne_per_transition.shape == (3,)  # g_max = 3 → indices 0, 1, 2
+    # Only parent-gen 0 has both n_m ≥ 2 and n_f ≥ 2 in this fixture.
+    assert np.isfinite(res.ne_per_transition[0])
+    # gen 1 has only 1 male; gen 2 has 0 females → both NaN.
+    assert np.isnan(res.ne_per_transition[1])
+    assert np.isnan(res.ne_per_transition[2])
+    # Scalar Ne is the harmonic mean over the one finite entry.
+    assert res.ne == pytest.approx(res.ne_per_transition[0], abs=1e-12)
+
+
+def test_ne_hill_inherits_skip_gen_fix(skip_gen_pedigree: PedigreeGraph) -> None:
+    """Ne_H delegates to Ne_V; skip-gen attribution flows through automatically."""
+    h = ne_hill_overlapping(skip_gen_pedigree)
+    v = ne_variance_family_size(skip_gen_pedigree)
+    assert h.ne == v.ne
+    assert h.collapses_to_ne_v is True
 
 
 # ---------------------------------------------------------------------------
