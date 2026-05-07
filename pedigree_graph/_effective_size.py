@@ -522,50 +522,211 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
 # ---------------------------------------------------------------------------
 
 
-def _founder_contribution_matrix(
-    pg: PedigreeGraph,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Per-individual genetic contribution from each founder.
+def _founder_idx(pg: PedigreeGraph) -> np.ndarray:
+    """Indices of founders (gen-0 individuals)."""
+    return np.where(np.asarray(pg.generation) == 0)[0].astype(np.intp)
 
-    ``c[i, f_local]`` = expected fraction of individual i's genome
-    inherited from founder ``founder_idx[f_local]``.  Founders contribute
-    1 to themselves and 0 to other founders; non-founders take the mean
-    of their two parents' rows.
+
+def _per_gen_founder_means(
+    pg: PedigreeGraph,
+    founder_idx: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-generation mean founder contribution via adjoint propagation.
+
+    Returns ``(m_g, founder_idx)`` where
+    ``m_g[g, f_local] = mean_{i ∈ gen g} c[i, founder_idx[f_local]]``,
+    with ``c[i, f]`` the expected genome fraction of i inherited from
+    founder f under the Mendelian recursion (founders contribute 1 to
+    themselves; non-founders take the mean of their two parents' rows).
+
+    Computed by iterating the adjoint of the forward recursion.  For
+    each target generation g, propagate the cohort uniform vector
+    ``1_{gen g} / N_g`` backward through child→parent edges.  At
+    iteration ``t``, scatter ``0.5 · u[child]`` from each ``child ∈
+    gen t+1`` into its mother and father (which may live in any earlier
+    generation under the ``gen[i] = max(gen_parents) + 1`` definition).
+    By the time iteration ``t`` reads ``u[gen == t+1]``, every later
+    generation has already contributed into it — so skip-gen parents are
+    handled correctly without bookkeeping.
+
+    Time: O(N · g_max²).  Memory: O(N + n_founders · g_max).
+
+    Args:
+        pg: Pedigree graph.
+        founder_idx: Optional precomputed founder index array.
 
     Returns:
-        ``(c, founder_idx)`` — ``c`` shape ``(n, n_founders)``, dtype
-        float64; ``founder_idx`` shape ``(n_founders,)``, dtype intp.
+        ``(m_g, founder_idx)`` — ``m_g`` shape ``(g_max + 1, n_founders)``
+        float64; ``founder_idx`` shape ``(n_founders,)`` intp.
     """
+    if founder_idx is None:
+        founder_idx = _founder_idx(pg)
+    n_founders = len(founder_idx)
     n = pg.n
     gen = np.asarray(pg.generation)
     mother = np.asarray(pg.mother)
     father = np.asarray(pg.father)
+    g_max = int(gen.max()) if n > 0 else 0
 
-    founder_idx = np.where(gen == 0)[0]
-    n_founders = len(founder_idx)
-
-    c = np.zeros((n, n_founders), dtype=np.float64)
+    m_g = np.full((g_max + 1, n_founders), np.nan, dtype=np.float64)
     if n_founders == 0:
-        return c, founder_idx
-    c[founder_idx, np.arange(n_founders)] = 1.0
+        return m_g, founder_idx
 
-    g_max = int(gen.max())
+    # Gen 0 mirrors the forward convention `c[gen==0].mean(axis=0)` —
+    # founders sit on the identity diagonal, so column means are 1/N_0.
+    n0 = int((gen == 0).sum())
+    if n0 > 0:
+        m_g[0] = 1.0 / n0
+
     for g in range(1, g_max + 1):
-        in_g = np.where(gen == g)[0]
+        in_g = np.flatnonzero(gen == g)
         if len(in_g) == 0:
             continue
-        m_idx_g = mother[in_g]
-        f_idx_g = father[in_g]
-        c_m = np.zeros((len(in_g), n_founders), dtype=np.float64)
-        c_f = np.zeros((len(in_g), n_founders), dtype=np.float64)
-        has_m = m_idx_g >= 0
-        has_f = f_idx_g >= 0
-        if has_m.any():
-            c_m[has_m] = c[m_idx_g[has_m]]
-        if has_f.any():
-            c_f[has_f] = c[f_idx_g[has_f]]
-        c[in_g] = 0.5 * (c_m + c_f)
-    return c, founder_idx
+        u = np.zeros(n, dtype=np.float64)
+        u[in_g] = 1.0 / len(in_g)
+        for t in range(g - 1, -1, -1):
+            child = np.flatnonzero(gen == t + 1)
+            if len(child) == 0:
+                continue
+            uc = 0.5 * u[child]
+            m = mother[child]
+            mask = m >= 0
+            if mask.any():
+                np.add.at(u, m[mask], uc[mask])  # perf: numba candidate
+            f = father[child]
+            mask = f >= 0
+            if mask.any():
+                np.add.at(u, f[mask], uc[mask])  # perf: numba candidate
+            u[child] = 0.0
+        m_g[g] = u[founder_idx]
+
+    return m_g, founder_idx
+
+
+def _caballero_toro_accumulators(
+    pg: PedigreeGraph,
+    founder_idx: np.ndarray,
+    F: np.ndarray,
+) -> dict[str, Any]:
+    """Streaming forward sweep producing per-(g, f) self-coancestry sums.
+
+    For each generation g and founder f, accumulates the count of
+    descendants of f in gen g and the sum of their self-coancestry
+    ``(1 + F_i) / 2``.  Avoids materializing the dense
+    ``(n × n_founders)`` contribution matrix by maintaining per-individual
+    ancestor sets only over the working frontier; sets are retired via a
+    per-individual remaining-child counter once the last child has been
+    processed.
+
+    "Descendant of f" is graph reachability — equivalent to ``c[i, f] >
+    0`` because the forward recursion only adds non-negatives, so a
+    non-zero ⇔ at least one ancestor path exists.
+
+    Args:
+        pg: Pedigree graph.
+        founder_idx: Founder indices (output of :func:`_founder_idx`).
+        F: Per-individual inbreeding coefficients (length ``pg.n``).
+
+    Returns:
+        Dict with:
+        * ``sums``: shape ``(g_max + 1, n_founders)``, float64.
+        * ``counts``: shape ``(g_max + 1, n_founders)``, int64.
+        * ``peak_ancestor_set_size``: max size of any single ancestor set.
+        * ``peak_live_ancestor_sets``: max simultaneously live sets.
+        * ``total_ancestor_pair_visits``: Σ over i of len(ancestor_set[i]).
+        * ``founder_idx``: copy of input.
+    """
+    n = pg.n
+    n_founders = len(founder_idx)
+    gen = np.asarray(pg.generation)
+    mother = np.asarray(pg.mother)
+    father = np.asarray(pg.father)
+    g_max = int(gen.max()) if n > 0 else 0
+
+    sums = np.zeros((g_max + 1, n_founders), dtype=np.float64)
+    counts = np.zeros((g_max + 1, n_founders), dtype=np.int64)
+    if n_founders == 0:
+        return {
+            "sums": sums,
+            "counts": counts,
+            "peak_ancestor_set_size": 0,
+            "peak_live_ancestor_sets": 0,
+            "total_ancestor_pair_visits": 0,
+            "founder_idx": founder_idx,
+        }
+
+    self_coancestry = (1.0 + F) / 2.0
+
+    # Per-individual remaining-child counter for ancestor-set retirement.
+    n_children = np.zeros(n, dtype=np.int64)
+    for parents in (mother, father):
+        valid = parents >= 0
+        if valid.any():
+            np.add.at(n_children, parents[valid], 1)
+    n_remaining = n_children.copy()
+
+    # Reverse map: individual index → founder local index (or −1).
+    founder_local_of = np.full(n, -1, dtype=np.int64)
+    founder_local_of[founder_idx] = np.arange(n_founders, dtype=np.int64)
+
+    ancestor_sets: dict[int, np.ndarray] = {}
+    peak_set_size = 0
+    peak_live = 0
+    total_pair_visits = 0
+
+    # perf: numba candidate — Python loop over n individuals with dict ops.
+    for g in range(g_max + 1):
+        in_g = np.flatnonzero(gen == g)
+        for i_np in in_g:
+            i = int(i_np)
+            f_local = int(founder_local_of[i])
+            if f_local >= 0:
+                anc = np.array([f_local], dtype=np.int32)
+            else:
+                m = int(mother[i])
+                f = int(father[i])
+                anc_m = ancestor_sets.get(m) if m >= 0 else None
+                anc_f = ancestor_sets.get(f) if f >= 0 else None
+                if anc_m is not None and anc_f is not None:
+                    anc = np.union1d(anc_m, anc_f).astype(np.int32, copy=False)
+                elif anc_m is not None:
+                    anc = anc_m
+                elif anc_f is not None:
+                    anc = anc_f
+                else:
+                    anc = np.empty(0, dtype=np.int32)
+
+            if anc.size > 0:
+                sums[g, anc] += self_coancestry[i]
+                counts[g, anc] += 1
+                total_pair_visits += int(anc.size)
+                if anc.size > peak_set_size:
+                    peak_set_size = int(anc.size)
+
+            # Retire parents whose last child has now been processed.
+            for p_raw in (mother[i], father[i]):
+                p = int(p_raw)
+                if p < 0:
+                    continue
+                n_remaining[p] -= 1
+                if n_remaining[p] == 0 and p in ancestor_sets:
+                    del ancestor_sets[p]
+
+            # Keep i's ancestor set only if it still has children to feed.
+            if n_children[i] > 0 and anc.size > 0:
+                ancestor_sets[i] = anc
+
+            if len(ancestor_sets) > peak_live:
+                peak_live = len(ancestor_sets)
+
+    return {
+        "sums": sums,
+        "counts": counts,
+        "peak_ancestor_set_size": int(peak_set_size),
+        "peak_live_ancestor_sets": int(peak_live),
+        "total_ancestor_pair_visits": int(total_pair_visits),
+        "founder_idx": founder_idx,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -730,7 +891,7 @@ def ne_individual_delta_f(pg: PedigreeGraph) -> NeIndividualDeltaFResult:
 
 def ne_long_term_contributions(
     pg: PedigreeGraph,
-    contribution: tuple[np.ndarray, np.ndarray] | None = None,
+    mean_contributions: tuple[np.ndarray, np.ndarray] | None = None,
     tol: float = 1e-6,
 ) -> NeLTCResult:
     """Wray & Thompson 1990 long-term contribution Ne (Ne_LTC).
@@ -744,10 +905,10 @@ def ne_long_term_contributions(
     When the asymptote is not reached before the last generation, ``ne``
     is ``None`` and ``asymptote_reached`` is ``False``.
     """
-    if contribution is None:
-        c, founder_idx = _founder_contribution_matrix(pg)
+    if mean_contributions is None:
+        m_g, founder_idx = _per_gen_founder_means(pg)
     else:
-        c, founder_idx = contribution
+        m_g, founder_idx = mean_contributions
     n_founders = len(founder_idx)
     if n_founders == 0:
         return NeLTCResult(
@@ -766,29 +927,23 @@ def ne_long_term_contributions(
             asymptote_reached=False,
             n_iterations=0,
             max_delta_final=float("nan"),
-            sum_c_squared=float((c[founder_idx] ** 2).sum() / n_founders**2 * n_founders),
+            sum_c_squared=float((m_g[0] ** 2).sum()),
         )
-
-    c_per_gen = np.full((g_max + 1, n_founders), np.nan, dtype=np.float64)
-    for g in range(g_max + 1):
-        in_g = gen == g
-        if in_g.any():
-            c_per_gen[g] = c[in_g].mean(axis=0)
 
     asymptote_reached = False
     n_iterations = 0
     max_delta_final = float("nan")
     for g in range(1, g_max + 1):
-        if not np.isfinite(c_per_gen[g]).all() or not np.isfinite(c_per_gen[g - 1]).all():
+        if not np.isfinite(m_g[g]).all() or not np.isfinite(m_g[g - 1]).all():
             continue
-        delta = float(np.max(np.abs(c_per_gen[g] - c_per_gen[g - 1])))
+        delta = float(np.max(np.abs(m_g[g] - m_g[g - 1])))
         n_iterations = g
         max_delta_final = delta
         if delta < tol:
             asymptote_reached = True
             break
 
-    final_c = c_per_gen[n_iterations]
+    final_c = m_g[n_iterations]
     sum_c_sq = float((final_c**2).sum())
     if asymptote_reached and sum_c_sq > 0:
         ne: float | None = 1.0 / (2.0 * sum_c_sq)
@@ -824,46 +979,40 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
 def ne_caballero_toro(
     pg: PedigreeGraph,
     K: sp.csc_matrix | None = None,
-    contribution: tuple[np.ndarray, np.ndarray] | None = None,
+    ct_accumulators: dict[str, Any] | None = None,
 ) -> NeCaballeroToroResult:
     """Caballero & Toro 2002 self-coancestry rate Ne (Ne_CT).
 
     For each founder f and generation g > 0, descendants are detected
-    via ``c[i, f] > 0`` (i.e., founder f contributes a non-zero genetic
-    fraction to i).  Self-coancestry per descendant is ``(1 + F_i) / 2``;
-    averaged within each founder's descendant set, then averaged across
-    founders that have descendants at gen g.  Ne from the regression
-    slope of ``ln(1 − f̄_s,g)`` on g.
+    via graph reachability — equivalently, ``c[i, f] > 0`` under the
+    Mendelian recursion.  Self-coancestry per descendant is
+    ``(1 + F_i) / 2``; averaged within each founder's descendant set,
+    then averaged across founders that have descendants at gen g.  Ne
+    from the regression slope of ``ln(1 − f̄_s,g)`` on g.
     """
     if K is None:
         K = pg.kinship_matrix()
-    F = pg.compute_inbreeding()
-    if contribution is None:
-        c, founder_idx = _founder_contribution_matrix(pg)
-    else:
-        c, founder_idx = contribution
-    n_founders = len(founder_idx)
-    gen = np.asarray(pg.generation)
-    g_max = int(gen.max())
+    if ct_accumulators is None:
+        founder_idx = _founder_idx(pg)
+        F = pg.compute_inbreeding()
+        ct_accumulators = _caballero_toro_accumulators(pg, founder_idx, F)
 
-    self_coancestry = (1.0 + F) / 2.0
+    sums = ct_accumulators["sums"]
+    counts = ct_accumulators["counts"]
+    g_max = sums.shape[0] - 1
+
+    valid = counts > 0
+    # per_founder_mean[g, f] = mean self-coancestry of f's descendants in gen g
+    per_founder_mean = np.where(valid, sums / np.maximum(counts, 1), 0.0)
+    n_with_desc_per_gen = valid.sum(axis=1).astype(np.int64)
     mean_fs_per_gen = np.full(g_max + 1, np.nan, dtype=np.float64)
-    n_with_desc_per_gen = np.zeros(g_max + 1, dtype=np.int64)
-
-    for g in range(1, g_max + 1):
-        in_g = np.where(gen == g)[0]
-        if len(in_g) == 0:
-            continue
-        # Per-founder mean self-coancestry over descendants in gen g.
-        per_founder = np.full(n_founders, np.nan, dtype=np.float64)
-        for f_local in range(n_founders):
-            desc_mask = c[in_g, f_local] > 0.0
-            if desc_mask.any():
-                per_founder[f_local] = float(self_coancestry[in_g[desc_mask]].mean())
-        with_desc = np.isfinite(per_founder)
-        n_with_desc_per_gen[g] = int(with_desc.sum())
-        if with_desc.any():
-            mean_fs_per_gen[g] = float(per_founder[with_desc].mean())
+    nz = n_with_desc_per_gen > 0
+    if nz.any():
+        mean_fs_per_gen[nz] = per_founder_mean.sum(axis=1)[nz] / n_with_desc_per_gen[nz]
+    # Gen 0 has no "descendants" in the CT regression sense; force NaN/0
+    # to match the historical contract (regression starts at g=1).
+    mean_fs_per_gen[0] = np.nan
+    n_with_desc_per_gen[0] = 0
 
     ne_per_gen = np.full(g_max + 1, np.nan, dtype=np.float64)
     for g in range(1, g_max + 1):
@@ -899,23 +1048,27 @@ def compute_all_ne(pg: PedigreeGraph) -> dict[str, Any]:
     """Run all eight Ne estimators on ``pg``.
 
     Builds the sparse kinship matrix and the founder-contribution
-    matrix once and reuses them for every kinship/contribution-dependent
-    estimator.
+    structures once and reuses them for every kinship/contribution-
+    dependent estimator.  ``pg.compute_inbreeding`` is lazily cached on
+    the graph, so repeated calls from individual estimators are free.
 
     Returns a dict keyed on estimator name; each value is the matching
     frozen result dataclass.
     """
     K = pg.kinship_matrix()
-    contribution = _founder_contribution_matrix(pg)
+    F = pg.compute_inbreeding()
+    founder_idx = _founder_idx(pg)
+    ltc_means = _per_gen_founder_means(pg, founder_idx=founder_idx)
+    ct_acc = _caballero_toro_accumulators(pg, founder_idx, F)
     return {
         "ne_inbreeding": ne_inbreeding(pg),
         "ne_coancestry": ne_coancestry(pg, K=K),
         "ne_variance_family_size": ne_variance_family_size(pg),
         "ne_sex_ratio": ne_sex_ratio(pg),
         "ne_individual_delta_f": ne_individual_delta_f(pg),
-        "ne_long_term_contributions": ne_long_term_contributions(pg, contribution=contribution),
+        "ne_long_term_contributions": ne_long_term_contributions(pg, mean_contributions=ltc_means),
         "ne_hill_overlapping": ne_hill_overlapping(pg),
-        "ne_caballero_toro": ne_caballero_toro(pg, K=K, contribution=contribution),
+        "ne_caballero_toro": ne_caballero_toro(pg, K=K, ct_accumulators=ct_acc),
     }
 
 
