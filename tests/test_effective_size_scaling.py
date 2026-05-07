@@ -214,49 +214,33 @@ def _build_skip_gen_pedigree() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "fixture_name",
-    ["closed_line_5", "wf_n20_g4", "skip_gen"],
-)
-def test_per_gen_founder_means_matches_reference(fixture_name: str) -> None:
-    """Adjoint sweep matches dense forward recursion to 1e-12."""
+@pytest.fixture(params=["closed_line_5", "wf_n20_g4", "skip_gen"])
+def parity_pedigree(request: pytest.FixtureRequest) -> PedigreeGraph:
+    """Small pedigree fixtures for byte-parity tests against the dense reference."""
     rng = np.random.default_rng(0)
-    if fixture_name == "closed_line_5":
+    name = request.param
+    if name == "closed_line_5":
         df = _build_closed_line(n_gens=5)
-    elif fixture_name == "wf_n20_g4":
+    elif name == "wf_n20_g4":
         df = _build_random_mating_pedigree(rng, n_per_gen=20, n_gens=4)
-    elif fixture_name == "skip_gen":
+    else:  # skip_gen
         df = _build_skip_gen_pedigree()
-    else:  # pragma: no cover
-        raise ValueError(fixture_name)
+    return PedigreeGraph(df)
 
-    pg = PedigreeGraph(df)
 
-    m_g_new, founder_idx_new = _per_gen_founder_means(pg)
-    m_g_ref, founder_idx_ref = _ref_per_gen_means(pg)
+def test_per_gen_founder_means_matches_reference(parity_pedigree: PedigreeGraph) -> None:
+    """Adjoint sweep matches dense forward recursion to 1e-12."""
+    m_g_new, founder_idx_new = _per_gen_founder_means(parity_pedigree)
+    m_g_ref, founder_idx_ref = _ref_per_gen_means(parity_pedigree)
 
     np.testing.assert_array_equal(founder_idx_new, founder_idx_ref)
     # Adjoint reorders summation, so use atol rather than equality.
     np.testing.assert_allclose(m_g_new, m_g_ref, atol=1e-12, rtol=0.0, equal_nan=True)
 
 
-@pytest.mark.parametrize(
-    "fixture_name",
-    ["closed_line_5", "wf_n20_g4", "skip_gen"],
-)
-def test_ct_accumulators_match_reference(fixture_name: str) -> None:
+def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None:
     """Streaming CT sums/counts match the dense reduction."""
-    rng = np.random.default_rng(0)
-    if fixture_name == "closed_line_5":
-        df = _build_closed_line(n_gens=5)
-    elif fixture_name == "wf_n20_g4":
-        df = _build_random_mating_pedigree(rng, n_per_gen=20, n_gens=4)
-    elif fixture_name == "skip_gen":
-        df = _build_skip_gen_pedigree()
-    else:  # pragma: no cover
-        raise ValueError(fixture_name)
-
-    pg = PedigreeGraph(df)
+    pg = parity_pedigree
     F = pg.compute_inbreeding()
     founder_idx = _founder_idx(pg)
 
@@ -268,23 +252,9 @@ def test_ct_accumulators_match_reference(fixture_name: str) -> None:
     np.testing.assert_allclose(new["sums"], ref["sums"], atol=1e-12, rtol=0.0)
 
 
-@pytest.mark.parametrize(
-    "fixture_name",
-    ["closed_line_5", "wf_n20_g4", "skip_gen"],
-)
-def test_estimator_results_match_reference(fixture_name: str) -> None:
+def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> None:
     """End-to-end LTC and CT dataclasses match the reference path field-by-field."""
-    rng = np.random.default_rng(0)
-    if fixture_name == "closed_line_5":
-        df = _build_closed_line(n_gens=5)
-    elif fixture_name == "wf_n20_g4":
-        df = _build_random_mating_pedigree(rng, n_per_gen=20, n_gens=4)
-    elif fixture_name == "skip_gen":
-        df = _build_skip_gen_pedigree()
-    else:  # pragma: no cover
-        raise ValueError(fixture_name)
-
-    pg = PedigreeGraph(df)
+    pg = parity_pedigree
     F = pg.compute_inbreeding()
 
     # New path

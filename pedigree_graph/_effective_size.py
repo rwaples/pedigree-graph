@@ -572,20 +572,24 @@ def _per_gen_founder_means(
     if n_founders == 0:
         return m_g, founder_idx
 
+    # Precompute per-generation member indices once — the inner sweep
+    # reads the same cohorts O(g_max) times across the outer loop.
+    cohorts = [np.flatnonzero(gen == g) for g in range(g_max + 1)]
+
     # Gen 0 mirrors the forward convention `c[gen==0].mean(axis=0)` —
     # founders sit on the identity diagonal, so column means are 1/N_0.
-    n0 = int((gen == 0).sum())
+    n0 = len(cohorts[0])
     if n0 > 0:
         m_g[0] = 1.0 / n0
 
     for g in range(1, g_max + 1):
-        in_g = np.flatnonzero(gen == g)
+        in_g = cohorts[g]
         if len(in_g) == 0:
             continue
         u = np.zeros(n, dtype=np.float64)
         u[in_g] = 1.0 / len(in_g)
         for t in range(g - 1, -1, -1):
-            child = np.flatnonzero(gen == t + 1)
+            child = cohorts[t + 1]
             if len(child) == 0:
                 continue
             uc = 0.5 * u[child]
@@ -674,10 +678,11 @@ def _caballero_toro_accumulators(
     peak_live = 0
     total_pair_visits = 0
 
+    cohorts = [np.flatnonzero(gen == g) for g in range(g_max + 1)]
+
     # perf: numba candidate — Python loop over n individuals with dict ops.
     for g in range(g_max + 1):
-        in_g = np.flatnonzero(gen == g)
-        for i_np in in_g:
+        for i_np in cohorts[g]:
             i = int(i_np)
             f_local = int(founder_local_of[i])
             if f_local >= 0:
