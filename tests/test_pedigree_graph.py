@@ -778,15 +778,17 @@ class TestFromArrays:
 class TestFromSubsample:
     @pytest.fixture
     def lineage_pedigree(self):
-        # 3-gen lineage: 0 founder, 1=child(0,2), 2 founder, 3=child(0,2), 4=child(1,3)
+        # 3-gen lineage: founders 0, 2 first; then 1=child(0,2), 3=child(0,2),
+        # 4=child(1,3).  Rows ordered so that parent row indices precede their
+        # children (topological invariant required by PedigreeGraph).
         return pd.DataFrame(
             {
-                "id": np.arange(5),
-                "mother": np.array([-1, 0, -1, 0, 1]),
-                "father": np.array([-1, 2, -1, 2, 3]),
+                "id": np.array([0, 2, 1, 3, 4]),
+                "mother": np.array([-1, -1, 0, 0, 1]),
+                "father": np.array([-1, -1, 2, 2, 3]),
                 "twin": np.full(5, -1),
-                "sex": np.array([0, 1, 0, 1, 0]),
-                "generation": np.array([0, 1, 0, 1, 2]),
+                "sex": np.array([0, 0, 1, 1, 0]),
+                "generation": np.array([0, 0, 1, 1, 2]),
             }
         )
 
@@ -930,3 +932,19 @@ class TestComputePairKinship:
             out = pg.compute_pair_kinship(pairs)
             assert out["MHS"].dtype == np.float64
             assert len(out["MHS"]) == 0
+
+    def test_constructor_rejects_non_topological(self):
+        # Parent index appears AFTER its child — violates the invariant
+        # required by `_compute_F_meuwissen_luo`'s outer loop.
+        df = pd.DataFrame(
+            {
+                "id": np.array([0, 1, 2, 3, 4, 5]),
+                "mother": np.array([-1, -1, 0, 5, -1, -1]),
+                "father": np.array([-1, -1, 1, -1, -1, -1]),
+                "twin": np.full(6, -1),
+                "sex": np.array([1, 0, 0, 1, 0, 1], dtype=np.int8),
+                "generation": np.array([0, 0, 1, 1, 0, 0]),
+            }
+        )
+        with pytest.raises(ValueError, match="topological order"):
+            PedigreeGraph(df)

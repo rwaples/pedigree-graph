@@ -265,6 +265,17 @@ class NeCoancestryResult:
     slope: float
     n_generations_used: int
 
+    @classmethod
+    def empty(cls, g_max: int) -> "NeCoancestryResult":
+        """All-NaN result of the right shape; used when Ne_C is skipped."""
+        return cls(
+            ne=None,
+            ne_per_gen=np.full(g_max + 1, np.nan, dtype=np.float64),
+            mean_theta_per_gen=np.full(g_max + 1, np.nan, dtype=np.float64),
+            slope=float("nan"),
+            n_generations_used=0,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
         return {
@@ -1005,7 +1016,6 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
 
 def ne_caballero_toro(
     pg: PedigreeGraph,
-    K: sp.csc_matrix | None = None,
     ct_accumulators: dict[str, Any] | None = None,
 ) -> NeCaballeroToroResult:
     """Caballero & Toro 2002 self-coancestry rate Ne (Ne_CT).
@@ -1017,8 +1027,6 @@ def ne_caballero_toro(
     then averaged across founders that have descendants at gen g.  Ne
     from the regression slope of ``ln(1 − f̄_s,g)`` on g.
     """
-    if K is None:
-        K = pg.kinship_matrix()
     if ct_accumulators is None:
         founder_idx = _founder_idx(pg)
         F = pg.compute_inbreeding()
@@ -1071,31 +1079,47 @@ def ne_caballero_toro(
 # ---------------------------------------------------------------------------
 
 
-def compute_all_ne(pg: PedigreeGraph) -> dict[str, Any]:
+def compute_all_ne(
+    pg: PedigreeGraph,
+    skip_full_kinship_matrix: bool = False,
+) -> dict[str, Any]:
     """Run all eight Ne estimators on ``pg``.
 
-    Builds the sparse kinship matrix and the founder-contribution
-    structures once and reuses them for every kinship/contribution-
-    dependent estimator.  ``pg.compute_inbreeding`` is lazily cached on
-    the graph, so repeated calls from individual estimators are free.
+    Builds the founder-contribution structures once and reuses them for
+    every contribution-dependent estimator.  F is computed lazily via
+    Meuwissen-Luo and cached on the graph; the sparse kinship matrix is
+    built only when ``ne_coancestry`` requires it.
+
+    Args:
+        pg: Pedigree graph.
+        skip_full_kinship_matrix: when True, skip the full sparse
+            kinship build entirely; ``ne_coancestry`` slot is populated
+            with NaN per-gen arrays and ``ne=None``.  Use on very large
+            pedigrees where the kinship matrix would OOM.
 
     Returns a dict keyed on estimator name; each value is the matching
     frozen result dataclass.
     """
-    K = pg.kinship_matrix()
     F = pg.compute_inbreeding()
     founder_idx = _founder_idx(pg)
     ltc_means = _per_gen_founder_means(pg, founder_idx=founder_idx)
     ct_acc = _caballero_toro_accumulators(pg, founder_idx, F)
+
+    if skip_full_kinship_matrix:
+        g_max = int(np.asarray(pg.generation).max()) if pg.n > 0 else 0
+        ne_coancestry_result = NeCoancestryResult.empty(g_max)
+    else:
+        ne_coancestry_result = ne_coancestry(pg)
+
     return {
         "ne_inbreeding": ne_inbreeding(pg),
-        "ne_coancestry": ne_coancestry(pg, K=K),
+        "ne_coancestry": ne_coancestry_result,
         "ne_variance_family_size": ne_variance_family_size(pg),
         "ne_sex_ratio": ne_sex_ratio(pg),
         "ne_individual_delta_f": ne_individual_delta_f(pg),
         "ne_long_term_contributions": ne_long_term_contributions(pg, mean_contributions=ltc_means),
         "ne_hill_overlapping": ne_hill_overlapping(pg),
-        "ne_caballero_toro": ne_caballero_toro(pg, K=K, ct_accumulators=ct_acc),
+        "ne_caballero_toro": ne_caballero_toro(pg, ct_accumulators=ct_acc),
     }
 
 

@@ -28,7 +28,12 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 import numpy as np
 import scipy.sparse as sp
 
-from pedigree_graph._kinship_kernel import _build_kinship_csc, _compute_depth
+from pedigree_graph._kinship_kernel import (
+    _build_kinship_csc,
+    _check_topological,
+    _compute_depth,
+    _compute_F_meuwissen_luo,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -151,6 +156,10 @@ class PedigreeGraph:
         # the resolved min_kinship threshold.
         self._kinship_cache: dict[float, sp.csc_matrix] = {}
         self._inbreeding: np.ndarray | None = None
+        # Topological depth recomputed from edges; user-supplied
+        # ``self.generation`` may be sparse/skipped/post-filtered and is
+        # not safe as a substitute for the ML F kernel.
+        self._depth: np.ndarray | None = None
 
         # Build ID → row index mapping (int32: row indices fit in 2.1B)
         self._ids = ids_arr
@@ -177,6 +186,9 @@ class PedigreeGraph:
         self.twin = _remap(np.asarray(arrays["twin"]))
         self.sex = np.asarray(arrays["sex"]).astype(np.int8)
         self.generation = np.asarray(arrays["generation"]).astype(np.int32)
+
+        if not _check_topological(self.mother, self.father, n):
+            raise ValueError("PedigreeGraph requires topological order: parents must precede children")
 
         # Build parent→child matrices using ALL available edges.
         # Each matrix is built independently so partial-pedigree data
@@ -1238,12 +1250,6 @@ class PedigreeGraph:
                 that the boundary kinship (e.g. 1/16 at degree 3) is
                 retained.  The stricter of the two applies.
 
-        F side-effect: ``self._inbreeding`` is populated *only* when the
-        resolved ``min_kinship`` is 0.0.  Pruned builds do not touch F
-        because pruning can under-estimate F under consanguinity (a
-        truncated parent off-diagonal adds 0 into the child's
-        self-kinship).  F-correctness requires the unpruned build.
-
         Returns:
             ``scipy.sparse.csc_matrix`` cached under the resolved
             ``min_kinship`` in ``self._kinship_cache``.
@@ -1269,10 +1275,6 @@ class PedigreeGraph:
         K = sp.csc_matrix((data, indices, indptr), shape=(self.n, self.n))
         self._kinship_cache[key] = K
 
-        if key == 0.0:
-            # Diagonal stores (1 + F_i) / 2; invert to extract F.
-            self._inbreeding = 2.0 * K.diagonal() - 1.0
-
         logger.info(
             "kinship_matrix: n=%d, nnz=%d, min_kinship=%.4g, %.2fs",
             self.n,
@@ -1285,12 +1287,19 @@ class PedigreeGraph:
     def compute_inbreeding(self) -> np.ndarray:
         """Return the inbreeding coefficient *F* per individual.
 
-        Lazy: triggers ``self.kinship_matrix(min_kinship=0.0)`` on
-        first call, which populates ``self._inbreeding`` as a side
-        effect (see :meth:`kinship_matrix`).
+        Computed via Meuwissen & Luo (1992) ancestor-walking on the LDL'
+        decomposition of the numerator relationship matrix; result is
+        cached on the graph (``self._inbreeding``).  MZ-naive — twins are
+        treated as full sibs.  Differs from the matrix-derived F only
+        for individuals whose only inbreeding path runs through both
+        members of an MZ twin pair as ancestors.
         """
-        if getattr(self, "_inbreeding", None) is None:
-            self.kinship_matrix(min_kinship=0.0)
+        if self._inbreeding is None:
+            if self._depth is None:
+                self._depth = _compute_depth(self.mother, self.father, self.n)
+            self._inbreeding = _compute_F_meuwissen_luo(
+                self.mother, self.father, self._depth, self.n
+            )
         return self._inbreeding
 
     def compute_pair_kinship(
@@ -1299,9 +1308,14 @@ class PedigreeGraph:
     ) -> dict[str, np.ndarray]:
         """Exact kinship per extracted pair.
 
-        Fast path (non-inbred, ``all(F == 0)``): returns
-        ``PAIR_KINSHIP[code]`` for each pair (MZ case handled via the
-        registry's special case = 0.5).
+        Fast path (non-inbred, MZ-free): returns ``PAIR_KINSHIP[code]``
+        for each pair (MZ case handled via the registry's special case
+        = 0.5).  The MZ-free guard is required because ``compute_inbreeding``
+        is MZ-naive: an individual whose only inbreeding is via MZ
+        co-coalescence has ML F = 0 but the matrix kinship still records
+        ``K[twin_a, twin_b] = (1 + F)/2``.  Without the guard, the fast
+        path would return ``PAIR_KINSHIP[code]`` defaults that miss this
+        inbred-MZ-coalescence case.
 
         Inbred path: reads values from the cached full kinship matrix.
         MZ-correct because the kernel sets twin off-diagonals to the
@@ -1311,7 +1325,7 @@ class PedigreeGraph:
         """
         F = self.compute_inbreeding()
 
-        if np.all(F == 0):
+        if np.all(F == 0) and not np.any(self.twin >= 0):
             return {code: np.full(len(idx1), PAIR_KINSHIP.get(code, 0.0)) for code, (idx1, _) in pairs.items()}
 
         K = self.kinship_matrix(min_kinship=0.0).tocsr()
