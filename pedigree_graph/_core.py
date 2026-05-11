@@ -62,6 +62,40 @@ def _coerce_to_array_dict(data: dict[str, np.ndarray] | pd.DataFrame) -> dict[st
     return result
 
 
+def _known_parent_edges(
+    parent_arr: np.ndarray,
+    birth_year: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Edges where both endpoints have a known ``birth_year``.
+
+    Shared by every overlapping-generation utility that needs the
+    parent-age distribution (topological validation,
+    ``pg.generation_interval``, ``eligible_cohort_range``, age-table
+    diagnostic).
+
+    Args:
+        parent_arr: per-row parent row-index array (``self.mother`` or
+            ``self.father``).
+        birth_year: per-row birth_year array (sentinel ``-1`` = unknown).
+
+    Returns:
+        ``(child_rows, age_diffs)`` — child row indices (where the edge
+        exists *and* both endpoints have ``birth_year >= 0``), and the
+        corresponding ``child.birth_year - parent.birth_year`` values
+        as ``int32``.  Empty arrays when no qualifying edges exist.
+    """
+    edge_rows = np.where(parent_arr >= 0)[0]
+    if edge_rows.size == 0:
+        return np.array([], dtype=np.intp), np.array([], dtype=np.int32)
+    parents = parent_arr[edge_rows]
+    by_child = birth_year[edge_rows]
+    by_parent = birth_year[parents]
+    both_known = (by_child >= 0) & (by_parent >= 0)
+    if not np.any(both_known):
+        return np.array([], dtype=np.intp), np.array([], dtype=np.int32)
+    return edge_rows[both_known], (by_child[both_known] - by_parent[both_known]).astype(np.int32)
+
+
 # ---------------------------------------------------------------------------
 # Relationship type registry
 # ---------------------------------------------------------------------------
@@ -234,26 +268,18 @@ class PedigreeGraph:
         """
         if self.birth_year is None:
             return
-        by = self.birth_year
         for parent_arr, parent_label in ((self.mother, "mother"), (self.father, "father")):
-            edge_rows = np.where(parent_arr >= 0)[0]
-            if edge_rows.size == 0:
+            edge_rows, diffs = _known_parent_edges(parent_arr, self.birth_year)
+            if diffs.size == 0:
                 continue
-            parent_rows = parent_arr[edge_rows]
-            by_child = by[edge_rows]
-            by_parent = by[parent_rows]
-            both_known = (by_child >= 0) & (by_parent >= 0)
-            if not np.any(both_known):
-                continue
-            violations = both_known & (by_child < by_parent)
+            violations = diffs < 0
             if np.any(violations):
                 n_bad = int(violations.sum())
                 first = int(np.argmax(violations))
                 raise ValueError(
                     f"birth_year topology violation: {n_bad} {parent_label}-child "
                     f"edge(s) have child.birth_year < {parent_label}.birth_year "
-                    f"(first: row {int(edge_rows[first])} child={int(by_child[first])} "
-                    f"< {parent_label}={int(by_parent[first])})"
+                    f"(first: row {int(edge_rows[first])}, diff={int(diffs[first])})"
                 )
 
     @cached_property
@@ -276,35 +302,21 @@ class PedigreeGraph:
         """
         if self.birth_year is None:
             return None
-        by = self.birth_year
 
-        def _mean_age_diff(parent_arr: np.ndarray) -> tuple[float, int] | None:
-            edge_rows = np.where(parent_arr >= 0)[0]
-            if edge_rows.size == 0:
-                return None
-            parents = parent_arr[edge_rows]
-            by_child = by[edge_rows]
-            by_parent = by[parents]
-            both_known = (by_child >= 0) & (by_parent >= 0)
-            if not np.any(both_known):
-                return None
-            diffs = (by_child[both_known] - by_parent[both_known]).astype(np.float64)
-            return float(diffs.mean()), int(both_known.sum())
-
-        m_result = _mean_age_diff(self.father)
-        f_result = _mean_age_diff(self.mother)
-        if m_result is None or f_result is None:
+        _, diffs_m = _known_parent_edges(self.father, self.birth_year)
+        _, diffs_f = _known_parent_edges(self.mother, self.birth_year)
+        if diffs_m.size == 0 or diffs_f.size == 0:
             return None
 
-        T_m, n_m = m_result
-        T_f, n_f = f_result
         from pedigree_graph._effective_size import GenerationInterval
 
+        T_m = float(diffs_m.mean())
+        T_f = float(diffs_f.mean())
         return GenerationInterval(
             T=(T_m + T_f) / 2.0,
             T_m=T_m,
             T_f=T_f,
-            n_edges=n_m + n_f,
+            n_edges=int(diffs_m.size + diffs_f.size),
         )
 
     # ------------------------------------------------------------------

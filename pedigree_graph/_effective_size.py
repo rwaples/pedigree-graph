@@ -198,14 +198,10 @@ def _sex_specific_family_table(
     k_fm: dict[int, np.ndarray] = {c: np.zeros(len(cohort_females[c]), dtype=np.int64) for c in cohort_labels}
     k_ff: dict[int, np.ndarray] = {c: np.zeros(len(cohort_females[c]), dtype=np.int64) for c in cohort_labels}
 
-    # Single pass over potential offspring; attribute each to its
-    # parent's cohort regardless of skip-gen edges.  In compact mode we
-    # skip founders (gen 0) for speed; in arbitrary mode we filter by
-    # the presence of any parent edge.
-    if cohort_mode == "compact_generation":
-        offs_idx = np.where(np.asarray(generation) > 0)[0]
-    else:
-        offs_idx = np.where((np.asarray(father) >= 0) | (np.asarray(mother) >= 0))[0]
+    # Single pass over individuals with at least one parent edge; the
+    # parent-presence filter is a safe superset of "non-founder" and
+    # works for both compact_generation and arbitrary cohort modes.
+    offs_idx = np.where((np.asarray(father) >= 0) | (np.asarray(mother) >= 0))[0]
 
     for i in offs_idx:
         o_sex = sex[i]
@@ -1129,20 +1125,15 @@ def _hill_age_table(pg: PedigreeGraph) -> dict[str, np.ndarray]:
     table interpretation (e.g. ``m_x`` per-capita fecundity) does not
     apply.  Returned as edge counts per parental age, per parent sex.
     """
+    from pedigree_graph._core import _known_parent_edges
+
     by = pg.birth_year
     assert by is not None
 
     def _ages(parent_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        edge_rows = np.where(parent_arr >= 0)[0]
-        if edge_rows.size == 0:
+        _, diffs = _known_parent_edges(parent_arr, by)
+        if diffs.size == 0:
             return np.array([], dtype=np.int32), np.array([], dtype=np.int64)
-        parents = parent_arr[edge_rows]
-        by_child = by[edge_rows]
-        by_parent = by[parents]
-        both = (by_child >= 0) & (by_parent >= 0)
-        if not np.any(both):
-            return np.array([], dtype=np.int32), np.array([], dtype=np.int64)
-        diffs = (by_child[both] - by_parent[both]).astype(np.int32)
         ages, counts = np.unique(diffs, return_counts=True)
         return ages.astype(np.int32), counts.astype(np.int64)
 
@@ -1154,21 +1145,6 @@ def _hill_age_table(pg: PedigreeGraph) -> dict[str, np.ndarray]:
         "ages_f": ages_f,
         "offspring_count_f": counts_f,
     }
-
-
-def _hill_count_known_edges(pg: PedigreeGraph) -> int:
-    """Total parent-child edges with both endpoints having known birth_year."""
-    by = pg.birth_year
-    assert by is not None
-    total = 0
-    for parent_arr in (np.asarray(pg.mother), np.asarray(pg.father)):
-        edge_rows = np.where(parent_arr >= 0)[0]
-        if edge_rows.size == 0:
-            continue
-        parents = parent_arr[edge_rows]
-        both = (by[edge_rows] >= 0) & (by[parents] >= 0)
-        total += int(both.sum())
-    return total
 
 
 def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
@@ -1197,18 +1173,10 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
       cohorts within
       :func:`~pedigree_graph._cohort_utils.eligible_cohort_range`.
     """
-    if pg.birth_year is None:
-        v = ne_variance_family_size(pg)
-        return NeHillResult(
-            ne=v.ne,
-            generation_interval=1.0,
-            collapses_to_ne_v=True,
-        )
-
+    # pg.generation_interval is None iff pg.birth_year is None or one sex
+    # has no qualifying edges — both cases collapse to Ne_V passthrough.
     gi = pg.generation_interval
     if gi is None:
-        # birth_year present but T not computable (one sex has no edges
-        # with known birth_years).  Fall back to the discrete sentinel.
         v = ne_variance_family_size(pg)
         return NeHillResult(
             ne=v.ne,
@@ -1271,7 +1239,7 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
     n_left = int((known < window.c_min).sum())
     n_right = int((known > window.c_max).sum())
     age_table = _hill_age_table(pg)
-    n_pairs = _hill_count_known_edges(pg)
+    n_pairs = gi.n_edges
 
     if not ne_per_c:
         return NeHillResult(

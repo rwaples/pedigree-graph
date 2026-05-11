@@ -96,19 +96,13 @@ def eligible_cohort_range(
     y_min = int(known.min())
     y_max = int(known.max())
 
-    # Parent-child age-difference distribution, both endpoints known.
-    diffs: list[np.ndarray] = []
-    for parent_arr in (pg.mother, pg.father):
-        edge_rows = np.where(parent_arr >= 0)[0]
-        if edge_rows.size == 0:
-            continue
-        parents = parent_arr[edge_rows]
-        by_child = by[edge_rows]
-        by_parent = by[parents]
-        both = (by_child >= 0) & (by_parent >= 0)
-        if np.any(both):
-            diffs.append((by_child[both] - by_parent[both]).astype(np.float64))
+    from pedigree_graph._core import _known_parent_edges
 
+    diffs = [
+        d
+        for parent_arr in (pg.mother, pg.father)
+        if (d := _known_parent_edges(parent_arr, by)[1]).size > 0
+    ]
     if not diffs:
         raise ValueError(
             "eligible_cohort_range: no parent-child edges with both birth_years known; "
