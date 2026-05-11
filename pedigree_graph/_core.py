@@ -42,18 +42,24 @@ logger = logging.getLogger(__name__)
 
 
 _REQUIRED_COLUMNS: tuple[str, ...] = ("id", "mother", "father", "twin", "sex", "generation")
+_OPTIONAL_COLUMNS: tuple[str, ...] = ("birth_year",)
 
 
 def _coerce_to_array_dict(data: dict[str, np.ndarray] | pd.DataFrame) -> dict[str, np.ndarray]:
     """Normalize input to a dict of numpy arrays.
 
     Accepts either a ``dict[str, np.ndarray]`` (returned as-is) or a
-    pandas ``DataFrame`` (each required column extracted via ``.values``).
-    No pandas import is performed in the dict path.
+    pandas ``DataFrame`` (each required column extracted via ``.values``;
+    optional columns extracted when present).  No pandas import is
+    performed in the dict path.
     """
     if isinstance(data, dict):
         return data
-    return {col: data[col].values for col in _REQUIRED_COLUMNS}
+    result = {col: data[col].values for col in _REQUIRED_COLUMNS}
+    for col in _OPTIONAL_COLUMNS:
+        if col in data.columns:
+            result[col] = data[col].values
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +193,20 @@ class PedigreeGraph:
         self.sex = np.asarray(arrays["sex"]).astype(np.int8)
         self.generation = np.asarray(arrays["generation"]).astype(np.int32)
 
+        # Optional birth_year (sentinel -1 for unknown). NaN floats coerced
+        # to -1 so callers can pass a pandas Series with missing values.
+        if "birth_year" in arrays:
+            by_raw = np.asarray(arrays["birth_year"])
+            if by_raw.dtype.kind == "f":
+                by_raw = np.where(np.isnan(by_raw), -1, by_raw)
+            self.birth_year: np.ndarray | None = by_raw.astype(np.int32)
+        else:
+            self.birth_year = None
+
         if not _check_topological(self.mother, self.father, n):
             raise ValueError("PedigreeGraph requires topological order: parents must precede children")
+
+        self._validate_birth_year_topology()
 
         # Build parent→child matrices using ALL available edges.
         # Each matrix is built independently so partial-pedigree data
@@ -205,6 +223,88 @@ class PedigreeGraph:
         self._Af = sp.csr_matrix(
             (np.ones(len(f_idx), dtype=np.float64), (f_idx, self.father[f_idx])),
             shape=(n, n),
+        )
+
+    def _validate_birth_year_topology(self) -> None:
+        """Reject parent-child edges with child.birth_year < parent.birth_year.
+
+        Only checks edges where both endpoints have known birth_year
+        (sentinel ``-1`` skipped). Unknown-parent and unknown-child rows
+        contribute no constraints.
+        """
+        if self.birth_year is None:
+            return
+        by = self.birth_year
+        for parent_arr, parent_label in ((self.mother, "mother"), (self.father, "father")):
+            edge_rows = np.where(parent_arr >= 0)[0]
+            if edge_rows.size == 0:
+                continue
+            parent_rows = parent_arr[edge_rows]
+            by_child = by[edge_rows]
+            by_parent = by[parent_rows]
+            both_known = (by_child >= 0) & (by_parent >= 0)
+            if not np.any(both_known):
+                continue
+            violations = both_known & (by_child < by_parent)
+            if np.any(violations):
+                n_bad = int(violations.sum())
+                first = int(np.argmax(violations))
+                raise ValueError(
+                    f"birth_year topology violation: {n_bad} {parent_label}-child "
+                    f"edge(s) have child.birth_year < {parent_label}.birth_year "
+                    f"(first: row {int(edge_rows[first])} child={int(by_child[first])} "
+                    f"< {parent_label}={int(by_parent[first])})"
+                )
+
+    @cached_property
+    def generation_interval(self):
+        """Sex-split generation interval (Hill 1979 ``L``).
+
+        Returns a :class:`~pedigree_graph._effective_size.GenerationInterval`
+        ``(T, T_m, T_f, n_edges)`` computed over all parent-child edges
+        where both endpoints have known ``birth_year`` (sentinel ``-1``
+        skipped).
+
+        * ``T_m`` = mean ``child.birth_year − sire.birth_year`` over
+          sire-offspring edges (parent = father field).
+        * ``T_f`` = symmetric for dam-offspring edges (parent = mother).
+        * ``T = (T_m + T_f) / 2``.
+        * Skip-generation edges included unconditionally.
+
+        Returns ``None`` if ``self.birth_year is None`` or if either sex
+        has zero qualifying edges.  Cached on the instance on first read.
+        """
+        if self.birth_year is None:
+            return None
+        by = self.birth_year
+
+        def _mean_age_diff(parent_arr: np.ndarray) -> tuple[float, int] | None:
+            edge_rows = np.where(parent_arr >= 0)[0]
+            if edge_rows.size == 0:
+                return None
+            parents = parent_arr[edge_rows]
+            by_child = by[edge_rows]
+            by_parent = by[parents]
+            both_known = (by_child >= 0) & (by_parent >= 0)
+            if not np.any(both_known):
+                return None
+            diffs = (by_child[both_known] - by_parent[both_known]).astype(np.float64)
+            return float(diffs.mean()), int(both_known.sum())
+
+        m_result = _mean_age_diff(self.father)
+        f_result = _mean_age_diff(self.mother)
+        if m_result is None or f_result is None:
+            return None
+
+        T_m, n_m = m_result
+        T_f, n_f = f_result
+        from pedigree_graph._effective_size import GenerationInterval
+
+        return GenerationInterval(
+            T=(T_m + T_f) / 2.0,
+            T_m=T_m,
+            T_f=T_f,
+            n_edges=n_m + n_f,
         )
 
     # ------------------------------------------------------------------
@@ -1133,6 +1233,7 @@ class PedigreeGraph:
         fathers: np.ndarray,
         twins: np.ndarray | None = None,
         generation: np.ndarray | None = None,
+        birth_year: np.ndarray | None = None,
     ) -> PedigreeGraph:
         """Construct a PedigreeGraph directly from numpy arrays.
 
@@ -1140,6 +1241,10 @@ class PedigreeGraph:
         don't have a ``pedigree.parquet`` DataFrame handy.  When
         *generation* is None, it is derived from the parent graph via a
         fixed-point sweep (founders = 0, offspring = max(parent_gen)+1).
+
+        *birth_year* is optional; sentinel ``-1`` marks unknown.  When
+        supplied, parent-child edges with both endpoints known are
+        validated to satisfy ``child.birth_year >= parent.birth_year``.
         """
         ids_arr = np.asarray(ids)
         mothers_arr = np.asarray(mothers)
@@ -1161,6 +1266,8 @@ class PedigreeGraph:
                 np.zeros(n, dtype=np.int32) if derive_generation else np.asarray(generation, dtype=np.int32)
             ),
         }
+        if birth_year is not None:
+            data["birth_year"] = np.asarray(birth_year)
         pg = cls(data)
         if derive_generation:
             pg.generation = _compute_depth(pg.mother, pg.father, n)

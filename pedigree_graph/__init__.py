@@ -17,6 +17,10 @@ Effective population size (Ne):
         founder-contribution matrix)
 """
 
+from pedigree_graph._cohort_utils import (
+    CohortWindow,
+    eligible_cohort_range,
+)
 from pedigree_graph._core import (
     PAIR_KINSHIP,
     REL_REGISTRY,
@@ -24,6 +28,7 @@ from pedigree_graph._core import (
     RelType,
 )
 from pedigree_graph._effective_size import (
+    GenerationInterval,
     NeCaballeroToroResult,
     NeCoancestryResult,
     NeHillResult,
@@ -47,6 +52,8 @@ from pedigree_graph._kinship_kernel import _compute_eqg
 __all__ = [
     "PAIR_KINSHIP",
     "REL_REGISTRY",
+    "CohortWindow",
+    "GenerationInterval",
     "NeCaballeroToroResult",
     "NeCoancestryResult",
     "NeHillResult",
@@ -59,6 +66,7 @@ __all__ = [
     "RelType",
     "_compute_eqg",
     "compute_all_ne",
+    "eligible_cohort_range",
     "ne_caballero_toro",
     "ne_coancestry",
     "ne_hill_overlapping",

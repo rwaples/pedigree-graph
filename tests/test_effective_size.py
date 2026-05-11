@@ -40,6 +40,73 @@ def _df(records: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _df_by(records: list[dict]) -> pd.DataFrame:
+    """Build a pedigree DataFrame including a ``birth_year`` column."""
+    rows = [
+        {
+            "id": r["id"],
+            "mother": r.get("mother", -1),
+            "father": r.get("father", -1),
+            "twin": r.get("twin", -1),
+            "sex": r["sex"],
+            "generation": r["generation"],
+            "birth_year": r["birth_year"],
+        }
+        for r in records
+    ]
+    return pd.DataFrame(rows)
+
+
+def _toy_birth_year_pedigree(
+    *,
+    cohort_a: int = 1900,
+    cohort_b: int = 1910,
+    paternity: str = "balanced",
+) -> pd.DataFrame:
+    """Build a 2-cohort pedigree with controlled σ²_m, σ²_f for eq. (10) tests.
+
+    Cohort A: 2 males (ids 0,1) + 2 females (ids 2,3).  Cohort B: 4 offspring.
+
+    * ``paternity='balanced'``: each parent has 1 son + 1 daughter →
+      σ²_m = σ²_f = 0.
+    * ``paternity='skewed'``: father 0 + mother 2 produce all 4 offspring →
+      σ²_m = σ²_f = 8.
+    * ``paternity='male_skewed_only'``: father 0 has all 4 sons + daughters
+      but mothers are split (mother 2 → 2 kids, mother 3 → 2 kids) →
+      σ²_m = 8, σ²_f = 0.
+    """
+    records = [
+        {"id": 0, "sex": 1, "generation": 0, "birth_year": cohort_a},
+        {"id": 1, "sex": 1, "generation": 0, "birth_year": cohort_a},
+        {"id": 2, "sex": 0, "generation": 0, "birth_year": cohort_a},
+        {"id": 3, "sex": 0, "generation": 0, "birth_year": cohort_a},
+    ]
+    if paternity == "balanced":
+        parents = [(0, 2), (1, 3), (0, 2), (1, 3)]
+    elif paternity == "skewed":
+        parents = [(0, 2), (0, 2), (0, 2), (0, 2)]
+    elif paternity == "male_skewed_only":
+        # All 4 children sired by father 0, but mothers split → σ²_m=8, σ²_f=0
+        parents = [(0, 2), (0, 2), (0, 3), (0, 3)]
+    elif paternity == "female_skewed_only":
+        # All 4 children mothered by mother 2; fathers split → σ²_m=0, σ²_f=8
+        parents = [(0, 2), (0, 2), (1, 2), (1, 2)]
+    else:
+        raise ValueError(f"unknown paternity={paternity!r}")
+    for i, (f, m) in enumerate(parents):
+        records.append(
+            {
+                "id": 4 + i,
+                "sex": 1 if i < 2 else 0,
+                "generation": 1,
+                "birth_year": cohort_b,
+                "father": f,
+                "mother": m,
+            }
+        )
+    return _df_by(records)
+
+
 # ---------------------------------------------------------------------------
 # Toy 1 — 2-founder full-sib mating: F=0.25, θ_sibs=0.25, EqG=1
 # ---------------------------------------------------------------------------
@@ -361,6 +428,269 @@ def test_ne_hill_collapses_to_ne_v():
 
 
 # ---------------------------------------------------------------------------
+# Ne_H birth-year branch — Hill 1979 eq. (10) via pg.birth_year
+# ---------------------------------------------------------------------------
+
+
+def test_ne_hill_uses_birth_year_handcomputed_balanced():
+    """Hand-computed toy: σ²_m = σ²_f = 0, N1 = 4, T = 10 → Ne = 80.
+
+    Per cohort 1900: 2 males + 2 females, each producing 1 son + 1
+    daughter at year 1910.  All sex-of-offspring quadrants k_mm = k_mf
+    = k_fm = k_ff = 1 for every parent → σ²_m = σ²_f = 0.  Hill 1979
+    eq. (10): Ne = 8·4·10 / (0 + 0 + 4) = 80.
+    """
+    df = _toy_birth_year_pedigree(paternity="balanced")
+    pg = PedigreeGraph(df)
+    res = ne_hill_overlapping(pg)
+    assert res.collapses_to_ne_v is False
+    assert res.T_m == pytest.approx(10.0)
+    assert res.T_f == pytest.approx(10.0)
+    assert res.generation_interval == pytest.approx(10.0)
+    assert res.Vk_m == pytest.approx(0.0, abs=1e-12)
+    assert res.Vk_f == pytest.approx(0.0, abs=1e-12)
+    assert res.ne == pytest.approx(80.0, rel=1e-9)
+    assert res.n_eligible_cohorts == 1
+
+
+def test_ne_hill_uses_birth_year_handcomputed_skewed():
+    """Hand-computed toy: σ²_m = σ²_f = 8, N1 = 4, T = 10 → Ne = 16.
+
+    Father 0 + mother 2 produce all 4 offspring; father 1 + mother 3
+    produce nothing.  V(k_mm)=V(k_mf)=2, Cov(k_mm,k_mf)=2 →
+    σ²_m = 2+2+2·2 = 8 (symmetric for females).  Hill 1979 eq. (10):
+    Ne = 8·4·10 / (8+8+4) = 16.
+    """
+    df = _toy_birth_year_pedigree(paternity="skewed")
+    pg = PedigreeGraph(df)
+    res = ne_hill_overlapping(pg)
+    assert res.Vk_m == pytest.approx(8.0, abs=1e-9)
+    assert res.Vk_f == pytest.approx(8.0, abs=1e-9)
+    assert res.ne == pytest.approx(16.0, rel=1e-9)
+
+
+def test_ne_hill_monotonic_in_sigma_m():
+    """Ne_H decreases as σ²_m increases (all else equal)."""
+    pg_lo = PedigreeGraph(_toy_birth_year_pedigree(paternity="balanced"))
+    pg_hi = PedigreeGraph(_toy_birth_year_pedigree(paternity="skewed"))
+    ne_lo = ne_hill_overlapping(pg_lo).ne
+    ne_hi = ne_hill_overlapping(pg_hi).ne
+    assert ne_lo is not None
+    assert ne_hi is not None
+    assert ne_lo > ne_hi
+
+
+def test_ne_hill_linear_in_T():
+    """Ne_H scales linearly in T when σ²_m, σ²_f, N1 are fixed."""
+    pg_t10 = PedigreeGraph(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1910))
+    pg_t20 = PedigreeGraph(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1920))
+    ne_t10 = ne_hill_overlapping(pg_t10).ne
+    ne_t20 = ne_hill_overlapping(pg_t20).ne
+    assert ne_t10 is not None
+    assert ne_t20 is not None
+    assert ne_t20 == pytest.approx(2.0 * ne_t10, rel=1e-9)
+
+
+def test_ne_hill_sex_symmetry():
+    """Swapping (N_m, σ²_m) ↔ (N_f, σ²_f) leaves Ne unchanged."""
+    pg_m = PedigreeGraph(_toy_birth_year_pedigree(paternity="male_skewed_only"))
+    pg_f = PedigreeGraph(_toy_birth_year_pedigree(paternity="female_skewed_only"))
+    res_m = ne_hill_overlapping(pg_m)
+    res_f = ne_hill_overlapping(pg_f)
+    # σ²_m and σ²_f should swap; Ne is invariant.
+    assert res_m.Vk_m == pytest.approx(res_f.Vk_f, abs=1e-9)
+    assert res_m.Vk_f == pytest.approx(res_f.Vk_m, abs=1e-9)
+    assert res_m.ne == pytest.approx(res_f.ne, rel=1e-9)
+
+
+def test_ne_hill_eligible_cohort_filtering():
+    """Right-censored cohorts excluded; cohort_window reflects this."""
+    # Three cohorts: 1900 (founders), 1910 (kids of 1900), 1920 (kids of 1910).
+    # Eligible window cutoff = y_max - p95(Δ) = 1920 - 10 = 1910.
+    # So cohort 1900 alone is eligible (1910 is at the boundary,
+    # included; 1920 excluded).
+    records = [
+        # Cohort 1900 founders: 2 males, 2 females
+        {"id": 0, "sex": 1, "generation": 0, "birth_year": 1900},
+        {"id": 1, "sex": 1, "generation": 0, "birth_year": 1900},
+        {"id": 2, "sex": 0, "generation": 0, "birth_year": 1900},
+        {"id": 3, "sex": 0, "generation": 0, "birth_year": 1900},
+    ]
+    # Cohort 1910 — 4 kids of cohort-1900 parents
+    pairs_1910 = [(0, 2), (1, 3), (0, 2), (1, 3)]
+    records.extend(
+        {"id": 4 + i, "sex": 1 if i < 2 else 0, "generation": 1, "birth_year": 1910,
+         "father": f, "mother": m}
+        for i, (f, m) in enumerate(pairs_1910)
+    )
+    # Cohort 1920 — 4 kids of cohort-1910 parents
+    pairs_1920 = [(4, 6), (5, 7), (4, 6), (5, 7)]
+    records.extend(
+        {"id": 8 + i, "sex": 1 if i < 2 else 0, "generation": 2, "birth_year": 1920,
+         "father": f, "mother": m}
+        for i, (f, m) in enumerate(pairs_1920)
+    )
+    df = _df_by(records)
+    pg = PedigreeGraph(df)
+    res = ne_hill_overlapping(pg)
+    assert res.cohort_window is not None
+    # p95 of edge Δs = 10 (all edges are 10y); c_max = 1920 - 10 = 1910.
+    assert res.cohort_window.c_max == 1910
+    # Cohorts 1900 and 1910 both fall in [c_min=1900, c_max=1910] and
+    # both have observed offspring (in 1910 and 1920 respectively), so
+    # both contribute a per-cohort Ne.
+    assert res.n_eligible_cohorts == 2
+    # Cohort 1920 individuals (4 of them) are right-censored.
+    assert res.n_excluded_right_censored == 4
+
+
+def test_ne_hill_age_table_descriptive():
+    """age_table is populated at the simulated parental ages."""
+    pg = PedigreeGraph(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1910))
+    res = ne_hill_overlapping(pg)
+    assert res.age_table is not None
+    # All father-child edges are 10y; same for mothers.
+    np.testing.assert_array_equal(res.age_table["ages_m"], [10])
+    np.testing.assert_array_equal(res.age_table["ages_f"], [10])
+    # 4 offspring → 4 father edges and 4 mother edges.
+    np.testing.assert_array_equal(res.age_table["offspring_count_m"], [4])
+    np.testing.assert_array_equal(res.age_table["offspring_count_f"], [4])
+    assert res.n_offspring_pairs == 8  # 4 mother + 4 father edges
+
+
+def test_ne_hill_threaded_matches_serial_with_birth_year():
+    """compute_all_ne n_threads=2 matches n_threads=1 for birth-year branch.
+
+    Targeted regression for the hill_from_variance bypass risk that
+    existed before Step 7.
+    """
+    pg = PedigreeGraph(_toy_birth_year_pedigree(paternity="skewed"))
+    r1 = compute_all_ne(pg, n_threads=1)["ne_hill_overlapping"]
+    r2 = compute_all_ne(pg, n_threads=2)["ne_hill_overlapping"]
+    assert r1.collapses_to_ne_v == r2.collapses_to_ne_v is False
+    assert r1.ne == pytest.approx(r2.ne, rel=1e-12)
+    assert r1.Vk_m == pytest.approx(r2.Vk_m, rel=1e-12)
+
+
+def test_ne_hill_serializes_to_dict():
+    """to_dict() yields a YAML-ready dict including new fields."""
+    pg = PedigreeGraph(_toy_birth_year_pedigree(paternity="balanced"))
+    res = ne_hill_overlapping(pg)
+    d = res.to_dict()
+    assert d["collapses_to_ne_v"] is False
+    assert d["ne"] == pytest.approx(80.0)
+    assert d["T_m"] == 10.0
+    assert d["cohort_window"]["c_min"] == 1900
+    assert d["age_table"]["ages_m"] == [10]
+    # n_unknown_birth_year is 0 in this toy (every individual has a known year).
+    assert d["n_unknown_birth_year"] == 0
+
+
+# ---------------------------------------------------------------------------
+# _sex_specific_family_table refactor: cohort_mode parameter
+# ---------------------------------------------------------------------------
+
+
+def test_sex_specific_family_table_compact_mode_unchanged():
+    """Default invocation reproduces pre-refactor behavior exactly."""
+    from pedigree_graph._effective_size import _sex_specific_family_table
+
+    df = _build_closed_line(n_gens=5)
+    pg = PedigreeGraph(df)
+    table = _sex_specific_family_table(
+        np.asarray(pg.mother),
+        np.asarray(pg.father),
+        np.asarray(pg.sex),
+        np.asarray(pg.generation),
+    )
+    # Keys are 0..g_max-1 (g_max excluded).
+    g_max = int(np.asarray(pg.generation).max())
+    assert set(table.keys()) == set(range(g_max))
+    # Each cohort has the expected sex counts (1 male + 1 female per gen).
+    for p in range(g_max):
+        assert len(table[p]["males_in_parent_gen"]) == 1
+        assert len(table[p]["females_in_parent_gen"]) == 1
+
+
+def test_sex_specific_family_table_arbitrary_mode_includes_max_label():
+    """Arbitrary mode keys on actual labels and includes the maximum."""
+    from pedigree_graph._effective_size import _sex_specific_family_table
+
+    df = _build_closed_line(n_gens=5)
+    pg = PedigreeGraph(df)
+    # Use a fake "birth_year" derived from generation + a constant offset
+    # so cohort labels are non-contiguous from zero.
+    fake_birth_year = (np.asarray(pg.generation) + 1970).astype(np.int32)
+    table = _sex_specific_family_table(
+        np.asarray(pg.mother),
+        np.asarray(pg.father),
+        np.asarray(pg.sex),
+        np.asarray(pg.generation),
+        cohort=fake_birth_year,
+        cohort_mode="arbitrary",
+    )
+    # Keys are 1970..1975 (g_max INCLUDED).
+    assert set(table.keys()) == {1970, 1971, 1972, 1973, 1974, 1975}
+    # The youngest cohort (1975 = gen 5) has no offspring → all-zero k's.
+    np.testing.assert_array_equal(table[1975]["k_mm"], [0])
+    np.testing.assert_array_equal(table[1975]["k_mf"], [0])
+    np.testing.assert_array_equal(table[1975]["k_fm"], [0])
+    np.testing.assert_array_equal(table[1975]["k_ff"], [0])
+
+
+def test_sex_specific_family_table_arbitrary_mode_filters_sentinels():
+    """Cohort labels of ``-1`` are excluded from the output dict."""
+    from pedigree_graph._effective_size import _sex_specific_family_table
+
+    df = _build_closed_line(n_gens=3)
+    pg = PedigreeGraph(df)
+    cohort = np.asarray(pg.generation).copy()
+    cohort[0] = -1  # mark one founder as unknown cohort
+    table = _sex_specific_family_table(
+        np.asarray(pg.mother),
+        np.asarray(pg.father),
+        np.asarray(pg.sex),
+        np.asarray(pg.generation),
+        cohort=cohort,
+        cohort_mode="arbitrary",
+    )
+    assert -1 not in table
+    # The id=0 founder (male) is no longer in cohort 0, so cohort 0 has
+    # only the female founder.
+    assert len(table[0]["males_in_parent_gen"]) == 0
+    assert len(table[0]["females_in_parent_gen"]) == 1
+
+
+def test_sex_specific_family_table_arbitrary_mode_requires_cohort():
+    """Missing cohort argument in arbitrary mode raises ValueError."""
+    from pedigree_graph._effective_size import _sex_specific_family_table
+
+    pg = PedigreeGraph(_build_closed_line(n_gens=3))
+    with pytest.raises(ValueError, match="cohort argument"):
+        _sex_specific_family_table(
+            np.asarray(pg.mother),
+            np.asarray(pg.father),
+            np.asarray(pg.sex),
+            np.asarray(pg.generation),
+            cohort_mode="arbitrary",
+        )
+
+
+def test_sex_specific_family_table_invalid_mode_raises():
+    from pedigree_graph._effective_size import _sex_specific_family_table
+
+    pg = PedigreeGraph(_build_closed_line(n_gens=3))
+    with pytest.raises(ValueError, match="cohort_mode must be"):
+        _sex_specific_family_table(
+            np.asarray(pg.mother),
+            np.asarray(pg.father),
+            np.asarray(pg.sex),
+            np.asarray(pg.generation),
+            cohort_mode="bogus",
+        )
+
+
+# ---------------------------------------------------------------------------
 # Step 2 — Ne_CT (Caballero & Toro 2002): closed-line round-trip
 # ---------------------------------------------------------------------------
 
@@ -411,3 +741,31 @@ def test_compute_all_ne_returns_eight_keys():
         d = r.to_dict()
         assert isinstance(d, dict)
         assert "ne" in d, f"{k} missing 'ne' field"
+
+
+def test_compute_all_ne_threaded_matches_serial():
+    """Threaded estimator dispatch preserves the serial result payloads."""
+    rng = np.random.default_rng(2027)
+    df = _build_random_mating_pedigree(rng, n_male=12, n_female=12, n_offspring=48)
+
+    serial = {k: v.to_dict() for k, v in compute_all_ne(PedigreeGraph(df), n_threads=1).items()}
+    threaded = {k: v.to_dict() for k, v in compute_all_ne(PedigreeGraph(df), n_threads=4).items()}
+
+    assert threaded == serial
+
+
+def test_compute_all_ne_threaded_matches_serial_when_coancestry_skipped():
+    """Threaded dispatch also preserves the large-pedigree skip branch."""
+    rng = np.random.default_rng(2028)
+    df = _build_random_mating_pedigree(rng, n_male=12, n_female=12, n_offspring=48)
+
+    serial = {
+        k: v.to_dict()
+        for k, v in compute_all_ne(PedigreeGraph(df), skip_full_kinship_matrix=True, n_threads=1).items()
+    }
+    threaded = {
+        k: v.to_dict()
+        for k, v in compute_all_ne(PedigreeGraph(df), skip_full_kinship_matrix=True, n_threads=4).items()
+    }
+
+    assert threaded == serial

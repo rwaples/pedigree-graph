@@ -774,6 +774,199 @@ class TestFromArrays:
         # All twin entries remap to -1 (no twins)
         assert np.all(pg.twin == -1)
 
+    def test_birth_year_omitted_is_none(self):
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+        )
+        assert pg.birth_year is None
+
+    def test_birth_year_round_trips_via_from_arrays(self):
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+            birth_year=np.array([1990, 1990, 2010]),
+        )
+        assert pg.birth_year is not None
+        assert pg.birth_year.dtype == np.int32
+        np.testing.assert_array_equal(pg.birth_year, [1990, 1990, 2010])
+
+    def test_birth_year_round_trips_via_dataframe(self):
+        df = pd.DataFrame(
+            {
+                "id": [0, 1, 2],
+                "mother": [-1, -1, 0],
+                "father": [-1, -1, 1],
+                "twin": [-1, -1, -1],
+                "sex": [0, 1, 0],
+                "generation": [0, 0, 1],
+                "birth_year": [1990, 1992, 2010],
+            }
+        )
+        pg = PedigreeGraph(df)
+        np.testing.assert_array_equal(pg.birth_year, [1990, 1992, 2010])
+
+    def test_birth_year_nan_coerced_to_sentinel(self):
+        # NaN floats (e.g. pandas Series with missing values) collapse to -1.
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+            birth_year=np.array([1990.0, np.nan, 2010.0]),
+        )
+        np.testing.assert_array_equal(pg.birth_year, [1990, -1, 2010])
+
+    def test_birth_year_topology_violation_raises(self):
+        # Child born before mother.
+        with pytest.raises(ValueError, match="birth_year topology violation"):
+            PedigreeGraph.from_arrays(
+                ids=np.array([0, 1, 2]),
+                mothers=np.array([-1, -1, 0]),
+                fathers=np.array([-1, -1, 1]),
+                birth_year=np.array([2010, 1990, 1990]),
+            )
+
+    def test_birth_year_topology_violation_message_mentions_father(self):
+        # Child born before father (mother edge OK).
+        with pytest.raises(ValueError, match="father-child"):
+            PedigreeGraph.from_arrays(
+                ids=np.array([0, 1, 2]),
+                mothers=np.array([-1, -1, 0]),
+                fathers=np.array([-1, -1, 1]),
+                birth_year=np.array([1990, 2010, 1995]),
+            )
+
+    def test_birth_year_partial_parent_validated_against_known_only(self):
+        # Child has only the mother known. Father edge unconstrained.
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, -1]),
+            birth_year=np.array([1990, 1990, 2010]),
+        )
+        np.testing.assert_array_equal(pg.birth_year, [1990, 1990, 2010])
+
+    def test_birth_year_unknown_endpoints_skip_validation(self):
+        # Mother has unknown birth_year (-1); edge is not constrained.
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+            birth_year=np.array([-1, 1990, 2010]),
+        )
+        np.testing.assert_array_equal(pg.birth_year, [-1, 1990, 2010])
+
+    def test_birth_year_equal_to_parent_is_allowed(self):
+        # Edge case: child.birth_year == parent.birth_year (unrealistic but
+        # not a topological error).
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+            birth_year=np.array([2010, 2010, 2010]),
+        )
+        np.testing.assert_array_equal(pg.birth_year, [2010, 2010, 2010])
+
+
+class TestGenerationInterval:
+    def test_returns_none_when_birth_year_missing(self):
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+        )
+        assert pg.generation_interval is None
+
+    def test_basic_two_parent_pedigree(self):
+        # Mother 0 born 1990; father 1 born 1992; child 2 born 2010.
+        # Only one mother-edge (Δ=20y) and one father-edge (Δ=18y).
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+            birth_year=np.array([1990, 1992, 2010]),
+        )
+        gi = pg.generation_interval
+        assert gi is not None
+        assert gi.T_m == pytest.approx(18.0)  # father-side
+        assert gi.T_f == pytest.approx(20.0)  # mother-side
+        assert gi.T == pytest.approx(19.0)  # noqa: SIM300 (gi.T is an attribute, not a constant)
+        assert gi.n_edges == 2
+
+    def test_returns_none_when_one_sex_has_no_edges(self):
+        # All fathers unknown → T_m undefined → result is None.
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 2]),
+            mothers=np.array([-1, 0]),
+            fathers=np.array([-1, -1]),
+            birth_year=np.array([1990, 2010]),
+        )
+        assert pg.generation_interval is None
+
+    def test_returns_none_when_no_edges_have_known_birth_years(self):
+        # Edges exist but parent birth_years all unknown.
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+            birth_year=np.array([-1, -1, 2010]),
+        )
+        assert pg.generation_interval is None
+
+    def test_unknown_endpoints_skipped_from_mean(self):
+        # Father 1's birth_year is unknown, so its two outgoing edges
+        # are excluded from T_m even though the children's birth_years
+        # are known.  All four endpoints known → both means defined.
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2, 3, 4, 5]),
+            mothers=np.array([-1, -1, -1, 0, 0, 2]),
+            fathers=np.array([-1, -1, -1, 1, 1, 1]),
+            # Mother 2's birth_year is unknown; the 2 → 5 mother edge is
+            # skipped from T_f, but the 0 → 3 and 0 → 4 edges remain.
+            birth_year=np.array([1990, 1990, -1, 2010, 2012, 2014]),
+        )
+        gi = pg.generation_interval
+        assert gi is not None
+        # T_m: edges 1→3 (Δ=20), 1→4 (Δ=22), 1→5 (Δ=24). Mean = 22.0.
+        assert gi.T_m == pytest.approx(22.0)
+        # T_f: edges 0→3 (Δ=20), 0→4 (Δ=22). The 2→5 edge is skipped
+        # because mother 2's birth_year is unknown.  Mean = 21.0.
+        assert gi.T_f == pytest.approx(21.0)
+        assert gi.T == pytest.approx(21.5)  # noqa: SIM300 (gi.T is an attribute, not a constant)
+
+    def test_includes_skip_generation_edges(self):
+        # Founder 0 (1900); child 1 (1920); grandchild 2 (1940);
+        # AND a skip-gen edge: 0 also fathered 2 directly.
+        # 0 → 1: 20y; 1 → 2: 20y; 0 → 2: 40y (skip-gen).
+        # Wait — that would conflict with father=0 and father=1 for id=2.
+        # Easier: build a pedigree with a skip-gen via the father field.
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),  # mother of 2 is 0 (skip-gen since 1 also exists)
+            fathers=np.array([-1, -1, 0]),  # father of 2 is also 0 — same founder, self-mating
+            birth_year=np.array([1900, 1920, 1940]),
+        )
+        gi = pg.generation_interval
+        assert gi is not None
+        # Mother edge: 0 → 2, Δ = 40
+        # Father edge: 0 → 2, Δ = 40
+        assert gi.T_m == pytest.approx(40.0)
+        assert gi.T_f == pytest.approx(40.0)
+        assert gi.n_edges == 2
+
+    def test_cached_on_second_access(self):
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]),
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
+            birth_year=np.array([1990, 1992, 2010]),
+        )
+        gi1 = pg.generation_interval
+        gi2 = pg.generation_interval
+        assert gi1 is gi2  # cached_property returns the same object
+
 
 class TestFromSubsample:
     @pytest.fixture
@@ -841,6 +1034,19 @@ class TestFromSubsample:
         pg = PedigreeGraph(lineage_pedigree)
         with pytest.raises(ValueError, match="scope must be"):
             pg.count_pairs(scope="bogus")
+
+    def test_birth_year_round_trips_through_subsample(self, lineage_pedigree):
+        # Attach birth_year to the full pedigree and ensure it survives
+        # the subsample construction path.
+        full = lineage_pedigree.copy()
+        full["birth_year"] = np.array([1990, 1990, 2000, 2000, 2010])
+        sub = full[full["id"].isin([1, 3, 4])].reset_index(drop=True)
+        pg = PedigreeGraph.from_subsample(full, sub)
+        assert pg.birth_year is not None
+        # The subsample graph is built over the FULL pedigree, so
+        # pg.birth_year is the full vector indexed by full-row index.
+        # Verify the values match the original full ordering.
+        np.testing.assert_array_equal(pg.birth_year, [1990, 1990, 2000, 2000, 2010])
 
 
 # ---------------------------------------------------------------------------

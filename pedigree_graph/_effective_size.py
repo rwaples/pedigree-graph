@@ -27,6 +27,7 @@ in the parent set for the gen-0 → gen-1 family-size variance transition.
 from __future__ import annotations
 
 __all__ = [
+    "GenerationInterval",
     "NeCaballeroToroResult",
     "NeCoancestryResult",
     "NeHillResult",
@@ -46,11 +47,13 @@ __all__ = [
     "ne_variance_family_size",
 ]
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
+from pedigree_graph._cohort_utils import CohortWindow, eligible_cohort_range
 from pedigree_graph._kinship_kernel import _compute_eqg
 
 if TYPE_CHECKING:
@@ -116,85 +119,125 @@ def _sex_specific_family_table(
     father: np.ndarray,
     sex: np.ndarray,
     generation: np.ndarray,
+    *,
+    cohort: np.ndarray | None = None,
+    cohort_mode: Literal["compact_generation", "arbitrary"] = "compact_generation",
 ) -> dict[int, dict[str, np.ndarray]]:
-    """Per-parent-generation counts of male/female offspring per parent.
+    """Per-parent-cohort counts of male/female offspring per parent.
 
-    For each parent generation ``p`` (0 ≤ p < g_max), tally the lifetime
-    offspring of every parent in cohort ``p``, partitioned by offspring
-    sex.  Offspring may live in any later generation, so the table
-    correctly attributes skip-gen children (where a child's generation
-    exceeds the parent's by more than 1) to the parent's own cohort.
-    Under strictly layered pedigrees this collapses to the standard
+    For each parent cohort ``c``, tally the lifetime offspring of every
+    parent in cohort ``c``, partitioned by offspring sex.  Offspring
+    may live in any later cohort, so the table correctly attributes
+    skip-gen children to the parent's own cohort.  Under strictly
+    layered pedigrees this collapses to the standard
     one-transition-per-cohort decomposition.
 
-    Returns:
-        Dict keyed on parent generation ``p``.  Each entry is a dict
-        with arrays:
+    Args:
+        mother: per-individual mother row index (``-1`` for unknown).
+        father: per-individual father row index (``-1`` for unknown).
+        sex: per-individual sex labels (``1`` male, ``0`` female).
+        generation: per-individual generation index (used by
+            ``compact_generation`` mode).
+        cohort: per-individual cohort label.  Required when
+            ``cohort_mode == 'arbitrary'``; ignored in
+            ``compact_generation`` mode.
+        cohort_mode:
+            * ``'compact_generation'`` (default, backward compatible):
+              cohort labels are ``0 .. g_max - 1`` (max excluded — last
+              cohort has no offspring under a discrete-generation
+              pedigree).
+            * ``'arbitrary'``: cohort labels are taken from
+              ``np.unique(cohort[cohort >= 0])``.  ``-1`` sentinels
+              are filtered; the max cohort is included (downstream
+              eligibility filtering handles right-censoring).
 
-        * ``males_in_parent_gen`` — row indices of males in cohort p
-        * ``females_in_parent_gen`` — row indices of females in cohort p
-        * ``k_mm`` — per-male count of male offspring (any later gen)
+    Returns:
+        Dict keyed on parent cohort label.  Each entry is a dict with
+        arrays:
+
+        * ``males_in_parent_gen`` — row indices of males in cohort
+        * ``females_in_parent_gen`` — row indices of females in cohort
+        * ``k_mm`` — per-male count of male offspring
         * ``k_mf`` — per-male count of female offspring
         * ``k_fm`` — per-female count of male offspring
         * ``k_ff`` — per-female count of female offspring
     """
-    g_max = int(generation.max())
     n = len(generation)
     sex = np.asarray(sex, dtype=np.int8)
+
+    if cohort_mode == "compact_generation":
+        cohort_arr = np.asarray(generation)
+        g_max = int(cohort_arr.max())
+        cohort_labels: list[int] = list(range(g_max))
+    elif cohort_mode == "arbitrary":
+        if cohort is None:
+            raise ValueError("cohort_mode='arbitrary' requires the cohort argument")
+        cohort_arr = np.asarray(cohort)
+        cohort_labels = [int(c) for c in np.unique(cohort_arr[cohort_arr >= 0])]
+    else:
+        raise ValueError(
+            f"cohort_mode must be 'compact_generation' or 'arbitrary'; got {cohort_mode!r}"
+        )
 
     # Per-cohort parent arrays + global parent → local index maps.
     cohort_males: dict[int, np.ndarray] = {}
     cohort_females: dict[int, np.ndarray] = {}
     parent_to_male_local = np.full(n, -1, dtype=np.int32)
     parent_to_female_local = np.full(n, -1, dtype=np.int32)
-    for p in range(g_max):
-        in_p = generation == p
-        m_arr = np.where(in_p & (sex == 1))[0]
-        f_arr = np.where(in_p & (sex == 0))[0]
-        cohort_males[p] = m_arr
-        cohort_females[p] = f_arr
+    for c in cohort_labels:
+        in_c = cohort_arr == c
+        m_arr = np.where(in_c & (sex == 1))[0]
+        f_arr = np.where(in_c & (sex == 0))[0]
+        cohort_males[c] = m_arr
+        cohort_females[c] = f_arr
         parent_to_male_local[m_arr] = np.arange(len(m_arr), dtype=np.int32)
         parent_to_female_local[f_arr] = np.arange(len(f_arr), dtype=np.int32)
 
-    k_mm: dict[int, np.ndarray] = {p: np.zeros(len(cohort_males[p]), dtype=np.int64) for p in range(g_max)}
-    k_mf: dict[int, np.ndarray] = {p: np.zeros(len(cohort_males[p]), dtype=np.int64) for p in range(g_max)}
-    k_fm: dict[int, np.ndarray] = {p: np.zeros(len(cohort_females[p]), dtype=np.int64) for p in range(g_max)}
-    k_ff: dict[int, np.ndarray] = {p: np.zeros(len(cohort_females[p]), dtype=np.int64) for p in range(g_max)}
+    k_mm: dict[int, np.ndarray] = {c: np.zeros(len(cohort_males[c]), dtype=np.int64) for c in cohort_labels}
+    k_mf: dict[int, np.ndarray] = {c: np.zeros(len(cohort_males[c]), dtype=np.int64) for c in cohort_labels}
+    k_fm: dict[int, np.ndarray] = {c: np.zeros(len(cohort_females[c]), dtype=np.int64) for c in cohort_labels}
+    k_ff: dict[int, np.ndarray] = {c: np.zeros(len(cohort_females[c]), dtype=np.int64) for c in cohort_labels}
 
-    # Single pass over all offspring (gen > 0); attribute each to its
-    # parent's cohort regardless of skip-gen edges.
-    offs_idx = np.where(generation > 0)[0]
+    # Single pass over potential offspring; attribute each to its
+    # parent's cohort regardless of skip-gen edges.  In compact mode we
+    # skip founders (gen 0) for speed; in arbitrary mode we filter by
+    # the presence of any parent edge.
+    if cohort_mode == "compact_generation":
+        offs_idx = np.where(np.asarray(generation) > 0)[0]
+    else:
+        offs_idx = np.where((np.asarray(father) >= 0) | (np.asarray(mother) >= 0))[0]
+
     for i in offs_idx:
         o_sex = sex[i]
         f = int(father[i])
         m = int(mother[i])
         if f >= 0:
-            fp = int(generation[f])
             lf = int(parent_to_male_local[f])
             if lf >= 0:
+                fp = int(cohort_arr[f])
                 if o_sex == 1:
                     k_mm[fp][lf] += 1
                 else:
                     k_mf[fp][lf] += 1
         if m >= 0:
-            mp = int(generation[m])
             lm = int(parent_to_female_local[m])
             if lm >= 0:
+                mp = int(cohort_arr[m])
                 if o_sex == 1:
                     k_fm[mp][lm] += 1
                 else:
                     k_ff[mp][lm] += 1
 
     return {
-        p: {
-            "males_in_parent_gen": cohort_males[p],
-            "females_in_parent_gen": cohort_females[p],
-            "k_mm": k_mm[p],
-            "k_mf": k_mf[p],
-            "k_fm": k_fm[p],
-            "k_ff": k_ff[p],
+        c: {
+            "males_in_parent_gen": cohort_males[c],
+            "females_in_parent_gen": cohort_females[c],
+            "k_mm": k_mm[c],
+            "k_mf": k_mf[c],
+            "k_fm": k_fm[c],
+            "k_ff": k_ff[c],
         }
-        for p in range(g_max)
+        for c in cohort_labels
     }
 
 
@@ -216,6 +259,35 @@ def _regress_log_one_minus(values: np.ndarray, t: np.ndarray) -> tuple[float, fl
 # ---------------------------------------------------------------------------
 # Result dataclasses
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationInterval:
+    """Sex-split generation interval (Hill 1979 ``L``).
+
+    ``T_m`` is the mean of ``child.birth_year − sire.birth_year`` over
+    all sire-offspring edges where both endpoints have known
+    ``birth_year``; ``T_f`` is the symmetric form over dam-offspring
+    edges; ``T = (T_m + T_f) / 2``.  ``n_edges`` is the total count
+    of qualifying edges (sire + dam) used in the means.
+
+    Skip-generation edges are included unconditionally — Hill's
+    pathway means in eq. (9) make no distinction.
+    """
+
+    T: float
+    T_m: float
+    T_f: float
+    n_edges: int
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize as a YAML-ready dict."""
+        return {
+            "T": float(self.T),
+            "T_m": float(self.T_m),
+            "T_f": float(self.T_f),
+            "n_edges": int(self.n_edges),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,7 +338,7 @@ class NeCoancestryResult:
     n_generations_used: int
 
     @classmethod
-    def empty(cls, g_max: int) -> "NeCoancestryResult":
+    def empty(cls, g_max: int) -> NeCoancestryResult:
         """All-NaN result of the right shape; used when Ne_C is skipped."""
         return cls(
             ne=None,
@@ -829,25 +901,77 @@ class NeLTCResult:
 
 @dataclass(frozen=True, slots=True)
 class NeHillResult:
-    """Hill 1979 age-structured (Ne_H) result, discrete-generation collapse.
+    """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
 
-    Under strictly discrete, non-overlapping generations the generation
-    interval ``L = 1`` and the Hill 1979 formula reduces to Ne_V.  This
-    class is a thin wrapper that records that collapse for traceability;
-    the scalar ``ne`` is taken from :func:`ne_variance_family_size`.
+    Two operating modes:
+
+    * **Sentinel branch** (``collapses_to_ne_v=True``): used when
+      ``pg.birth_year is None``.  Hill 1979 with ``L = 1`` reduces
+      algebraically to Ne_V (Caballero 1994 eq. 6 / Hill 1979 eq. 8 with
+      equal sexes), so ``ne`` is the Ne_V passthrough.  New diagnostic
+      fields are all ``None`` / ``0`` defaults.
+    * **Birth-year branch** (``collapses_to_ne_v=False``): used when
+      ``pg.birth_year`` is set.  Ne is computed per eligible birth-year
+      cohort via Hill 1979 eq. (10)::
+
+          Ne(c) = 8·N1(c)·T / (σ²_m(c) + σ²_f(c) + 4)
+
+      where ``σ²_m`` and ``σ²_f`` are the Caballero 1994 eq. 6
+      sex-of-offspring variance reassemblies, ``N1(c) = N_m(c) + N_f(c)``
+      is the total cohort size, and ``T = (T_m + T_f) / 2`` is the
+      sex-averaged generation interval.  Scenario-scalar ``ne`` is the
+      harmonic mean over eligible cohorts.
+
+    Diagnostic fields ``T_m``, ``T_f``, ``N1_m``, ``N1_f``, ``Vk_m``,
+    ``Vk_f`` are scenario-level means over eligible cohorts and do not
+    re-enter the Ne computation.
     """
 
     ne: float | None
     generation_interval: float
     collapses_to_ne_v: bool
+    # Sex-split generation interval (Hill 1979 L)
+    T_m: float | None = None
+    T_f: float | None = None
+    # Scenario-level diagnostic means over eligible cohorts
+    N1_m: float | None = None
+    N1_f: float | None = None
+    Vk_m: float | None = None
+    Vk_f: float | None = None
+    # Cohort eligibility
+    cohort_window: CohortWindow | None = None
+    n_eligible_cohorts: int = 0
+    n_excluded_right_censored: int = 0
+    n_excluded_left_censored: int = 0
+    n_unknown_birth_year: int = 0
+    # Per-individual age table — descriptive only, not used in Ne
+    age_table: dict[str, np.ndarray] | None = None
+    n_offspring_pairs: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
-        return {
+        out: dict[str, Any] = {
             "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
             "generation_interval": float(self.generation_interval),
             "collapses_to_ne_v": bool(self.collapses_to_ne_v),
+            "T_m": None if self.T_m is None or not np.isfinite(self.T_m) else float(self.T_m),
+            "T_f": None if self.T_f is None or not np.isfinite(self.T_f) else float(self.T_f),
+            "N1_m": None if self.N1_m is None or not np.isfinite(self.N1_m) else float(self.N1_m),
+            "N1_f": None if self.N1_f is None or not np.isfinite(self.N1_f) else float(self.N1_f),
+            "Vk_m": None if self.Vk_m is None or not np.isfinite(self.Vk_m) else float(self.Vk_m),
+            "Vk_f": None if self.Vk_f is None or not np.isfinite(self.Vk_f) else float(self.Vk_f),
+            "cohort_window": None if self.cohort_window is None else self.cohort_window._asdict(),
+            "n_eligible_cohorts": int(self.n_eligible_cohorts),
+            "n_excluded_right_censored": int(self.n_excluded_right_censored),
+            "n_excluded_left_censored": int(self.n_excluded_left_censored),
+            "n_unknown_birth_year": int(self.n_unknown_birth_year),
+            "n_offspring_pairs": int(self.n_offspring_pairs),
         }
+        if self.age_table is None:
+            out["age_table"] = None
+        else:
+            out["age_table"] = {k: v.tolist() for k, v in self.age_table.items()}
+        return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -997,20 +1121,194 @@ def ne_long_term_contributions(
     )
 
 
-def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
-    """Hill 1979 age-structured Ne (Ne_H), discrete-generation regression sentinel.
+def _hill_age_table(pg: PedigreeGraph) -> dict[str, np.ndarray]:
+    """Parental-age-at-offspring-birth histograms (descriptive diagnostic).
 
-    simACE pedigrees are strictly discrete and non-overlapping (no age
-    column, generations replace each other), so the generation interval
-    ``L = 1`` and Hill's age-structured variance Ne reduces algebraically
-    to :func:`ne_variance_family_size`.  This wrapper records the
-    collapse for downstream consumers and explicit traceability.
+    NOT used in Ne computation — survival is not observable from
+    reproduction alone in real animal pedigrees, so the standard life-
+    table interpretation (e.g. ``m_x`` per-capita fecundity) does not
+    apply.  Returned as edge counts per parental age, per parent sex.
     """
-    v_result = ne_variance_family_size(pg)
+    by = pg.birth_year
+    assert by is not None
+
+    def _ages(parent_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        edge_rows = np.where(parent_arr >= 0)[0]
+        if edge_rows.size == 0:
+            return np.array([], dtype=np.int32), np.array([], dtype=np.int64)
+        parents = parent_arr[edge_rows]
+        by_child = by[edge_rows]
+        by_parent = by[parents]
+        both = (by_child >= 0) & (by_parent >= 0)
+        if not np.any(both):
+            return np.array([], dtype=np.int32), np.array([], dtype=np.int64)
+        diffs = (by_child[both] - by_parent[both]).astype(np.int32)
+        ages, counts = np.unique(diffs, return_counts=True)
+        return ages.astype(np.int32), counts.astype(np.int64)
+
+    ages_m, counts_m = _ages(np.asarray(pg.father))
+    ages_f, counts_f = _ages(np.asarray(pg.mother))
+    return {
+        "ages_m": ages_m,
+        "offspring_count_m": counts_m,
+        "ages_f": ages_f,
+        "offspring_count_f": counts_f,
+    }
+
+
+def _hill_count_known_edges(pg: PedigreeGraph) -> int:
+    """Total parent-child edges with both endpoints having known birth_year."""
+    by = pg.birth_year
+    assert by is not None
+    total = 0
+    for parent_arr in (np.asarray(pg.mother), np.asarray(pg.father)):
+        edge_rows = np.where(parent_arr >= 0)[0]
+        if edge_rows.size == 0:
+            continue
+        parents = parent_arr[edge_rows]
+        both = (by[edge_rows] >= 0) & (by[parents] >= 0)
+        total += int(both.sum())
+    return total
+
+
+def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
+    """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
+
+    Dispatches on ``pg.birth_year``:
+
+    * **Sentinel branch** (``pg.birth_year is None``, or one sex has no
+      qualifying parent-child edges): the discrete-generation form of
+      Hill 1979 reduces to Ne_V (Caballero 1994 eq. 6 = Hill 1979 eq. 8
+      under symmetric sexes), so ``ne`` is the
+      :func:`ne_variance_family_size` passthrough and
+      ``collapses_to_ne_v=True``.
+    * **Birth-year branch**: applies Hill 1979 eq. (10) per eligible
+      birth-year cohort::
+
+          Ne(c) = 8·N1(c)·T / (σ²_m(c) + σ²_f(c) + 4)
+
+      where ``σ²_m = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the
+      per-male total-offspring variance reassembled from sex-of-offspring
+      quadrants (Caballero 1994 eq. 6) and ``σ²_f`` is the symmetric
+      female form.  ``N1(c) = N_m(c) + N_f(c)`` is the total newborn
+      cohort size; ``T = (T_m + T_f) / 2`` is the sex-averaged
+      generation interval from :attr:`PedigreeGraph.generation_interval`.
+      Scenario-scalar ``ne`` is the harmonic mean of ``Ne(c)`` across
+      cohorts within
+      :func:`~pedigree_graph._cohort_utils.eligible_cohort_range`.
+    """
+    if pg.birth_year is None:
+        v = ne_variance_family_size(pg)
+        return NeHillResult(
+            ne=v.ne,
+            generation_interval=1.0,
+            collapses_to_ne_v=True,
+        )
+
+    gi = pg.generation_interval
+    if gi is None:
+        # birth_year present but T not computable (one sex has no edges
+        # with known birth_years).  Fall back to the discrete sentinel.
+        v = ne_variance_family_size(pg)
+        return NeHillResult(
+            ne=v.ne,
+            generation_interval=1.0,
+            collapses_to_ne_v=True,
+        )
+
+    window = eligible_cohort_range(pg)
+    table = _sex_specific_family_table(
+        np.asarray(pg.mother),
+        np.asarray(pg.father),
+        np.asarray(pg.sex),
+        np.asarray(pg.generation),
+        cohort=pg.birth_year,
+        cohort_mode="arbitrary",
+    )
+
+    ne_per_c: list[float] = []
+    Vk_m_per_c: list[float] = []
+    Vk_f_per_c: list[float] = []
+    N1_m_per_c: list[int] = []
+    N1_f_per_c: list[int] = []
+
+    for c, entry in table.items():
+        if c < window.c_min or c > window.c_max:
+            continue
+        kmm = entry["k_mm"]
+        kmf = entry["k_mf"]
+        kfm = entry["k_fm"]
+        kff = entry["k_ff"]
+        n_m = len(kmm)
+        n_f = len(kfm)
+        # Need at least 2 of each sex for sample variance (ddof=1) and a
+        # meaningful covariance.
+        if n_m < 2 or n_f < 2:
+            continue
+        v_mm = float(kmm.var(ddof=1))
+        v_mf = float(kmf.var(ddof=1))
+        v_fm = float(kfm.var(ddof=1))
+        v_ff = float(kff.var(ddof=1))
+        cov_m = float(np.cov(kmm, kmf, ddof=1)[0, 1])
+        cov_f = float(np.cov(kfm, kff, ddof=1)[0, 1])
+        sigma2_m = v_mm + v_mf + 2.0 * cov_m  # Hill 1979 σ²_m
+        sigma2_f = v_fm + v_ff + 2.0 * cov_f
+        N1 = n_m + n_f
+        denom = sigma2_m + sigma2_f + 4.0
+        if denom <= 0:
+            continue
+        # Hill 1979 eq. (10): Ne = 8·N·L / (σ²_m + σ²_f + 4)
+        ne_c = 8.0 * N1 * gi.T / denom
+        ne_per_c.append(ne_c)
+        Vk_m_per_c.append(sigma2_m)
+        Vk_f_per_c.append(sigma2_f)
+        N1_m_per_c.append(n_m)
+        N1_f_per_c.append(n_f)
+
+    by = pg.birth_year
+    n_unknown = int((by < 0).sum())
+    known = by[by >= 0]
+    n_left = int((known < window.c_min).sum())
+    n_right = int((known > window.c_max).sum())
+    age_table = _hill_age_table(pg)
+    n_pairs = _hill_count_known_edges(pg)
+
+    if not ne_per_c:
+        return NeHillResult(
+            ne=None,
+            generation_interval=gi.T,
+            collapses_to_ne_v=False,
+            T_m=gi.T_m,
+            T_f=gi.T_f,
+            cohort_window=window,
+            n_eligible_cohorts=0,
+            n_excluded_left_censored=n_left,
+            n_excluded_right_censored=n_right,
+            n_unknown_birth_year=n_unknown,
+            age_table=age_table,
+            n_offspring_pairs=n_pairs,
+        )
+
+    ne_arr = np.array(ne_per_c, dtype=np.float64)
+    ne_h = _harmonic_mean(ne_arr) if np.isfinite(ne_arr).any() else None
+
     return NeHillResult(
-        ne=v_result.ne,
-        generation_interval=1.0,
-        collapses_to_ne_v=True,
+        ne=ne_h,
+        generation_interval=gi.T,
+        collapses_to_ne_v=False,
+        T_m=gi.T_m,
+        T_f=gi.T_f,
+        N1_m=float(np.mean(N1_m_per_c)),
+        N1_f=float(np.mean(N1_f_per_c)),
+        Vk_m=float(np.mean(Vk_m_per_c)),
+        Vk_f=float(np.mean(Vk_f_per_c)),
+        cohort_window=window,
+        n_eligible_cohorts=len(ne_per_c),
+        n_excluded_left_censored=n_left,
+        n_excluded_right_censored=n_right,
+        n_unknown_birth_year=n_unknown,
+        age_table=age_table,
+        n_offspring_pairs=n_pairs,
     )
 
 
@@ -1051,7 +1349,14 @@ def ne_caballero_toro(
 
     ne_per_gen = np.full(g_max + 1, np.nan, dtype=np.float64)
     for g in range(1, g_max + 1):
-        prev = mean_fs_per_gen[g - 1] if g >= 2 else 0.0
+        # For g=1 we anchor `prev = 0.5` (the natural self-coancestry floor for
+        # non-inbred individuals, since fs = (1+F)/2 and founder F = 0).  An
+        # earlier version anchored at 0.0, which produced a meaningless
+        # ``Ne = 1/(2·0.5) = 1`` artifact at g=1; the actual drift signal is the
+        # deviation of fs above 0.5, which only starts accumulating from g=2
+        # onward.  At g=1 ``d == 0`` and the ``d > 0`` guard now correctly
+        # leaves the entry as NaN.
+        prev = mean_fs_per_gen[g - 1] if g >= 2 else 0.5
         if not np.isfinite(prev) or prev >= 1.0 or not np.isfinite(mean_fs_per_gen[g]):
             continue
         d = (mean_fs_per_gen[g] - prev) / (1.0 - prev)
@@ -1082,13 +1387,16 @@ def ne_caballero_toro(
 def compute_all_ne(
     pg: PedigreeGraph,
     skip_full_kinship_matrix: bool = False,
+    n_threads: int = 1,
 ) -> dict[str, Any]:
     """Run all eight Ne estimators on ``pg``.
 
     Builds the founder-contribution structures once and reuses them for
     every contribution-dependent estimator.  F is computed lazily via
     Meuwissen-Luo and cached on the graph; the sparse kinship matrix is
-    built only when ``ne_coancestry`` requires it.
+    built only when ``ne_coancestry`` requires it.  When ``n_threads`` is
+    greater than 1, shared mutable graph caches are populated before
+    independent estimators are dispatched to worker threads.
 
     Args:
         pg: Pedigree graph.
@@ -1096,10 +1404,15 @@ def compute_all_ne(
             kinship build entirely; ``ne_coancestry`` slot is populated
             with NaN per-gen arrays and ``ne=None``.  Use on very large
             pedigrees where the kinship matrix would OOM.
+        n_threads: maximum number of worker threads for independent
+            estimator calls.  ``1`` preserves serial execution.
 
     Returns a dict keyed on estimator name; each value is the matching
     frozen result dataclass.
     """
+    if n_threads < 1:
+        raise ValueError("n_threads must be >= 1")
+
     F = pg.compute_inbreeding()
     founder_idx = _founder_idx(pg)
     ltc_means = _per_gen_founder_means(pg, founder_idx=founder_idx)
@@ -1109,17 +1422,57 @@ def compute_all_ne(
         g_max = int(np.asarray(pg.generation).max()) if pg.n > 0 else 0
         ne_coancestry_result = NeCoancestryResult.empty(g_max)
     else:
-        ne_coancestry_result = ne_coancestry(pg)
+        K = pg.kinship_matrix()
+
+    if n_threads == 1:
+        ne_variance_result = ne_variance_family_size(pg)
+        if not skip_full_kinship_matrix:
+            ne_coancestry_result = ne_coancestry(pg, K=K)
+        return {
+            "ne_inbreeding": ne_inbreeding(pg),
+            "ne_coancestry": ne_coancestry_result,
+            "ne_variance_family_size": ne_variance_result,
+            "ne_sex_ratio": ne_sex_ratio(pg),
+            "ne_individual_delta_f": ne_individual_delta_f(pg),
+            "ne_long_term_contributions": ne_long_term_contributions(pg, mean_contributions=ltc_means),
+            "ne_hill_overlapping": ne_hill_overlapping(pg),
+            "ne_caballero_toro": ne_caballero_toro(pg, ct_accumulators=ct_acc),
+        }
+
+    tasks = {
+        "ne_inbreeding": (ne_inbreeding, (pg,), {}),
+        "ne_variance_family_size": (ne_variance_family_size, (pg,), {}),
+        "ne_sex_ratio": (ne_sex_ratio, (pg,), {}),
+        "ne_individual_delta_f": (ne_individual_delta_f, (pg,), {}),
+        "ne_long_term_contributions": (ne_long_term_contributions, (pg,), {"mean_contributions": ltc_means}),
+        "ne_hill_overlapping": (ne_hill_overlapping, (pg,), {}),
+        "ne_caballero_toro": (ne_caballero_toro, (pg,), {"ct_accumulators": ct_acc}),
+    }
+    if not skip_full_kinship_matrix:
+        tasks["ne_coancestry"] = (ne_coancestry, (pg,), {"K": K})
+
+    results: dict[str, Any] = {}
+    max_workers = min(n_threads, len(tasks))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            name: executor.submit(func, *args, **kwargs)
+            for name, (func, args, kwargs) in tasks.items()
+        }
+        for name, future in futures.items():
+            results[name] = future.result()
+
+    if skip_full_kinship_matrix:
+        results["ne_coancestry"] = ne_coancestry_result
 
     return {
-        "ne_inbreeding": ne_inbreeding(pg),
-        "ne_coancestry": ne_coancestry_result,
-        "ne_variance_family_size": ne_variance_family_size(pg),
-        "ne_sex_ratio": ne_sex_ratio(pg),
-        "ne_individual_delta_f": ne_individual_delta_f(pg),
-        "ne_long_term_contributions": ne_long_term_contributions(pg, mean_contributions=ltc_means),
-        "ne_hill_overlapping": ne_hill_overlapping(pg),
-        "ne_caballero_toro": ne_caballero_toro(pg, ct_accumulators=ct_acc),
+        "ne_inbreeding": results["ne_inbreeding"],
+        "ne_coancestry": results["ne_coancestry"],
+        "ne_variance_family_size": results["ne_variance_family_size"],
+        "ne_sex_ratio": results["ne_sex_ratio"],
+        "ne_individual_delta_f": results["ne_individual_delta_f"],
+        "ne_long_term_contributions": results["ne_long_term_contributions"],
+        "ne_hill_overlapping": results["ne_hill_overlapping"],
+        "ne_caballero_toro": results["ne_caballero_toro"],
     }
 
 
