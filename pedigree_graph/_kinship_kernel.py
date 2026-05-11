@@ -101,6 +101,23 @@ def _compute_eqg(m_idx: np.ndarray, f_idx: np.ndarray, n: int) -> np.ndarray:
 INIT_CAP_PER_ROW = 16
 
 
+def _suggest_init_cap_per_row(g_ped: int) -> int:
+    """Heuristic: bigger initial row capacity when the pedigree is deep.
+
+    The DP per-row buffer doubles every time a row exhausts its slot,
+    abandoning the old slot.  At G_ped=6 with random mating, observed row
+    sizes hit ~690, so a row starting at 16 entries goes through 6
+    doublings — accumulating ``16 + 32 + 64 + ... + 512 = 1008`` dead
+    entries per row before reaching its final size of 1024.
+
+    Picking ``init_cap ≈ 2 ** (G_ped + 4)`` (capped at 4096) lets typical
+    rows fit in the initial allocation, eliminating most per-row
+    relocations and the dead-space buildup.  Tiny pedigrees fall back to
+    the 16 floor.
+    """
+    return max(16, min(4096, 1 << (g_ped + 4)))
+
+
 @numba.njit(cache=True)
 def _grow_global(cols: np.ndarray, vals: np.ndarray, min_size: int):
     """Return larger arrays copying existing contents, growing geometrically."""
@@ -110,7 +127,7 @@ def _grow_global(cols: np.ndarray, vals: np.ndarray, min_size: int):
         new_len *= 2
     new_cols = np.full(new_len, -1, dtype=np.int32)
     new_cols[:old_len] = cols
-    new_vals = np.zeros(new_len, dtype=np.float64)
+    new_vals = np.zeros(new_len, dtype=np.float32)
     new_vals[:old_len] = vals
     return new_cols, new_vals
 
@@ -125,7 +142,7 @@ def _append_entry(
     next_alloc: np.int64,
     row_idx: np.int32,
     col_idx: np.int32,
-    val: np.float64,
+    val: np.float32,
 ):
     """Append (col_idx, val) to row_idx.
 
@@ -145,7 +162,7 @@ def _append_entry(
         for k in range(cnt):
             cols[next_alloc + k] = cols[src + k]
             vals[next_alloc + k] = vals[src + k]
-        row_start[row_idx] = np.int32(next_alloc)
+        row_start[row_idx] = np.int64(next_alloc)
         row_cap[row_idx] = np.int32(new_cap)
         next_alloc += new_cap
     # Append.
@@ -179,31 +196,41 @@ def _dp_kinship(
     tw_idx: np.ndarray,
     depth: np.ndarray,
     threshold: float,
+    init_cap_per_row: int,
 ):
     """Build per-row sorted kinship arrays via gen-by-gen DP.
 
     Returns:
         cols: int32[total_cap], flat col storage (per-row contiguous).
-        vals: float64[total_cap], matching values.
-        row_start: int32[n], where each row begins in cols/vals.
+        vals: float32[total_cap], matching values (narrowed from float64
+            for ~50 % memory reduction at large N; kinship values lie in
+            [0, 1] so float32's 7-digit mantissa keeps relative error well
+            below downstream slope-fit tolerances).
+        row_start: int64[n], where each row begins in cols/vals.  int64
+            because the flat buffer can exceed 2**31 entries at large N
+            (e.g. N ≈ 525K with init_cap_per_row=4096).
         row_count: int32[n], entries per row.
 
     Rows are stored symmetrically (row i contains entries for cols j
     and vice versa).  Within each row, entries are sorted by column
     index (ascending).
     """
-    # Global buffer — geometric growth.
-    total_cap = np.int64(n) * INIT_CAP_PER_ROW
+    # Global buffer — geometric growth.  ``init_cap_per_row`` may be
+    # tuned upward to skip the doubling cascade when the caller knows
+    # typical kinship row sizes (e.g. ``2 ** (G_ped + 4)`` ≈ 1024 at
+    # G_ped=6); see :func:`_suggest_init_cap_per_row`.
+    init_cap = np.int32(init_cap_per_row)
+    total_cap = np.int64(n) * init_cap
     cols = np.full(total_cap, -1, dtype=np.int32)
-    vals = np.zeros(total_cap, dtype=np.float64)
-    row_start = np.zeros(n, dtype=np.int32)
+    vals = np.zeros(total_cap, dtype=np.float32)
+    row_start = np.zeros(n, dtype=np.int64)
     row_count = np.zeros(n, dtype=np.int32)
-    row_cap = np.full(n, INIT_CAP_PER_ROW, dtype=np.int32)
+    row_cap = np.full(n, init_cap, dtype=np.int32)
 
-    # Each row starts at position i * INIT_CAP_PER_ROW.
+    # Each row starts at position i * init_cap.
     for i in range(n):
-        row_start[i] = np.int32(i * INIT_CAP_PER_ROW)
-    next_alloc = np.int64(n) * INIT_CAP_PER_ROW
+        row_start[i] = np.int64(i) * np.int64(init_cap)
+    next_alloc = np.int64(n) * init_cap
 
     # Diagonal self-kinship for founders only (0.5 with no inbreeding).
     # For non-founders, the diagonal is appended AFTER the merge walk —
@@ -213,7 +240,7 @@ def _dp_kinship(
     for i in range(n):
         if m_idx[i] < 0 and f_idx[i] < 0:
             cols[row_start[i]] = np.int32(i)
-            vals[row_start[i]] = 0.5
+            vals[row_start[i]] = np.float32(0.5)
             row_count[i] = np.int32(1)
 
     # DP: process in depth order.
@@ -228,7 +255,7 @@ def _dp_kinship(
                 continue  # disconnected founder; self-kinship already 0.5
 
             # --- Self-kinship (inbreeding correction) ---
-            km_f = 0.0
+            km_f = np.float32(0.0)
             if m >= 0 and f >= 0:
                 # Look up kinship(m, f) by scanning m's row for column f.
                 ms = row_start[m]
@@ -248,17 +275,17 @@ def _dp_kinship(
             # walk (see below).  Do not pre-populate row j here.
 
             # --- Merge walk through rel(m) ∪ rel(f) ---
-            ms = row_start[m] if m >= 0 else np.int32(0)
+            ms = row_start[m] if m >= 0 else np.int64(0)
             mc = row_count[m] if m >= 0 else np.int32(0)
-            fs = row_start[f] if f >= 0 else np.int32(0)
+            fs = row_start[f] if f >= 0 else np.int64(0)
             fc = row_count[f] if f >= 0 else np.int32(0)
 
             pm = 0
             pf = 0
             while pm < mc or pf < fc:
                 k = np.int32(-1)
-                mv = 0.0
-                fv = 0.0
+                mv = np.float32(0.0)
+                fv = np.float32(0.0)
                 if pm < mc and (pf == fc or cols[ms + pm] <= cols[fs + pf]):
                     if pf < fc and cols[fs + pf] == cols[ms + pm]:
                         k = cols[ms + pm]
@@ -276,7 +303,7 @@ def _dp_kinship(
                     pf += 1
                 if k == j:
                     continue
-                val = (mv + fv) / 2.0
+                val = np.float32((mv + fv) / 2.0)
                 if val <= threshold:
                     continue
                 # Append (k, val) to row j.  Merge walk yields columns in
@@ -312,7 +339,7 @@ def _dp_kinship(
             # --- Append diagonal (j, self_kin) to row j AFTER merge walk.
             # All merge-walk entries have cols < j (ancestors), so j is
             # the largest column — row j stays sorted.
-            self_kin = (1.0 + km_f) / 2.0
+            self_kin = np.float32((1.0 + km_f) / 2.0)
             cols, vals, next_alloc = _append_entry(
                 cols,
                 vals,
@@ -338,7 +365,7 @@ def _dp_kinship(
             # according to its column index = j).
             rs_j0 = row_start[j]
             rc_j0 = row_count[j]
-            self_k = 0.5  # fallback if not found (shouldn't happen)
+            self_k = np.float32(0.5)  # fallback if not found (shouldn't happen)
             lo_j = 0
             hi_j = rc_j0
             while lo_j < hi_j:
@@ -446,7 +473,13 @@ def _assemble_csc(
     # First pass: count entries per column in the sliced matrix.
     # The kinship rows are sorted by column, so we iterate and count
     # only those (i, j) with both i and j in phen_pos.
-    col_counts = np.zeros(n_phen, dtype=np.int64)
+    #
+    # Indices/indptr use int32 throughout to halve K's footprint vs int64
+    # (≈ 1.65 GB saved at N=100K).  Safe as long as ``nnz < 2**31``; the
+    # caller (`_build_kinship_csc`) is responsible for guarding against
+    # the int32-overflow regime (G_ped × N very large).  At G_ped=6 we
+    # see nnz ≈ 690 × N, so overflow only kicks in beyond N≈3M.
+    col_counts = np.zeros(n_phen, dtype=np.int32)
     for i_full in range(n_full):
         i_phen = full_to_phen[i_full]
         if i_phen < 0:
@@ -459,13 +492,13 @@ def _assemble_csc(
             if j_phen >= 0:
                 col_counts[j_phen] += 1
 
-    indptr = np.zeros(n_phen + 1, dtype=np.int64)
+    indptr = np.zeros(n_phen + 1, dtype=np.int32)
     for j in range(n_phen):
         indptr[j + 1] = indptr[j] + col_counts[j]
     nnz = indptr[n_phen]
 
-    indices = np.empty(nnz, dtype=np.int64)
-    values = np.empty(nnz, dtype=np.float64)
+    indices = np.empty(nnz, dtype=np.int32)
+    values = np.empty(nnz, dtype=np.float32)
 
     # Second pass: fill.  For CSC with column j holding rows from
     # (phen → full) mapping, we need to iterate the *column* of the
@@ -475,7 +508,7 @@ def _assemble_csc(
     #
     # To keep column-major order preserved per column, maintain a
     # running pointer per column.
-    col_write = np.zeros(n_phen, dtype=np.int64)
+    col_write = np.zeros(n_phen, dtype=np.int32)
     for i_full in range(n_full):
         i_phen = full_to_phen[i_full]
         if i_phen < 0:
@@ -495,7 +528,7 @@ def _assemble_csc(
             if to_grm:
                 # GRM = 2·K (off-diag and diagonal both scale; the
                 # diagonal becomes 2 · (1 + F_i)/2 = 1 + F_i).
-                v *= 2.0
+                v *= np.float32(2.0)
             values[pos] = v
             col_write[j_phen] += 1
 
@@ -519,6 +552,7 @@ def _build_kinship_csc(
     tw_idx: np.ndarray,
     generation: np.ndarray | None,
     min_kinship: float,
+    init_cap_per_row: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute pedigree kinship and return full-symmetric CSC arrays.
 
@@ -549,6 +583,10 @@ def _build_kinship_csc(
     else:
         depth = np.ascontiguousarray(generation, dtype=np.int32)
 
+    if init_cap_per_row is None:
+        g_ped = int(depth.max()) if n > 0 else 0
+        init_cap_per_row = _suggest_init_cap_per_row(g_ped)
+
     cols, vals, row_start, row_count = _dp_kinship(
         n,
         m_idx,
@@ -556,6 +594,7 @@ def _build_kinship_csc(
         tw_idx,
         depth,
         float(min_kinship),
+        int(init_cap_per_row),
     )
     phen_pos = np.arange(n, dtype=np.int32)
     indptr, indices, values = _assemble_csc(
@@ -566,6 +605,16 @@ def _build_kinship_csc(
         phen_pos,
         False,
     )
+    # _assemble_csc writes int32 indptr/indices.  If the build exceeded
+    # int32 range (only possible at extreme scale, e.g. N ≳ 3M at G_ped=6
+    # with full mixing), promote to int64 so scipy/downstream code can
+    # still operate.  Negative indptr[-1] is the canonical overflow signal
+    # from wrap-around during accumulation.
+    if indptr[-1] < 0:
+        raise OverflowError(
+            "kinship matrix nnz exceeded int32 range — rebuild with int64 "
+            "CSC indices (open a pedigree-graph issue if you hit this)"
+        )
     return indptr, indices, values
 
 

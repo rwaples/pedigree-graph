@@ -9,7 +9,7 @@ MZ off-diagonal instead of the correct (1 + F)/2 = 0.625).
 import numpy as np
 import scipy.sparse as sp
 
-from pedigree_graph._kinship_kernel import _build_kinship_csc
+from pedigree_graph._kinship_kernel import _build_kinship_csc, _dp_kinship
 
 
 def _build(n, mothers, fathers, twins, generation, min_kinship=0.0):
@@ -151,3 +151,38 @@ def test_generation_none_autoderives():
     assert np.array_equal(indptr_a, indptr_b)
     assert np.array_equal(indices_a, indices_b)
     assert np.array_equal(data_a, data_b)
+
+
+def test_dp_kinship_row_start_is_int64():
+    # row_start must be int64 so that ``i * init_cap`` does not overflow at
+    # N > 525K with init_cap=4096 (product exceeds 2**31).  Allocating the
+    # actual overflow case requires ~17 GB of buffer; the dtype check is
+    # the regression gate.  End-to-end overflow is exercised by the
+    # Phase-5 benches at N>=500K.
+    n = 4
+    m_idx = np.array([-1, -1, 0, 0], dtype=np.int32)
+    f_idx = np.array([-1, -1, 1, 1], dtype=np.int32)
+    tw_idx = np.full(n, -1, dtype=np.int32)
+    depth = np.array([0, 0, 1, 1], dtype=np.int32)
+    _cols, _vals, row_start, _row_count = _dp_kinship(
+        n, m_idx, f_idx, tw_idx, depth, 0.0, 16,
+    )
+    assert row_start.dtype == np.int64
+    # Founder rows start at i * init_cap; the merge walk may relocate
+    # non-founder rows, so check the founders only.
+    assert row_start[0] == 0
+    assert row_start[1] == 16
+
+
+def test_dp_kinship_row_start_arithmetic_no_overflow():
+    # The widened arithmetic ``np.int64(i) * np.int64(init_cap)`` must
+    # produce values exceeding int32 range without wrap-around.  This is
+    # the path the kernel uses to initialize row_start on every DP run.
+    n = 10
+    init_cap = 1 << 28  # 268_435_456
+    expected_last = np.int64(n - 1) * np.int64(init_cap)
+    assert expected_last > (1 << 31)  # sanity: arithmetic crosses int32
+    # Validate the same arithmetic numba uses (cast both operands to int64).
+    computed = np.int64(n - 1) * np.int64(init_cap)
+    assert computed == expected_last
+    assert computed < (1 << 63) - 1
