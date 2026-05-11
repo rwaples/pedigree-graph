@@ -17,7 +17,9 @@ __all__ = [
     "_compute_F_meuwissen_luo",
     "_compute_depth",
     "_compute_eqg",
+    "_compute_theta_per_gen",
     "_dp_kinship",
+    "_per_gen_mean_kinship_from_dp",
 ]
 
 import numba
@@ -616,6 +618,152 @@ def _build_kinship_csc(
             "CSC indices (open a pedigree-graph issue if you hit this)"
         )
     return indptr, indices, values
+
+
+# ---------------------------------------------------------------------------
+# Streaming per-generation mean kinship (no CSC build)
+# ---------------------------------------------------------------------------
+
+
+@numba.njit(cache=True)
+def _stream_sum_theta_per_gen(
+    cols: np.ndarray,
+    vals: np.ndarray,
+    row_start: np.ndarray,
+    row_count: np.ndarray,
+    generation: np.ndarray,
+    twin_idx: np.ndarray,
+    g_max: np.int32,
+) -> np.ndarray:
+    """Sum kinship over within-cohort upper-triangle non-twin pairs.
+
+    Walks the DP row storage directly (already ascending-col-sorted per
+    row), counting each unordered pair once at row index < col index.
+    Float32 ``vals`` are widened to float64 on accumulation to keep the
+    sum well above per-entry ulp at large N.
+    """
+    sum_theta = np.zeros(g_max + 1, dtype=np.float64)
+    n = row_start.shape[0]
+    for i in range(n):
+        g_i = generation[i]
+        tw_i = twin_idx[i]
+        rs = row_start[i]
+        rc = row_count[i]
+        for p in range(rc):
+            j = cols[rs + p]
+            # Skip diagonal and lower-triangle entries (each pair counted once).
+            if j <= i:
+                continue
+            # Skip MZ twin pair.
+            if j == tw_i:
+                continue
+            # Skip cross-generation pairs.
+            if generation[j] != g_i:
+                continue
+            sum_theta[g_i] += np.float64(vals[rs + p])
+    return sum_theta
+
+
+def _per_gen_mean_kinship_from_dp(
+    cols: np.ndarray,
+    vals: np.ndarray,
+    row_start: np.ndarray,
+    row_count: np.ndarray,
+    generation: np.ndarray,
+    twin_idx: np.ndarray,
+) -> np.ndarray:
+    """Mean θ per generation, streamed from DP row storage.
+
+    Same semantics as
+    :func:`pedigree_graph._effective_size._per_gen_mean_kinship` but
+    bypasses materializing the full kinship CSC.  Excludes diagonal and
+    MZ twin pairs; returns ``np.nan`` for cohorts with fewer than 2
+    non-twin members.
+
+    Args:
+        cols, vals, row_start, row_count: DP output from
+            :func:`_dp_kinship`.
+        generation: per-individual generation index (founders = 0).
+        twin_idx: per-individual twin partner row index, ``-1`` for
+            non-twins.
+
+    Returns:
+        Float64 array of length ``g_max + 1`` with mean θ̄_g per
+        generation, NaN for cohorts with no eligible pairs.
+    """
+    gen = np.ascontiguousarray(generation, dtype=np.int32)
+    twin = np.ascontiguousarray(twin_idx, dtype=np.int32)
+    g_max = int(gen.max()) if gen.size else 0
+
+    sum_theta = _stream_sum_theta_per_gen(
+        cols, vals, row_start, row_count, gen, twin, np.int32(g_max),
+    )
+
+    # Pair counts in closed form (matches _per_gen_mean_kinship).
+    out = np.full(g_max + 1, np.nan, dtype=np.float64)
+    idx = np.arange(len(gen))
+    for g in range(g_max + 1):
+        in_g = gen == g
+        n_g = int(in_g.sum())
+        if n_g < 2:
+            continue
+        twin_in_g = int(((twin >= 0) & in_g & (twin > idx)).sum())
+        total_pairs = n_g * (n_g - 1) // 2 - twin_in_g
+        if total_pairs <= 0:
+            continue
+        out[g] = sum_theta[g] / total_pairs
+    return out
+
+
+def _compute_theta_per_gen(
+    n: int,
+    m_idx: np.ndarray,
+    f_idx: np.ndarray,
+    tw_idx: np.ndarray,
+    generation: np.ndarray | None,
+    min_kinship: float,
+    init_cap_per_row: int | None = None,
+) -> np.ndarray:
+    """Per-generation mean kinship θ̄_g without materializing K.
+
+    Runs the same DP as :func:`_build_kinship_csc` but skips the CSC
+    assembly entirely — instead, streams the row storage through
+    :func:`_per_gen_mean_kinship_from_dp` and returns the per-gen mean
+    directly.  DP buffers go out of scope on return.
+
+    Args:
+        n, m_idx, f_idx, tw_idx, generation, min_kinship,
+        init_cap_per_row: same semantics as :func:`_build_kinship_csc`.
+
+    Returns:
+        Float64 array of length ``g_max + 1`` with mean θ̄_g per
+        generation, NaN for cohorts with fewer than 2 non-twin members.
+    """
+    m_idx = np.ascontiguousarray(m_idx, dtype=np.int32)
+    f_idx = np.ascontiguousarray(f_idx, dtype=np.int32)
+    tw_idx = np.ascontiguousarray(tw_idx, dtype=np.int32)
+
+    if generation is None:
+        depth = _compute_depth(m_idx, f_idx, n)
+    else:
+        depth = np.ascontiguousarray(generation, dtype=np.int32)
+
+    if init_cap_per_row is None:
+        g_ped = int(depth.max()) if n > 0 else 0
+        init_cap_per_row = _suggest_init_cap_per_row(g_ped)
+
+    cols, vals, row_start, row_count = _dp_kinship(
+        n,
+        m_idx,
+        f_idx,
+        tw_idx,
+        depth,
+        float(min_kinship),
+        int(init_cap_per_row),
+    )
+    return _per_gen_mean_kinship_from_dp(
+        cols, vals, row_start, row_count, depth, tw_idx,
+    )
 
 
 # ---------------------------------------------------------------------------

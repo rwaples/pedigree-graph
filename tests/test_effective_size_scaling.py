@@ -627,6 +627,35 @@ def test_ltc_runs_at_scale_old_code_could_not() -> None:
 
 
 @pytest.mark.slow
+def test_streaming_ne_coancestry_recovery_at_n2000_g8() -> None:
+    """Stationary random-mating Ne_C from the streaming path matches Ne_V.
+
+    Phase-2 precision check: at n_per_gen=2000, G=8 the streaming Ne_C
+    should land within 15% of Ne_V (Caballero variance Ne), since under
+    balanced-sex random mating the two estimators converge to the same
+    target.  Catches float32 precision regressions in the streaming
+    accumulator — earlier evidence of bias would surface as a >15%
+    divergence here long before Phase-5c (N=10M) would show the same
+    pattern at much higher cost.
+    """
+    rng = np.random.default_rng(2026)
+    df = _build_random_mating_pedigree(rng, n_per_gen=2000, n_gens=8)
+    pg = PedigreeGraph(df)
+
+    nec = ne_coancestry(pg)
+    nev = ne_variance_family_size(pg)
+
+    assert nec.ne is not None, "Ne_C scalar must be defined for stationary pedigree"
+    assert nev.ne is not None, "Ne_V scalar must be defined for stationary pedigree"
+    # Both should land near n_per_gen=2000 with a generous tolerance.
+    relative_error = abs(nec.ne - nev.ne) / nev.ne
+    assert relative_error < 0.15, (
+        f"streaming Ne_C ({nec.ne:.1f}) diverges from Ne_V ({nev.ne:.1f}) "
+        f"by {relative_error:.1%} — exceeds 15% precision gate"
+    )
+
+
+@pytest.mark.slow
 def test_compute_all_ne_at_n2000_g8_smoke() -> None:
     """End-to-end smoke at the scale targeted by the refactor."""
     rng = np.random.default_rng(11)

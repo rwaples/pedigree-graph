@@ -472,19 +472,38 @@ def ne_inbreeding(pg: PedigreeGraph) -> NeInbreedingResult:
     )
 
 
-def ne_coancestry(pg: PedigreeGraph, K: sp.csc_matrix | None = None) -> NeCoancestryResult:
+def ne_coancestry(
+    pg: PedigreeGraph,
+    K: sp.csc_matrix | None = None,
+    theta_per_gen: np.ndarray | None = None,
+) -> NeCoancestryResult:
     """Coancestry-rate Ne (Ne_C).
 
     Same regression form as Ne_I but on per-cohort mean kinship θ over
     within-cohort unordered pairs (excluding the diagonal and MZ twin
     pairs).
+
+    The estimator accepts θ̄_g pre-computed (streamed from the DP
+    without materializing K) — preferred path at large N where K's CSC
+    would OOM.  If neither θ̄_g nor K is supplied, the K-free streaming
+    path is used by default.
+
+    Args:
+        pg: Pedigree graph.
+        K: optional pre-built sparse kinship matrix.  Used only when
+            ``theta_per_gen`` is None.
+        theta_per_gen: optional pre-computed per-generation mean
+            kinship.  When supplied, K is ignored.
     """
-    if K is None:
-        K = pg.kinship_matrix()
     gen = np.asarray(pg.generation)
-    twin = np.asarray(pg.twin)
     g_max = int(gen.max())
-    mean_theta = _per_gen_mean_kinship(K, gen, twin)
+    if theta_per_gen is not None:
+        mean_theta = np.asarray(theta_per_gen, dtype=np.float64)
+    elif K is not None:
+        twin = np.asarray(pg.twin)
+        mean_theta = _per_gen_mean_kinship(K, gen, twin)
+    else:
+        mean_theta = pg.per_gen_mean_kinship()
 
     ne_per_gen = np.full(g_max + 1, np.nan, dtype=np.float64)
     for g in range(1, g_max + 1):
@@ -1354,24 +1373,26 @@ def ne_caballero_toro(
 
 def compute_all_ne(
     pg: PedigreeGraph,
-    skip_full_kinship_matrix: bool = False,
+    skip_ne_coancestry: bool = False,
     n_threads: int = 1,
 ) -> dict[str, Any]:
     """Run all eight Ne estimators on ``pg``.
 
     Builds the founder-contribution structures once and reuses them for
     every contribution-dependent estimator.  F is computed lazily via
-    Meuwissen-Luo and cached on the graph; the sparse kinship matrix is
-    built only when ``ne_coancestry`` requires it.  When ``n_threads`` is
-    greater than 1, shared mutable graph caches are populated before
+    Meuwissen-Luo and cached on the graph; per-generation mean kinship
+    θ̄_g is streamed from the DP without materializing the full sparse
+    kinship matrix (``pg.per_gen_mean_kinship()``).  When ``n_threads``
+    is greater than 1, shared mutable graph caches are populated before
     independent estimators are dispatched to worker threads.
 
     Args:
         pg: Pedigree graph.
-        skip_full_kinship_matrix: when True, skip the full sparse
-            kinship build entirely; ``ne_coancestry`` slot is populated
-            with NaN per-gen arrays and ``ne=None``.  Use on very large
-            pedigrees where the kinship matrix would OOM.
+        skip_ne_coancestry: when True, skip the coancestry-rate Ne
+            estimator (and its DP run) entirely; ``ne_coancestry`` slot
+            is populated with NaN per-gen arrays and ``ne=None``.  Use
+            on very large pedigrees when only the 7 non-coancestry
+            estimators are needed.
         n_threads: maximum number of worker threads for independent
             estimator calls.  ``1`` preserves serial execution.
 
@@ -1386,16 +1407,19 @@ def compute_all_ne(
     ltc_means = _per_gen_founder_means(pg, founder_idx=founder_idx)
     ct_acc = _caballero_toro_accumulators(pg, founder_idx, F)
 
-    if skip_full_kinship_matrix:
+    if skip_ne_coancestry:
         g_max = int(np.asarray(pg.generation).max()) if pg.n > 0 else 0
         ne_coancestry_result = NeCoancestryResult.empty(g_max)
+        theta_per_gen = None
     else:
-        K = pg.kinship_matrix()
+        # Stream θ̄_g without materializing K.  pg caches the result so a
+        # later direct ne_coancestry call shares the same array.
+        theta_per_gen = pg.per_gen_mean_kinship()
 
     if n_threads == 1:
         ne_variance_result = ne_variance_family_size(pg)
-        if not skip_full_kinship_matrix:
-            ne_coancestry_result = ne_coancestry(pg, K=K)
+        if not skip_ne_coancestry:
+            ne_coancestry_result = ne_coancestry(pg, theta_per_gen=theta_per_gen)
         return {
             "ne_inbreeding": ne_inbreeding(pg),
             "ne_coancestry": ne_coancestry_result,
@@ -1416,8 +1440,8 @@ def compute_all_ne(
         "ne_hill_overlapping": (ne_hill_overlapping, (pg,), {}),
         "ne_caballero_toro": (ne_caballero_toro, (pg,), {"ct_accumulators": ct_acc}),
     }
-    if not skip_full_kinship_matrix:
-        tasks["ne_coancestry"] = (ne_coancestry, (pg,), {"K": K})
+    if not skip_ne_coancestry:
+        tasks["ne_coancestry"] = (ne_coancestry, (pg,), {"theta_per_gen": theta_per_gen})
 
     results: dict[str, Any] = {}
     max_workers = min(n_threads, len(tasks))
@@ -1429,7 +1453,7 @@ def compute_all_ne(
         for name, future in futures.items():
             results[name] = future.result()
 
-    if skip_full_kinship_matrix:
+    if skip_ne_coancestry:
         results["ne_coancestry"] = ne_coancestry_result
 
     return {

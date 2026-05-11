@@ -21,7 +21,12 @@ from pedigree_graph import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
-from pedigree_graph._kinship_kernel import _compute_eqg
+from pedigree_graph._effective_size import _per_gen_mean_kinship
+from pedigree_graph._kinship_kernel import (
+    _compute_eqg,
+    _compute_theta_per_gen,
+    _per_gen_mean_kinship_from_dp,
+)
 
 
 def _df(records: list[dict]) -> pd.DataFrame:
@@ -754,6 +759,97 @@ def test_compute_all_ne_threaded_matches_serial():
     assert threaded == serial
 
 
+def _streaming_theta(pg: PedigreeGraph) -> np.ndarray:
+    """Helper: compute θ̄_g via the streaming path (no K materialization)."""
+    return _compute_theta_per_gen(
+        pg.n,
+        np.asarray(pg.mother, dtype=np.int32),
+        np.asarray(pg.father, dtype=np.int32),
+        np.asarray(pg.twin, dtype=np.int32),
+        np.asarray(pg.generation, dtype=np.int32),
+        0.0,
+    )
+
+
+def test_streaming_theta_matches_K_path_toy1():
+    """Streaming θ̄_g must equal the K-path on toy 1 within float tolerance.
+
+    Different summation orders (row-major streaming vs. col-major COO)
+    preclude bit-identical results in general; ``rtol=0, atol=1e-12`` is
+    the tightest tolerance the float64 accumulator can guarantee.
+    """
+    df = _df(
+        [
+            {"id": 0, "sex": 1, "generation": 0},
+            {"id": 1, "sex": 0, "generation": 0},
+            {"id": 2, "sex": 1, "generation": 1, "mother": 1, "father": 0},
+            {"id": 3, "sex": 0, "generation": 1, "mother": 1, "father": 0},
+            {"id": 4, "sex": 1, "generation": 2, "mother": 3, "father": 2},
+        ]
+    )
+    pg = PedigreeGraph(df)
+    theta_k = _per_gen_mean_kinship(
+        pg.kinship_matrix(),
+        np.asarray(pg.generation),
+        np.asarray(pg.twin),
+    )
+    theta_stream = _streaming_theta(pg)
+    # NaN positions must match.
+    assert np.array_equal(np.isnan(theta_k), np.isnan(theta_stream))
+    # Non-NaN values must agree.
+    mask = ~np.isnan(theta_k)
+    assert np.allclose(theta_k[mask], theta_stream[mask], rtol=0, atol=1e-12)
+
+
+def test_streaming_theta_matches_K_path_random_mating():
+    """Streaming θ̄_g must equal K-path on a multi-gen random-mating pedigree."""
+    rng = np.random.default_rng(2026)
+    df = _build_random_mating_pedigree(rng, n_male=12, n_female=12, n_offspring=48)
+    pg = PedigreeGraph(df)
+    theta_k = _per_gen_mean_kinship(
+        pg.kinship_matrix(),
+        np.asarray(pg.generation),
+        np.asarray(pg.twin),
+    )
+    theta_stream = _streaming_theta(pg)
+    assert np.array_equal(np.isnan(theta_k), np.isnan(theta_stream))
+    mask = ~np.isnan(theta_k)
+    assert np.allclose(theta_k[mask], theta_stream[mask], rtol=0, atol=1e-12)
+
+
+def test_per_gen_mean_kinship_cached_per_threshold():
+    """Cache is keyed by min_kinship — different thresholds get fresh results."""
+    rng = np.random.default_rng(2031)
+    df = _build_random_mating_pedigree(rng, n_male=8, n_female=8, n_offspring=32)
+    pg = PedigreeGraph(df)
+
+    theta_0 = pg.per_gen_mean_kinship()  # min_kinship=0.0
+    theta_0_cached = pg.per_gen_mean_kinship()  # cache hit
+    # Same object returned (cache hit, not recomputed).
+    assert theta_0 is theta_0_cached
+
+    # A different threshold must produce a different array (different
+    # cache slot).  Use a threshold high enough to prune some entries.
+    theta_pruned = pg.per_gen_mean_kinship(min_kinship=0.05)
+    assert theta_pruned is not theta_0
+    # Cache stores both.
+    assert 0.0 in pg._theta_per_gen_cache
+    assert 0.05 in pg._theta_per_gen_cache
+
+
+def test_streaming_theta_helper_directly_bit_identical_to_self():
+    """_per_gen_mean_kinship_from_dp must be deterministic across calls."""
+    rng = np.random.default_rng(2030)
+    df = _build_random_mating_pedigree(rng, n_male=8, n_female=8, n_offspring=32)
+    pg = PedigreeGraph(df)
+    a = _streaming_theta(pg)
+    b = _streaming_theta(pg)
+    # Same inputs in same order — bit-identical accumulator state.
+    assert np.array_equal(np.isnan(a), np.isnan(b))
+    mask = ~np.isnan(a)
+    assert (a[mask] == b[mask]).all()
+
+
 def test_compute_all_ne_threaded_matches_serial_when_coancestry_skipped():
     """Threaded dispatch also preserves the large-pedigree skip branch."""
     rng = np.random.default_rng(2028)
@@ -761,11 +857,11 @@ def test_compute_all_ne_threaded_matches_serial_when_coancestry_skipped():
 
     serial = {
         k: v.to_dict()
-        for k, v in compute_all_ne(PedigreeGraph(df), skip_full_kinship_matrix=True, n_threads=1).items()
+        for k, v in compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True, n_threads=1).items()
     }
     threaded = {
         k: v.to_dict()
-        for k, v in compute_all_ne(PedigreeGraph(df), skip_full_kinship_matrix=True, n_threads=4).items()
+        for k, v in compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True, n_threads=4).items()
     }
 
     assert threaded == serial

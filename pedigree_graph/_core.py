@@ -33,6 +33,7 @@ from pedigree_graph._kinship_kernel import (
     _check_topological,
     _compute_depth,
     _compute_F_meuwissen_luo,
+    _compute_theta_per_gen,
 )
 
 if TYPE_CHECKING:
@@ -195,6 +196,10 @@ class PedigreeGraph:
         # Lazy kinship cache — populated by kinship_matrix(); keyed by
         # the resolved min_kinship threshold.
         self._kinship_cache: dict[float, sp.csc_matrix] = {}
+        # Lazy per-generation mean kinship cache — populated by
+        # per_gen_mean_kinship(); keyed by min_kinship so callers using a
+        # non-default threshold do not get a stale θ̄.
+        self._theta_per_gen_cache: dict[float, np.ndarray] = {}
         self._inbreeding: np.ndarray | None = None
         # Topological depth recomputed from edges; user-supplied
         # ``self.generation`` may be sparse/skipped/post-filtered and is
@@ -1402,6 +1407,56 @@ class PedigreeGraph:
             time.perf_counter() - t0,
         )
         return K
+
+    def per_gen_mean_kinship(self, min_kinship: float = 0.0) -> np.ndarray:
+        """Per-generation mean kinship θ̄_g, computed without building K.
+
+        Streams the DP row storage directly through
+        :func:`_per_gen_mean_kinship_from_dp`; no CSC matrix is ever
+        materialized.  This is the K-free path for
+        :func:`pedigree_graph.ne_coancestry` and scales to N where
+        ``kinship_matrix()`` would OOM (nnz beyond int32, or simply too
+        large for memory).
+
+        Result is cached under ``min_kinship`` in
+        ``self._theta_per_gen_cache``.  Mirrors ``kinship_matrix()``'s
+        cache keying so a caller requesting a different threshold gets a
+        fresh computation rather than a stale θ̄.
+
+        Args:
+            min_kinship: kernel-side pruning threshold.  Off-diagonal
+                entries with ``value <= min_kinship`` are dropped during
+                DP propagation.  Diagonal always kept.
+
+        Returns:
+            ``np.ndarray`` of dtype float64, length ``g_max + 1``, with
+            mean within-cohort kinship per generation (NaN for cohorts
+            with fewer than 2 non-twin members).
+        """
+        key = float(min_kinship)
+        cached = self._theta_per_gen_cache.get(key)
+        if cached is not None:
+            return cached
+
+        t0 = time.perf_counter()
+        theta = _compute_theta_per_gen(
+            self.n,
+            self.mother,
+            self.father,
+            self.twin,
+            self.generation,
+            min_kinship,
+        )
+        self._theta_per_gen_cache[key] = theta
+
+        logger.info(
+            "per_gen_mean_kinship: n=%d, g_max=%d, min_kinship=%.4g, %.2fs",
+            self.n,
+            theta.shape[0] - 1,
+            min_kinship,
+            time.perf_counter() - t0,
+        )
+        return theta
 
     def compute_inbreeding(self) -> np.ndarray:
         """Return the inbreeding coefficient *F* per individual.
