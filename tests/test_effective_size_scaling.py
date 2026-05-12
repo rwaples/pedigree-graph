@@ -259,6 +259,68 @@ def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None
     np.testing.assert_allclose(new["sums"], ref["sums"], atol=1e-12, rtol=0.0)
 
 
+def test_per_gen_mean_kinship_retire_matches_legacy(
+    parity_pedigree: PedigreeGraph,
+) -> None:
+    # Inline and post-hoc accumulation sum the same pairs in different
+    # orders, so float-level bit identity is not achievable; require
+    # 1e-12 absolute.
+    pg = parity_pedigree
+    theta_retiring = pg.per_gen_mean_kinship()
+    theta_legacy = pg.per_gen_mean_kinship(_debug_no_retire=True)
+    np.testing.assert_allclose(
+        theta_retiring, theta_legacy, rtol=0, atol=1e-12, equal_nan=True,
+    )
+
+
+def test_per_gen_mean_kinship_retire_matches_K_reference(
+    parity_pedigree: PedigreeGraph,
+) -> None:
+    from pedigree_graph._effective_size import _per_gen_mean_kinship
+
+    pg = parity_pedigree
+    theta_retiring = pg.per_gen_mean_kinship()
+    K = pg.kinship_matrix()
+    theta_K = _per_gen_mean_kinship(
+        K, np.asarray(pg.generation), np.asarray(pg.twin),
+    )
+    np.testing.assert_allclose(
+        theta_retiring, theta_K, rtol=0, atol=1e-12, equal_nan=True,
+    )
+
+
+def test_per_gen_mean_kinship_debug_no_retire_bypasses_cache(
+    parity_pedigree: PedigreeGraph,
+) -> None:
+    # The flag exists so parity tests never compare a cached retire=True
+    # result against itself; verify by poisoning the cache and confirming
+    # the legacy call neither reads nor overwrites the poisoned entry.
+    pg = parity_pedigree
+    theta_retiring = pg.per_gen_mean_kinship()
+    cached = pg._theta_per_gen_cache[0.0]
+    pg._theta_per_gen_cache[0.0] = np.full_like(cached, -999.0)
+    theta_legacy = pg.per_gen_mean_kinship(_debug_no_retire=True)
+    assert not np.allclose(theta_legacy, -999.0, equal_nan=True)
+    np.testing.assert_array_equal(
+        pg._theta_per_gen_cache[0.0], np.full_like(cached, -999.0),
+    )
+    np.testing.assert_allclose(
+        theta_legacy, theta_retiring, rtol=0, atol=1e-12, equal_nan=True,
+    )
+
+
+def test_per_gen_mean_kinship_debug_asserts_pass_on_well_formed_pedigree(
+    parity_pedigree: PedigreeGraph,
+) -> None:
+    pg = parity_pedigree
+    theta_default = pg.per_gen_mean_kinship()
+    pg._theta_per_gen_cache = {}
+    theta_asserts = pg.per_gen_mean_kinship(_debug_asserts=True)
+    np.testing.assert_allclose(
+        theta_default, theta_asserts, rtol=0, atol=1e-12, equal_nan=True,
+    )
+
+
 def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> None:
     """End-to-end LTC and CT dataclasses match the reference path field-by-field."""
     pg = parity_pedigree

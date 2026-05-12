@@ -1409,25 +1409,28 @@ class PedigreeGraph:
         )
         return K
 
-    def per_gen_mean_kinship(self, min_kinship: float = 0.0) -> np.ndarray:
+    def per_gen_mean_kinship(
+        self,
+        min_kinship: float = 0.0,
+        *,
+        _debug_no_retire: bool = False,
+        _debug_asserts: bool = False,
+    ) -> np.ndarray:
         """Per-generation mean kinship θ̄_g, computed without building K.
 
-        Streams the DP row storage directly through
-        :func:`_per_gen_mean_kinship_from_dp`; no CSC matrix is ever
-        materialized.  This is the K-free path for
-        :func:`pedigree_graph.ne_coancestry` and scales to N where
-        ``kinship_matrix()`` would OOM (nnz beyond int32, or simply too
-        large for memory).
-
-        Result is cached under ``min_kinship`` in
-        ``self._theta_per_gen_cache``.  Mirrors ``kinship_matrix()``'s
-        cache keying so a caller requesting a different threshold gets a
-        fresh computation rather than a stale θ̄.
+        Streams the DP row storage through :func:`_compute_theta_per_gen`;
+        no CSC matrix is ever materialized.  Result is cached under
+        ``min_kinship`` in ``self._theta_per_gen_cache``.
 
         Args:
             min_kinship: kernel-side pruning threshold.  Off-diagonal
                 entries with ``value <= min_kinship`` are dropped during
                 DP propagation.  Diagonal always kept.
+            _debug_no_retire: hidden flag; when True, take the
+                two-pass DP path and bypass the cache in both
+                directions.  ``_debug_asserts`` has no effect under it.
+            _debug_asserts: hidden flag; enables retire-correctness
+                runtime asserts inside ``_dp_kinship``.
 
         Returns:
             ``np.ndarray`` of dtype float64, length ``g_max + 1``, with
@@ -1435,16 +1438,14 @@ class PedigreeGraph:
             with fewer than 2 non-twin members).
         """
         key = float(min_kinship)
-        cached = self._theta_per_gen_cache.get(key)
-        if cached is not None:
-            return cached
+        if not _debug_no_retire:
+            cached = self._theta_per_gen_cache.get(key)
+            if cached is not None:
+                return cached
 
         t0 = time.perf_counter()
         # If K is already cached at this threshold, derive θ̄ from the
-        # existing sparse matrix (seconds) rather than re-running the DP
-        # (tens of seconds + multi-GB scratch).  Streaming intent is "K-free
-        # at scale"; reusing a cached K when one happens to exist is
-        # complementary.
+        # existing sparse matrix rather than re-running the DP.
         K = self._kinship_cache.get(key)
         if K is not None:
             theta = _per_gen_mean_kinship(
@@ -1458,8 +1459,11 @@ class PedigreeGraph:
                 self.twin,
                 self.generation,
                 min_kinship,
+                _debug_no_retire=_debug_no_retire,
+                _debug_asserts=_debug_asserts,
             )
-        self._theta_per_gen_cache[key] = theta
+        if not _debug_no_retire:
+            self._theta_per_gen_cache[key] = theta
 
         logger.info(
             "per_gen_mean_kinship: n=%d, g_max=%d, min_kinship=%.4g, %.2fs",

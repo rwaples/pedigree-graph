@@ -17,6 +17,7 @@ __all__ = [
     "_compute_F_meuwissen_luo",
     "_compute_depth",
     "_compute_eqg",
+    "_compute_last_direct_child_depth",
     "_compute_theta_per_gen",
     "_dp_kinship",
     "_per_gen_mean_kinship_from_dp",
@@ -57,6 +58,38 @@ def _compute_depth(m_idx: np.ndarray, f_idx: np.ndarray, n: int) -> np.ndarray:
         if depth[j] < 0:
             depth[j] = 0
     return depth
+
+
+@numba.njit(cache=True)
+def _compute_last_direct_child_depth(
+    m_idx: np.ndarray,
+    f_idx: np.ndarray,
+    depth: np.ndarray,
+    n: int,
+) -> np.ndarray:
+    """Max depth at which row[k] is still READ by a merge walk.
+
+    Returns, for each k, ``max(depth[k], max(depth[j] : k ∈ {m_idx[j], f_idx[j]}))``.
+    After this depth the kernel makes no further reads against ``row_start[k]``
+    storage, so the slot may be retired (freed for reuse).  Twin partners are
+    intentionally excluded — the MZ twin pass writes to twin rows but never
+    reads them via the merge walk.
+
+    Rows with no direct children retain ``depth[k]``, meaning they are
+    eligible for retirement immediately after their own processing finishes.
+    """
+    out = np.empty(n, dtype=np.int32)
+    for k in range(n):
+        out[k] = depth[k]
+    for j in range(n):
+        d_j = depth[j]
+        m = m_idx[j]
+        if m >= 0 and d_j > out[m]:
+            out[m] = d_j
+        f = f_idx[j]
+        if f >= 0 and d_j > out[f]:
+            out[f] = d_j
+    return out
 
 
 @numba.njit(cache=True)
@@ -134,6 +167,119 @@ def _grow_global(cols: np.ndarray, vals: np.ndarray, min_size: int):
     return new_cols, new_vals
 
 
+# ---------------------------------------------------------------------------
+# Free-list for retired/relocated row slots (size-bucketed LIFO stacks)
+# ---------------------------------------------------------------------------
+#
+# When retirement is enabled, end-of-depth retirement pushes freed
+# ``(start, cap)`` slots onto a size-bucketed stack.  Subsequent
+# relocations and overflow allocations pop from the matching bucket
+# before advancing ``next_alloc``.  Bucket index = log2(cap / init_cap);
+# caps are bounded above by ``n`` (a row can't hold more entries than
+# individuals), so ``n_buckets = ceil(log2(n / init_cap_per_row)) + 1``
+# covers every reachable size.  No overflow bucket is needed.
+
+
+def _freelist_alloc(
+    init_cap_per_row: int, n: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Pre-allocate the size-bucketed free-list backing arrays.
+
+    Returns ``(starts, tops)`` where ``starts`` is int64
+    ``(n_buckets, n)`` of slot start offsets and ``tops`` is int32
+    ``(n_buckets,)`` of per-bucket stack heights (top of stack = next
+    write index).  ``max_per_bucket = n`` is the loose worst case
+    (every row freed at one cap level); tightening this is a follow-up.
+
+    For the no-retirement path callers may pass ``init_cap_per_row=0``
+    or ``n=0`` — both yield 1×1 placeholder arrays that quietly absorb
+    push/pop attempts.
+    """
+    cap = max(1, int(init_cap_per_row))
+    n_eff = max(1, int(n))
+    # ceil(log2(n / cap)) + 1, with a floor of 1 bucket for tiny pedigrees.
+    n_buckets = 1
+    v = cap
+    while v < n_eff:
+        v *= 2
+        n_buckets += 1
+    starts = np.zeros((n_buckets, n_eff), dtype=np.int64)
+    tops = np.zeros(n_buckets, dtype=np.int32)
+    return starts, tops
+
+
+@numba.njit(cache=True)
+def _freelist_bucket(cap: np.int32, init_cap_per_row: np.int32) -> np.int32:
+    """Return ``floor(log2(cap / init_cap_per_row))`` for power-of-two caps.
+
+    Caps grow only via doubling from ``init_cap_per_row``, so this is an
+    integer log2.  Returns 0 for cap == init_cap and clips to 0 below.
+    """
+    if cap <= init_cap_per_row:
+        return np.int32(0)
+    b = np.int32(0)
+    v = np.int32(init_cap_per_row)
+    while v < cap:
+        v *= np.int32(2)
+        b += np.int32(1)
+    return b
+
+
+@numba.njit(cache=True)
+def _freelist_push(
+    freelist_starts: np.ndarray,
+    freelist_tops: np.ndarray,
+    start: np.int64,
+    cap: np.int32,
+    init_cap_per_row: np.int32,
+) -> None:
+    """Push ``(start, cap)`` onto its bucket's LIFO stack.
+
+    Silently no-ops when the free list is a placeholder (no buckets, or
+    cap out of range, or bucket full) — callers under ``retire=False``
+    pass placeholder arrays and rely on this to be inert.
+    """
+    if init_cap_per_row <= 0 or cap <= 0:
+        return
+    b = _freelist_bucket(cap, init_cap_per_row)
+    if b >= freelist_starts.shape[0]:
+        return
+    top = freelist_tops[b]
+    if top >= freelist_starts.shape[1]:
+        # Bucket sizing assumes worst case, so this branch should not
+        # fire under documented inputs.  Silent no-op for safety.
+        return
+    freelist_starts[b, top] = start
+    freelist_tops[b] = top + np.int32(1)
+
+
+@numba.njit(cache=True)
+def _freelist_pop(
+    freelist_starts: np.ndarray,
+    freelist_tops: np.ndarray,
+    needed_cap: np.int32,
+    init_cap_per_row: np.int32,
+) -> np.int64:
+    """Pop a slot matching ``needed_cap`` from its bucket; LIFO.
+
+    Returns the slot's start offset, or ``-1`` when the matching bucket
+    is empty (callers fall back to ``next_alloc``).  Placeholder
+    free-lists always return ``-1``.
+    """
+    if init_cap_per_row <= 0 or needed_cap <= 0:
+        return np.int64(-1)
+    b = _freelist_bucket(needed_cap, init_cap_per_row)
+    if b >= freelist_starts.shape[0]:
+        return np.int64(-1)
+    top = freelist_tops[b]
+    if top == 0:
+        return np.int64(-1)
+    new_top = top - np.int32(1)
+    start = freelist_starts[b, new_top]
+    freelist_tops[b] = new_top
+    return start
+
+
 @numba.njit(cache=True)
 def _append_entry(
     cols: np.ndarray,
@@ -145,34 +291,98 @@ def _append_entry(
     row_idx: np.int32,
     col_idx: np.int32,
     val: np.float32,
+    freelist_starts: np.ndarray,
+    freelist_tops: np.ndarray,
+    fl_init_cap: np.int32,
 ):
     """Append (col_idx, val) to row_idx.
 
-    If the row's capacity is exhausted, relocate the row to a new segment
-    at ``next_alloc`` with doubled capacity.  Returns (cols, vals,
-    next_alloc).  The arrays may be reallocated; use the returned values.
+    If ``row_start[row_idx] < 0`` the row has been retired (Phase 6); the
+    call is a silent no-op.
+
+    If the row's capacity is exhausted, relocate the row to a new
+    segment with doubled capacity.  Under retirement, the freed old slot
+    is pushed onto the free list and the new larger slot is taken from
+    the free list if a matching bucket has a vacant entry — otherwise
+    ``next_alloc`` is bumped.  Returns ``(cols, vals, next_alloc)``;
+    ``cols``/``vals`` may be reallocated by ``_grow_global``.
+
+    Under ``retire=False`` callers pass placeholder ``freelist_*``
+    arrays and ``fl_init_cap=0``, which makes push/pop silent no-ops
+    and preserves the original "always advance next_alloc" behavior.
     """
+    # Sentinel: retired rows silently drop writes.  Descendants of a
+    # retired ancestor may still emit symmetric appends targeting the
+    # ancestor's row index; they land here and dissolve.
+    if row_start[row_idx] < 0:
+        return cols, vals, next_alloc
+
     if row_count[row_idx] >= row_cap[row_idx]:
-        # Row is full — relocate to end of buffer with doubled capacity.
-        new_cap = row_cap[row_idx] * 2
-        needed = next_alloc + new_cap
-        if needed > cols.shape[0]:
-            cols, vals = _grow_global(cols, vals, needed)
-        # Copy existing data.
+        # Row is full — relocate with doubled capacity.
+        new_cap = np.int32(row_cap[row_idx] * np.int32(2))
+        # Push the about-to-be-abandoned slot.  No-op under retire=False.
+        _freelist_push(
+            freelist_starts,
+            freelist_tops,
+            row_start[row_idx],
+            row_cap[row_idx],
+            fl_init_cap,
+        )
+        # Prefer a free-list slot of the new size; fall back to next_alloc.
+        reused = _freelist_pop(
+            freelist_starts, freelist_tops, new_cap, fl_init_cap,
+        )
+        if reused >= 0:
+            dest = reused
+        else:
+            needed = next_alloc + np.int64(new_cap)
+            if needed > cols.shape[0]:
+                cols, vals = _grow_global(cols, vals, needed)
+            dest = next_alloc
+            next_alloc += np.int64(new_cap)
+        # Copy existing data to the new slot.
         src = row_start[row_idx]
         cnt = row_count[row_idx]
         for k in range(cnt):
-            cols[next_alloc + k] = cols[src + k]
-            vals[next_alloc + k] = vals[src + k]
-        row_start[row_idx] = np.int64(next_alloc)
-        row_cap[row_idx] = np.int32(new_cap)
-        next_alloc += new_cap
+            cols[dest + k] = cols[src + k]
+            vals[dest + k] = vals[src + k]
+        row_start[row_idx] = np.int64(dest)
+        row_cap[row_idx] = new_cap
     # Append.
     pos = row_start[row_idx] + row_count[row_idx]
     cols[pos] = col_idx
     vals[pos] = val
     row_count[row_idx] += 1
     return cols, vals, next_alloc
+
+
+@numba.njit(cache=True)
+def _retire_rows_at_depth(
+    d: np.int32,
+    last_dcd: np.ndarray,
+    row_start: np.ndarray,
+    row_count: np.ndarray,
+    row_cap: np.ndarray,
+    freelist_starts: np.ndarray,
+    freelist_tops: np.ndarray,
+    fl_init_cap: np.int32,
+) -> None:
+    """Free every row whose last-direct-child depth equals ``d``.
+
+    Pushes the slot onto the size-bucketed free list and marks the row
+    retired via ``row_start = -1`` so subsequent symmetric appends from
+    descendant chains land in ``_append_entry``'s sentinel branch and
+    dissolve.
+    """
+    for rk in range(last_dcd.shape[0]):
+        if last_dcd[rk] == d:
+            _freelist_push(
+                freelist_starts, freelist_tops,
+                row_start[rk], row_cap[rk], fl_init_cap,
+            )
+            row_start[rk] = np.int64(-1)
+            row_count[rk] = np.int32(0)
+            row_cap[rk] = np.int32(0)
 
 
 @numba.njit(cache=True)
@@ -199,8 +409,21 @@ def _dp_kinship(
     depth: np.ndarray,
     threshold: float,
     init_cap_per_row: int,
+    retire: bool,
+    debug_asserts: bool,
 ):
     """Build per-row sorted kinship arrays via gen-by-gen DP.
+
+    When ``retire`` is True, rows are freed at end-of-depth once their
+    ``last_direct_child_depth`` is reached, and θ̄ accumulates inline
+    during the merge walk so the caller can finalize per-generation
+    means without rescanning the row storage.  Subsequent symmetric
+    writes targeting a retired row dissolve via the sentinel branch in
+    ``_append_entry``.
+
+    When ``debug_asserts`` is True, each child-row step verifies its
+    direct parents have not been retired — the regression gate for
+    premature-retirement bugs.
 
     Returns:
         cols: int32[total_cap], flat col storage (per-row contiguous).
@@ -210,8 +433,13 @@ def _dp_kinship(
             below downstream slope-fit tolerances).
         row_start: int64[n], where each row begins in cols/vals.  int64
             because the flat buffer can exceed 2**31 entries at large N
-            (e.g. N ≈ 525K with init_cap_per_row=4096).
+            (e.g. N ≈ 525K with init_cap_per_row=4096).  Retired rows
+            have ``row_start = -1``.
         row_count: int32[n], entries per row.
+        sum_theta: float64[g_max + 1], inline within-cohort kinship sum
+            per generation (only populated when ``retire=True``; under
+            ``retire=False`` this is a length-1 placeholder that the
+            caller discards).
 
     Rows are stored symmetrically (row i contains entries for cols j
     and vice versa).  Within each row, entries are sorted by column
@@ -234,6 +462,32 @@ def _dp_kinship(
         row_start[i] = np.int64(i) * np.int64(init_cap)
     next_alloc = np.int64(n) * init_cap
 
+    max_depth = np.int32(depth.max()) if n > 0 else np.int32(0)
+
+    # Retirement state.  Placeholders under retire=False satisfy numba's
+    # type unifier; push/pop are no-ops because fl_init_cap = 0.
+    if retire:
+        last_dcd = _compute_last_direct_child_depth(m_idx, f_idx, depth, n)
+        sum_theta = np.zeros(max_depth + np.int32(1), dtype=np.float64)
+        # Bucket sizing: caps are bounded above by n, so
+        # n_buckets = ceil(log2(n / init_cap)) + 1.
+        n_buckets = np.int32(1)
+        v_b = np.int64(init_cap)
+        n_int64 = np.int64(n)
+        while v_b < n_int64:
+            v_b *= np.int64(2)
+            n_buckets += np.int32(1)
+        max_per_bucket = n if n > 0 else 1
+        freelist_starts = np.zeros((n_buckets, max_per_bucket), dtype=np.int64)
+        freelist_tops = np.zeros(n_buckets, dtype=np.int32)
+        fl_init_cap = init_cap
+    else:
+        last_dcd = np.empty(0, dtype=np.int32)
+        sum_theta = np.zeros(1, dtype=np.float64)
+        freelist_starts = np.zeros((1, 1), dtype=np.int64)
+        freelist_tops = np.zeros(1, dtype=np.int32)
+        fl_init_cap = np.int32(0)
+
     # Diagonal self-kinship for founders only (0.5 with no inbreeding).
     # For non-founders, the diagonal is appended AFTER the merge walk —
     # doing it upfront would break the sorted-row invariant because the
@@ -245,8 +499,15 @@ def _dp_kinship(
             vals[row_start[i]] = np.float32(0.5)
             row_count[i] = np.int32(1)
 
+    # Founders with no children at any later depth retire immediately;
+    # their stored diagonal is never read by a merge walk.
+    if retire:
+        _retire_rows_at_depth(
+            np.int32(0), last_dcd, row_start, row_count, row_cap,
+            freelist_starts, freelist_tops, fl_init_cap,
+        )
+
     # DP: process in depth order.
-    max_depth = np.int32(depth.max())
     for d in range(1, max_depth + 1):
         for j in range(n):
             if depth[j] != d:
@@ -255,6 +516,18 @@ def _dp_kinship(
             f = f_idx[j]
             if m < 0 and f < 0:
                 continue  # disconnected founder; self-kinship already 0.5
+
+            # Trips if ``last_direct_child_depth`` underestimates row
+            # liveness — i.e. a row was retired while still needed.
+            if debug_asserts:
+                if m >= 0 and row_start[m] < 0:
+                    raise AssertionError(
+                        "mother row retired before child processed"
+                    )
+                if f >= 0 and row_start[f] < 0:
+                    raise AssertionError(
+                        "father row retired before child processed"
+                    )
 
             # --- Self-kinship (inbreeding correction) ---
             km_f = np.float32(0.0)
@@ -308,6 +581,11 @@ def _dp_kinship(
                 val = np.float32((mv + fv) / 2.0)
                 if val <= threshold:
                     continue
+                # ``k < j`` counts each unordered within-cohort non-twin
+                # pair exactly once; folding the sum into the merge walk
+                # lets retirement free row[k] before any rescan.
+                if retire and depth[k] == d and k != tw_idx[j] and k < j:
+                    sum_theta[d] += np.float64(val)
                 # Append (k, val) to row j.  Merge walk yields columns in
                 # ascending order, so row j stays sorted.
                 cols, vals, next_alloc = _append_entry(
@@ -320,6 +598,9 @@ def _dp_kinship(
                     np.int32(j),
                     k,
                     val,
+                    freelist_starts,
+                    freelist_tops,
+                    fl_init_cap,
                 )
                 # Symmetric fill: append (j, val) to row k.  Since j is
                 # processed in depth order and higher j means later
@@ -336,6 +617,9 @@ def _dp_kinship(
                     k,
                     np.int32(j),
                     val,
+                    freelist_starts,
+                    freelist_tops,
+                    fl_init_cap,
                 )
 
             # --- Append diagonal (j, self_kin) to row j AFTER merge walk.
@@ -352,6 +636,9 @@ def _dp_kinship(
                 np.int32(j),
                 np.int32(j),
                 self_kin,
+                freelist_starts,
+                freelist_tops,
+                fl_init_cap,
             )
 
         # MZ twin pass for this generation.
@@ -406,6 +693,9 @@ def _dp_kinship(
                     np.int32(j),
                     np.int32(tw),
                     self_k,
+                    freelist_starts,
+                    freelist_tops,
+                    fl_init_cap,
                 )
                 # Re-sort row j (bubble the new entry into place).  Small
                 # per-row cost, rare.
@@ -434,10 +724,23 @@ def _dp_kinship(
                     np.int32(tw),
                     np.int32(j),
                     self_k,
+                    freelist_starts,
+                    freelist_tops,
+                    fl_init_cap,
                 )
                 _sort_row_inplace(cols, vals, row_start[tw], row_count[tw])
 
-    return cols, vals, row_start, row_count
+        # Runs AFTER the MZ twin pass so twin writes land before
+        # retirement.  ``_grow_global`` preserves freed offsets safely
+        # because retirement only releases rows that have completed all
+        # writes at this depth — any pending grow happened earlier.
+        if retire:
+            _retire_rows_at_depth(
+                np.int32(d), last_dcd, row_start, row_count, row_cap,
+                freelist_starts, freelist_tops, fl_init_cap,
+            )
+
+    return cols, vals, row_start, row_count, sum_theta
 
 
 # ---------------------------------------------------------------------------
@@ -547,21 +850,18 @@ def _assemble_csc(
 # ---------------------------------------------------------------------------
 
 
-def _run_dp(
+def _validate_dp_args(
     n: int,
     m_idx: np.ndarray,
     f_idx: np.ndarray,
     tw_idx: np.ndarray,
     generation: np.ndarray | None,
-    min_kinship: float,
     init_cap_per_row: int | None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Validate args + run the kinship DP.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+    """Coerce arrays + resolve ``depth`` and ``init_cap_per_row`` defaults.
 
-    Shared by :func:`_build_kinship_csc` (CSC assembly) and
-    :func:`_compute_theta_per_gen` (streaming θ̄).  Returns the DP row
-    storage along with the resolved ``depth`` and contiguous ``tw_idx``
-    so downstream code can avoid re-casting.
+    Shared between :func:`_run_dp` and :func:`_run_dp_retiring` so the
+    two entry points reach the kernel with identical, contiguous inputs.
     """
     m_idx = np.ascontiguousarray(m_idx, dtype=np.int32)
     f_idx = np.ascontiguousarray(f_idx, dtype=np.int32)
@@ -573,11 +873,63 @@ def _run_dp(
     if init_cap_per_row is None:
         g_ped = int(depth.max()) if n > 0 else 0
         init_cap_per_row = _suggest_init_cap_per_row(g_ped)
-    cols, vals, row_start, row_count = _dp_kinship(
+    return m_idx, f_idx, tw_idx, depth, int(init_cap_per_row)
+
+
+def _run_dp(
+    n: int,
+    m_idx: np.ndarray,
+    f_idx: np.ndarray,
+    tw_idx: np.ndarray,
+    generation: np.ndarray | None,
+    min_kinship: float,
+    init_cap_per_row: int | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Validate args + run the kinship DP (no retirement).
+
+    Used by :func:`_build_kinship_csc` for CSC assembly and by the
+    legacy parity path in :func:`_compute_theta_per_gen`.  Returns the
+    DP row storage along with the resolved ``depth`` and contiguous
+    ``tw_idx`` so downstream code can avoid re-casting.
+    """
+    m_idx, f_idx, tw_idx, depth, init_cap_per_row = _validate_dp_args(
+        n, m_idx, f_idx, tw_idx, generation, init_cap_per_row,
+    )
+    cols, vals, row_start, row_count, _sum_theta = _dp_kinship(
         n, m_idx, f_idx, tw_idx, depth,
-        float(min_kinship), int(init_cap_per_row),
+        float(min_kinship), init_cap_per_row,
+        False,  # retire=False — CSC path needs the full row storage
+        False,  # debug_asserts=False — never trip in the CSC path
     )
     return cols, vals, row_start, row_count, depth, tw_idx
+
+
+def _run_dp_retiring(
+    n: int,
+    m_idx: np.ndarray,
+    f_idx: np.ndarray,
+    tw_idx: np.ndarray,
+    generation: np.ndarray | None,
+    min_kinship: float,
+    init_cap_per_row: int | None,
+    debug_asserts: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Run the kinship DP with end-of-depth retirement + inline θ̄.
+
+    Returns ``(sum_theta, depth, tw_idx)``.  The DP row storage is
+    progressively retired during the run and goes out of scope on
+    return; only the per-generation θ̄ sum survives.
+    """
+    m_idx, f_idx, tw_idx, depth, init_cap_per_row = _validate_dp_args(
+        n, m_idx, f_idx, tw_idx, generation, init_cap_per_row,
+    )
+    _cols, _vals, _row_start, _row_count, sum_theta = _dp_kinship(
+        n, m_idx, f_idx, tw_idx, depth,
+        float(min_kinship), init_cap_per_row,
+        True,  # retire=True
+        bool(debug_asserts),
+    )
+    return sum_theta, depth, tw_idx
 
 
 def _build_kinship_csc(
@@ -671,6 +1023,36 @@ def _stream_sum_theta_per_gen(
     return sum_theta
 
 
+def _finalize_from_sum_theta(
+    sum_theta: np.ndarray,
+    generation: np.ndarray,
+    twin_idx: np.ndarray,
+) -> np.ndarray:
+    """Divide per-gen θ̄ sums by within-cohort non-twin pair counts.
+
+    Shared by :func:`_per_gen_mean_kinship_from_dp` (post-hoc walk) and
+    :func:`_compute_theta_per_gen` (inline accumulator from the
+    retiring DP).  Excludes the diagonal and MZ twin pairs; returns
+    NaN for cohorts with fewer than 2 non-twin members.
+    """
+    gen = np.ascontiguousarray(generation, dtype=np.int32)
+    twin = np.ascontiguousarray(twin_idx, dtype=np.int32)
+    g_max = int(gen.max()) if gen.size else 0
+    out = np.full(g_max + 1, np.nan, dtype=np.float64)
+    idx = np.arange(len(gen))
+    for g in range(g_max + 1):
+        in_g = gen == g
+        n_g = int(in_g.sum())
+        if n_g < 2:
+            continue
+        twin_in_g = int(((twin >= 0) & in_g & (twin > idx)).sum())
+        total_pairs = n_g * (n_g - 1) // 2 - twin_in_g
+        if total_pairs <= 0:
+            continue
+        out[g] = sum_theta[g] / total_pairs
+    return out
+
+
 def _per_gen_mean_kinship_from_dp(
     cols: np.ndarray,
     vals: np.ndarray,
@@ -701,25 +1083,10 @@ def _per_gen_mean_kinship_from_dp(
     gen = np.ascontiguousarray(generation, dtype=np.int32)
     twin = np.ascontiguousarray(twin_idx, dtype=np.int32)
     g_max = int(gen.max()) if gen.size else 0
-
     sum_theta = _stream_sum_theta_per_gen(
         cols, vals, row_start, row_count, gen, twin, np.int32(g_max),
     )
-
-    # Pair counts in closed form (matches _per_gen_mean_kinship).
-    out = np.full(g_max + 1, np.nan, dtype=np.float64)
-    idx = np.arange(len(gen))
-    for g in range(g_max + 1):
-        in_g = gen == g
-        n_g = int(in_g.sum())
-        if n_g < 2:
-            continue
-        twin_in_g = int(((twin >= 0) & in_g & (twin > idx)).sum())
-        total_pairs = n_g * (n_g - 1) // 2 - twin_in_g
-        if total_pairs <= 0:
-            continue
-        out[g] = sum_theta[g] / total_pairs
-    return out
+    return _finalize_from_sum_theta(sum_theta, gen, twin)
 
 
 def _compute_theta_per_gen(
@@ -730,13 +1097,19 @@ def _compute_theta_per_gen(
     generation: np.ndarray | None,
     min_kinship: float,
     init_cap_per_row: int | None = None,
+    _debug_no_retire: bool = False,
+    _debug_asserts: bool = False,
 ) -> np.ndarray:
     """Per-generation mean kinship θ̄_g without materializing K.
 
-    Runs the same DP as :func:`_build_kinship_csc` but skips the CSC
-    assembly entirely — instead, streams the row storage through
-    :func:`_per_gen_mean_kinship_from_dp` and returns the per-gen mean
-    directly.  DP buffers go out of scope on return.
+    The retiring DP frees rows in place at end-of-depth and
+    accumulates θ̄ inline during the merge walk; no CSC matrix and no
+    full N × G row buffer ever co-exist.
+
+    ``_debug_no_retire=True`` falls back to a two-pass path (full DP
+    then post-hoc walk) for parity testing.  ``_debug_asserts=True``
+    enables retire-correctness asserts inside the kernel; no effect
+    under ``_debug_no_retire=True``.
 
     Args:
         n, m_idx, f_idx, tw_idx, generation, min_kinship,
@@ -746,12 +1119,18 @@ def _compute_theta_per_gen(
         Float64 array of length ``g_max + 1`` with mean θ̄_g per
         generation, NaN for cohorts with fewer than 2 non-twin members.
     """
-    cols, vals, row_start, row_count, depth, tw_idx = _run_dp(
+    if _debug_no_retire:
+        cols, vals, row_start, row_count, depth, tw_idx_c = _run_dp(
+            n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
+        )
+        return _per_gen_mean_kinship_from_dp(
+            cols, vals, row_start, row_count, depth, tw_idx_c,
+        )
+    sum_theta, depth, tw_idx_c = _run_dp_retiring(
         n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
+        debug_asserts=_debug_asserts,
     )
-    return _per_gen_mean_kinship_from_dp(
-        cols, vals, row_start, row_count, depth, tw_idx,
-    )
+    return _finalize_from_sum_theta(sum_theta, depth, tw_idx_c)
 
 
 # ---------------------------------------------------------------------------
