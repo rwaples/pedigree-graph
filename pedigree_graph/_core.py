@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 import numpy as np
 import scipy.sparse as sp
 
+from pedigree_graph._effective_size import _per_gen_mean_kinship
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
     _check_topological,
@@ -1439,14 +1440,25 @@ class PedigreeGraph:
             return cached
 
         t0 = time.perf_counter()
-        theta = _compute_theta_per_gen(
-            self.n,
-            self.mother,
-            self.father,
-            self.twin,
-            self.generation,
-            min_kinship,
-        )
+        # If K is already cached at this threshold, derive θ̄ from the
+        # existing sparse matrix (seconds) rather than re-running the DP
+        # (tens of seconds + multi-GB scratch).  Streaming intent is "K-free
+        # at scale"; reusing a cached K when one happens to exist is
+        # complementary.
+        K = self._kinship_cache.get(key)
+        if K is not None:
+            theta = _per_gen_mean_kinship(
+                K, np.asarray(self.generation), np.asarray(self.twin),
+            )
+        else:
+            theta = _compute_theta_per_gen(
+                self.n,
+                self.mother,
+                self.father,
+                self.twin,
+                self.generation,
+                min_kinship,
+            )
         self._theta_per_gen_cache[key] = theta
 
         logger.info(

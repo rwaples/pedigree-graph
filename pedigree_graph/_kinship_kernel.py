@@ -547,6 +547,39 @@ def _assemble_csc(
 # ---------------------------------------------------------------------------
 
 
+def _run_dp(
+    n: int,
+    m_idx: np.ndarray,
+    f_idx: np.ndarray,
+    tw_idx: np.ndarray,
+    generation: np.ndarray | None,
+    min_kinship: float,
+    init_cap_per_row: int | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Validate args + run the kinship DP.
+
+    Shared by :func:`_build_kinship_csc` (CSC assembly) and
+    :func:`_compute_theta_per_gen` (streaming θ̄).  Returns the DP row
+    storage along with the resolved ``depth`` and contiguous ``tw_idx``
+    so downstream code can avoid re-casting.
+    """
+    m_idx = np.ascontiguousarray(m_idx, dtype=np.int32)
+    f_idx = np.ascontiguousarray(f_idx, dtype=np.int32)
+    tw_idx = np.ascontiguousarray(tw_idx, dtype=np.int32)
+    if generation is None:
+        depth = _compute_depth(m_idx, f_idx, n)
+    else:
+        depth = np.ascontiguousarray(generation, dtype=np.int32)
+    if init_cap_per_row is None:
+        g_ped = int(depth.max()) if n > 0 else 0
+        init_cap_per_row = _suggest_init_cap_per_row(g_ped)
+    cols, vals, row_start, row_count = _dp_kinship(
+        n, m_idx, f_idx, tw_idx, depth,
+        float(min_kinship), int(init_cap_per_row),
+    )
+    return cols, vals, row_start, row_count, depth, tw_idx
+
+
 def _build_kinship_csc(
     n: int,
     m_idx: np.ndarray,
@@ -576,27 +609,8 @@ def _build_kinship_csc(
         column are sorted ascendingly (under the common case of the
         kernel iterating ``phen_pos = arange(n)``).
     """
-    m_idx = np.ascontiguousarray(m_idx, dtype=np.int32)
-    f_idx = np.ascontiguousarray(f_idx, dtype=np.int32)
-    tw_idx = np.ascontiguousarray(tw_idx, dtype=np.int32)
-
-    if generation is None:
-        depth = _compute_depth(m_idx, f_idx, n)
-    else:
-        depth = np.ascontiguousarray(generation, dtype=np.int32)
-
-    if init_cap_per_row is None:
-        g_ped = int(depth.max()) if n > 0 else 0
-        init_cap_per_row = _suggest_init_cap_per_row(g_ped)
-
-    cols, vals, row_start, row_count = _dp_kinship(
-        n,
-        m_idx,
-        f_idx,
-        tw_idx,
-        depth,
-        float(min_kinship),
-        int(init_cap_per_row),
+    cols, vals, row_start, row_count, depth, tw_idx = _run_dp(
+        n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
     )
     phen_pos = np.arange(n, dtype=np.int32)
     indptr, indices, values = _assemble_csc(
@@ -651,14 +665,7 @@ def _stream_sum_theta_per_gen(
         rc = row_count[i]
         for p in range(rc):
             j = cols[rs + p]
-            # Skip diagonal and lower-triangle entries (each pair counted once).
-            if j <= i:
-                continue
-            # Skip MZ twin pair.
-            if j == tw_i:
-                continue
-            # Skip cross-generation pairs.
-            if generation[j] != g_i:
+            if j <= i or j == tw_i or generation[j] != g_i:
                 continue
             sum_theta[g_i] += np.float64(vals[rs + p])
     return sum_theta
@@ -739,27 +746,8 @@ def _compute_theta_per_gen(
         Float64 array of length ``g_max + 1`` with mean θ̄_g per
         generation, NaN for cohorts with fewer than 2 non-twin members.
     """
-    m_idx = np.ascontiguousarray(m_idx, dtype=np.int32)
-    f_idx = np.ascontiguousarray(f_idx, dtype=np.int32)
-    tw_idx = np.ascontiguousarray(tw_idx, dtype=np.int32)
-
-    if generation is None:
-        depth = _compute_depth(m_idx, f_idx, n)
-    else:
-        depth = np.ascontiguousarray(generation, dtype=np.int32)
-
-    if init_cap_per_row is None:
-        g_ped = int(depth.max()) if n > 0 else 0
-        init_cap_per_row = _suggest_init_cap_per_row(g_ped)
-
-    cols, vals, row_start, row_count = _dp_kinship(
-        n,
-        m_idx,
-        f_idx,
-        tw_idx,
-        depth,
-        float(min_kinship),
-        int(init_cap_per_row),
+    cols, vals, row_start, row_count, depth, tw_idx = _run_dp(
+        n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
     )
     return _per_gen_mean_kinship_from_dp(
         cols, vals, row_start, row_count, depth, tw_idx,

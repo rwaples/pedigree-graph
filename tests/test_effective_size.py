@@ -817,6 +817,23 @@ def test_streaming_theta_matches_K_path_random_mating():
     assert np.allclose(theta_k[mask], theta_stream[mask], rtol=0, atol=1e-12)
 
 
+def test_per_gen_mean_kinship_reuses_cached_K():
+    """When K is already cached, per_gen_mean_kinship avoids a fresh DP."""
+    rng = np.random.default_rng(2032)
+    df = _build_random_mating_pedigree(rng, n_male=8, n_female=8, n_offspring=32)
+    pg = PedigreeGraph(df)
+
+    # Force K build first; this populates pg._kinship_cache[0.0].
+    _ = pg.kinship_matrix()
+    # Now θ̄ via the public API must come from the cached K, not a fresh DP.
+    theta_via_cache = pg.per_gen_mean_kinship()
+    # Compare against the streaming path directly.
+    theta_streamed = _streaming_theta(pg)
+    assert np.array_equal(np.isnan(theta_via_cache), np.isnan(theta_streamed))
+    mask = ~np.isnan(theta_via_cache)
+    assert np.allclose(theta_via_cache[mask], theta_streamed[mask], rtol=0, atol=1e-12)
+
+
 def test_per_gen_mean_kinship_cached_per_threshold():
     """Cache is keyed by min_kinship — different thresholds get fresh results."""
     rng = np.random.default_rng(2031)
