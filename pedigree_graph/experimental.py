@@ -67,10 +67,7 @@ def _run_per_anchor(
         return worker(0, n)
     chunk = (n + n_threads - 1) // n_threads
     with ThreadPoolExecutor(max_workers=n_threads) as pool:
-        futures = [
-            pool.submit(worker, k * chunk, min((k + 1) * chunk, n))
-            for k in range(n_threads)
-        ]
+        futures = [pool.submit(worker, k * chunk, min((k + 1) * chunk, n)) for k in range(n_threads)]
         all_i: list[np.ndarray] = []
         all_j: list[np.ndarray] = []
         for f in futures:
@@ -156,17 +153,14 @@ def count_pairs_bfs(
     """
     if max_degree != 5:
         raise NotImplementedError(
-            "count_pairs_bfs only supports max_degree=5; "
-            "use PedigreeGraph.count_pairs for partial extractions",
+            "count_pairs_bfs only supports max_degree=5; use PedigreeGraph.count_pairs for partial extractions",
         )
     if pg._sample_mask is not None or pg._subsample_remap is not None:
         raise NotImplementedError(
-            "count_pairs_bfs does not support subsampled graphs yet; "
-            "use PedigreeGraph.count_pairs() instead",
+            "count_pairs_bfs does not support subsampled graphs yet; use PedigreeGraph.count_pairs() instead",
         )
     warnings.warn(
-        "count_pairs_bfs is experimental — API and semantics may change "
-        "or be removed in any minor release",
+        "count_pairs_bfs is experimental — API and semantics may change or be removed in any minor release",
         FutureWarning,
         stacklevel=2,
     )
@@ -281,7 +275,9 @@ def count_pairs_bfs(
             enum_cache[(a, b)] = empty
             logger.info(
                 "[bfs]   _enumerate_shared(%d,%d) empty in %.2fs",
-                a, b, time.perf_counter() - t_total,
+                a,
+                b,
+                time.perf_counter() - t_total,
             )
             return empty
         t_d = time.perf_counter()
@@ -296,8 +292,13 @@ def count_pairs_bfs(
         enum_cache[(a, b)] = result
         logger.info(
             "[bfs]   _enumerate_shared(%d,%d) %.2fs (kernel=%.2fs dedup=%.2fs raw=%d uniq=%d)",
-            a, b, time.perf_counter() - t_total, t_kernel,
-            time.perf_counter() - t_d, out_i.size, u_lo.size,
+            a,
+            b,
+            time.perf_counter() - t_total,
+            t_kernel,
+            time.perf_counter() - t_d,
+            out_i.size,
+            u_lo.size,
         )
         return result
 
@@ -328,6 +329,7 @@ def count_pairs_bfs(
     # for each FS pair (s1, s2), all (child_of_s1, s2) and (child_of_s2, s1).
     t0 = time.perf_counter()
     if fs_lo.size:
+
         def _av_worker(start: int, stop: int) -> tuple[list[np.ndarray], list[np.ndarray]]:
             local_i: list[np.ndarray] = []
             local_j: list[np.ndarray] = []
@@ -414,7 +416,9 @@ def count_pairs_bfs(
     t0 = time.perf_counter()
     gav_lo, gav_hi = _collateral_pairs(fs_lo, fs_hi, down=1, up=3)
     gav_count = _count_after_subtract(
-        gav_lo, gav_hi, [(po_lo, po_hi), (gp_lo, gp_hi), (av_lo, av_hi)],
+        gav_lo,
+        gav_hi,
+        [(po_lo, po_hi), (gp_lo, gp_hi), (av_lo, av_hi)],
     )
     logger.info("[bfs]   GAv in %.2fs", time.perf_counter() - t0)
 
@@ -422,7 +426,8 @@ def count_pairs_bfs(
     t0 = time.perf_counter()
     hgav_lo, hgav_hi = _collateral_pairs(hs_lo, hs_hi, down=1, up=3)
     hgav_count = _count_after_subtract(
-        hgav_lo, hgav_hi,
+        hgav_lo,
+        hgav_hi,
         [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi), (hav_lo, hav_hi)],
     )
     logger.info("[bfs]   HGAv in %.2fs", time.perf_counter() - t0)
@@ -431,9 +436,9 @@ def count_pairs_bfs(
     t0 = time.perf_counter()
     ggav_lo, ggav_hi = _collateral_pairs(fs_lo, fs_hi, down=1, up=4)
     ggav_count = _count_after_subtract(
-        ggav_lo, ggav_hi,
-        [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi),
-         (av_lo, av_hi), (gav_lo, gav_hi)],
+        ggav_lo,
+        ggav_hi,
+        [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi), (av_lo, av_hi), (gav_lo, gav_hi)],
     )
     logger.info("[bfs]   GGAv in %.2fs", time.perf_counter() - t0)
 
@@ -446,9 +451,17 @@ def count_pairs_bfs(
     c1r_lo = p23_lo[p23_full_mask]
     c1r_hi = p23_hi[p23_full_mask]
     c1r_count = _count_after_subtract(
-        c1r_lo, c1r_hi,
-        [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi), (av_lo, av_hi),
-         (gav_lo, gav_hi), (sib_all_lo, sib_all_hi), (one_c_lo, one_c_hi)],
+        c1r_lo,
+        c1r_hi,
+        [
+            (po_lo, po_hi),
+            (gp_lo, gp_hi),
+            (ggp_lo, ggp_hi),
+            (av_lo, av_hi),
+            (gav_lo, gav_hi),
+            (sib_all_lo, sib_all_hi),
+            (one_c_lo, one_c_hi),
+        ],
     )
     h1c1r_lo = p23_lo[p23_half_mask]
     h1c1r_hi = p23_hi[p23_half_mask]
@@ -457,9 +470,9 @@ def count_pairs_bfs(
     t0 = time.perf_counter()
     hggav_lo, hggav_hi = _collateral_pairs(hs_lo, hs_hi, down=1, up=4)
     hggav_count = _count_after_subtract(
-        hggav_lo, hggav_hi,
-        [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi), (gggp_lo, gggp_hi),
-         (hav_lo, hav_hi), (hgav_lo, hgav_hi)],
+        hggav_lo,
+        hggav_hi,
+        [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi), (gggp_lo, gggp_hi), (hav_lo, hav_hi), (hgav_lo, hgav_hi)],
     )
     logger.info("[bfs]   HGGAv in %.2fs", time.perf_counter() - t0)
 
@@ -467,18 +480,36 @@ def count_pairs_bfs(
     t0 = time.perf_counter()
     g3av_lo, g3av_hi = _collateral_pairs(fs_lo, fs_hi, down=1, up=5)
     g3av_count = _count_after_subtract(
-        g3av_lo, g3av_hi,
-        [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi), (gggp_lo, gggp_hi),
-         (av_lo, av_hi), (gav_lo, gav_hi), (ggav_lo, ggav_hi)],
+        g3av_lo,
+        g3av_hi,
+        [
+            (po_lo, po_hi),
+            (gp_lo, gp_hi),
+            (ggp_lo, ggp_hi),
+            (gggp_lo, gggp_hi),
+            (av_lo, av_hi),
+            (gav_lo, gav_hi),
+            (ggav_lo, ggav_hi),
+        ],
     )
     logger.info("[bfs]   G3Av in %.2fs", time.perf_counter() - t0)
 
     # ---- H1C1R: half-2C-1R = depth-(2,3) shared with count == 1.
     h1c1r_count = _count_after_subtract(
-        h1c1r_lo, h1c1r_hi,
-        [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi), (gggp_lo, gggp_hi),
-         (hav_lo, hav_hi), (hgav_lo, hgav_hi), (sib_all_lo, sib_all_hi),
-         (one_c_lo, one_c_hi), (h1c_lo, h1c_hi), (c1r_lo, c1r_hi)],
+        h1c1r_lo,
+        h1c1r_hi,
+        [
+            (po_lo, po_hi),
+            (gp_lo, gp_hi),
+            (ggp_lo, ggp_hi),
+            (gggp_lo, gggp_hi),
+            (hav_lo, hav_hi),
+            (hgav_lo, hgav_hi),
+            (sib_all_lo, sib_all_hi),
+            (one_c_lo, one_c_hi),
+            (h1c_lo, h1c_hi),
+            (c1r_lo, c1r_hi),
+        ],
     )
 
     # ---- 1C2R: pairs sharing depth (2, 4) ancestors with count >= 2.
@@ -487,11 +518,21 @@ def count_pairs_bfs(
     c2r_lo = p24_lo[p24_full_mask]
     c2r_hi = p24_hi[p24_full_mask]
     c2r_count = _count_after_subtract(
-        c2r_lo, c2r_hi,
-        [(po_lo, po_hi), (gp_lo, gp_hi), (ggp_lo, ggp_hi), (gggp_lo, gggp_hi),
-         (av_lo, av_hi), (gav_lo, gav_hi), (ggav_lo, ggav_hi),
-         (sib_all_lo, sib_all_hi), (one_c_lo, one_c_hi), (h1c_lo, h1c_hi),
-         (c1r_lo, c1r_hi)],
+        c2r_lo,
+        c2r_hi,
+        [
+            (po_lo, po_hi),
+            (gp_lo, gp_hi),
+            (ggp_lo, ggp_hi),
+            (gggp_lo, gggp_hi),
+            (av_lo, av_hi),
+            (gav_lo, gav_hi),
+            (ggav_lo, ggav_hi),
+            (sib_all_lo, sib_all_hi),
+            (one_c_lo, one_c_hi),
+            (h1c_lo, h1c_hi),
+            (c1r_lo, c1r_hi),
+        ],
     )
 
     # ---- 2C: pairs sharing depth-3 ancestors with count >= 2, minus those
