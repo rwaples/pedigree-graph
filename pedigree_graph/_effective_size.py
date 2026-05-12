@@ -430,6 +430,28 @@ def _harmonic_mean(values: np.ndarray) -> float:
     return float(finite.sum() / np.sum(1.0 / values[finite]))
 
 
+def _waples_vk2_expectation(vk1: float, kbar1: float, kbar2: float = 2.0) -> float:
+    """Waples 2002 eq. 5 — expected Vk under a constant-N reference.
+
+    Rescales an observed lifetime offspring-count variance ``vk1`` from
+    its empirical mean ``kbar1`` to the value it would take if the
+    population were at constant N (so the long-run lifetime mean is
+    ``kbar2 = 2`` per Wright-Fisher / Caswell).  Used to strip
+    demographic non-stationarity out of ``Vk`` before applying Hill 1979
+    eq. (10) to overlapping-generation pedigrees that span growth or
+    decline.
+
+    Formula::
+
+        E(Vk2) = kbar2 · [1 + (kbar2 / kbar1) · (Vk1 / kbar1 − 1)]
+
+    Returns ``vk1`` unchanged when ``kbar1 <= 0`` (degenerate cohort).
+    """
+    if kbar1 <= 0:
+        return vk1
+    return float(kbar2 * (1.0 + (kbar2 / kbar1) * (vk1 / kbar1 - 1.0)))
+
+
 def ne_inbreeding(pg: PedigreeGraph) -> NeInbreedingResult:
     """Inbreeding-rate Ne (Ne_I).
 
@@ -953,12 +975,34 @@ class NeHillResult:
     N1_f: float | None = None
     Vk_m: float | None = None
     Vk_f: float | None = None
+    # Mean lifetime offspring per individual (zeros included), per sex
+    kbar_m: float | None = None
+    kbar_f: float | None = None
+    # Sex-decomposed Ne (Wright 1938 / paper eq. 3 combination):
+    #   1/Ne = 1/(4·Ne_m) + 1/(4·Ne_f)
+    # Per-cohort Ne_s = 4·N1_s·T/(Vk_s + 2), then harmonic-mean across cohorts.
+    Ne_m: float | None = None
+    Ne_f: float | None = None
+    # Whether Vk_m/Vk_f were rescaled to constant-N reference via Waples 2002 eq. 5
+    vk_scaled: bool = False
     # Cohort eligibility
     cohort_window: CohortWindow | None = None
     n_eligible_cohorts: int = 0
     n_excluded_right_censored: int = 0
     n_excluded_left_censored: int = 0
     n_unknown_birth_year: int = 0
+    # Per-cohort series (one entry per eligible cohort year) — supports
+    # rolling-window analyses and reproduction of paper-style "early N
+    # cohorts" vs "recent N cohorts" comparisons.  All arrays share the
+    # same index as ``cohort_years``.  None on the sentinel branch.
+    cohort_years: np.ndarray | None = None
+    ne_per_cohort: np.ndarray | None = None
+    Ne_m_per_cohort: np.ndarray | None = None
+    Ne_f_per_cohort: np.ndarray | None = None
+    Vk_m_per_cohort: np.ndarray | None = None
+    Vk_f_per_cohort: np.ndarray | None = None
+    N1_m_per_cohort: np.ndarray | None = None
+    N1_f_per_cohort: np.ndarray | None = None
     # Per-individual age table — descriptive only, not used in Ne
     age_table: dict[str, np.ndarray] | None = None
     n_offspring_pairs: int = 0
@@ -975,6 +1019,11 @@ class NeHillResult:
             "N1_f": None if self.N1_f is None or not np.isfinite(self.N1_f) else float(self.N1_f),
             "Vk_m": None if self.Vk_m is None or not np.isfinite(self.Vk_m) else float(self.Vk_m),
             "Vk_f": None if self.Vk_f is None or not np.isfinite(self.Vk_f) else float(self.Vk_f),
+            "kbar_m": None if self.kbar_m is None or not np.isfinite(self.kbar_m) else float(self.kbar_m),
+            "kbar_f": None if self.kbar_f is None or not np.isfinite(self.kbar_f) else float(self.kbar_f),
+            "Ne_m": None if self.Ne_m is None or not np.isfinite(self.Ne_m) else float(self.Ne_m),
+            "Ne_f": None if self.Ne_f is None or not np.isfinite(self.Ne_f) else float(self.Ne_f),
+            "vk_scaled": bool(self.vk_scaled),
             "cohort_window": None if self.cohort_window is None else self.cohort_window._asdict(),
             "n_eligible_cohorts": int(self.n_eligible_cohorts),
             "n_excluded_right_censored": int(self.n_excluded_right_censored),
@@ -982,6 +1031,18 @@ class NeHillResult:
             "n_unknown_birth_year": int(self.n_unknown_birth_year),
             "n_offspring_pairs": int(self.n_offspring_pairs),
         }
+        for name in (
+            "cohort_years",
+            "ne_per_cohort",
+            "Ne_m_per_cohort",
+            "Ne_f_per_cohort",
+            "Vk_m_per_cohort",
+            "Vk_f_per_cohort",
+            "N1_m_per_cohort",
+            "N1_f_per_cohort",
+        ):
+            arr = getattr(self, name)
+            out[name] = None if arr is None else [float(v) for v in arr]
         if self.age_table is None:
             out["age_table"] = None
         else:
@@ -1166,7 +1227,7 @@ def _hill_age_table(pg: PedigreeGraph) -> dict[str, np.ndarray]:
     }
 
 
-def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
+def ne_hill_overlapping(pg: PedigreeGraph, vk_scale: bool = False) -> NeHillResult:
     """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
 
     Dispatches on ``pg.birth_year``:
@@ -1177,20 +1238,40 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
       under symmetric sexes), so ``ne`` is the
       :func:`ne_variance_family_size` passthrough and
       ``collapses_to_ne_v=True``.
-    * **Birth-year branch**: applies Hill 1979 eq. (10) per eligible
-      birth-year cohort::
+    * **Birth-year branch**: per eligible birth-year cohort, computes
+      sex-specific Ne via Hill 1979 eq. (4)::
 
-          Ne(c) = 8·N1(c)·T / (σ²_m(c) + σ²_f(c) + 4)
+          Ne_s(c) = 4·N1_s(c)·T / (σ²_s(c) + 2)         s ∈ {m, f}
+
+      and combines them with Wright 1938 sex-ratio (paper eq. 3)::
+
+          1/Ne(c) = 1/(4·Ne_m(c)) + 1/(4·Ne_f(c))
 
       where ``σ²_m = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the
-      per-male total-offspring variance reassembled from sex-of-offspring
-      quadrants (Caballero 1994 eq. 6) and ``σ²_f`` is the symmetric
-      female form.  ``N1(c) = N_m(c) + N_f(c)`` is the total newborn
-      cohort size; ``T = (T_m + T_f) / 2`` is the sex-averaged
-      generation interval from :attr:`PedigreeGraph.generation_interval`.
-      Scenario-scalar ``ne`` is the harmonic mean of ``Ne(c)`` across
-      cohorts within
+      per-male lifetime offspring variance reassembled from sex-of-
+      offspring quadrants (Caballero 1994 eq. 6) and ``σ²_f`` is the
+      symmetric female form.  ``N1_s(c)`` is the number of newborns of
+      sex ``s`` in cohort ``c`` (zero-offspring individuals included);
+      ``T = (T_m + T_f) / 2`` from
+      :attr:`PedigreeGraph.generation_interval`.
+
+      Scenario-scalar ``ne``, ``Ne_m``, ``Ne_f`` are harmonic means
+      across cohorts within
       :func:`~pedigree_graph._cohort_utils.eligible_cohort_range`.
+
+      Under balanced sex (``N1_m ≈ N1_f``) this matches the eq. (10)
+      form ``Ne = 8·N·T / (σ²_m + σ²_f + 4)``; the per-sex form is
+      preferred because it surfaces ``Ne_m`` and ``Ne_f`` directly and
+      handles sex-asymmetric cohorts correctly.
+
+    Args:
+        pg: Pedigree graph.
+        vk_scale: when ``True``, rescale ``σ²_m`` and ``σ²_f`` per
+            cohort via Waples 2002 eq. (5) so the resulting Ne assumes
+            a constant-N reference (``k̄ = 2``).  Removes demographic
+            non-stationarity from ``Vk`` over populations spanning
+            growth or decline.  Default ``False`` (raw sample
+            variances).
     """
     # pg.generation_interval is None iff pg.birth_year is None or one sex
     # has no qualifying edges — both cases collapse to Ne_V passthrough.
@@ -1214,11 +1295,17 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
     )
 
     ne_per_c: list[float] = []
+    Ne_m_per_c: list[float] = []
+    Ne_f_per_c: list[float] = []
     Vk_m_per_c: list[float] = []
     Vk_f_per_c: list[float] = []
+    kbar_m_per_c: list[float] = []
+    kbar_f_per_c: list[float] = []
     N1_m_per_c: list[int] = []
     N1_f_per_c: list[int] = []
+    cohort_years_kept: list[int] = []
 
+    T = gi.T
     for c, entry in table.items():
         if c < window.c_min or c > window.c_max:
             continue
@@ -1240,17 +1327,36 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
         cov_f = float(np.cov(kfm, kff, ddof=1)[0, 1])
         sigma2_m = v_mm + v_mf + 2.0 * cov_m  # Hill 1979 σ²_m
         sigma2_f = v_fm + v_ff + 2.0 * cov_f
-        N1 = n_m + n_f
-        denom = sigma2_m + sigma2_f + 4.0
-        if denom <= 0:
+        # Lifetime offspring mean (zeros included) per parent sex
+        k_m_total = kmm + kmf
+        k_f_total = kfm + kff
+        kbar_m = float(k_m_total.mean())
+        kbar_f = float(k_f_total.mean())
+
+        if vk_scale:
+            sigma2_m = _waples_vk2_expectation(sigma2_m, kbar_m)
+            sigma2_f = _waples_vk2_expectation(sigma2_f, kbar_f)
+
+        denom_m = sigma2_m + 2.0
+        denom_f = sigma2_f + 2.0
+        if denom_m <= 0 or denom_f <= 0:
             continue
-        # Hill 1979 eq. (10): Ne = 8·N·L / (σ²_m + σ²_f + 4)
-        ne_c = 8.0 * N1 * gi.T / denom
+        ne_m_c = 4.0 * n_m * T / denom_m
+        ne_f_c = 4.0 * n_f * T / denom_f
+        if ne_m_c + ne_f_c <= 0:
+            continue
+        # Wright 1938 sex-ratio combination (paper eq. 3)
+        ne_c = 4.0 * ne_m_c * ne_f_c / (ne_m_c + ne_f_c)
         ne_per_c.append(ne_c)
+        Ne_m_per_c.append(ne_m_c)
+        Ne_f_per_c.append(ne_f_c)
         Vk_m_per_c.append(sigma2_m)
         Vk_f_per_c.append(sigma2_f)
+        kbar_m_per_c.append(kbar_m)
+        kbar_f_per_c.append(kbar_f)
         N1_m_per_c.append(n_m)
         N1_f_per_c.append(n_f)
+        cohort_years_kept.append(int(c))
 
     by = pg.birth_year
     n_unknown = int((by < 0).sum())
@@ -1267,6 +1373,7 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
             collapses_to_ne_v=False,
             T_m=gi.T_m,
             T_f=gi.T_f,
+            vk_scaled=vk_scale,
             cohort_window=window,
             n_eligible_cohorts=0,
             n_excluded_left_censored=n_left,
@@ -1278,6 +1385,10 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
 
     ne_arr = np.array(ne_per_c, dtype=np.float64)
     ne_h = _harmonic_mean(ne_arr) if np.isfinite(ne_arr).any() else None
+    ne_m_arr = np.array(Ne_m_per_c, dtype=np.float64)
+    ne_f_arr = np.array(Ne_f_per_c, dtype=np.float64)
+    ne_m_scalar = _harmonic_mean(ne_m_arr) if np.isfinite(ne_m_arr).any() else None
+    ne_f_scalar = _harmonic_mean(ne_f_arr) if np.isfinite(ne_f_arr).any() else None
 
     return NeHillResult(
         ne=ne_h,
@@ -1289,11 +1400,24 @@ def ne_hill_overlapping(pg: PedigreeGraph) -> NeHillResult:
         N1_f=float(np.mean(N1_f_per_c)),
         Vk_m=float(np.mean(Vk_m_per_c)),
         Vk_f=float(np.mean(Vk_f_per_c)),
+        kbar_m=float(np.mean(kbar_m_per_c)),
+        kbar_f=float(np.mean(kbar_f_per_c)),
+        Ne_m=ne_m_scalar,
+        Ne_f=ne_f_scalar,
+        vk_scaled=vk_scale,
         cohort_window=window,
         n_eligible_cohorts=len(ne_per_c),
         n_excluded_left_censored=n_left,
         n_excluded_right_censored=n_right,
         n_unknown_birth_year=n_unknown,
+        cohort_years=np.array(cohort_years_kept, dtype=np.int32),
+        ne_per_cohort=ne_arr,
+        Ne_m_per_cohort=ne_m_arr,
+        Ne_f_per_cohort=ne_f_arr,
+        Vk_m_per_cohort=np.array(Vk_m_per_c, dtype=np.float64),
+        Vk_f_per_cohort=np.array(Vk_f_per_c, dtype=np.float64),
+        N1_m_per_cohort=np.array(N1_m_per_c, dtype=np.int64),
+        N1_f_per_cohort=np.array(N1_f_per_c, dtype=np.int64),
         age_table=age_table,
         n_offspring_pairs=n_pairs,
     )
@@ -1375,6 +1499,7 @@ def compute_all_ne(
     pg: PedigreeGraph,
     skip_ne_coancestry: bool = False,
     n_threads: int = 1,
+    hill_vk_scale: bool = False,
 ) -> dict[str, Any]:
     """Run all eight Ne estimators on ``pg``.
 
@@ -1395,6 +1520,10 @@ def compute_all_ne(
             estimators are needed.
         n_threads: maximum number of worker threads for independent
             estimator calls.  ``1`` preserves serial execution.
+        hill_vk_scale: forwarded to :func:`ne_hill_overlapping` as
+            ``vk_scale``; when True applies Waples 2002 eq. 5 rescaling
+            of ``Vk`` to the constant-N reference before computing
+            Ne_H.
 
     Returns a dict keyed on estimator name; each value is the matching
     frozen result dataclass.
@@ -1427,7 +1556,7 @@ def compute_all_ne(
             "ne_sex_ratio": ne_sex_ratio(pg),
             "ne_individual_delta_f": ne_individual_delta_f(pg),
             "ne_long_term_contributions": ne_long_term_contributions(pg, mean_contributions=ltc_means),
-            "ne_hill_overlapping": ne_hill_overlapping(pg),
+            "ne_hill_overlapping": ne_hill_overlapping(pg, vk_scale=hill_vk_scale),
             "ne_caballero_toro": ne_caballero_toro(pg, ct_accumulators=ct_acc),
         }
 
@@ -1437,7 +1566,7 @@ def compute_all_ne(
         "ne_sex_ratio": (ne_sex_ratio, (pg,), {}),
         "ne_individual_delta_f": (ne_individual_delta_f, (pg,), {}),
         "ne_long_term_contributions": (ne_long_term_contributions, (pg,), {"mean_contributions": ltc_means}),
-        "ne_hill_overlapping": (ne_hill_overlapping, (pg,), {}),
+        "ne_hill_overlapping": (ne_hill_overlapping, (pg,), {"vk_scale": hill_vk_scale}),
         "ne_caballero_toro": (ne_caballero_toro, (pg,), {"ct_accumulators": ct_acc}),
     }
     if not skip_ne_coancestry:
