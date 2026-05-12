@@ -7,11 +7,13 @@ MZ off-diagonal instead of the correct (1 + F)/2 = 0.625).
 """
 
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from pedigree_graph._kinship_kernel import (
     _append_entry,
     _build_kinship_csc,
+    _checked_int32_indptr_from_counts,
     _compute_last_direct_child_depth,
     _dp_kinship,
     _freelist_alloc,
@@ -419,3 +421,21 @@ def test_dp_kinship_row_start_arithmetic_no_overflow():
     computed = np.int64(n - 1) * np.int64(init_cap)
     assert computed == expected_last
     assert computed < (1 << 63) - 1
+
+
+def test_checked_int32_indptr_from_counts_raises_before_wrap():
+    counts = np.array([(1 << 31) - 1, 1], dtype=np.int64)
+
+    with pytest.raises(OverflowError, match="int32 range"):
+        _checked_int32_indptr_from_counts(counts)
+
+
+def test_checked_int32_indptr_from_counts_allows_int32_max():
+    counts = np.array([(1 << 31) - 2, 1], dtype=np.int64)
+
+    indptr = _checked_int32_indptr_from_counts(counts)
+
+    np.testing.assert_array_equal(
+        indptr,
+        np.array([0, (1 << 31) - 2, (1 << 31) - 1], dtype=np.int32),
+    )

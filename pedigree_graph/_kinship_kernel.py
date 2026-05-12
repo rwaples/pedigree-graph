@@ -13,6 +13,7 @@ to pandas: all inputs are numpy arrays remapped to 0..n-1 row indices.
 __all__ = [
     "_assemble_csc",
     "_build_kinship_csc",
+    "_checked_int32_indptr_from_counts",
     "_check_topological",
     "_compute_F_meuwissen_luo",
     "_compute_depth",
@@ -749,6 +750,28 @@ def _dp_kinship(
 
 
 @numba.njit(cache=True)
+def _checked_int32_indptr_from_counts(col_counts: np.ndarray) -> np.ndarray:
+    """Build an int32 CSC indptr, raising before prefix sums overflow."""
+    n = col_counts.shape[0]
+    total = np.int64(0)
+    max_int32 = np.int64(2147483647)
+    for j in range(n):
+        total += np.int64(col_counts[j])
+        if total > max_int32:
+            raise OverflowError(
+                "kinship matrix nnz exceeded int32 range -- rebuild with "
+                "int64 CSC indices (open a pedigree-graph issue if you hit this)"
+            )
+
+    indptr = np.zeros(n + 1, dtype=np.int32)
+    total = np.int64(0)
+    for j in range(n):
+        total += np.int64(col_counts[j])
+        indptr[j + 1] = np.int32(total)
+    return indptr
+
+
+@numba.njit(cache=True)
 def _assemble_csc(
     cols: np.ndarray,
     vals: np.ndarray,
@@ -780,11 +803,11 @@ def _assemble_csc(
     # only those (i, j) with both i and j in phen_pos.
     #
     # Indices/indptr use int32 throughout to halve K's footprint vs int64
-    # (≈ 1.65 GB saved at N=100K).  Safe as long as ``nnz < 2**31``; the
-    # caller (`_build_kinship_csc`) is responsible for guarding against
-    # the int32-overflow regime (G_ped × N very large).  At G_ped=6 we
-    # see nnz ≈ 690 × N, so overflow only kicks in beyond N≈3M.
-    col_counts = np.zeros(n_phen, dtype=np.int32)
+    # (≈ 1.65 GB saved at N=100K).  Count and prefix-sum in int64 so the
+    # overflow guard runs before int32 prefix writes can wrap.
+    # At G_ped=6 we see nnz ≈ 690 × N, so overflow only kicks in beyond
+    # N≈3M.
+    col_counts = np.zeros(n_phen, dtype=np.int64)
     for i_full in range(n_full):
         i_phen = full_to_phen[i_full]
         if i_phen < 0:
@@ -795,11 +818,9 @@ def _assemble_csc(
             j_full = cols[rs + p]
             j_phen = full_to_phen[j_full]
             if j_phen >= 0:
-                col_counts[j_phen] += 1
+                col_counts[j_phen] += np.int64(1)
 
-    indptr = np.zeros(n_phen + 1, dtype=np.int32)
-    for j in range(n_phen):
-        indptr[j + 1] = indptr[j] + col_counts[j]
+    indptr = _checked_int32_indptr_from_counts(col_counts)
     nnz = indptr[n_phen]
 
     indices = np.empty(nnz, dtype=np.int32)
@@ -973,16 +994,6 @@ def _build_kinship_csc(
         phen_pos,
         False,
     )
-    # _assemble_csc writes int32 indptr/indices.  If the build exceeded
-    # int32 range (only possible at extreme scale, e.g. N ≳ 3M at G_ped=6
-    # with full mixing), promote to int64 so scipy/downstream code can
-    # still operate.  Negative indptr[-1] is the canonical overflow signal
-    # from wrap-around during accumulation.
-    if indptr[-1] < 0:
-        raise OverflowError(
-            "kinship matrix nnz exceeded int32 range — rebuild with int64 "
-            "CSC indices (open a pedigree-graph issue if you hit this)"
-        )
     return indptr, indices, values
 
 

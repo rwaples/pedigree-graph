@@ -1445,8 +1445,9 @@ class PedigreeGraph:
 
         t0 = time.perf_counter()
         # If K is already cached at this threshold, derive θ̄ from the
-        # existing sparse matrix rather than re-running the DP.
-        K = self._kinship_cache.get(key)
+        # existing sparse matrix rather than re-running the DP.  The
+        # no-retire debug path must exercise the legacy DP path directly.
+        K = None if _debug_no_retire else self._kinship_cache.get(key)
         if K is not None:
             theta = _per_gen_mean_kinship(
                 K, np.asarray(self.generation), np.asarray(self.twin),

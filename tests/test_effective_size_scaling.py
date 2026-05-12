@@ -21,6 +21,7 @@ import textwrap
 import numpy as np
 import pandas as pd
 import pytest
+import scipy.sparse as sp
 
 from pedigree_graph import (
     PedigreeGraph,
@@ -293,17 +294,21 @@ def test_per_gen_mean_kinship_debug_no_retire_bypasses_cache(
     parity_pedigree: PedigreeGraph,
 ) -> None:
     # The flag exists so parity tests never compare a cached retire=True
-    # result against itself; verify by poisoning the cache and confirming
-    # the legacy call neither reads nor overwrites the poisoned entry.
+    # result or K-derived value against itself; verify by poisoning both
+    # caches and confirming the legacy call reads neither one.
     pg = parity_pedigree
     theta_retiring = pg.per_gen_mean_kinship()
     cached = pg._theta_per_gen_cache[0.0]
     pg._theta_per_gen_cache[0.0] = np.full_like(cached, -999.0)
+    K = pg.kinship_matrix()
+    poisoned_K = sp.csc_matrix(K.shape, dtype=K.dtype)
+    pg._kinship_cache[0.0] = poisoned_K
     theta_legacy = pg.per_gen_mean_kinship(_debug_no_retire=True)
     assert not np.allclose(theta_legacy, -999.0, equal_nan=True)
     np.testing.assert_array_equal(
         pg._theta_per_gen_cache[0.0], np.full_like(cached, -999.0),
     )
+    assert pg._kinship_cache[0.0] is poisoned_K
     np.testing.assert_allclose(
         theta_legacy, theta_retiring, rtol=0, atol=1e-12, equal_nan=True,
     )
