@@ -178,6 +178,8 @@ def test_dp_kinship_row_start_is_int64():
     depth = np.array([0, 0, 1, 1], dtype=np.int32)
     _cols, _vals, row_start, _row_count, _sum_theta = _dp_kinship(
         n, m_idx, f_idx, tw_idx, depth, 0.0, 16, False, False, False,
+        np.zeros(3, dtype=np.int64),
+        np.int64(0),
     )
     assert row_start.dtype == np.int64
     # Founder rows start at i * init_cap; the merge walk may relocate
@@ -333,6 +335,7 @@ def test_append_entry_sentinel_silently_drops_retired_writes():
         cols, vals, row_start, row_count, row_cap, next_alloc,
         np.int32(1), np.int32(0), np.float32(0.25),
         starts, tops, np.int32(0),
+        np.zeros(3, dtype=np.int64),
     )
     # No write occurred anywhere; next_alloc unchanged.
     assert next_alloc_out == next_alloc
@@ -362,6 +365,7 @@ def test_append_entry_relocation_pushes_old_slot_to_free_list():
         cols, vals, row_start, row_count, row_cap, next_alloc,
         np.int32(0), np.int32(30), np.float32(0.3),
         starts, tops, np.int32(init_cap),
+        np.zeros(3, dtype=np.int64),
     )
     # Bucket 0 (cap=2) now has the old slot start=0.
     assert tops[0] == 1
@@ -397,6 +401,7 @@ def test_append_entry_relocation_reuses_freelist_slot_when_available():
         cols, vals, row_start, row_count, row_cap, next_alloc,
         np.int32(0), np.int32(30), np.float32(0.3),
         starts, tops, np.int32(init_cap),
+        np.zeros(3, dtype=np.int64),
     )
     # The free-list slot was popped; bucket 1 is now empty.
     assert tops[1] == 0
@@ -434,6 +439,7 @@ def test_append_entry_lazy_allocates_never_allocated_row_via_freelist():
         cols, vals, row_start, row_count, row_cap, next_alloc,
         np.int32(1), np.int32(7), np.float32(0.42),
         starts, tops, np.int32(init_cap),
+        np.zeros(3, dtype=np.int64),
     )
     # Bucket 0 was popped; row 1 now lives at the free-list slot.
     assert tops[0] == 0
@@ -463,6 +469,7 @@ def test_append_entry_lazy_allocates_never_allocated_row_via_bump():
         cols, vals, row_start, row_count, row_cap, next_alloc,
         np.int32(1), np.int32(11), np.float32(0.5),
         starts, tops, np.int32(init_cap),
+        np.zeros(3, dtype=np.int64),
     )
     # No free-list pops occurred.
     assert tops[0] == 0

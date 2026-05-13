@@ -155,8 +155,21 @@ def _suggest_init_cap_per_row(g_ped: int) -> int:
 
 
 @numba.njit(cache=True)
-def _grow_global(cols: np.ndarray, vals: np.ndarray, min_size: int):
-    """Return larger arrays copying existing contents, growing geometrically."""
+def _grow_global(
+    cols: np.ndarray,
+    vals: np.ndarray,
+    min_size: int,
+    grow_stats: np.ndarray,
+):
+    """Return larger arrays copying existing contents, growing geometrically.
+
+    ``grow_stats`` is a length-3 int64 array used for benchmarking the
+    doubling cascade.  Slot 0: call count.  Slot 1: total entries
+    copied (summed ``old_len``).  Slot 2: peak allocated entries
+    (``max(new_len)``).  Writes are three int64 stores per call, kept
+    in nopython mode; production callers can pass a freshly-zeroed
+    placeholder and ignore it.
+    """
     old_len = cols.shape[0]
     new_len = old_len * 2
     while new_len < min_size:
@@ -165,6 +178,10 @@ def _grow_global(cols: np.ndarray, vals: np.ndarray, min_size: int):
     new_cols[:old_len] = cols
     new_vals = np.zeros(new_len, dtype=np.float32)
     new_vals[:old_len] = vals
+    grow_stats[0] += np.int64(1)
+    grow_stats[1] += np.int64(old_len)
+    if np.int64(new_len) > grow_stats[2]:
+        grow_stats[2] = np.int64(new_len)
     return new_cols, new_vals
 
 
@@ -282,6 +299,39 @@ def _freelist_pop(
 
 
 @numba.njit(cache=True, inline="always")
+def _acquire_slot(
+    cap: np.int32,
+    cols: np.ndarray,
+    vals: np.ndarray,
+    next_alloc: np.int64,
+    freelist_starts: np.ndarray,
+    freelist_tops: np.ndarray,
+    fl_init_cap: np.int32,
+    grow_stats: np.ndarray,
+):
+    """Acquire a slot of capacity ``cap`` for a row.
+
+    Tries the size-bucketed free list first; falls back to bumping
+    ``next_alloc`` and growing the global buffer if needed.  Shared
+    by ``_append_entry``'s lazy-allocate and relocation branches —
+    both want the same "allocate-or-pop" pattern.
+
+    Returns ``(cols, vals, next_alloc, dest)``: ``cols``/``vals`` may
+    have been reallocated by ``_grow_global``; ``dest`` is the offset
+    of the acquired slot.
+    """
+    reused = _freelist_pop(freelist_starts, freelist_tops, cap, fl_init_cap)
+    if reused >= 0:
+        return cols, vals, next_alloc, np.int64(reused)
+    needed = next_alloc + np.int64(cap)
+    if needed > cols.shape[0]:
+        cols, vals = _grow_global(cols, vals, needed, grow_stats)
+    dest = next_alloc
+    next_alloc = next_alloc + np.int64(cap)
+    return cols, vals, next_alloc, dest
+
+
+@numba.njit(cache=True, inline="always")
 def _append_entry(
     cols: np.ndarray,
     vals: np.ndarray,
@@ -295,6 +345,7 @@ def _append_entry(
     freelist_starts: np.ndarray,
     freelist_tops: np.ndarray,
     fl_init_cap: np.int32,
+    grow_stats: np.ndarray,
 ):
     """Append (col_idx, val) to row_idx.
 
@@ -327,19 +378,11 @@ def _append_entry(
             # Retired — silently drop the write.
             return cols, vals, next_alloc
         # Never-allocated: lazy-allocate a slot of cap = row_cap[row_idx].
-        needed_cap = row_cap[row_idx]
-        reused = _freelist_pop(
-            freelist_starts, freelist_tops, needed_cap, fl_init_cap,
+        cols, vals, next_alloc, dest = _acquire_slot(
+            row_cap[row_idx], cols, vals, next_alloc,
+            freelist_starts, freelist_tops, fl_init_cap, grow_stats,
         )
-        if reused >= 0:
-            dest = reused
-        else:
-            needed = next_alloc + np.int64(needed_cap)
-            if needed > cols.shape[0]:
-                cols, vals = _grow_global(cols, vals, needed)
-            dest = next_alloc
-            next_alloc += np.int64(needed_cap)
-        row_start[row_idx] = np.int64(dest)
+        row_start[row_idx] = dest
         # row_count stays 0; row_cap unchanged; fall through to append.
 
     if row_count[row_idx] >= row_cap[row_idx]:
@@ -353,25 +396,17 @@ def _append_entry(
             row_cap[row_idx],
             fl_init_cap,
         )
-        # Prefer a free-list slot of the new size; fall back to next_alloc.
-        reused = _freelist_pop(
-            freelist_starts, freelist_tops, new_cap, fl_init_cap,
+        cols, vals, next_alloc, dest = _acquire_slot(
+            new_cap, cols, vals, next_alloc,
+            freelist_starts, freelist_tops, fl_init_cap, grow_stats,
         )
-        if reused >= 0:
-            dest = reused
-        else:
-            needed = next_alloc + np.int64(new_cap)
-            if needed > cols.shape[0]:
-                cols, vals = _grow_global(cols, vals, needed)
-            dest = next_alloc
-            next_alloc += np.int64(new_cap)
         # Copy existing data to the new slot.
         src = row_start[row_idx]
         cnt = row_count[row_idx]
         for k in range(cnt):
             cols[dest + k] = cols[src + k]
             vals[dest + k] = vals[src + k]
-        row_start[row_idx] = np.int64(dest)
+        row_start[row_idx] = dest
         row_cap[row_idx] = new_cap
     # Append.
     pos = row_start[row_idx] + row_count[row_idx]
@@ -441,6 +476,8 @@ def _dp_kinship(
     retire: bool,
     lazy: bool,
     debug_asserts: bool,
+    grow_stats: np.ndarray,
+    initial_buffer_override: np.int64,
 ):
     """Build per-row sorted kinship arrays via gen-by-gen DP.
 
@@ -514,10 +551,15 @@ def _dp_kinship(
     if lazy:
         # Conservative starting size — _grow_global expands geometrically.
         # max(1<<16, init_cap*1024) entries ≈ 0.5 MB at init_cap=512.
-        init_cap_i64 = np.int64(init_cap)
-        baseline = np.int64(1 << 16)
-        scaled = init_cap_i64 * np.int64(1024)
-        initial_buffer = baseline if baseline > scaled else scaled
+        # ``initial_buffer_override > 0`` lets bench callers swap the
+        # heuristic without recompiling the kernel.
+        if initial_buffer_override > 0:
+            initial_buffer = initial_buffer_override
+        else:
+            init_cap_i64 = np.int64(init_cap)
+            baseline = np.int64(1 << 16)
+            scaled = init_cap_i64 * np.int64(1024)
+            initial_buffer = baseline if baseline > scaled else scaled
         cols = np.full(initial_buffer, -1, dtype=np.int32)
         vals = np.zeros(initial_buffer, dtype=np.float32)
         row_start = np.full(n, -1, dtype=np.int64)
@@ -563,24 +605,22 @@ def _dp_kinship(
     # doing it upfront would break the sorted-row invariant because the
     # merge walk appends cols < j (ancestors have lower indices under
     # depth-first ID assignment), so position 0 must be the smallest col.
-    if lazy:
-        # Route through _append_entry so the slot is lazy-allocated.
-        # Skip founders that no descendant will ever read.
-        for i in range(n):
-            if m_idx[i] < 0 and f_idx[i] < 0:
-                if last_dcd[i] == depth[i]:
-                    continue  # never-needed: leave at never-allocated state
-                cols, vals, next_alloc = _append_entry(
-                    cols, vals, row_start, row_count, row_cap, next_alloc,
-                    np.int32(i), np.int32(i), np.float32(0.5),
-                    freelist_starts, freelist_tops, fl_init_cap,
-                )
-    else:
-        for i in range(n):
-            if m_idx[i] < 0 and f_idx[i] < 0:
-                cols[row_start[i]] = np.int32(i)
-                vals[row_start[i]] = np.float32(0.5)
-                row_count[i] = np.int32(1)
+    # Unified founder init.  Under lazy alloc, never-needed founders
+    # (no descendant ever reads their row) skip allocation entirely;
+    # everyone else routes through _append_entry, which lazy-allocates
+    # the slot via the never-allocated branch.  Under eager alloc, all
+    # founders' slots already exist at ``row_start[i] = i * init_cap``,
+    # so _append_entry takes the live-row path and writes directly.
+    for i in range(n):
+        if m_idx[i] < 0 and f_idx[i] < 0:
+            if lazy and last_dcd[i] == depth[i]:
+                continue  # never-needed: leave at never-allocated state
+            cols, vals, next_alloc = _append_entry(
+                cols, vals, row_start, row_count, row_cap, next_alloc,
+                np.int32(i), np.int32(i), np.float32(0.5),
+                freelist_starts, freelist_tops, fl_init_cap,
+                grow_stats,
+            )
 
     # Founders with no children at any later depth retire immediately;
     # their stored diagonal is never read by a merge walk.  Under lazy
@@ -687,6 +727,7 @@ def _dp_kinship(
                     freelist_starts,
                     freelist_tops,
                     fl_init_cap,
+                    grow_stats,
                 )
                 # Symmetric fill: append (j, val) to row k.  Since j is
                 # processed in depth order and higher j means later
@@ -706,6 +747,7 @@ def _dp_kinship(
                     freelist_starts,
                     freelist_tops,
                     fl_init_cap,
+                    grow_stats,
                 )
 
             # --- Append diagonal (j, self_kin) to row j AFTER merge walk.
@@ -725,6 +767,7 @@ def _dp_kinship(
                 freelist_starts,
                 freelist_tops,
                 fl_init_cap,
+                grow_stats,
             )
 
         # MZ twin pass for this generation.
@@ -782,6 +825,7 @@ def _dp_kinship(
                     freelist_starts,
                     freelist_tops,
                     fl_init_cap,
+                    grow_stats,
                 )
                 # Re-sort row j (bubble the new entry into place).  Small
                 # per-row cost, rare.
@@ -813,6 +857,7 @@ def _dp_kinship(
                     freelist_starts,
                     freelist_tops,
                     fl_init_cap,
+                    grow_stats,
                 )
                 _sort_row_inplace(cols, vals, row_start[tw], row_count[tw])
 
@@ -1001,12 +1046,15 @@ def _run_dp(
     m_idx, f_idx, tw_idx, depth, init_cap_per_row = _validate_dp_args(
         n, m_idx, f_idx, tw_idx, generation, init_cap_per_row,
     )
+    grow_stats = np.zeros(3, dtype=np.int64)
     cols, vals, row_start, row_count, _sum_theta = _dp_kinship(
         n, m_idx, f_idx, tw_idx, depth,
         float(min_kinship), init_cap_per_row,
         False,  # retire=False — CSC path needs the full row storage
         False,  # lazy=False   — CSC iterates row_start, needs every row materialized
         False,  # debug_asserts=False — never trip in the CSC path
+        grow_stats,
+        np.int64(0),  # initial_buffer_override unused under lazy=False
     )
     return cols, vals, row_start, row_count, depth, tw_idx
 
@@ -1022,6 +1070,8 @@ def _run_dp_retiring(
     debug_asserts: bool = False,
     *,
     _lazy: bool = True,
+    _grow_stats: np.ndarray | None = None,
+    _initial_buffer_override: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Run the kinship DP with end-of-depth retirement + inline θ̄.
 
@@ -1033,16 +1083,33 @@ def _run_dp_retiring(
     leave it at ``True`` (Phase-7 lazy row-slot allocation).  The
     parity tests pass ``_lazy=False`` to exercise the eager-allocated
     retire path as a comparator.
+
+    ``_grow_stats`` is a benchmark-only escape hatch.  Pass a
+    pre-allocated length-3 int64 array to capture
+    ``[_grow_global_call_count, total_entries_copied, peak_allocated]``;
+    leave ``None`` for production to use a fresh zeroed placeholder.
+
+    ``_initial_buffer_override`` is a benchmark-only escape hatch for
+    sweeping initial-buffer heuristics.  Pass ``None`` (production) or
+    ``0`` to use the current heuristic
+    ``max(1<<16, init_cap_per_row*1024)``; positive int swaps it.
     """
     m_idx, f_idx, tw_idx, depth, init_cap_per_row = _validate_dp_args(
         n, m_idx, f_idx, tw_idx, generation, init_cap_per_row,
     )
+    grow_stats = (
+        _grow_stats if _grow_stats is not None
+        else np.zeros(3, dtype=np.int64)
+    )
+    override = np.int64(_initial_buffer_override or 0)
     _cols, _vals, _row_start, _row_count, sum_theta = _dp_kinship(
         n, m_idx, f_idx, tw_idx, depth,
         float(min_kinship), init_cap_per_row,
         True,  # retire=True
         bool(_lazy),
         bool(debug_asserts),
+        grow_stats,
+        override,
     )
     return sum_theta, depth, tw_idx
 
