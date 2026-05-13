@@ -573,11 +573,30 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     with ``Ne_p = 1/(2·ΔF)``.  When ``V(k)/k̄ → 1`` (Poisson) and
     ``N_m = N_f``, this reduces to Wright's ``4 N_m N_f / (N_m + N_f)``.
     Aggregate Ne is the harmonic mean across parent generations.
+
+    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1 —
+    almost always a sign that the caller forgot to pass ``sex=`` to
+    :meth:`PedigreeGraph.from_arrays` and is unwittingly running on the
+    all-female default.  The estimator still returns ``ne=None``
+    (consistent with a legitimate single-sex pedigree), so the warning
+    is the only diagnostic.
     """
+    import warnings
+
+    sex = np.asarray(pg.sex)
+    if pg.n > 0 and len(np.unique(sex)) < 2:
+        warnings.warn(
+            "ne_variance_family_size: pg.sex is uniform "
+            f"(all {int(sex[0])}); estimator is degenerate and will return ne=None. "
+            "Did you forget to pass sex= to PedigreeGraph.from_arrays?",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
     table = _sex_specific_family_table(
         np.asarray(pg.mother),
         np.asarray(pg.father),
-        np.asarray(pg.sex),
+        sex,
         np.asarray(pg.generation),
     )
     g_max = int(np.asarray(pg.generation).max())
@@ -635,9 +654,26 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
 
     ``Ne_t = 4·Nm_t·Nf_t / (Nm_t + Nf_t)`` per generation; aggregate is
     the harmonic mean across cohorts with both sexes present.
+
+    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1 —
+    almost always a sign the caller forgot to pass ``sex=`` to
+    :meth:`PedigreeGraph.from_arrays` and is unwittingly running on the
+    all-female default.  The estimator still returns ``ne=None`` in
+    that case (consistent with a legitimate single-sex pedigree), so
+    the warning is the only diagnostic.
     """
+    import warnings
+
     gen = np.asarray(pg.generation)
     sex = np.asarray(pg.sex)
+    if pg.n > 0 and len(np.unique(sex)) < 2:
+        warnings.warn(
+            "ne_sex_ratio: pg.sex is uniform "
+            f"(all {int(sex[0])}); estimator is degenerate and will return ne=None. "
+            "Did you forget to pass sex= to PedigreeGraph.from_arrays?",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     g_max = int(gen.max())
     n_male = np.zeros(g_max + 1, dtype=np.int64)
     n_female = np.zeros(g_max + 1, dtype=np.int64)

@@ -36,6 +36,10 @@ from pedigree_graph._kinship_kernel import (
     _compute_F_meuwissen_luo,
     _compute_theta_per_gen,
 )
+from pedigree_graph._lineage_kernel import (
+    _compute_n_ancestors,
+    _compute_n_descendants,
+)
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -206,6 +210,10 @@ class PedigreeGraph:
         # ``self.generation`` may be sparse/skipped/post-filtered and is
         # not safe as a substitute for the ML F kernel.
         self._depth: np.ndarray | None = None
+        # Lazy lineage caches populated by compute_n_ancestors() and
+        # compute_n_descendants().
+        self._n_ancestors: np.ndarray | None = None
+        self._n_descendants: np.ndarray | None = None
 
         # Build ID → row index mapping (int32: row indices fit in 2.1B)
         self._ids = ids_arr
@@ -1252,6 +1260,7 @@ class PedigreeGraph:
         twins: np.ndarray | None = None,
         generation: np.ndarray | None = None,
         birth_year: np.ndarray | None = None,
+        sex: np.ndarray | None = None,
     ) -> PedigreeGraph:
         """Construct a PedigreeGraph directly from numpy arrays.
 
@@ -1263,12 +1272,22 @@ class PedigreeGraph:
         *birth_year* is optional; sentinel ``-1`` marks unknown.  When
         supplied, parent-child edges with both endpoints known are
         validated to satisfy ``child.birth_year >= parent.birth_year``.
+
+        *sex* is optional and defaults to zeros (``int8``).  **Foot-gun
+        warning**: the default makes every individual female (sex=0),
+        which silently degenerates sex-aware estimators
+        (:func:`ne_sex_ratio`, :func:`ne_variance_family_size`) to
+        ``ne=None``.  Always pass ``sex=`` when constructing graphs that
+        will feed into ``compute_all_ne``.  Kinship-only callers
+        (relationship-pair extraction, GRMs, PA-FGRS) can ignore this —
+        their consumers do not read ``pg.sex``.
         """
         ids_arr = np.asarray(ids)
         mothers_arr = np.asarray(mothers)
         fathers_arr = np.asarray(fathers)
         n = len(ids_arr)
         twins_arr = np.full(n, -1, dtype=np.int64) if twins is None else np.asarray(twins)
+        sex_arr = np.zeros(n, dtype=np.int8) if sex is None else np.asarray(sex, dtype=np.int8)
 
         # Generation column may be unknown here — fill a placeholder,
         # instantiate the graph (which remaps parents to row indices),
@@ -1279,7 +1298,7 @@ class PedigreeGraph:
             "mother": mothers_arr,
             "father": fathers_arr,
             "twin": twins_arr,
-            "sex": np.zeros(n, dtype=np.int8),
+            "sex": sex_arr,
             "generation": (
                 np.zeros(n, dtype=np.int32) if derive_generation else np.asarray(generation, dtype=np.int32)
             ),
@@ -1492,6 +1511,44 @@ class PedigreeGraph:
                 self.mother, self.father, self._depth, self.n
             )
         return self._inbreeding
+
+    def compute_n_descendants(self) -> np.ndarray:
+        """Per-individual descendant count, **path-count semantics**.
+
+        ``n_desc[v]`` counts (v, w) walks down the DAG, not unique
+        descendants.  Equivalent to unique counts in non-inbred
+        pedigrees; over-counts by the inbreeding rate where marriage
+        loops give a descendant multiple ancestor paths to v.  Matches
+        the convention used for GP / Av / 1C pair counts.
+
+        Returns an ``int32`` array of length ``self.n``, cached on the
+        graph (``self._n_descendants``).
+        """
+        if self._n_descendants is None:
+            self._n_descendants = _compute_n_descendants(
+                self.mother, self.father, self.n,
+            )
+        return self._n_descendants
+
+    def compute_n_ancestors(self) -> np.ndarray:
+        """Per-individual distinct strict-ancestor count.
+
+        ``n_anc[v]`` is the number of unique ancestors of v — an
+        ancestor reachable through multiple paths (loops introduced by
+        inbreeding) is counted once, contrasting with the path-count
+        semantics of :meth:`compute_n_descendants`.
+
+        Returns an ``int32`` array of length ``self.n``, cached on the
+        graph (``self._n_ancestors``).  Backed by a sparse boolean
+        transitive closure of the parent graph; memory scales with
+        ``sum_i n_anc[i]``, so very deep / very large pedigrees may
+        need a future retirement-style DP variant.
+        """
+        if self._n_ancestors is None:
+            self._n_ancestors = _compute_n_ancestors(
+                self.mother, self.father, self.n,
+            )
+        return self._n_ancestors
 
     def compute_pair_kinship(
         self,
