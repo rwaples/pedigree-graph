@@ -20,6 +20,7 @@ from pedigree_graph._kinship_kernel import (
     _freelist_bucket,
     _freelist_pop,
     _freelist_push,
+    _retire_rows_at_depth,
 )
 
 
@@ -176,7 +177,7 @@ def test_dp_kinship_row_start_is_int64():
     tw_idx = np.full(n, -1, dtype=np.int32)
     depth = np.array([0, 0, 1, 1], dtype=np.int32)
     _cols, _vals, row_start, _row_count, _sum_theta = _dp_kinship(
-        n, m_idx, f_idx, tw_idx, depth, 0.0, 16, False, False,
+        n, m_idx, f_idx, tw_idx, depth, 0.0, 16, False, False, False,
     )
     assert row_start.dtype == np.int64
     # Founder rows start at i * init_cap; the merge walk may relocate
@@ -407,6 +408,99 @@ def test_append_entry_relocation_reuses_freelist_slot_when_available():
     assert row_cap[0] == 4
     # next_alloc did NOT advance — slot reuse instead of fresh allocation.
     assert next_alloc_out == before_next_alloc
+
+
+def test_append_entry_lazy_allocates_never_allocated_row_via_freelist():
+    # Bucket 0 is pre-stocked by retirement of an earlier row; a
+    # never-allocated row's first append must pop that slot rather than
+    # bumping next_alloc.
+    init_cap = 4
+    n_rows = 2
+    # Reserve one extra cap-sized cell for the free-list slot inside buffer.
+    cols, vals, row_start, row_count, row_cap, next_alloc = _make_buffer(
+        n_rows, init_cap, extra_cells=init_cap,
+    )
+    # Row 1 transitions to never-allocated: row_start=-1, row_cap=init_cap.
+    row_start[1] = np.int64(-1)
+    row_count[1] = np.int32(0)
+    row_cap[1] = np.int32(init_cap)
+    # Pre-stock bucket 0 with a slot inside the buffer.
+    free_slot_start = np.int64(n_rows * init_cap)
+    starts, tops = _freelist_alloc(init_cap, 8)
+    _freelist_push(starts, tops, free_slot_start, np.int32(init_cap), np.int32(init_cap))
+    assert tops[0] == 1
+    before_next_alloc = next_alloc
+    cols_out, vals_out, next_alloc_out = _append_entry(
+        cols, vals, row_start, row_count, row_cap, next_alloc,
+        np.int32(1), np.int32(7), np.float32(0.42),
+        starts, tops, np.int32(init_cap),
+    )
+    # Bucket 0 was popped; row 1 now lives at the free-list slot.
+    assert tops[0] == 0
+    assert row_start[1] == free_slot_start
+    assert row_cap[1] == init_cap
+    assert row_count[1] == 1
+    # The data landed at the popped offset.
+    assert cols_out[free_slot_start] == 7
+    assert vals_out[free_slot_start] == np.float32(0.42)
+    # next_alloc unchanged — slot reuse, not fresh bump.
+    assert next_alloc_out == before_next_alloc
+
+
+def test_append_entry_lazy_allocates_never_allocated_row_via_bump():
+    # No free-list slot available — lazy-allocate must bump next_alloc.
+    init_cap = 4
+    n_rows = 2
+    cols, vals, row_start, row_count, row_cap, next_alloc = _make_buffer(
+        n_rows, init_cap, extra_cells=init_cap,
+    )
+    row_start[1] = np.int64(-1)
+    row_count[1] = np.int32(0)
+    row_cap[1] = np.int32(init_cap)
+    starts, tops = _freelist_alloc(init_cap, 8)  # empty
+    before_next_alloc = next_alloc
+    cols_out, vals_out, next_alloc_out = _append_entry(
+        cols, vals, row_start, row_count, row_cap, next_alloc,
+        np.int32(1), np.int32(11), np.float32(0.5),
+        starts, tops, np.int32(init_cap),
+    )
+    # No free-list pops occurred.
+    assert tops[0] == 0
+    # Row 1 lives at the previous next_alloc; bump advanced by init_cap.
+    assert row_start[1] == before_next_alloc
+    assert next_alloc_out == before_next_alloc + np.int64(init_cap)
+    assert row_count[1] == 1
+    assert cols_out[before_next_alloc] == 11
+    assert vals_out[before_next_alloc] == np.float32(0.5)
+
+
+def test_retire_rows_at_depth_skips_freelist_for_never_allocated_rows():
+    # Lazy-alloc safety: a row marked retired-at-depth that never
+    # actually allocated a slot (row_start == -1) must NOT push -1 into
+    # the free list — otherwise a later pop would corrupt row_start.
+    init_cap = 4
+    last_dcd = np.array([0, 0], dtype=np.int32)
+    # Row 0 was allocated (row_start=0, row_cap=init_cap); row 1 never
+    # allocated (row_start=-1, row_cap=init_cap, "wants this much").
+    row_start = np.array([0, -1], dtype=np.int64)
+    row_count = np.array([2, 0], dtype=np.int32)
+    row_cap = np.array([init_cap, init_cap], dtype=np.int32)
+    starts, tops = _freelist_alloc(init_cap, 8)
+    _retire_rows_at_depth(
+        np.int32(0), last_dcd,
+        row_start, row_count, row_cap,
+        starts, tops, np.int32(init_cap),
+    )
+    # Bucket 0 received exactly one push — row 0's slot, not row 1's -1.
+    assert tops[0] == 1
+    assert starts[0, 0] == 0
+    # Both rows are now in the retired sentinel state.
+    assert row_start[0] == -1
+    assert row_start[1] == -1
+    assert row_cap[0] == 0
+    assert row_cap[1] == 0
+    assert row_count[0] == 0
+    assert row_count[1] == 0
 
 
 def test_dp_kinship_row_start_arithmetic_no_overflow():

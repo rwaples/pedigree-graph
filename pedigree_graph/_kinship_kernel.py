@@ -298,12 +298,20 @@ def _append_entry(
 ):
     """Append (col_idx, val) to row_idx.
 
-    If ``row_start[row_idx] < 0`` the row has been retired (Phase 6); the
-    call is a silent no-op.
+    Three row states (Phase 7):
 
-    If the row's capacity is exhausted, relocate the row to a new
-    segment with doubled capacity.  Under retirement, the freed old slot
-    is pushed onto the free list and the new larger slot is taken from
+    * **live**: ``row_start[i] >= 0`` and ``row_cap[i] > 0`` — append into
+      the existing slot, relocating with doubled capacity if full.
+    * **never-allocated** (lazy alloc only): ``row_start[i] < 0`` and
+      ``row_cap[i] > 0``. ``row_cap[i]`` holds the desired starting
+      capacity; the first append here pops a free-list slot of that
+      cap or bumps ``next_alloc``.
+    * **retired** (Phase 6 sentinel): ``row_start[i] < 0`` and
+      ``row_cap[i] == 0`` — silently drop the write.
+
+    If a live row's capacity is exhausted, relocate to a new segment
+    with doubled capacity.  Under retirement, the freed old slot is
+    pushed onto the free list and the new larger slot is taken from
     the free list if a matching bucket has a vacant entry — otherwise
     ``next_alloc`` is bumped.  Returns ``(cols, vals, next_alloc)``;
     ``cols``/``vals`` may be reallocated by ``_grow_global``.
@@ -311,12 +319,29 @@ def _append_entry(
     Under ``retire=False`` callers pass placeholder ``freelist_*``
     arrays and ``fl_init_cap=0``, which makes push/pop silent no-ops
     and preserves the original "always advance next_alloc" behavior.
+    The eager init pre-sets ``row_start[i] = i * init_cap`` for all
+    rows, so the never-allocated branch never fires under retire=False.
     """
-    # Sentinel: retired rows silently drop writes.  Descendants of a
-    # retired ancestor may still emit symmetric appends targeting the
-    # ancestor's row index; they land here and dissolve.
+    # Three-state sentinel for retired or never-allocated rows.
     if row_start[row_idx] < 0:
-        return cols, vals, next_alloc
+        if row_cap[row_idx] == 0:
+            # Retired — silently drop the write.
+            return cols, vals, next_alloc
+        # Never-allocated: lazy-allocate a slot of cap = row_cap[row_idx].
+        needed_cap = row_cap[row_idx]
+        reused = _freelist_pop(
+            freelist_starts, freelist_tops, needed_cap, fl_init_cap,
+        )
+        if reused >= 0:
+            dest = reused
+        else:
+            needed = next_alloc + np.int64(needed_cap)
+            if needed > cols.shape[0]:
+                cols, vals = _grow_global(cols, vals, needed)
+            dest = next_alloc
+            next_alloc += np.int64(needed_cap)
+        row_start[row_idx] = np.int64(dest)
+        # row_count stays 0; row_cap unchanged; fall through to append.
 
     if row_count[row_idx] >= row_cap[row_idx]:
         # Row is full — relocate with doubled capacity.
@@ -373,14 +398,18 @@ def _retire_rows_at_depth(
     Pushes the slot onto the size-bucketed free list and marks the row
     retired via ``row_start = -1`` so subsequent symmetric appends from
     descendant chains land in ``_append_entry``'s sentinel branch and
-    dissolve.
+    dissolve. Under lazy allocation a row may reach retirement having
+    never been allocated (``row_start = -1``); in that case there is
+    no slot to push, but the row still transitions into the retired
+    sentinel state so any later writes silently drop.
     """
     for rk in range(last_dcd.shape[0]):
         if last_dcd[rk] == d:
-            _freelist_push(
-                freelist_starts, freelist_tops,
-                row_start[rk], row_cap[rk], fl_init_cap,
-            )
+            if row_start[rk] >= 0 and row_cap[rk] > 0:
+                _freelist_push(
+                    freelist_starts, freelist_tops,
+                    row_start[rk], row_cap[rk], fl_init_cap,
+                )
             row_start[rk] = np.int64(-1)
             row_count[rk] = np.int32(0)
             row_cap[rk] = np.int32(0)
@@ -411,6 +440,7 @@ def _dp_kinship(
     threshold: float,
     init_cap_per_row: int,
     retire: bool,
+    lazy: bool,
     debug_asserts: bool,
 ):
     """Build per-row sorted kinship arrays via gen-by-gen DP.
@@ -421,6 +451,19 @@ def _dp_kinship(
     means without rescanning the row storage.  Subsequent symmetric
     writes targeting a retired row dissolve via the sentinel branch in
     ``_append_entry``.
+
+    When ``lazy`` is True (Phase 7), rows are *not* eagerly allocated.
+    Each row starts at ``row_start[i] = -1`` and ``row_cap[i] = init_cap``;
+    the first ``_append_entry`` write triggers slot allocation, drawing
+    from the free list (which retirement populates) or bumping
+    ``next_alloc`` when no matching bucket is available.  Combined with
+    retirement, this lets ``cols.shape[0]`` track the working set
+    rather than the static ``N × init_cap`` floor.  Founders with no
+    direct child at any later depth (``last_dcd[i] == depth[i]``) skip
+    allocation entirely — their (i, 0.5) diagonal is never read.
+
+    The eager path (``lazy=False``) preserves the Phase-6 layout and is
+    used by the CSC assembly path through ``_run_dp``.
 
     When ``debug_asserts`` is True, each child-row step verifies its
     direct parents have not been retired — the regression gate for
@@ -451,24 +494,42 @@ def _dp_kinship(
     # typical kinship row sizes (e.g. ``2 ** (G_ped + 4)`` ≈ 1024 at
     # G_ped=6); see :func:`_suggest_init_cap_per_row`.
     init_cap = np.int32(init_cap_per_row)
-    total_cap = np.int64(n) * init_cap
-    cols = np.full(total_cap, -1, dtype=np.int32)
-    vals = np.zeros(total_cap, dtype=np.float32)
-    row_start = np.zeros(n, dtype=np.int64)
-    row_count = np.zeros(n, dtype=np.int32)
-    row_cap = np.full(n, init_cap, dtype=np.int32)
-
-    # Each row starts at position i * init_cap.
-    for i in range(n):
-        row_start[i] = np.int64(i) * np.int64(init_cap)
-    next_alloc = np.int64(n) * init_cap
-
     max_depth = np.int32(depth.max()) if n > 0 else np.int32(0)
+
+    # ``last_dcd`` is needed by lazy founder-skipping and by
+    # end-of-depth retirement; compute once and share.  Under
+    # (retire=False, lazy=False) it is unused but cheap (O(n)).
+    last_dcd = _compute_last_direct_child_depth(m_idx, f_idx, depth, n)
+
+    # Per-row state and initial flat buffer.
+    if lazy:
+        # Conservative starting size — _grow_global expands geometrically.
+        # max(1<<16, init_cap*1024) entries ≈ 0.5 MB at init_cap=512.
+        init_cap_i64 = np.int64(init_cap)
+        baseline = np.int64(1 << 16)
+        scaled = init_cap_i64 * np.int64(1024)
+        initial_buffer = baseline if baseline > scaled else scaled
+        cols = np.full(initial_buffer, -1, dtype=np.int32)
+        vals = np.zeros(initial_buffer, dtype=np.float32)
+        row_start = np.full(n, -1, dtype=np.int64)
+        row_count = np.zeros(n, dtype=np.int32)
+        row_cap = np.full(n, init_cap, dtype=np.int32)
+        next_alloc = np.int64(0)
+    else:
+        total_cap = np.int64(n) * init_cap
+        cols = np.full(total_cap, -1, dtype=np.int32)
+        vals = np.zeros(total_cap, dtype=np.float32)
+        row_start = np.zeros(n, dtype=np.int64)
+        row_count = np.zeros(n, dtype=np.int32)
+        row_cap = np.full(n, init_cap, dtype=np.int32)
+        # Each row starts at position i * init_cap.
+        for i in range(n):
+            row_start[i] = np.int64(i) * np.int64(init_cap)
+        next_alloc = np.int64(n) * init_cap
 
     # Retirement state.  Placeholders under retire=False satisfy numba's
     # type unifier; push/pop are no-ops because fl_init_cap = 0.
     if retire:
-        last_dcd = _compute_last_direct_child_depth(m_idx, f_idx, depth, n)
         sum_theta = np.zeros(max_depth + np.int32(1), dtype=np.float64)
         # Bucket sizing: caps are bounded above by n, so
         # n_buckets = ceil(log2(n / init_cap)) + 1.
@@ -483,7 +544,6 @@ def _dp_kinship(
         freelist_tops = np.zeros(n_buckets, dtype=np.int32)
         fl_init_cap = init_cap
     else:
-        last_dcd = np.empty(0, dtype=np.int32)
         sum_theta = np.zeros(1, dtype=np.float64)
         freelist_starts = np.zeros((1, 1), dtype=np.int64)
         freelist_tops = np.zeros(1, dtype=np.int32)
@@ -494,14 +554,30 @@ def _dp_kinship(
     # doing it upfront would break the sorted-row invariant because the
     # merge walk appends cols < j (ancestors have lower indices under
     # depth-first ID assignment), so position 0 must be the smallest col.
-    for i in range(n):
-        if m_idx[i] < 0 and f_idx[i] < 0:
-            cols[row_start[i]] = np.int32(i)
-            vals[row_start[i]] = np.float32(0.5)
-            row_count[i] = np.int32(1)
+    if lazy:
+        # Route through _append_entry so the slot is lazy-allocated.
+        # Skip founders that no descendant will ever read.
+        for i in range(n):
+            if m_idx[i] < 0 and f_idx[i] < 0:
+                if last_dcd[i] == depth[i]:
+                    continue  # never-needed: leave at never-allocated state
+                cols, vals, next_alloc = _append_entry(
+                    cols, vals, row_start, row_count, row_cap, next_alloc,
+                    np.int32(i), np.int32(i), np.float32(0.5),
+                    freelist_starts, freelist_tops, fl_init_cap,
+                )
+    else:
+        for i in range(n):
+            if m_idx[i] < 0 and f_idx[i] < 0:
+                cols[row_start[i]] = np.int32(i)
+                vals[row_start[i]] = np.float32(0.5)
+                row_count[i] = np.int32(1)
 
     # Founders with no children at any later depth retire immediately;
-    # their stored diagonal is never read by a merge walk.
+    # their stored diagonal is never read by a merge walk.  Under lazy
+    # alloc these were already skipped in init; the retire pass just
+    # transitions them from never-allocated to retired-sentinel so any
+    # stray descendant write would dissolve.
     if retire:
         _retire_rows_at_depth(
             np.int32(0), last_dcd, row_start, row_count, row_cap,
@@ -920,6 +996,7 @@ def _run_dp(
         n, m_idx, f_idx, tw_idx, depth,
         float(min_kinship), init_cap_per_row,
         False,  # retire=False — CSC path needs the full row storage
+        False,  # lazy=False   — CSC iterates row_start, needs every row materialized
         False,  # debug_asserts=False — never trip in the CSC path
     )
     return cols, vals, row_start, row_count, depth, tw_idx
@@ -948,6 +1025,7 @@ def _run_dp_retiring(
         n, m_idx, f_idx, tw_idx, depth,
         float(min_kinship), init_cap_per_row,
         True,  # retire=True
+        True,  # lazy=True — Phase 7 production retire path is lazy-only
         bool(debug_asserts),
     )
     return sum_theta, depth, tw_idx

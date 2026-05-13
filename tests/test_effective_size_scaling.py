@@ -260,6 +260,40 @@ def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None
     np.testing.assert_allclose(new["sums"], ref["sums"], atol=1e-12, rtol=0.0)
 
 
+def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
+    """Phase 7 private test helper — retire=True with lazy=False.
+
+    Production retire path is lazy-only (see ``_run_dp_retiring``);
+    this helper drives ``_dp_kinship`` directly with ``lazy=False`` so
+    parity tests can compare the lazy-allocated retire result against
+    the eager-allocated retire result.  Bit identity is expected at
+    small N — lazy alloc shifts the buffer layout but not the order of
+    arithmetic operations.
+    """
+    from pedigree_graph._kinship_kernel import (
+        _dp_kinship,
+        _finalize_from_sum_theta,
+        _validate_dp_args,
+    )
+
+    n = pg.n
+    m_idx = np.asarray(pg.mother, dtype=np.int32)
+    f_idx = np.asarray(pg.father, dtype=np.int32)
+    tw_idx = np.asarray(pg.twin, dtype=np.int32)
+    generation = np.asarray(pg.generation, dtype=np.int32)
+    m_idx, f_idx, tw_idx, depth, init_cap_per_row = _validate_dp_args(
+        n, m_idx, f_idx, tw_idx, generation, None,
+    )
+    _cols, _vals, _row_start, _row_count, sum_theta = _dp_kinship(
+        n, m_idx, f_idx, tw_idx, depth,
+        0.0, init_cap_per_row,
+        True,   # retire=True
+        False,  # lazy=False  — test-only eager-retire path
+        False,  # debug_asserts
+    )
+    return _finalize_from_sum_theta(sum_theta, depth, tw_idx)
+
+
 def test_per_gen_mean_kinship_retire_matches_legacy(
     parity_pedigree: PedigreeGraph,
 ) -> None:
@@ -272,6 +306,22 @@ def test_per_gen_mean_kinship_retire_matches_legacy(
     np.testing.assert_allclose(
         theta_retiring, theta_legacy, rtol=0, atol=1e-12, equal_nan=True,
     )
+
+
+def test_per_gen_mean_kinship_lazy_matches_eager_retire(
+    parity_pedigree: PedigreeGraph,
+) -> None:
+    """Phase 7 parity: lazy-allocated retire bit-identical to eager retire.
+
+    Same arithmetic, different storage layout — bit identity is the
+    expected outcome.  Falls back to 1e-12 absolute if the platform
+    reorders within-cohort sums via SIMD; in practice it has held
+    exactly.
+    """
+    pg = parity_pedigree
+    theta_lazy = pg.per_gen_mean_kinship()  # production: lazy=True
+    theta_eager = _theta_retire_eager(pg)   # test-only: lazy=False
+    np.testing.assert_array_equal(theta_lazy, theta_eager)
 
 
 def test_per_gen_mean_kinship_retire_matches_K_reference(
