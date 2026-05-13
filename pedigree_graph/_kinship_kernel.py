@@ -281,7 +281,7 @@ def _freelist_pop(
     return start
 
 
-@numba.njit(cache=True)
+@numba.njit(cache=True, inline="always")
 def _append_entry(
     cols: np.ndarray,
     vals: np.ndarray,
