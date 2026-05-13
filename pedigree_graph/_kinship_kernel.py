@@ -322,7 +322,6 @@ def _append_entry(
     The eager init pre-sets ``row_start[i] = i * init_cap`` for all
     rows, so the never-allocated branch never fires under retire=False.
     """
-    # Three-state sentinel for retired or never-allocated rows.
     if row_start[row_idx] < 0:
         if row_cap[row_idx] == 0:
             # Retired — silently drop the write.
@@ -452,18 +451,19 @@ def _dp_kinship(
     writes targeting a retired row dissolve via the sentinel branch in
     ``_append_entry``.
 
-    When ``lazy`` is True (Phase 7), rows are *not* eagerly allocated.
-    Each row starts at ``row_start[i] = -1`` and ``row_cap[i] = init_cap``;
-    the first ``_append_entry`` write triggers slot allocation, drawing
-    from the free list (which retirement populates) or bumping
-    ``next_alloc`` when no matching bucket is available.  Combined with
-    retirement, this lets ``cols.shape[0]`` track the working set
-    rather than the static ``N × init_cap`` floor.  Founders with no
-    direct child at any later depth (``last_dcd[i] == depth[i]``) skip
-    allocation entirely — their (i, 0.5) diagonal is never read.
+    When ``lazy`` is True (Phase 7), rows defer allocation to the
+    first write through ``_append_entry`` — see that function's
+    three-state contract for the row-state machine.  This lets
+    ``cols.shape[0]`` track the working set rather than the static
+    ``N × init_cap`` floor.  Founders with no direct child at any
+    later depth (``last_dcd[i] == depth[i]``) skip allocation
+    entirely.  ``lazy=True`` only makes sense paired with
+    ``retire=True`` (the free list that lazy alloc draws from is
+    populated by retirement); the invalid combination
+    ``(retire=False, lazy=True)`` is rejected.
 
-    The eager path (``lazy=False``) preserves the Phase-6 layout and is
-    used by the CSC assembly path through ``_run_dp``.
+    The eager path (``lazy=False``) preserves the Phase-6 layout and
+    is used by the CSC assembly path through ``_run_dp``.
 
     When ``debug_asserts`` is True, each child-row step verifies its
     direct parents have not been retired — the regression gate for
@@ -489,6 +489,15 @@ def _dp_kinship(
     and vice versa).  Within each row, entries are sorted by column
     index (ascending).
     """
+    # Reject (retire=False, lazy=True): the never-allocated → live
+    # transition is fed by retirement pushing slots onto the free list;
+    # without retirement, never-allocated rows would all bump
+    # next_alloc on first write with no recycling, defeating the win
+    # and corrupting the CSC contract (rows the caller expects to
+    # iterate via row_start would remain at -1).
+    if lazy and not retire:
+        raise ValueError("_dp_kinship: lazy=True requires retire=True")
+
     # Global buffer — geometric growth.  ``init_cap_per_row`` may be
     # tuned upward to skip the doubling cascade when the caller knows
     # typical kinship row sizes (e.g. ``2 ** (G_ped + 4)`` ≈ 1024 at
@@ -1011,12 +1020,19 @@ def _run_dp_retiring(
     min_kinship: float,
     init_cap_per_row: int | None,
     debug_asserts: bool = False,
+    *,
+    _lazy: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Run the kinship DP with end-of-depth retirement + inline θ̄.
 
     Returns ``(sum_theta, depth, tw_idx)``.  The DP row storage is
     progressively retired during the run and goes out of scope on
     return; only the per-generation θ̄ sum survives.
+
+    ``_lazy`` is a test-only escape hatch: production callers must
+    leave it at ``True`` (Phase-7 lazy row-slot allocation).  The
+    parity tests pass ``_lazy=False`` to exercise the eager-allocated
+    retire path as a comparator.
     """
     m_idx, f_idx, tw_idx, depth, init_cap_per_row = _validate_dp_args(
         n, m_idx, f_idx, tw_idx, generation, init_cap_per_row,
@@ -1025,7 +1041,7 @@ def _run_dp_retiring(
         n, m_idx, f_idx, tw_idx, depth,
         float(min_kinship), init_cap_per_row,
         True,  # retire=True
-        True,  # lazy=True — Phase 7 production retire path is lazy-only
+        bool(_lazy),
         bool(debug_asserts),
     )
     return sum_theta, depth, tw_idx

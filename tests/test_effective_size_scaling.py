@@ -261,35 +261,27 @@ def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None
 
 
 def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
-    """Phase 7 private test helper — retire=True with lazy=False.
+    """Phase 7 test helper — retire=True with lazy=False.
 
-    Production retire path is lazy-only (see ``_run_dp_retiring``);
-    this helper drives ``_dp_kinship`` directly with ``lazy=False`` so
-    parity tests can compare the lazy-allocated retire result against
-    the eager-allocated retire result.  Bit identity is expected at
-    small N — lazy alloc shifts the buffer layout but not the order of
-    arithmetic operations.
+    Drives the same path as production but with the lazy-alloc gate
+    flipped off so parity tests can compare the lazy-allocated retire
+    result against the eager-allocated retire result.  Bit identity
+    is expected at small N — lazy alloc shifts the buffer layout but
+    not the order of arithmetic operations.
     """
     from pedigree_graph._kinship_kernel import (
-        _dp_kinship,
         _finalize_from_sum_theta,
-        _validate_dp_args,
+        _run_dp_retiring,
     )
 
-    n = pg.n
-    m_idx = np.asarray(pg.mother, dtype=np.int32)
-    f_idx = np.asarray(pg.father, dtype=np.int32)
-    tw_idx = np.asarray(pg.twin, dtype=np.int32)
-    generation = np.asarray(pg.generation, dtype=np.int32)
-    m_idx, f_idx, tw_idx, depth, init_cap_per_row = _validate_dp_args(
-        n, m_idx, f_idx, tw_idx, generation, None,
-    )
-    _cols, _vals, _row_start, _row_count, sum_theta = _dp_kinship(
-        n, m_idx, f_idx, tw_idx, depth,
-        0.0, init_cap_per_row,
-        True,   # retire=True
-        False,  # lazy=False  — test-only eager-retire path
-        False,  # debug_asserts
+    sum_theta, depth, tw_idx = _run_dp_retiring(
+        pg.n,
+        np.asarray(pg.mother, dtype=np.int32),
+        np.asarray(pg.father, dtype=np.int32),
+        np.asarray(pg.twin, dtype=np.int32),
+        np.asarray(pg.generation, dtype=np.int32),
+        0.0, None,
+        _lazy=False,
     )
     return _finalize_from_sum_theta(sum_theta, depth, tw_idx)
 
