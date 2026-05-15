@@ -292,9 +292,14 @@ def test_per_gen_mean_kinship_retire_matches_legacy(
     # Inline and post-hoc accumulation sum the same pairs in different
     # orders, so float-level bit identity is not achievable; require
     # 1e-12 absolute.
+    from pedigree_graph._kinship_kernel import _compute_theta_per_gen
+
     pg = parity_pedigree
     theta_retiring = pg.per_gen_mean_kinship()
-    theta_legacy = pg.per_gen_mean_kinship(_debug_no_retire=True)
+    theta_legacy = _compute_theta_per_gen(
+        pg.n, pg.mother, pg.father, pg.twin, pg.generation, 0.0,
+        _debug_no_retire=True,
+    )
     np.testing.assert_allclose(
         theta_retiring, theta_legacy, rtol=0, atol=1e-12, equal_nan=True,
     )
@@ -332,12 +337,19 @@ def test_per_gen_mean_kinship_retire_matches_K_reference(
     )
 
 
-def test_per_gen_mean_kinship_debug_no_retire_bypasses_cache(
+def test_compute_theta_per_gen_debug_no_retire_independent_of_caches(
     parity_pedigree: PedigreeGraph,
 ) -> None:
-    # The flag exists so parity tests never compare a cached retire=True
-    # result or K-derived value against itself; verify by poisoning both
-    # caches and confirming the legacy call reads neither one.
+    """The kernel debug path is array-only and never reads pg caches.
+
+    Poison both per-gen and K caches on the graph, then call the
+    kernel's legacy DP directly with arrays — it must return the
+    correct θ̄ regardless.  Replaces the older
+    ``per_gen_mean_kinship(_debug_no_retire=True)`` API test now that
+    the public method no longer exposes the flag.
+    """
+    from pedigree_graph._kinship_kernel import _compute_theta_per_gen
+
     pg = parity_pedigree
     theta_retiring = pg.per_gen_mean_kinship()
     cached = pg._theta_per_gen_cache[0.0]
@@ -345,7 +357,10 @@ def test_per_gen_mean_kinship_debug_no_retire_bypasses_cache(
     K = pg.kinship_matrix()
     poisoned_K = sp.csc_matrix(K.shape, dtype=K.dtype)
     pg._kinship_cache[0.0] = poisoned_K
-    theta_legacy = pg.per_gen_mean_kinship(_debug_no_retire=True)
+    theta_legacy = _compute_theta_per_gen(
+        pg.n, pg.mother, pg.father, pg.twin, pg.generation, 0.0,
+        _debug_no_retire=True,
+    )
     assert not np.allclose(theta_legacy, -999.0, equal_nan=True)
     np.testing.assert_array_equal(
         pg._theta_per_gen_cache[0.0], np.full_like(cached, -999.0),
@@ -356,13 +371,17 @@ def test_per_gen_mean_kinship_debug_no_retire_bypasses_cache(
     )
 
 
-def test_per_gen_mean_kinship_debug_asserts_pass_on_well_formed_pedigree(
+def test_compute_theta_per_gen_debug_asserts_pass_on_well_formed_pedigree(
     parity_pedigree: PedigreeGraph,
 ) -> None:
+    from pedigree_graph._kinship_kernel import _compute_theta_per_gen
+
     pg = parity_pedigree
     theta_default = pg.per_gen_mean_kinship()
-    pg._theta_per_gen_cache = {}
-    theta_asserts = pg.per_gen_mean_kinship(_debug_asserts=True)
+    theta_asserts = _compute_theta_per_gen(
+        pg.n, pg.mother, pg.father, pg.twin, pg.generation, 0.0,
+        _debug_asserts=True,
+    )
     np.testing.assert_allclose(
         theta_default, theta_asserts, rtol=0, atol=1e-12, equal_nan=True,
     )

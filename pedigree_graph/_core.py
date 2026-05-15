@@ -1774,28 +1774,19 @@ class PedigreeGraph:
         )
         return K
 
-    def per_gen_mean_kinship(
-        self,
-        min_kinship: float = 0.0,
-        *,
-        _debug_no_retire: bool = False,
-        _debug_asserts: bool = False,
-    ) -> np.ndarray:
+    def per_gen_mean_kinship(self, min_kinship: float = 0.0) -> np.ndarray:
         """Per-generation mean kinship θ̄_g, computed without building K.
 
         Streams the DP row storage through :func:`_compute_theta_per_gen`;
         no CSC matrix is ever materialized.  Result is cached under
-        ``min_kinship`` in ``self._theta_per_gen_cache``.
+        ``min_kinship`` in ``self._theta_per_gen_cache``.  If the full
+        kinship matrix is already cached at the same threshold, θ̄ is
+        derived from that matrix instead of re-running the DP.
 
         Args:
             min_kinship: kernel-side pruning threshold.  Off-diagonal
                 entries with ``value <= min_kinship`` are dropped during
                 DP propagation.  Diagonal always kept.
-            _debug_no_retire: hidden flag; when True, take the
-                two-pass DP path and bypass the cache in both
-                directions.  ``_debug_asserts`` has no effect under it.
-            _debug_asserts: hidden flag; enables retire-correctness
-                runtime asserts inside ``_dp_kinship``.
 
         Returns:
             ``np.ndarray`` of dtype float64, length ``g_max + 1``, with
@@ -1803,33 +1794,22 @@ class PedigreeGraph:
             with fewer than 2 non-twin members).
         """
         key = float(min_kinship)
-        if not _debug_no_retire:
-            cached = self._theta_per_gen_cache.get(key)
-            if cached is not None:
-                return cached
+        cached = self._theta_per_gen_cache.get(key)
+        if cached is not None:
+            return cached
 
         t0 = time.perf_counter()
-        # If K is already cached at this threshold, derive θ̄ from the
-        # existing sparse matrix rather than re-running the DP.  The
-        # no-retire debug path must exercise the legacy DP path directly.
-        K = None if _debug_no_retire else self._kinship_cache.get(key)
+        K = self._kinship_cache.get(key)
         if K is not None:
             theta = _per_gen_mean_kinship(
                 K, np.asarray(self.generation), np.asarray(self.twin),
             )
         else:
             theta = _compute_theta_per_gen(
-                self.n,
-                self.mother,
-                self.father,
-                self.twin,
-                self.generation,
+                self.n, self.mother, self.father, self.twin, self.generation,
                 min_kinship,
-                _debug_no_retire=_debug_no_retire,
-                _debug_asserts=_debug_asserts,
             )
-        if not _debug_no_retire:
-            self._theta_per_gen_cache[key] = theta
+        self._theta_per_gen_cache[key] = theta
 
         logger.info(
             "per_gen_mean_kinship: n=%d, g_max=%d, min_kinship=%.4g, %.2fs",
