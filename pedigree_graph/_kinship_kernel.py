@@ -333,6 +333,35 @@ def _acquire_slot(
     return cols, vals, next_alloc, dest
 
 
+class _FreelistBuffers(NamedTuple):
+    """Bundle of slab-allocator support state passed through the DP hot loop.
+
+    The kinship DP threads four arrays/scalars through every
+    ``_append_entry``, ``_acquire_slot``, and ``_freelist_push`` call —
+    the same four every time.  Bundling them into a NamedTuple
+    eliminates 4 args at each call site in ``_dp_kinship`` without
+    changing what numba sees (NamedTuple fields lower to fixed-offset
+    loads under ``inline="always"`` callees).
+
+    Fields:
+        freelist_starts: (n_buckets, max_per_bucket) int64 LIFO of slot
+            offsets, one bucket per row-size (powers of two of
+            init_cap_per_row).
+        freelist_tops: per-bucket stack head (int32).
+        fl_init_cap: power-of-two anchor used for bucket sizing
+            (``init_cap_per_row``); ``0`` under ``retire=False`` to make
+            push/pop silent no-ops.
+        grow_stats: 3-element int64 array
+            ``[grow_call_count, total_entries_copied, peak_allocated]``;
+            bench-only telemetry.
+    """
+
+    freelist_starts: np.ndarray
+    freelist_tops: np.ndarray
+    fl_init_cap: np.int32
+    grow_stats: np.ndarray
+
+
 @numba.njit(cache=True, inline="always")
 def _append_entry(
     cols: np.ndarray,
@@ -344,10 +373,7 @@ def _append_entry(
     row_idx: np.int32,
     col_idx: np.int32,
     val: np.float32,
-    freelist_starts: np.ndarray,
-    freelist_tops: np.ndarray,
-    fl_init_cap: np.int32,
-    grow_stats: np.ndarray,
+    buffers,
 ):
     """Append (col_idx, val) to row_idx.
 
@@ -369,11 +395,12 @@ def _append_entry(
     ``next_alloc`` is bumped.  Returns ``(cols, vals, next_alloc)``;
     ``cols``/``vals`` may be reallocated by ``_grow_global``.
 
-    Under ``retire=False`` callers pass placeholder ``freelist_*``
-    arrays and ``fl_init_cap=0``, which makes push/pop silent no-ops
-    and preserves the original "always advance next_alloc" behavior.
-    The eager init pre-sets ``row_start[i] = i * init_cap`` for all
-    rows, so the never-allocated branch never fires under retire=False.
+    ``buffers`` is a :class:`_FreelistBuffers` carrying the four
+    slab-allocator arrays/scalars; under ``retire=False`` it holds
+    placeholder arrays and ``fl_init_cap=0``, which makes push/pop
+    silent no-ops.  The eager init pre-sets
+    ``row_start[i] = i * init_cap`` for all rows, so the
+    never-allocated branch never fires under retire=False.
     """
     if row_start[row_idx] < 0:
         if row_cap[row_idx] == 0:
@@ -382,7 +409,8 @@ def _append_entry(
         # Never-allocated: lazy-allocate a slot of cap = row_cap[row_idx].
         cols, vals, next_alloc, dest = _acquire_slot(
             row_cap[row_idx], cols, vals, next_alloc,
-            freelist_starts, freelist_tops, fl_init_cap, grow_stats,
+            buffers.freelist_starts, buffers.freelist_tops,
+            buffers.fl_init_cap, buffers.grow_stats,
         )
         row_start[row_idx] = dest
         # row_count stays 0; row_cap unchanged; fall through to append.
@@ -392,15 +420,16 @@ def _append_entry(
         new_cap = np.int32(row_cap[row_idx] * np.int32(2))
         # Push the about-to-be-abandoned slot.  No-op under retire=False.
         _freelist_push(
-            freelist_starts,
-            freelist_tops,
+            buffers.freelist_starts,
+            buffers.freelist_tops,
             row_start[row_idx],
             row_cap[row_idx],
-            fl_init_cap,
+            buffers.fl_init_cap,
         )
         cols, vals, next_alloc, dest = _acquire_slot(
             new_cap, cols, vals, next_alloc,
-            freelist_starts, freelist_tops, fl_init_cap, grow_stats,
+            buffers.freelist_starts, buffers.freelist_tops,
+            buffers.fl_init_cap, buffers.grow_stats,
         )
         # Copy existing data to the new slot.
         src = row_start[row_idx]
@@ -601,6 +630,15 @@ def _dp_kinship(
         freelist_tops = np.zeros(1, dtype=np.int32)
         fl_init_cap = np.int32(0)
 
+    # Bundle the slab-allocator state once.  Every `_append_entry` call
+    # in the DP loop (and the helpers it inlines) reads through these
+    # four fields; threading them as a NamedTuple keeps the hot-loop
+    # call sites short while still flattening to fixed-offset loads
+    # under numba's `inline="always"`.
+    buffers = _FreelistBuffers(
+        freelist_starts, freelist_tops, fl_init_cap, grow_stats,
+    )
+
     # Diagonal self-kinship for founders only (0.5 with no inbreeding).
     # For non-founders, the diagonal is appended AFTER the merge walk —
     # doing it upfront would break the sorted-row invariant because the
@@ -619,8 +657,7 @@ def _dp_kinship(
             cols, vals, next_alloc = _append_entry(
                 cols, vals, row_start, row_count, row_cap, next_alloc,
                 np.int32(i), np.int32(i), np.float32(0.5),
-                freelist_starts, freelist_tops, fl_init_cap,
-                grow_stats,
+                buffers,
             )
 
     # Founders with no children at any later depth retire immediately;
@@ -716,19 +753,8 @@ def _dp_kinship(
                 # Append (k, val) to row j.  Merge walk yields columns in
                 # ascending order, so row j stays sorted.
                 cols, vals, next_alloc = _append_entry(
-                    cols,
-                    vals,
-                    row_start,
-                    row_count,
-                    row_cap,
-                    next_alloc,
-                    np.int32(j),
-                    k,
-                    val,
-                    freelist_starts,
-                    freelist_tops,
-                    fl_init_cap,
-                    grow_stats,
+                    cols, vals, row_start, row_count, row_cap, next_alloc,
+                    np.int32(j), k, val, buffers,
                 )
                 # Symmetric fill: append (j, val) to row k.  Since j is
                 # processed in depth order and higher j means later
@@ -736,19 +762,8 @@ def _dp_kinship(
                 # to row k come in ascending j order → row k stays
                 # sorted.
                 cols, vals, next_alloc = _append_entry(
-                    cols,
-                    vals,
-                    row_start,
-                    row_count,
-                    row_cap,
-                    next_alloc,
-                    k,
-                    np.int32(j),
-                    val,
-                    freelist_starts,
-                    freelist_tops,
-                    fl_init_cap,
-                    grow_stats,
+                    cols, vals, row_start, row_count, row_cap, next_alloc,
+                    k, np.int32(j), val, buffers,
                 )
 
             # --- Append diagonal (j, self_kin) to row j AFTER merge walk.
@@ -756,19 +771,8 @@ def _dp_kinship(
             # the largest column — row j stays sorted.
             self_kin = np.float32((1.0 + km_f) / 2.0)
             cols, vals, next_alloc = _append_entry(
-                cols,
-                vals,
-                row_start,
-                row_count,
-                row_cap,
-                next_alloc,
-                np.int32(j),
-                np.int32(j),
-                self_kin,
-                freelist_starts,
-                freelist_tops,
-                fl_init_cap,
-                grow_stats,
+                cols, vals, row_start, row_count, row_cap, next_alloc,
+                np.int32(j), np.int32(j), self_kin, buffers,
             )
 
         # MZ twin pass for this generation.
@@ -814,19 +818,8 @@ def _dp_kinship(
                 # Need to insert in-place; falls back to append then
                 # sort.  Only happens for twins so rare; cheap.
                 cols, vals, next_alloc = _append_entry(
-                    cols,
-                    vals,
-                    row_start,
-                    row_count,
-                    row_cap,
-                    next_alloc,
-                    np.int32(j),
-                    np.int32(tw),
-                    self_k,
-                    freelist_starts,
-                    freelist_tops,
-                    fl_init_cap,
-                    grow_stats,
+                    cols, vals, row_start, row_count, row_cap, next_alloc,
+                    np.int32(j), np.int32(tw), self_k, buffers,
                 )
                 # Re-sort row j (bubble the new entry into place).  Small
                 # per-row cost, rare.
@@ -846,19 +839,8 @@ def _dp_kinship(
                 vals[rs_t + lo] = self_k
             else:
                 cols, vals, next_alloc = _append_entry(
-                    cols,
-                    vals,
-                    row_start,
-                    row_count,
-                    row_cap,
-                    next_alloc,
-                    np.int32(tw),
-                    np.int32(j),
-                    self_k,
-                    freelist_starts,
-                    freelist_tops,
-                    fl_init_cap,
-                    grow_stats,
+                    cols, vals, row_start, row_count, row_cap, next_alloc,
+                    np.int32(tw), np.int32(j), self_k, buffers,
                 )
                 _sort_row_inplace(cols, vals, row_start[tw], row_count[tw])
 
