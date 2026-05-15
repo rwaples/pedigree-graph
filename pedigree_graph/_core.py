@@ -259,19 +259,7 @@ class PedigreeGraph:
         # Build parent→child matrices using ALL available edges.
         # Each matrix is built independently so partial-pedigree data
         # (e.g. after subsampling) still contributes edges.
-        m_mask = self.mother >= 0
-        m_idx = np.where(m_mask)[0]
-        f_mask = self.father >= 0
-        f_idx = np.where(f_mask)[0]
-
-        self._Am = sp.csr_matrix(
-            (np.ones(len(m_idx), dtype=np.float64), (m_idx, self.mother[m_idx])),
-            shape=(n, n),
-        )
-        self._Af = sp.csr_matrix(
-            (np.ones(len(f_idx), dtype=np.float64), (f_idx, self.father[f_idx])),
-            shape=(n, n),
-        )
+        self._build_parent_csr()
 
     def _validate_birth_year_topology(self) -> None:
         """Reject parent-child edges with child.birth_year < parent.birth_year.
@@ -282,8 +270,8 @@ class PedigreeGraph:
         """
         if self.birth_year is None:
             return
-        for parent_arr, parent_label in ((self.mother, "mother"), (self.father, "father")):
-            edge_rows, diffs = _known_parent_edges(parent_arr, self.birth_year)
+        for parent_label in ("mother", "father"):
+            edge_rows, diffs = self._known_parent_edges_for(parent_label)
             if diffs.size == 0:
                 continue
             violations = diffs < 0
@@ -295,6 +283,57 @@ class PedigreeGraph:
                     f"edge(s) have child.birth_year < {parent_label}.birth_year "
                     f"(first: row {int(edge_rows[first])}, diff={int(diffs[first])})"
                 )
+
+    def _build_parent_csr(self) -> None:
+        """Build ``self._Am`` and ``self._Af`` from current parent arrays.
+
+        Re-called by :meth:`count_pairs_streaming` after
+        :meth:`extract_pairs` drops the matrices to free memory.  Keeping
+        one canonical builder prevents the dtype/shape contract from
+        drifting between constructor and re-builder.
+        """
+        n = self.n
+        m_idx = np.where(self.mother >= 0)[0]
+        f_idx = np.where(self.father >= 0)[0]
+        self._Am = sp.csr_matrix(
+            (np.ones(len(m_idx), dtype=np.float64), (m_idx, self.mother[m_idx])),
+            shape=(n, n),
+        )
+        self._Af = sp.csr_matrix(
+            (np.ones(len(f_idx), dtype=np.float64), (f_idx, self.father[f_idx])),
+            shape=(n, n),
+        )
+
+    def _known_parent_edges_for(
+        self, parent_label: Literal["mother", "father"],
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Cached :func:`_known_parent_edges` lookup by parent label.
+
+        ``_validate_birth_year_topology`` (in __init__),
+        ``generation_interval``, ``_cohort_utils.eligible_cohort_range``,
+        and ``_hill_age_table`` all call the same edge-filter and
+        age-diff computation against the same arrays — at scale that's
+        eight passes over the full pedigree.  Cached per-graph keyed on
+        ``"mother"``/``"father"``.  Bypassed when ``birth_year is None``
+        (the underlying helper still runs but the result is small).
+        """
+        cache = getattr(self, "_known_parent_edges_cache", None)
+        if cache is None:
+            cache = {}
+            self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = cache
+        hit = cache.get(parent_label)
+        if hit is not None:
+            return hit
+        parent_arr = self.mother if parent_label == "mother" else self.father
+        if self.birth_year is None:
+            result = (
+                np.array([], dtype=np.intp),
+                np.array([], dtype=np.int32),
+            )
+        else:
+            result = _known_parent_edges(parent_arr, self.birth_year)
+        cache[parent_label] = result
+        return result
 
     @cached_property
     def generation_interval(self):
@@ -317,8 +356,8 @@ class PedigreeGraph:
         if self.birth_year is None:
             return None
 
-        _, diffs_m = _known_parent_edges(self.father, self.birth_year)
-        _, diffs_f = _known_parent_edges(self.mother, self.birth_year)
+        _, diffs_m = self._known_parent_edges_for("father")
+        _, diffs_f = self._known_parent_edges_for("mother")
         if diffs_m.size == 0 or diffs_f.size == 0:
             return None
 
@@ -1296,16 +1335,7 @@ class PedigreeGraph:
 
         # Lazily rebuild _Am / _Af if extract_pairs deleted them.
         if not hasattr(self, "_Am") or not hasattr(self, "_Af"):
-            m_idx = np.where(self.mother >= 0)[0]
-            f_idx = np.where(self.father >= 0)[0]
-            self._Am = sp.csr_matrix(
-                (np.ones(len(m_idx), dtype=np.float64), (m_idx, self.mother[m_idx])),
-                shape=(n, n),
-            )
-            self._Af = sp.csr_matrix(
-                (np.ones(len(f_idx), dtype=np.float64), (f_idx, self.father[f_idx])),
-                shape=(n, n),
-            )
+            self._build_parent_csr()
 
         counts: dict[str, int] = {code: 0 for code in REL_REGISTRY}
         children_count = np.diff(self._A.tocsc().indptr).astype(np.int64)
@@ -1343,22 +1373,31 @@ class PedigreeGraph:
             fs_count = int(((pair_k * (pair_k - 1)) // 2).sum())
         counts["FS"] = fs_count
 
+        # Sex-side and mating-pair member arrays are reused across every
+        # degree branch — compute them once.  Empty when no sample has the
+        # corresponding known parent (the per-degree blocks skip cleanly).
         m_known = nt_m >= 0
         f_known = nt_f >= 0
-        if m_known.any():
-            _, m_sizes = np.unique(nt_m[m_known], return_counts=True)
+        has_m = bool(m_known.any())
+        has_f = bool(f_known.any())
+        m_parents = nt_m[m_known]
+        f_parents = nt_f[f_known]
+        m_anchors = nt_idx[m_known]
+        f_anchors = nt_idx[f_known]
+        members = mating_pair_id >= 0
+        members_pid = mating_pair_id[members]
+        has_pairs = len(pair_k) > 0
+
+        if has_m:
+            _, m_sizes = np.unique(m_parents, return_counts=True)
             counts["MHS"] = (
                 int(((m_sizes * (m_sizes - 1)) // 2).sum()) - fs_count
             )
-        else:
-            m_sizes = np.array([], dtype=np.int64)
-        if f_known.any():
-            _, f_sizes = np.unique(nt_f[f_known], return_counts=True)
+        if has_f:
+            _, f_sizes = np.unique(f_parents, return_counts=True)
             counts["PHS"] = (
                 int(((f_sizes * (f_sizes - 1)) // 2).sum()) - fs_count
             )
-        else:
-            f_sizes = np.array([], dtype=np.int64)
 
         if max_degree < 2:
             return self._finalise_scalar_counts(counts, scope, t_total)
@@ -1368,15 +1407,14 @@ class PedigreeGraph:
 
         pair_sum_d1 = np.array([], dtype=np.int64)
         pair_sum_d1_sq = np.array([], dtype=np.int64)
-        if len(pair_k) > 0:
-            members = mating_pair_id >= 0
+        if has_pairs:
             pair_sum_d1 = np.bincount(
-                mating_pair_id[members],
+                members_pid,
                 weights=children_count[members],
                 minlength=len(pair_k),
             ).astype(np.int64)
             pair_sum_d1_sq = np.bincount(
-                mating_pair_id[members],
+                members_pid,
                 weights=children_count[members].astype(np.int64) ** 2,
                 minlength=len(pair_k),
             ).astype(np.int64)
@@ -1390,36 +1428,19 @@ class PedigreeGraph:
         d2_count = np.diff(self._A2.tocsc().indptr).astype(np.int64)
         d3_count = np.diff(self._A3.tocsc().indptr).astype(np.int64)
 
-        if m_known.any():
-            m_sum_d1 = np.bincount(
-                nt_m[m_known],
-                weights=children_count[nt_idx[m_known]],
-            ).astype(np.int64)
-            m_kp = np.bincount(nt_m[m_known]).astype(np.int64)
-            m_av = int(((m_kp - 1).clip(min=0) * m_sum_d1).sum())
-        else:
-            m_av = 0
-            m_kp = np.array([], dtype=np.int64)
-            m_sum_d1 = np.array([], dtype=np.int64)
-        if f_known.any():
-            f_sum_d1 = np.bincount(
-                nt_f[f_known],
-                weights=children_count[nt_idx[f_known]],
-            ).astype(np.int64)
-            f_kp = np.bincount(nt_f[f_known]).astype(np.int64)
-            f_av = int(((f_kp - 1).clip(min=0) * f_sum_d1).sum())
-        else:
-            f_av = 0
-            f_kp = np.array([], dtype=np.int64)
-            f_sum_d1 = np.array([], dtype=np.int64)
+        m_av, m_kp, _ = self._per_sex_anchor_sums(
+            has_m, m_parents, children_count, m_anchors,
+        )
+        f_av, f_kp, _ = self._per_sex_anchor_sums(
+            has_f, f_parents, children_count, f_anchors,
+        )
         counts["HAv"] = m_av + f_av - 2 * counts["Av"]
 
         pair_sum_d2 = np.array([], dtype=np.int64)
         pair_sum_d3 = np.array([], dtype=np.int64)
-        if len(pair_k) > 0:
-            members = mating_pair_id >= 0
+        if has_pairs:
             pair_sum_d2 = np.bincount(
-                mating_pair_id[members],
+                members_pid,
                 weights=d2_count[members],
                 minlength=len(pair_k),
             ).astype(np.int64)
@@ -1447,10 +1468,9 @@ class PedigreeGraph:
         counts["GGGP"] = int(self._A4.nnz)
         d4_count = np.diff(self._A4.tocsc().indptr).astype(np.int64)
 
-        if len(pair_k) > 0:
-            members = mating_pair_id >= 0
+        if has_pairs:
             pair_sum_d3 = np.bincount(
-                mating_pair_id[members],
+                members_pid,
                 weights=d3_count[members],
                 minlength=len(pair_k),
             ).astype(np.int64)
@@ -1460,24 +1480,8 @@ class PedigreeGraph:
                 0, naive_1c1r - counts["Av"] - counts["GAv"],
             )
 
-        if m_known.any():
-            m_sum_d2 = np.bincount(
-                nt_m[m_known],
-                weights=d2_count[nt_idx[m_known]],
-            ).astype(np.int64)
-            m_hgav = int(((m_kp - 1).clip(min=0) * m_sum_d2).sum())
-        else:
-            m_hgav = 0
-            m_sum_d2 = np.array([], dtype=np.int64)
-        if f_known.any():
-            f_sum_d2 = np.bincount(
-                nt_f[f_known],
-                weights=d2_count[nt_idx[f_known]],
-            ).astype(np.int64)
-            f_hgav = int(((f_kp - 1).clip(min=0) * f_sum_d2).sum())
-        else:
-            f_hgav = 0
-            f_sum_d2 = np.array([], dtype=np.int64)
+        m_hgav, _, _ = self._per_sex_anchor_sums(has_m, m_parents, d2_count, m_anchors, m_kp)
+        f_hgav, _, _ = self._per_sex_anchor_sums(has_f, f_parents, d2_count, f_anchors, f_kp)
         counts["HGAv"] = m_hgav + f_hgav - 2 * counts["GAv"]
 
         if max_degree < 5:
@@ -1486,10 +1490,9 @@ class PedigreeGraph:
         # ---- Degree 5: G3GP, HGGAv, G3Av, H1C1R, 1C2R, 2C -------------
         counts["G3GP"] = int(self._A5.nnz)
 
-        if len(pair_k) > 0:
-            members = mating_pair_id >= 0
+        if has_pairs:
             pair_sum_d4 = np.bincount(
-                mating_pair_id[members],
+                members_pid,
                 weights=d4_count[members],
                 minlength=len(pair_k),
             ).astype(np.int64)
@@ -1500,22 +1503,8 @@ class PedigreeGraph:
             )
             counts["2C"] = int(((pair_sum_d2 * (pair_sum_d2 - 1)) // 2).sum())
 
-        if m_known.any():
-            m_sum_d3 = np.bincount(
-                nt_m[m_known],
-                weights=d3_count[nt_idx[m_known]],
-            ).astype(np.int64)
-            m_hggav = int(((m_kp - 1).clip(min=0) * m_sum_d3).sum())
-        else:
-            m_hggav = 0
-        if f_known.any():
-            f_sum_d3 = np.bincount(
-                nt_f[f_known],
-                weights=d3_count[nt_idx[f_known]],
-            ).astype(np.int64)
-            f_hggav = int(((f_kp - 1).clip(min=0) * f_sum_d3).sum())
-        else:
-            f_hggav = 0
+        m_hggav, _, _ = self._per_sex_anchor_sums(has_m, m_parents, d3_count, m_anchors, m_kp)
+        f_hggav, _, _ = self._per_sex_anchor_sums(has_f, f_parents, d3_count, f_anchors, f_kp)
         counts["HGGAv"] = m_hggav + f_hggav - 2 * counts["GGAv"]
 
         h1c1r_naive = int((d2_count * d3_count).sum())
@@ -1528,6 +1517,37 @@ class PedigreeGraph:
         )
 
         return self._finalise_scalar_counts(counts, scope, t_total)
+
+    @staticmethod
+    def _per_sex_anchor_sums(
+        has_side: bool,
+        parents: np.ndarray,
+        weights: np.ndarray,
+        anchors: np.ndarray,
+        kp_cached: np.ndarray | None = None,
+    ) -> tuple[int, np.ndarray, np.ndarray]:
+        """Σ over single-parent anchor i: (kp_i − 1) · Σ_d weights[child].
+
+        Per-degree HAv/HGAv/HGGAv all collapse to this form, parameterised
+        by the depth-d ``weights`` array (``children_count``,
+        ``d2_count``, …).  ``kp_cached`` lets the d>1 caller reuse the
+        per-parent child count computed at d=1, avoiding a redundant
+        ``np.bincount(parents)`` per degree.
+
+        Returns ``(scalar_sum, kp, weighted_sum_per_parent)`` so the d=1
+        caller can capture ``kp`` and ``weighted_sum`` for downstream
+        diagnostics; later calls discard them.
+        """
+        if not has_side:
+            empty = np.array([], dtype=np.int64)
+            return 0, empty, empty
+        weighted_per_parent = np.bincount(parents, weights=weights[anchors]).astype(np.int64)
+        kp = (
+            kp_cached if kp_cached is not None
+            else np.bincount(parents).astype(np.int64)
+        )
+        total = int(((kp - 1).clip(min=0) * weighted_per_parent).sum())
+        return total, kp, weighted_per_parent
 
     def _finalise_scalar_counts(
         self,

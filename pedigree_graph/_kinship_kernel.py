@@ -349,7 +349,7 @@ def _append_entry(
 ):
     """Append (col_idx, val) to row_idx.
 
-    Three row states (Phase 7):
+    Three row states:
 
     * **live**: ``row_start[i] >= 0`` and ``row_cap[i] > 0`` — append into
       the existing slot, relocating with doubled capacity if full.
@@ -357,8 +357,8 @@ def _append_entry(
       ``row_cap[i] > 0``. ``row_cap[i]`` holds the desired starting
       capacity; the first append here pops a free-list slot of that
       cap or bumps ``next_alloc``.
-    * **retired** (Phase 6 sentinel): ``row_start[i] < 0`` and
-      ``row_cap[i] == 0`` — silently drop the write.
+    * **retired**: ``row_start[i] < 0`` and ``row_cap[i] == 0`` —
+      silently drop the write.
 
     If a live row's capacity is exhausted, relocate to a new segment
     with doubled capacity.  Under retirement, the freed old slot is
@@ -488,19 +488,18 @@ def _dp_kinship(
     writes targeting a retired row dissolve via the sentinel branch in
     ``_append_entry``.
 
-    When ``lazy`` is True (Phase 7), rows defer allocation to the
-    first write through ``_append_entry`` — see that function's
-    three-state contract for the row-state machine.  This lets
-    ``cols.shape[0]`` track the working set rather than the static
-    ``N × init_cap`` floor.  Founders with no direct child at any
-    later depth (``last_dcd[i] == depth[i]``) skip allocation
-    entirely.  ``lazy=True`` only makes sense paired with
-    ``retire=True`` (the free list that lazy alloc draws from is
-    populated by retirement); the invalid combination
-    ``(retire=False, lazy=True)`` is rejected.
+    When ``lazy`` is True, rows defer allocation to the first write
+    through ``_append_entry`` — see that function's three-state
+    contract for the row-state machine.  This lets ``cols.shape[0]``
+    track the working set rather than the static ``N × init_cap``
+    floor.  Founders with no direct child at any later depth
+    (``last_dcd[i] == depth[i]``) skip allocation entirely.
+    ``lazy=True`` only makes sense paired with ``retire=True`` (the
+    free list that lazy alloc draws from is populated by retirement);
+    the invalid combination ``(retire=False, lazy=True)`` is rejected.
 
-    The eager path (``lazy=False``) preserves the Phase-6 layout and
-    is used by the CSC assembly path through ``_run_dp``.
+    The eager path (``lazy=False``) pre-allocates the row buffer up
+    front and is used by the CSC assembly path through ``_run_dp``.
 
     When ``debug_asserts`` is True, each child-row step verifies its
     direct parents have not been retired — the regression gate for
@@ -1080,9 +1079,9 @@ def _run_dp_retiring(
     return; only the per-generation θ̄ sum survives.
 
     ``_lazy`` is a test-only escape hatch: production callers must
-    leave it at ``True`` (Phase-7 lazy row-slot allocation).  The
-    parity tests pass ``_lazy=False`` to exercise the eager-allocated
-    retire path as a comparator.
+    leave it at ``True`` (lazy row-slot allocation).  The parity tests
+    pass ``_lazy=False`` to exercise the eager-allocated retire path
+    as a comparator.
 
     ``_grow_stats`` is a benchmark-only escape hatch.  Pass a
     pre-allocated length-3 int64 array to capture
@@ -1211,17 +1210,20 @@ def _finalize_from_sum_theta(
     twin = np.ascontiguousarray(twin_idx, dtype=np.int32)
     g_max = int(gen.max()) if gen.size else 0
     out = np.full(g_max + 1, np.nan, dtype=np.float64)
-    idx = np.arange(len(gen))
-    for g in range(g_max + 1):
-        in_g = gen == g
-        n_g = int(in_g.sum())
-        if n_g < 2:
-            continue
-        twin_in_g = int(((twin >= 0) & in_g & (twin > idx)).sum())
-        total_pairs = n_g * (n_g - 1) // 2 - twin_in_g
-        if total_pairs <= 0:
-            continue
-        out[g] = sum_theta[g] / total_pairs
+
+    # Single-pass per-gen denominators: n_g via bincount, twin pairs via
+    # bincount of the partner-with-smaller-index mask.
+    n_per_g = np.bincount(gen, minlength=g_max + 1).astype(np.int64)
+    idx = np.arange(len(gen), dtype=np.int32)
+    twin_pair = (twin >= 0) & (twin > idx)
+    twin_per_g = (
+        np.bincount(gen[twin_pair], minlength=g_max + 1).astype(np.int64)
+        if twin_pair.any()
+        else np.zeros(g_max + 1, dtype=np.int64)
+    )
+    total_pairs = n_per_g * (n_per_g - 1) // 2 - twin_per_g
+    eligible = (n_per_g >= 2) & (total_pairs > 0)
+    out[eligible] = sum_theta[eligible] / total_pairs[eligible]
     return out
 
 

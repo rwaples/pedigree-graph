@@ -47,7 +47,6 @@ from pedigree_graph._effective_size import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
-from pedigree_graph._kinship_kernel import _compute_eqg
 
 __all__ = [
     "PAIR_KINSHIP",
@@ -64,7 +63,6 @@ __all__ = [
     "NeVarianceResult",
     "PedigreeGraph",
     "RelType",
-    "_compute_eqg",
     "compute_all_ne",
     "eligible_cohort_range",
     "ne_caballero_toro",

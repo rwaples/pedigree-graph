@@ -96,12 +96,10 @@ def eligible_cohort_range(
     y_min = int(known.min())
     y_max = int(known.max())
 
-    from pedigree_graph._core import _known_parent_edges
-
     diffs = [
         d
-        for parent_arr in (pg.mother, pg.father)
-        if (d := _known_parent_edges(parent_arr, by)[1]).size > 0
+        for parent_label in ("mother", "father")
+        if (d := pg._known_parent_edges_for(parent_label)[1]).size > 0
     ]
     if not diffs:
         raise ValueError(

@@ -47,6 +47,7 @@ __all__ = [
     "ne_variance_family_size",
 ]
 
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -54,7 +55,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 from pedigree_graph._cohort_utils import CohortWindow, eligible_cohort_range
-from pedigree_graph._kinship_kernel import _compute_eqg
+from pedigree_graph._kinship_kernel import _compute_eqg, _finalize_from_sum_theta
 
 if TYPE_CHECKING:
     import scipy.sparse as sp
@@ -86,32 +87,19 @@ def _per_gen_mean_kinship(
             non-twins.
     """
     g_max = int(generation.max())
-    out = np.full(g_max + 1, np.nan, dtype=np.float64)
 
     # COO traversal — restrict to upper triangle, same generation,
-    # non-twin pairs.
+    # non-twin pairs.  Sum per-gen θ via bincount, then divide through
+    # the shared finalizer that knows the within-cohort pair-count math.
     coo = K.tocoo()
     rows, cols, vals = coo.row, coo.col, coo.data
     pair_mask = (rows < cols) & (generation[rows] == generation[cols])
     pair_mask &= ~((twin_idx[rows] >= 0) & (twin_idx[rows] == cols))
-    rows = rows[pair_mask]
-    cols = cols[pair_mask]
-    vals = vals[pair_mask]
-    pair_gens = generation[rows]
-
-    for g in range(g_max + 1):
-        in_g = generation == g
-        n_g = int(in_g.sum())
-        if n_g < 2:
-            continue
-        # Twin pairs (count each pair once: partner with smaller index).
-        twin_in_g = int(((twin_idx >= 0) & in_g & (twin_idx > np.arange(len(generation)))).sum())
-        total_pairs = n_g * (n_g - 1) // 2 - twin_in_g
-        if total_pairs <= 0:
-            continue
-        sum_theta = float(vals[pair_gens == g].sum())
-        out[g] = sum_theta / total_pairs
-    return out
+    pair_gens = generation[rows[pair_mask]].astype(np.intp)
+    sum_theta = np.bincount(
+        pair_gens, weights=vals[pair_mask].astype(np.float64), minlength=g_max + 1,
+    )
+    return _finalize_from_sum_theta(sum_theta, generation, twin_idx)
 
 
 def _sex_specific_family_table(
@@ -307,10 +295,10 @@ class NeInbreedingResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict (numpy arrays → list)."""
         return {
-            "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
-            "ne_per_gen": [None if not np.isfinite(v) else float(v) for v in self.ne_per_gen],
+            "ne": _optional_float(self.ne),
+            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
             "mean_f_per_gen": [float(v) for v in self.mean_f_per_gen],
-            "slope": None if not np.isfinite(self.slope) else float(self.slope),
+            "slope": _optional_float(self.slope),
             "n_generations_used": int(self.n_generations_used),
         }
 
@@ -347,10 +335,10 @@ class NeCoancestryResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
         return {
-            "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
-            "ne_per_gen": [None if not np.isfinite(v) else float(v) for v in self.ne_per_gen],
-            "mean_theta_per_gen": [None if not np.isfinite(v) else float(v) for v in self.mean_theta_per_gen],
-            "slope": None if not np.isfinite(self.slope) else float(self.slope),
+            "ne": _optional_float(self.ne),
+            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
+            "mean_theta_per_gen": [_optional_float(v) for v in self.mean_theta_per_gen],
+            "slope": _optional_float(self.slope),
             "n_generations_used": int(self.n_generations_used),
         }
 
@@ -383,8 +371,8 @@ class NeVarianceResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
         return {
-            "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
-            "ne_per_transition": [None if not np.isfinite(v) else float(v) for v in self.ne_per_transition],
+            "ne": _optional_float(self.ne),
+            "ne_per_transition": [_optional_float(v) for v in self.ne_per_transition],
             "v_mm": [float(v) for v in self.v_mm],
             "v_mf": [float(v) for v in self.v_mf],
             "v_fm": [float(v) for v in self.v_fm],
@@ -410,8 +398,8 @@ class NeSexRatioResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
         return {
-            "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
-            "ne_per_gen": [None if not np.isfinite(v) else float(v) for v in self.ne_per_gen],
+            "ne": _optional_float(self.ne),
+            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
             "n_male_per_gen": [int(v) for v in self.n_male_per_gen],
             "n_female_per_gen": [int(v) for v in self.n_female_per_gen],
         }
@@ -428,6 +416,77 @@ def _harmonic_mean(values: np.ndarray) -> float:
     if not finite.any():
         return float("nan")
     return float(finite.sum() / np.sum(1.0 / values[finite]))
+
+
+def _optional_float(x: float | None) -> float | None:
+    """``None`` for missing or non-finite; else ``float(x)``.
+
+    Used by every ``NeXxxResult.to_dict`` to coerce optional scalar Ne /
+    diagnostic fields to YAML-safe JSON values.
+    """
+    if x is None or not np.isfinite(x):
+        return None
+    return float(x)
+
+
+def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
+    """RuntimeWarning when ``pg.sex`` is uniform — usually a missing ``sex=``.
+
+    Fired by :func:`ne_variance_family_size` and :func:`ne_sex_ratio`
+    (both estimators are degenerate on single-sex pedigrees and the
+    overwhelmingly common cause is the caller forgetting to pass ``sex=``
+    to :meth:`PedigreeGraph.from_arrays`, which silently defaults the
+    array to all-female).  Estimators still return ``ne=None`` (matching
+    a legitimately single-sex pedigree), so the warning is the only
+    diagnostic.
+    """
+    if pg.n == 0:
+        return
+    sex = np.asarray(pg.sex)
+    if len(np.unique(sex)) < 2:
+        warnings.warn(
+            f"{caller}: pg.sex is uniform (all {int(sex[0])}); estimator is "
+            "degenerate and will return ne=None. Did you forget to pass sex= "
+            "to PedigreeGraph.from_arrays?",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+
+def _sigma2_from_quadrants(
+    entry: dict[str, np.ndarray],
+) -> tuple[float, float, float, float, float, float, float, float, int, int] | None:
+    """Caballero 1994 eq. 6 reassembly from sex-of-offspring quadrants.
+
+    Computes the per-sex lifetime-offspring variance ``σ²_s = V(k_ss) +
+    V(k_sf) + 2·Cov(k_ss, k_sf)`` and the per-sex offspring-count mean
+    ``k̄_s`` from one row of :func:`_sex_specific_family_table` output.
+    Returns ``None`` when the cohort lacks two of either sex (Ne is
+    undefined for that transition).
+
+    Returns:
+        ``(v_mm, v_mf, v_fm, v_ff, cov_m, cov_f, kbar_m, kbar_f, n_m,
+        n_f)`` — six variance/covariance terms, two means, two cohort
+        sizes.  Callers reassemble ``σ²_m`` and ``σ²_f`` from the
+        appropriate sum.
+    """
+    kmm = entry["k_mm"]
+    kmf = entry["k_mf"]
+    kfm = entry["k_fm"]
+    kff = entry["k_ff"]
+    n_m = len(kmm)
+    n_f = len(kfm)
+    if n_m < 2 or n_f < 2:
+        return None
+    kbar_m = float((kmm + kmf).mean())
+    kbar_f = float((kfm + kff).mean())
+    v_mm = float(kmm.var(ddof=1))
+    v_mf = float(kmf.var(ddof=1))
+    v_fm = float(kfm.var(ddof=1))
+    v_ff = float(kff.var(ddof=1))
+    cov_m = float(np.cov(kmm, kmf, ddof=1)[0, 1])
+    cov_f = float(np.cov(kfm, kff, ddof=1)[0, 1])
+    return v_mm, v_mf, v_fm, v_ff, cov_m, cov_f, kbar_m, kbar_f, n_m, n_f
 
 
 def _waples_vk2_expectation(vk1: float, kbar1: float, kbar2: float = 2.0) -> float:
@@ -581,22 +640,12 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     (consistent with a legitimate single-sex pedigree), so the warning
     is the only diagnostic.
     """
-    import warnings
-
-    sex = np.asarray(pg.sex)
-    if pg.n > 0 and len(np.unique(sex)) < 2:
-        warnings.warn(
-            "ne_variance_family_size: pg.sex is uniform "
-            f"(all {int(sex[0])}); estimator is degenerate and will return ne=None. "
-            "Did you forget to pass sex= to PedigreeGraph.from_arrays?",
-            RuntimeWarning,
-            stacklevel=2,
-        )
+    _warn_if_uniform_sex(pg, "ne_variance_family_size")
 
     table = _sex_specific_family_table(
         np.asarray(pg.mother),
         np.asarray(pg.father),
-        sex,
+        np.asarray(pg.sex),
         np.asarray(pg.generation),
     )
     g_max = int(np.asarray(pg.generation).max())
@@ -611,28 +660,20 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     cov_f = np.full(g_max, np.nan, dtype=np.float64)
 
     for p, entry in table.items():
-        kmm = entry["k_mm"]
-        kmf = entry["k_mf"]
-        kfm = entry["k_fm"]
-        kff = entry["k_ff"]
-        n_m = len(kmm)
-        n_f = len(kfm)
-        if n_m < 2 or n_f < 2:
+        decomp = _sigma2_from_quadrants(entry)
+        if decomp is None:
             continue
-        k_m_total = kmm + kmf
-        k_f_total = kfm + kff
-        kbar_m = float(k_m_total.mean())
-        kbar_f = float(k_f_total.mean())
+        v_mm_p, v_mf_p, v_fm_p, v_ff_p, cov_m_p, cov_f_p, kbar_m, kbar_f, n_m, n_f = decomp
         if kbar_m <= 0 or kbar_f <= 0:
             continue
-        v_mm[p] = float(kmm.var(ddof=1))
-        v_mf[p] = float(kmf.var(ddof=1))
-        v_fm[p] = float(kfm.var(ddof=1))
-        v_ff[p] = float(kff.var(ddof=1))
-        cov_m[p] = float(np.cov(kmm, kmf, ddof=1)[0, 1])
-        cov_f[p] = float(np.cov(kfm, kff, ddof=1)[0, 1])
-        var_km_total = v_mm[p] + v_mf[p] + 2.0 * cov_m[p]
-        var_kf_total = v_fm[p] + v_ff[p] + 2.0 * cov_f[p]
+        v_mm[p] = v_mm_p
+        v_mf[p] = v_mf_p
+        v_fm[p] = v_fm_p
+        v_ff[p] = v_ff_p
+        cov_m[p] = cov_m_p
+        cov_f[p] = cov_f_p
+        var_km_total = v_mm_p + v_mf_p + 2.0 * cov_m_p
+        var_kf_total = v_fm_p + v_ff_p + 2.0 * cov_f_p
         df = (var_km_total / kbar_m) / (4.0 * n_m * kbar_m) + (var_kf_total / kbar_f) / (4.0 * n_f * kbar_f)
         if df > 0:
             ne_per_t[p] = 1.0 / (2.0 * df)
@@ -662,18 +703,10 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
     that case (consistent with a legitimate single-sex pedigree), so
     the warning is the only diagnostic.
     """
-    import warnings
+    _warn_if_uniform_sex(pg, "ne_sex_ratio")
 
     gen = np.asarray(pg.generation)
     sex = np.asarray(pg.sex)
-    if pg.n > 0 and len(np.unique(sex)) < 2:
-        warnings.warn(
-            "ne_sex_ratio: pg.sex is uniform "
-            f"(all {int(sex[0])}); estimator is degenerate and will return ne=None. "
-            "Did you forget to pass sex= to PedigreeGraph.from_arrays?",
-            RuntimeWarning,
-            stacklevel=2,
-        )
     g_max = int(gen.max())
     n_male = np.zeros(g_max + 1, dtype=np.int64)
     n_female = np.zeros(g_max + 1, dtype=np.int64)
@@ -935,9 +968,9 @@ class NeIndividualDeltaFResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
         return {
-            "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
-            "ne_per_gen": [None if not np.isfinite(v) else float(v) for v in self.ne_per_gen],
-            "mean_eqg_per_gen": [None if not np.isfinite(v) else float(v) for v in self.mean_eqg_per_gen],
+            "ne": _optional_float(self.ne),
+            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
+            "mean_eqg_per_gen": [_optional_float(v) for v in self.mean_eqg_per_gen],
             "n_used_per_gen": [int(v) for v in self.n_used_per_gen],
         }
 
@@ -964,10 +997,10 @@ class NeLTCResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
         return {
-            "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
+            "ne": _optional_float(self.ne),
             "asymptote_reached": bool(self.asymptote_reached),
             "n_iterations": int(self.n_iterations),
-            "max_delta_final": None if not np.isfinite(self.max_delta_final) else float(self.max_delta_final),
+            "max_delta_final": _optional_float(self.max_delta_final),
             "sum_c_squared": float(self.sum_c_squared),
         }
 
@@ -1046,19 +1079,19 @@ class NeHillResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
         out: dict[str, Any] = {
-            "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
+            "ne": _optional_float(self.ne),
             "generation_interval": float(self.generation_interval),
             "collapses_to_ne_v": bool(self.collapses_to_ne_v),
-            "T_m": None if self.T_m is None or not np.isfinite(self.T_m) else float(self.T_m),
-            "T_f": None if self.T_f is None or not np.isfinite(self.T_f) else float(self.T_f),
-            "N1_m": None if self.N1_m is None or not np.isfinite(self.N1_m) else float(self.N1_m),
-            "N1_f": None if self.N1_f is None or not np.isfinite(self.N1_f) else float(self.N1_f),
-            "Vk_m": None if self.Vk_m is None or not np.isfinite(self.Vk_m) else float(self.Vk_m),
-            "Vk_f": None if self.Vk_f is None or not np.isfinite(self.Vk_f) else float(self.Vk_f),
-            "kbar_m": None if self.kbar_m is None or not np.isfinite(self.kbar_m) else float(self.kbar_m),
-            "kbar_f": None if self.kbar_f is None or not np.isfinite(self.kbar_f) else float(self.kbar_f),
-            "Ne_m": None if self.Ne_m is None or not np.isfinite(self.Ne_m) else float(self.Ne_m),
-            "Ne_f": None if self.Ne_f is None or not np.isfinite(self.Ne_f) else float(self.Ne_f),
+            "T_m": _optional_float(self.T_m),
+            "T_f": _optional_float(self.T_f),
+            "N1_m": _optional_float(self.N1_m),
+            "N1_f": _optional_float(self.N1_f),
+            "Vk_m": _optional_float(self.Vk_m),
+            "Vk_f": _optional_float(self.Vk_f),
+            "kbar_m": _optional_float(self.kbar_m),
+            "kbar_f": _optional_float(self.kbar_f),
+            "Ne_m": _optional_float(self.Ne_m),
+            "Ne_f": _optional_float(self.Ne_f),
             "vk_scaled": bool(self.vk_scaled),
             "cohort_window": None if self.cohort_window is None else self.cohort_window._asdict(),
             "n_eligible_cohorts": int(self.n_eligible_cohorts),
@@ -1107,13 +1140,13 @@ class NeCaballeroToroResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict."""
         return {
-            "ne": None if self.ne is None or not np.isfinite(self.ne) else float(self.ne),
-            "ne_per_gen": [None if not np.isfinite(v) else float(v) for v in self.ne_per_gen],
+            "ne": _optional_float(self.ne),
+            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
             "mean_self_coancestry_per_gen": [
-                None if not np.isfinite(v) else float(v) for v in self.mean_self_coancestry_per_gen
+                _optional_float(v) for v in self.mean_self_coancestry_per_gen
             ],
             "n_founders_with_descendants_per_gen": [int(v) for v in self.n_founders_with_descendants_per_gen],
-            "slope": None if not np.isfinite(self.slope) else float(self.slope),
+            "slope": _optional_float(self.slope),
         }
 
 
@@ -1241,20 +1274,17 @@ def _hill_age_table(pg: PedigreeGraph) -> dict[str, np.ndarray]:
     table interpretation (e.g. ``m_x`` per-capita fecundity) does not
     apply.  Returned as edge counts per parental age, per parent sex.
     """
-    from pedigree_graph._core import _known_parent_edges
+    assert pg.birth_year is not None
 
-    by = pg.birth_year
-    assert by is not None
-
-    def _ages(parent_arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        _, diffs = _known_parent_edges(parent_arr, by)
+    def _ages(parent_label: Literal["mother", "father"]) -> tuple[np.ndarray, np.ndarray]:
+        _, diffs = pg._known_parent_edges_for(parent_label)
         if diffs.size == 0:
             return np.array([], dtype=np.int32), np.array([], dtype=np.int64)
         ages, counts = np.unique(diffs, return_counts=True)
         return ages.astype(np.int32), counts.astype(np.int64)
 
-    ages_m, counts_m = _ages(np.asarray(pg.father))
-    ages_f, counts_f = _ages(np.asarray(pg.mother))
+    ages_m, counts_m = _ages("father")
+    ages_f, counts_f = _ages("mother")
     return {
         "ages_m": ages_m,
         "offspring_count_m": counts_m,
@@ -1345,29 +1375,14 @@ def ne_hill_overlapping(pg: PedigreeGraph, vk_scale: bool = False) -> NeHillResu
     for c, entry in table.items():
         if c < window.c_min or c > window.c_max:
             continue
-        kmm = entry["k_mm"]
-        kmf = entry["k_mf"]
-        kfm = entry["k_fm"]
-        kff = entry["k_ff"]
-        n_m = len(kmm)
-        n_f = len(kfm)
         # Need at least 2 of each sex for sample variance (ddof=1) and a
-        # meaningful covariance.
-        if n_m < 2 or n_f < 2:
+        # meaningful covariance — _sigma2_from_quadrants returns None below.
+        decomp = _sigma2_from_quadrants(entry)
+        if decomp is None:
             continue
-        v_mm = float(kmm.var(ddof=1))
-        v_mf = float(kmf.var(ddof=1))
-        v_fm = float(kfm.var(ddof=1))
-        v_ff = float(kff.var(ddof=1))
-        cov_m = float(np.cov(kmm, kmf, ddof=1)[0, 1])
-        cov_f = float(np.cov(kfm, kff, ddof=1)[0, 1])
+        v_mm, v_mf, v_fm, v_ff, cov_m, cov_f, kbar_m, kbar_f, n_m, n_f = decomp
         sigma2_m = v_mm + v_mf + 2.0 * cov_m  # Hill 1979 σ²_m
         sigma2_f = v_fm + v_ff + 2.0 * cov_f
-        # Lifetime offspring mean (zeros included) per parent sex
-        k_m_total = kmm + kmf
-        k_f_total = kfm + kff
-        kbar_m = float(k_m_total.mean())
-        kbar_f = float(k_f_total.mean())
 
         if vk_scale:
             sigma2_m = _waples_vk2_expectation(sigma2_m, kbar_m)
@@ -1620,17 +1635,7 @@ def compute_all_ne(
 
     if skip_ne_coancestry:
         results["ne_coancestry"] = ne_coancestry_result
-
-    return {
-        "ne_inbreeding": results["ne_inbreeding"],
-        "ne_coancestry": results["ne_coancestry"],
-        "ne_variance_family_size": results["ne_variance_family_size"],
-        "ne_sex_ratio": results["ne_sex_ratio"],
-        "ne_individual_delta_f": results["ne_individual_delta_f"],
-        "ne_long_term_contributions": results["ne_long_term_contributions"],
-        "ne_hill_overlapping": results["ne_hill_overlapping"],
-        "ne_caballero_toro": results["ne_caballero_toro"],
-    }
+    return results
 
 
 def _result_to_dict(result: Any) -> dict[str, Any]:

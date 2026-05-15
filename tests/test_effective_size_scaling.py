@@ -261,7 +261,7 @@ def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None
 
 
 def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
-    """Phase 7 test helper — retire=True with lazy=False.
+    """Parity helper: retire=True with lazy=False.
 
     Drives the same path as production but with the lazy-alloc gate
     flipped off so parity tests can compare the lazy-allocated retire
@@ -303,7 +303,7 @@ def test_per_gen_mean_kinship_retire_matches_legacy(
 def test_per_gen_mean_kinship_lazy_matches_eager_retire(
     parity_pedigree: PedigreeGraph,
 ) -> None:
-    """Phase 7 parity: lazy-allocated retire bit-identical to eager retire.
+    """Lazy-allocated retire bit-identical to eager retire.
 
     Same arithmetic, different storage layout — bit identity is the
     expected outcome.  Falls back to 1e-12 absolute if the platform
