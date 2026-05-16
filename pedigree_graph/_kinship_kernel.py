@@ -1010,6 +1010,39 @@ def _validate_dp_args(
     return m_idx, f_idx, tw_idx, depth, int(init_cap_per_row)
 
 
+class KinshipDPConfig(NamedTuple):
+    """Three behavior flags passed through to ``_dp_kinship``.
+
+    Bundled at the Python layer so the two thin shims and any future
+    test caller can pick a named preset (``CSC_ASSEMBLY``,
+    ``RETIRING_DEFAULT``) instead of threading three positional
+    booleans.  Numba never sees this NamedTuple — ``_run_dp_core``
+    unpacks it into plain ``bool`` args at the ``_dp_kinship`` call
+    boundary, so dispatch fragmentation is impossible by construction.
+
+    Fields:
+        retire: free DP rows in place at end-of-depth + accumulate
+            inline θ̄.  Required for ``per_gen_mean_kinship``; turned
+            off for CSC assembly which needs the full row storage.
+        lazy: defer row-slot allocation to the first write.  Only
+            valid with ``retire=True``; the never-allocated → live
+            transition relies on freelist slots which retirement
+            populates.
+        debug_asserts: enable retire-correctness asserts inside
+            ``_dp_kinship``.  Test/parity use only.
+    """
+
+    retire: bool
+    lazy: bool
+    debug_asserts: bool
+
+
+# Named presets — the two shapes the production shims actually use.
+# Tests/parity callers build their own when they want a non-default
+# combination (e.g. lazy=False with retire=True).
+_DP_CONFIG_CSC = KinshipDPConfig(retire=False, lazy=False, debug_asserts=False)
+
+
 class DPResult(NamedTuple):
     """Full output bundle from :func:`_run_dp_core`.
 
@@ -1041,20 +1074,24 @@ def _run_dp_core(
     min_kinship: float,
     init_cap_per_row: int | None,
     *,
-    retire: bool,
-    lazy: bool = False,
-    debug_asserts: bool = False,
+    config: KinshipDPConfig,
     grow_stats: np.ndarray | None = None,
     initial_buffer_override: int | None = None,
 ) -> DPResult:
     """Validate args + run :func:`_dp_kinship`; bundle the full output.
 
     Single entry point for both the CSC-assembly path
-    (``retire=False, lazy=False``) and the retiring streaming θ̄ path
-    (``retire=True``, ``lazy`` follows the caller).  Thin Python
-    shims (:func:`_run_dp` and :func:`_run_dp_retiring`) preserve the
-    historical signatures and pick the fields each downstream caller
-    needs from the returned :class:`DPResult`.
+    (``config = KinshipDPConfig(retire=False, lazy=False, ...)``) and the
+    retiring streaming θ̄ path
+    (``config.retire=True``, ``config.lazy`` follows the caller).  Thin
+    Python shims (:func:`_run_dp` and :func:`_run_dp_retiring`)
+    preserve the historical signatures and pick the fields each
+    downstream caller needs from the returned :class:`DPResult`.
+
+    The :class:`KinshipDPConfig` lives entirely at the Python layer —
+    ``_run_dp_core`` unpacks it into plain ``bool`` args at the
+    ``_dp_kinship`` call boundary, so the ``@njit`` kernel still sees
+    three plain bools and can't fragment its dispatch.
 
     ``grow_stats`` and ``initial_buffer_override`` are bench-only
     knobs — production callers leave them at ``None``.
@@ -1068,7 +1105,7 @@ def _run_dp_core(
     cols, vals, row_start, row_count, sum_theta = _dp_kinship(
         n, m_idx, f_idx, tw_idx, depth,
         float(min_kinship), init_cap_per_row,
-        bool(retire), bool(lazy), bool(debug_asserts),
+        bool(config.retire), bool(config.lazy), bool(config.debug_asserts),
         grow_stats, override,
     )
     return DPResult(
@@ -1095,7 +1132,7 @@ def _run_dp(
     """
     r = _run_dp_core(
         n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
-        retire=False, lazy=False,
+        config=_DP_CONFIG_CSC,
     )
     return r.cols, r.vals, r.row_start, r.row_count, r.depth, r.tw_idx
 
@@ -1137,7 +1174,7 @@ def _run_dp_retiring(
     """
     r = _run_dp_core(
         n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
-        retire=True, lazy=_lazy, debug_asserts=debug_asserts,
+        config=KinshipDPConfig(retire=True, lazy=_lazy, debug_asserts=debug_asserts),
         grow_stats=_grow_stats, initial_buffer_override=_initial_buffer_override,
     )
     return r.sum_theta, r.depth, r.tw_idx
