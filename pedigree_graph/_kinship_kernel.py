@@ -530,7 +530,8 @@ def _dp_kinship(
     the invalid combination ``(retire=False, lazy=True)`` is rejected.
 
     The eager path (``lazy=False``) pre-allocates the row buffer up
-    front and is used by the CSC assembly path through ``_run_dp``.
+    front and is used by the CSC assembly path through
+    ``_run_dp_core(config=_DP_CONFIG_CSC)``.
 
     When ``debug_asserts`` is True, each child-row step verifies its
     direct parents have not been retired — the regression gate for
@@ -630,11 +631,6 @@ def _dp_kinship(
         freelist_tops = np.zeros(1, dtype=np.int32)
         fl_init_cap = np.int32(0)
 
-    # Bundle the slab-allocator state once.  Every `_append_entry` call
-    # in the DP loop (and the helpers it inlines) reads through these
-    # four fields; threading them as a NamedTuple keeps the hot-loop
-    # call sites short while still flattening to fixed-offset loads
-    # under numba's `inline="always"`.
     buffers = _FreelistBuffers(
         freelist_starts, freelist_tops, fl_init_cap, grow_stats,
     )
@@ -994,8 +990,8 @@ def _validate_dp_args(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
     """Coerce arrays + resolve ``depth`` and ``init_cap_per_row`` defaults.
 
-    Shared between :func:`_run_dp` and :func:`_run_dp_retiring` so the
-    two entry points reach the kernel with identical, contiguous inputs.
+    Called by :func:`_run_dp_core` so every DP dispatch reaches the
+    kernel with identical, contiguous inputs regardless of caller.
     """
     m_idx = np.ascontiguousarray(m_idx, dtype=np.int32)
     f_idx = np.ascontiguousarray(f_idx, dtype=np.int32)
@@ -1013,9 +1009,9 @@ def _validate_dp_args(
 class KinshipDPConfig(NamedTuple):
     """Three behavior flags passed through to ``_dp_kinship``.
 
-    Bundled at the Python layer so the two thin shims and any future
-    test caller can pick a named preset (``CSC_ASSEMBLY``,
-    ``RETIRING_DEFAULT``) instead of threading three positional
+    Bundled at the Python layer so :func:`_run_dp_core`'s callers can
+    pick the CSC-assembly preset (:data:`_DP_CONFIG_CSC`) or build a
+    retiring/debug config inline instead of threading three positional
     booleans.  Numba never sees this NamedTuple — ``_run_dp_core``
     unpacks it into plain ``bool`` args at the ``_dp_kinship`` call
     boundary, so dispatch fragmentation is impossible by construction.
@@ -1037,9 +1033,6 @@ class KinshipDPConfig(NamedTuple):
     debug_asserts: bool
 
 
-# Named presets — the two shapes the production shims actually use.
-# Tests/parity callers build their own when they want a non-default
-# combination (e.g. lazy=False with retire=True).
 _DP_CONFIG_CSC = KinshipDPConfig(retire=False, lazy=False, debug_asserts=False)
 
 
@@ -1081,12 +1074,12 @@ def _run_dp_core(
     """Validate args + run :func:`_dp_kinship`; bundle the full output.
 
     Single entry point for both the CSC-assembly path
-    (``config = KinshipDPConfig(retire=False, lazy=False, ...)``) and the
-    retiring streaming θ̄ path
-    (``config.retire=True``, ``config.lazy`` follows the caller).  Thin
-    Python shims (:func:`_run_dp` and :func:`_run_dp_retiring`)
-    preserve the historical signatures and pick the fields each
-    downstream caller needs from the returned :class:`DPResult`.
+    (``config = _DP_CONFIG_CSC``) and the retiring streaming θ̄ path
+    (``config.retire=True``, ``config.lazy`` follows the caller).
+    Callers pick the fields they need from the returned
+    :class:`DPResult` — the CSC path consumes
+    ``cols``/``vals``/``row_start``/``row_count``, the retiring path
+    consumes ``sum_theta``, both consume ``depth``/``tw_idx``.
 
     The :class:`KinshipDPConfig` lives entirely at the Python layer —
     ``_run_dp_core`` unpacks it into plain ``bool`` args at the
@@ -1112,72 +1105,6 @@ def _run_dp_core(
         cols=cols, vals=vals, row_start=row_start, row_count=row_count,
         sum_theta=sum_theta, depth=depth, tw_idx=tw_idx,
     )
-
-
-def _run_dp(
-    n: int,
-    m_idx: np.ndarray,
-    f_idx: np.ndarray,
-    tw_idx: np.ndarray,
-    generation: np.ndarray | None,
-    min_kinship: float,
-    init_cap_per_row: int | None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Thin shim: CSC-assembly DP (retire=False, lazy=False).
-
-    Used by :func:`_build_kinship_csc` for CSC assembly and by the
-    legacy parity path in :func:`_compute_theta_per_gen`.  Returns the
-    DP row storage along with the resolved ``depth`` and contiguous
-    ``tw_idx`` so downstream code can avoid re-casting.
-    """
-    r = _run_dp_core(
-        n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
-        config=_DP_CONFIG_CSC,
-    )
-    return r.cols, r.vals, r.row_start, r.row_count, r.depth, r.tw_idx
-
-
-def _run_dp_retiring(
-    n: int,
-    m_idx: np.ndarray,
-    f_idx: np.ndarray,
-    tw_idx: np.ndarray,
-    generation: np.ndarray | None,
-    min_kinship: float,
-    init_cap_per_row: int | None,
-    debug_asserts: bool = False,
-    *,
-    _lazy: bool = True,
-    _grow_stats: np.ndarray | None = None,
-    _initial_buffer_override: int | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Thin shim: retiring DP with end-of-depth retirement + inline θ̄.
-
-    Returns ``(sum_theta, depth, tw_idx)``.  The DP row storage is
-    progressively retired during the run and goes out of scope on
-    return; only the per-generation θ̄ sum survives.
-
-    ``_lazy`` is a test-only escape hatch: production callers must
-    leave it at ``True`` (lazy row-slot allocation).  The parity tests
-    pass ``_lazy=False`` to exercise the eager-allocated retire path
-    as a comparator.
-
-    ``_grow_stats`` is a benchmark-only escape hatch.  Pass a
-    pre-allocated length-3 int64 array to capture
-    ``[_grow_global_call_count, total_entries_copied, peak_allocated]``;
-    leave ``None`` for production to use a fresh zeroed placeholder.
-
-    ``_initial_buffer_override`` is a benchmark-only escape hatch for
-    sweeping initial-buffer heuristics.  Pass ``None`` (production) or
-    ``0`` to use the current heuristic
-    ``max(1<<16, init_cap_per_row*1024)``; positive int swaps it.
-    """
-    r = _run_dp_core(
-        n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
-        config=KinshipDPConfig(retire=True, lazy=_lazy, debug_asserts=debug_asserts),
-        grow_stats=_grow_stats, initial_buffer_override=_initial_buffer_override,
-    )
-    return r.sum_theta, r.depth, r.tw_idx
 
 
 def _build_kinship_csc(
@@ -1209,17 +1136,13 @@ def _build_kinship_csc(
         column are sorted ascendingly (under the common case of the
         kernel iterating ``phen_pos = arange(n)``).
     """
-    cols, vals, row_start, row_count, depth, tw_idx = _run_dp(
+    r = _run_dp_core(
         n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
+        config=_DP_CONFIG_CSC,
     )
     phen_pos = np.arange(n, dtype=np.int32)
     indptr, indices, values = _assemble_csc(
-        cols,
-        vals,
-        row_start,
-        row_count,
-        phen_pos,
-        False,
+        r.cols, r.vals, r.row_start, r.row_count, phen_pos, False,
     )
     return indptr, indices, values
 
@@ -1361,17 +1284,18 @@ def _compute_theta_per_gen(
         generation, NaN for cohorts with fewer than 2 non-twin members.
     """
     if _debug_no_retire:
-        cols, vals, row_start, row_count, depth, tw_idx_c = _run_dp(
+        r = _run_dp_core(
             n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
+            config=_DP_CONFIG_CSC,
         )
         return _per_gen_mean_kinship_from_dp(
-            cols, vals, row_start, row_count, depth, tw_idx_c,
+            r.cols, r.vals, r.row_start, r.row_count, r.depth, r.tw_idx,
         )
-    sum_theta, depth, tw_idx_c = _run_dp_retiring(
+    r = _run_dp_core(
         n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
-        debug_asserts=_debug_asserts,
+        config=KinshipDPConfig(retire=True, lazy=True, debug_asserts=_debug_asserts),
     )
-    return _finalize_from_sum_theta(sum_theta, depth, tw_idx_c)
+    return _finalize_from_sum_theta(r.sum_theta, r.depth, r.tw_idx)
 
 
 # ---------------------------------------------------------------------------

@@ -294,8 +294,22 @@ class PedigreeGraph:
                     f"(first: row {int(edge_rows[first])}, diff={int(diffs[first])})"
                 )
 
+    def _ensure_parent_csr(self) -> None:
+        """Idempotent (re)build of ``self._Am`` and ``self._Af``.
+
+        No-op when both matrices are already present.  Called by
+        ``__init__`` (initial build), by :meth:`extract_pairs` (rebuild
+        after a prior call dropped them), and by
+        :meth:`count_pairs_streaming` (same reason).  Single guarded
+        helper avoids duplicating the ``hasattr`` check at each
+        rebuild site.
+        """
+        if hasattr(self, "_Am") and hasattr(self, "_Af"):
+            return
+        self._build_parent_csr()
+
     def _build_parent_csr(self) -> None:
-        """Build ``self._Am`` and ``self._Af`` from current parent arrays.
+        """Unconditionally (re)build ``self._Am`` and ``self._Af``.
 
         Re-called by :meth:`count_pairs_streaming` after
         :meth:`extract_pairs` drops the matrices to free memory.  Keeping
@@ -948,9 +962,7 @@ class PedigreeGraph:
 
         # Pre-trigger cached properties needed by downstream extractions.
         # _Am/_Af are only needed to build _A; delete after to free memory.
-        # Rebuild if a prior extract_pairs call already freed them.
-        if not hasattr(self, "_Am") or not hasattr(self, "_Af"):
-            self._build_parent_csr()
+        self._ensure_parent_csr()
         if max_degree >= 2:
             _ = self._A2  # chains: _Am, _Af → _A → _A2
         else:
@@ -1351,8 +1363,7 @@ class PedigreeGraph:
         n = self.n
 
         # Lazily rebuild _Am / _Af if extract_pairs deleted them.
-        if not hasattr(self, "_Am") or not hasattr(self, "_Af"):
-            self._build_parent_csr()
+        self._ensure_parent_csr()
 
         counts: dict[str, int] = {code: 0 for code in REL_REGISTRY}
         children_count = np.diff(self._A.tocsc().indptr).astype(np.int64)

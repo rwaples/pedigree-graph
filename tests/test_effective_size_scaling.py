@@ -270,20 +270,21 @@ def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
     not the order of arithmetic operations.
     """
     from pedigree_graph._kinship_kernel import (
+        KinshipDPConfig,
         _finalize_from_sum_theta,
-        _run_dp_retiring,
+        _run_dp_core,
     )
 
-    sum_theta, depth, tw_idx = _run_dp_retiring(
+    r = _run_dp_core(
         pg.n,
         np.asarray(pg.mother, dtype=np.int32),
         np.asarray(pg.father, dtype=np.int32),
         np.asarray(pg.twin, dtype=np.int32),
         np.asarray(pg.generation, dtype=np.int32),
         0.0, None,
-        _lazy=False,
+        config=KinshipDPConfig(retire=True, lazy=False, debug_asserts=False),
     )
-    return _finalize_from_sum_theta(sum_theta, depth, tw_idx)
+    return _finalize_from_sum_theta(r.sum_theta, r.depth, r.tw_idx)
 
 
 def test_per_gen_mean_kinship_retire_matches_legacy(
