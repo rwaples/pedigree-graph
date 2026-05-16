@@ -16,8 +16,8 @@ import scipy.sparse as sp
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
-    _compute_F_meuwissen_luo,
     _compute_depth,
+    _compute_F_meuwissen_luo,
 )
 
 
@@ -109,7 +109,7 @@ def test_deeper_chain_15gen():
     # 15-generation parent-offspring chain (mother only); F stays 0
     # throughout, but the depth bookkeeping should not break.
     n = 15
-    m = [-1] + list(range(n - 1))
+    m = [-1, *list(range(n - 1))]
     f = [-1] * n
     F = _F(m, f, n)
     assert np.allclose(F, np.zeros(n))

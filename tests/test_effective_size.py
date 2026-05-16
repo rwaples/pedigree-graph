@@ -25,7 +25,6 @@ from pedigree_graph._effective_size import _per_gen_mean_kinship
 from pedigree_graph._kinship_kernel import (
     _compute_eqg,
     _compute_theta_per_gen,
-    _per_gen_mean_kinship_from_dp,
 )
 
 

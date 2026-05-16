@@ -13,8 +13,8 @@ to pandas: all inputs are numpy arrays remapped to 0..n-1 row indices.
 __all__ = [
     "_assemble_csc",
     "_build_kinship_csc",
-    "_checked_int32_indptr_from_counts",
     "_check_topological",
+    "_checked_int32_indptr_from_counts",
     "_compute_F_meuwissen_luo",
     "_compute_depth",
     "_compute_eqg",
@@ -1128,6 +1128,8 @@ def _build_kinship_csc(
         min_kinship: off-diagonal entries with ``value <= min_kinship``
             are dropped during the DP (kernel-side pruning).  Diagonal
             always kept.
+        init_cap_per_row: optional per-row initial column capacity for the
+            DP row buffer.  ``None`` defers to the kernel default.
 
     Returns:
         ``(indptr, indices, data)`` suitable for
@@ -1234,8 +1236,10 @@ def _per_gen_mean_kinship_from_dp(
     non-twin members.
 
     Args:
-        cols, vals, row_start, row_count: DP output from
-            :func:`_dp_kinship`.
+        cols: DP-output column indices array from :func:`_dp_kinship`.
+        vals: DP-output kinship values array from :func:`_dp_kinship`.
+        row_start: DP-output per-row offsets array from :func:`_dp_kinship`.
+        row_count: DP-output per-row entry counts array from :func:`_dp_kinship`.
         generation: per-individual generation index (founders = 0).
         twin_idx: per-individual twin partner row index, ``-1`` for
             non-twins.
@@ -1276,7 +1280,12 @@ def _compute_theta_per_gen(
     under ``_debug_no_retire=True``.
 
     Args:
-        n, m_idx, f_idx, tw_idx, generation, min_kinship,
+        n: same semantics as :func:`_build_kinship_csc`.
+        m_idx: same semantics as :func:`_build_kinship_csc`.
+        f_idx: same semantics as :func:`_build_kinship_csc`.
+        tw_idx: same semantics as :func:`_build_kinship_csc`.
+        generation: same semantics as :func:`_build_kinship_csc`.
+        min_kinship: same semantics as :func:`_build_kinship_csc`.
         init_cap_per_row: same semantics as :func:`_build_kinship_csc`.
 
     Returns:

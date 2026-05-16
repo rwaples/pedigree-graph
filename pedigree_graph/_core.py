@@ -1365,12 +1365,12 @@ class PedigreeGraph:
         # Lazily rebuild _Am / _Af if extract_pairs deleted them.
         self._ensure_parent_csr()
 
-        counts: dict[str, int] = {code: 0 for code in REL_REGISTRY}
+        counts: dict[str, int] = dict.fromkeys(REL_REGISTRY, 0)
         children_count = np.diff(self._A.tocsc().indptr).astype(np.int64)
 
         # ---- Degree 0: MZ ---------------------------------------------
         mz_i, _ = self._mz_twin_pairs()
-        counts["MZ"] = int(len(mz_i))
+        counts["MZ"] = len(mz_i)
 
         # ---- Degree 1: MO, FO, FS -------------------------------------
         counts["MO"] = int(self._Am.nnz)

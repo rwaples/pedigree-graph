@@ -7,8 +7,6 @@ underlying pedigree breaks one of those conditions.
 """
 
 import numpy as np
-import pandas as pd
-import pytest
 
 from pedigree_graph import PedigreeGraph
 

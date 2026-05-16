@@ -19,8 +19,8 @@ arithmetic.  Two semantics live here:
 
 from __future__ import annotations
 
-import numpy as np
 import numba
+import numpy as np
 import scipy.sparse as sp
 
 
