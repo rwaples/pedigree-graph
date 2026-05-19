@@ -17,8 +17,9 @@ Estimator coverage:
 * :func:`ne_hill_overlapping`        — Hill 1979 (collapses to Ne_V at L=1).
 * :func:`ne_caballero_toro`          — Caballero & Toro 2002 self-coancestry regression.
 
-Convenience entry: :func:`compute_all_ne` builds the kinship matrix and
-the founder-contribution matrix once and dispatches all eight estimators.
+Convenience entry: :func:`compute_all_ne` runs all eight estimators in
+one call, sharing cached F, streamed θ̄, and founder-contribution
+summaries where applicable.
 
 Founders are excluded from the ΔF / Δθ regressions; they are included
 in the parent set for the gen-0 → gen-1 family-size variance transition.

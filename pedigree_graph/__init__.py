@@ -13,8 +13,9 @@ Effective population size (Ne):
     Estimators: ne_caballero_toro, ne_coancestry, ne_hill_overlapping,
         ne_inbreeding, ne_individual_delta_f, ne_long_term_contributions,
         ne_sex_ratio, ne_variance_family_size
-    Convenience: compute_all_ne (runs all eight, sharing K and the
-        founder-contribution matrix)
+    Convenience: compute_all_ne (runs all eight estimators, sharing
+        cached F, streamed θ̄, and founder-contribution summaries where
+        applicable)
 """
 
 from pedigree_graph._cohort_utils import (

@@ -39,17 +39,24 @@ live on the corresponding GitHub release pages.
 - New private kernel module `pedigree_graph/_lineage_kernel.py` houses
   the descendant (numba-JIT) and ancestor (scipy sparse) primitives.
 
-- **`PedigreeGraph.count_pairs_streaming(max_degree=2, scope="subsample")`**
+- **`PedigreeGraph.count_pairs_streaming(max_degree=2, scope="full")`**
   — new method.  Memory-bounded relationship pair counts via pure
   scalar arithmetic; no pair-key arrays are ever materialized.  Peak
   memory is O(N) regardless of pedigree density.  Returns all 23
   codes from `REL_REGISTRY`.  Bit-identical to `count_pairs` for
-  the 10 simple codes (`MO`, `FO`, `GP`, `GGP`, `GGGP`, `G3GP`,
-  `MZ`, `FS`, `MHS`, `PHS`); approximate (~1% on deep low-inbreeding
+  the 10 simple codes (`MZ`, `MO`, `FO`, `FS`, `MHS`, `PHS`, `GP`,
+  `GGP`, `GGGP`, `G3GP`); approximate (~1% on deep low-inbreeding
   pedigrees) for the 13 cousin / collateral codes (`Av`, `1C`,
   `H1C`, `HAv`, `GAv`, `GGAv`, `G3Av`, `HGAv`, `HGGAv`, `1C1R`,
-  `H1C1R`, `1C2R`, `2C`).  See `LIMITATIONS.md` for the full
-  precision contract and the rationale behind shipping the
-  approximate variant.  Benchmark: 5 seconds on a 783K-row
-  stallion-heavy livestock pedigree where both matrix and BFS
-  engines OOM at 30 GB.
+  `H1C1R`, `1C2R`, `2C`).  The scalar path is **full-graph only**:
+  `scope='subsample'` raises `NotImplementedError` on graphs built
+  via `from_subsample` (use `count_pairs` for subsample-restricted
+  counts).  See `LIMITATIONS.md` for the full precision contract.
+  Benchmark: 5 seconds on a 783K-row stallion-heavy livestock
+  pedigree where both matrix and BFS engines OOM at 30 GB.
+
+- **`max_degree` validation** — `extract_pairs`, `count_pairs`, and
+  `count_pairs_streaming` now reject `max_degree` outside `[0, 5]`
+  with `ValueError`.  Degree 0 is accepted (cheap codes MZ / MO /
+  FO / FS are computed regardless; the cap controls the expensive
+  matrix products at degree 2 and above).
