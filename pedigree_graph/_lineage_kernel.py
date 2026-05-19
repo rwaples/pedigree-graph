@@ -37,6 +37,10 @@ def _compute_n_descendants(
     indices in reverse, pushing each row's contribution up to its
     parents.  When we visit i, every descendant of i has higher row
     index and was therefore visited first, so ``n_desc[i]`` is final.
+
+    Returns an ``int64`` array — path counts can exceed unique-descendant
+    counts on inbred / loop-heavy pedigrees, so the int32 downcast is
+    deferred to the public method which checks for overflow.
     """
     n_desc = np.zeros(n, dtype=np.int64)
     for i in range(n - 1, -1, -1):
@@ -47,7 +51,7 @@ def _compute_n_descendants(
         f = f_idx[i]
         if f >= 0:
             n_desc[f] += contrib
-    return n_desc.astype(np.int32)
+    return n_desc
 
 
 def _compute_n_ancestors(

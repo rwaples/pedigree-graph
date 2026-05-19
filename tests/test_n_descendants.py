@@ -8,6 +8,7 @@ will fail loudly.
 """
 
 import numpy as np
+import pytest
 
 from pedigree_graph import PedigreeGraph
 
@@ -84,3 +85,42 @@ def test_returns_int32_and_caches():
     assert first.dtype == np.int32
     second = pg.compute_n_descendants()
     assert first is second  # identity check on cache
+
+
+def test_overflow_raises(monkeypatch):
+    """A path count exceeding int32 max must raise ``OverflowError``,
+    not silently wrap on the downcast.
+
+    Real pedigrees would need billions of rows or pathological loops to
+    blow int32, so we inject an overflowing int64 array through the
+    kernel boundary.
+    """
+    pg = _pg([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
+    over = np.iinfo(np.int32).max + 1
+
+    def fake_kernel(m, f, n):
+        out = np.zeros(n, dtype=np.int64)
+        out[0] = over
+        return out
+
+    import pedigree_graph._core as core
+    monkeypatch.setattr(core, "_compute_n_descendants", fake_kernel)
+    with pytest.raises(OverflowError, match="int32 max"):
+        pg.compute_n_descendants()
+
+
+def test_no_overflow_at_int32_max(monkeypatch):
+    """Exactly ``int32_max`` is the boundary and must NOT raise."""
+    pg = _pg([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
+    boundary = np.iinfo(np.int32).max
+
+    def fake_kernel(m, f, n):
+        out = np.zeros(n, dtype=np.int64)
+        out[0] = boundary
+        return out
+
+    import pedigree_graph._core as core
+    monkeypatch.setattr(core, "_compute_n_descendants", fake_kernel)
+    result = pg.compute_n_descendants()
+    assert result.dtype == np.int32
+    assert int(result[0]) == boundary

@@ -20,7 +20,10 @@ live on the corresponding GitHub release pages.
   count; in inbred pedigrees it over-counts a descendant reachable via
   multiple ancestor paths.  Matches the convention used historically
   by `pedsum` (`compute_descendants`) and by the matrix engine's GP /
-  Av / 1C pair counts.
+  Av / 1C pair counts.  Raises `OverflowError` if any per-individual
+  path count exceeds `int32` max (the kernel accumulates in `int64`
+  and the cast happens after a bounds check, so deeply inbred
+  pedigrees cannot silently wrap).
 
 - **`PedigreeGraph.from_arrays(...)`** — accepts a new optional `sex`
   kwarg (`np.ndarray | None`).  When omitted, behaviour is unchanged

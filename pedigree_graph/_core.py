@@ -1902,11 +1902,28 @@ class PedigreeGraph:
 
         Returns an ``int32`` array of length ``self.n``, cached on the
         graph (``self._n_descendants``).
+
+        Raises:
+            OverflowError: if any per-individual path count exceeds
+                ``np.iinfo(np.int32).max``.  The kernel accumulates in
+                ``int64``; the cast to ``int32`` happens here after a
+                bounds check so deeply inbred / loop-heavy pedigrees
+                cannot silently wrap.
         """
         if self._n_descendants is None:
-            self._n_descendants = _compute_n_descendants(
+            n_desc64 = _compute_n_descendants(
                 self.mother, self.father, self.n,
             )
+            if n_desc64.size and int(n_desc64.max()) > np.iinfo(np.int32).max:
+                raise OverflowError(
+                    "compute_n_descendants: at least one path count exceeds "
+                    f"int32 max ({np.iinfo(np.int32).max:,}); the pedigree is "
+                    "too inbred / loop-heavy for the int32-cached output.  "
+                    "Inspect the int64 kernel output via "
+                    "pedigree_graph._lineage_kernel._compute_n_descendants "
+                    "if larger values are required.",
+                )
+            self._n_descendants = n_desc64.astype(np.int32)
         return self._n_descendants
 
     def compute_n_ancestors(self) -> np.ndarray:
