@@ -7,6 +7,7 @@ underlying pedigree breaks one of those conditions.
 """
 
 import numpy as np
+import pytest
 
 from pedigree_graph import PedigreeGraph
 
@@ -134,3 +135,129 @@ def test_streaming_n1_founder():
     counts = pg.count_pairs_streaming(max_degree=5)
     for code, c in counts.items():
         assert c == 0, f"{code} = {c} on N=1, expected 0"
+
+
+# ---------------------------------------------------------------------------
+# API validation: scope, max_degree, from_subsample interaction
+# ---------------------------------------------------------------------------
+
+
+def test_streaming_invalid_scope_raises(small_pedigree):
+    pg = PedigreeGraph(small_pedigree)
+    with pytest.raises(ValueError, match="scope must be"):
+        pg.count_pairs_streaming(scope="bogus")
+
+
+def test_streaming_default_scope_is_full(small_pedigree):
+    """Default ``scope`` is ``'full'``; on non-subsample graphs it matches
+    explicit ``scope='full'``."""
+    pg_default = PedigreeGraph(small_pedigree)
+    pg_explicit = PedigreeGraph(small_pedigree)
+    assert (
+        pg_default.count_pairs_streaming(max_degree=5)
+        == pg_explicit.count_pairs_streaming(max_degree=5, scope="full")
+    )
+
+
+def test_streaming_subsample_on_from_subsample_raises(small_pedigree):
+    """``scope='subsample'`` on a ``from_subsample`` graph is not supported.
+
+    The scalar path is full-graph only.  Callers needing subsample-restricted
+    counts should use ``count_pairs``; callers wanting full-graph counts
+    should pass ``scope='full'`` explicitly.
+    """
+    df = small_pedigree
+    half = df.iloc[: len(df) // 2].reset_index(drop=True)
+    pg = PedigreeGraph.from_subsample(df, half)
+    with pytest.raises(NotImplementedError, match="from_subsample"):
+        pg.count_pairs_streaming(scope="subsample")
+
+
+def test_streaming_full_scope_on_from_subsample_works(small_pedigree):
+    """``scope='full'`` is valid on a ``from_subsample`` graph and matches
+    the full-graph result."""
+    df = small_pedigree
+    half = df.iloc[: len(df) // 2].reset_index(drop=True)
+    pg_sub = PedigreeGraph.from_subsample(df, half)
+    pg_full = PedigreeGraph(df)
+    assert (
+        pg_sub.count_pairs_streaming(max_degree=5, scope="full")
+        == pg_full.count_pairs_streaming(max_degree=5, scope="full")
+    )
+
+
+def test_streaming_subsample_on_plain_graph_equals_full(small_pedigree):
+    """On a plain (non-subsample) graph, ``scope='subsample'`` is equivalent
+    to ``scope='full'``."""
+    pg_sub = PedigreeGraph(small_pedigree)
+    pg_full = PedigreeGraph(small_pedigree)
+    assert (
+        pg_sub.count_pairs_streaming(max_degree=5, scope="subsample")
+        == pg_full.count_pairs_streaming(max_degree=5, scope="full")
+    )
+
+
+def test_streaming_av_within_approximate_bound(small_pedigree):
+    """``Av`` belongs to the approximate contract — gap from matrix is small
+    but need not be zero on twin-having / shallow-founder fixtures."""
+    pg_s = PedigreeGraph(small_pedigree)
+    pg_m = PedigreeGraph(small_pedigree)
+    s = pg_s.count_pairs_streaming(max_degree=5, scope="full")
+    m = pg_m.count_pairs(max_degree=5, scope="full")
+    # Within 5% (or 20 pairs absolute, whichever is larger).
+    assert abs(s["Av"] - m["Av"]) <= max(20, m["Av"] // 20)
+
+
+# ---------------------------------------------------------------------------
+# max_degree validation (covers all three public APIs)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad", [-1, 6, 100])
+def test_extract_pairs_invalid_max_degree(small_pedigree, bad):
+    pg = PedigreeGraph(small_pedigree)
+    with pytest.raises(ValueError, match="max_degree must be"):
+        pg.extract_pairs(max_degree=bad)
+
+
+@pytest.mark.parametrize("bad", [-1, 6, 100])
+def test_count_pairs_invalid_max_degree(small_pedigree, bad):
+    pg = PedigreeGraph(small_pedigree)
+    with pytest.raises(ValueError, match="max_degree must be"):
+        pg.count_pairs(max_degree=bad)
+
+
+@pytest.mark.parametrize("bad", [-1, 6, 100])
+def test_count_pairs_streaming_invalid_max_degree(small_pedigree, bad):
+    pg = PedigreeGraph(small_pedigree)
+    with pytest.raises(ValueError, match="max_degree must be"):
+        pg.count_pairs_streaming(max_degree=bad)
+
+
+def test_max_degree_zero_skips_degree_2_plus(small_pedigree):
+    """``max_degree=0`` is a legitimate query.
+
+    Cheap codes (``MZ`` and degree-1 ``MO``/``FO``/``FS``) are always
+    computed; the cap controls the expensive sparse matrix products at
+    degree 2 and above.  Assert the expensive codes are zero and MZ
+    matches between engines.
+    """
+    pg_s = PedigreeGraph(small_pedigree)
+    s = pg_s.count_pairs_streaming(max_degree=0)
+    pg_m = PedigreeGraph(small_pedigree)
+    m = pg_m.count_pairs(max_degree=0, scope="full")
+    assert s["MZ"] == m["MZ"]
+    for code in ("GP", "Av", "GGP", "HAv", "GAv", "1C", "GGGP",
+                 "HGAv", "GGAv", "H1C", "1C1R", "G3GP", "HGGAv",
+                 "G3Av", "H1C1R", "1C2R", "2C"):
+        assert s[code] == 0, f"streaming {code}={s[code]} should be 0 at max_degree=0"
+        assert m[code] == 0, f"matrix {code}={m[code]} should be 0 at max_degree=0"
+
+
+def test_max_degree_five_is_valid(small_pedigree):
+    """Upper bound of the validator is 5 (REL_REGISTRY tops out at degree 5)."""
+    pg = PedigreeGraph(small_pedigree)
+    # Should not raise.
+    _ = pg.count_pairs_streaming(max_degree=5)
+    _ = PedigreeGraph(small_pedigree).count_pairs(max_degree=5)
+    _ = PedigreeGraph(small_pedigree).extract_pairs(max_degree=5)

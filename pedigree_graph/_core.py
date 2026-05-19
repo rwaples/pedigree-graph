@@ -170,6 +170,22 @@ for _rt in [
 # Kinship lookup by code — single source of truth for all consumers
 PAIR_KINSHIP: dict[str, float] = {rt.code: rt.kinship for rt in REL_REGISTRY.values()}
 
+# Valid ``max_degree`` range for the public pair APIs.  Degree 0 = MZ only
+# (still a useful query — twins-only counts); degree 5 = full registry.
+_MAX_DEGREE_MIN = 0
+_MAX_DEGREE_MAX = 5
+
+
+def _validate_max_degree(max_degree: int) -> int:
+    """Coerce *max_degree* to int and reject values outside ``[0, 5]``."""
+    md = int(max_degree)
+    if md < _MAX_DEGREE_MIN or md > _MAX_DEGREE_MAX:
+        raise ValueError(
+            f"max_degree must be in [{_MAX_DEGREE_MIN}, {_MAX_DEGREE_MAX}], "
+            f"got {max_degree!r}",
+        )
+    return md
+
 
 class PedigreeGraph:
     """Parent→child DAG for efficient relationship queries.
@@ -951,6 +967,7 @@ class PedigreeGraph:
         Returns:
             Dict mapping relationship code to (idx1, idx2) row-index arrays.
         """
+        max_degree = _validate_max_degree(max_degree)
         t_total = time.perf_counter()
         pairs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         empty = np.array([], dtype=np.intp)
@@ -1296,6 +1313,7 @@ class PedigreeGraph:
         """
         if scope not in ("subsample", "full"):
             raise ValueError(f"scope must be 'subsample' or 'full', got {scope!r}")
+        max_degree = _validate_max_degree(max_degree)
 
         key = ("matrix", int(max_degree), 0.0)
         entry = self._pair_count_cache.get(key)
@@ -1308,7 +1326,7 @@ class PedigreeGraph:
     def count_pairs_streaming(
         self,
         max_degree: int = 2,
-        scope: Literal["subsample", "full"] = "subsample",
+        scope: Literal["subsample", "full"] = "full",
     ) -> dict[str, int]:
         """Memory-bounded relationship pair counts via pure scalar arithmetic.
 
@@ -1318,18 +1336,23 @@ class PedigreeGraph:
         run in seconds on stallion-heavy 783K-row livestock pedigrees
         that OOM the matrix and BFS engines.
 
+        The scalar path is **full-graph only** — the cache slot it
+        populates holds identical raw/subsample dicts.  On graphs built
+        via :meth:`from_subsample`, ``scope='subsample'`` raises
+        ``NotImplementedError``; use :meth:`count_pairs` for
+        subsample-restricted counts.
+
         **Precision contract**:
 
-        - Bit-identical to ``count_pairs`` on **deep, non-inbred,
-          twin-free** pedigrees for the lineal codes (``MO``, ``FO``,
-          ``GP``, ``GGP``, ``GGGP``, ``G3GP``), all sibling codes
-          (``MZ``, ``FS``, ``MHS``, ``PHS``), and ``Av``.
-        - Cousin and collateral codes (``1C``, ``H1C``, ``Av``,
-          ``HAv``, ``GAv``, ``GGAv``, ``G3Av``, ``HGAv``, ``HGGAv``,
-          ``1C1R``, ``H1C1R``, ``1C2R``, ``2C``) use scalar formulas
-          that assume each individual has the full complement of
-          known grandparents at the relevant depth.  Diverges from
-          the matrix engine on:
+        - Exact (bit-identical to :meth:`count_pairs` on every input)
+          for 10 codes: ``MZ``, ``MO``, ``FO``, ``FS``, ``MHS``,
+          ``PHS``, ``GP``, ``GGP``, ``GGGP``, ``G3GP``.
+        - Approximate for 13 cousin / collateral codes: ``Av``,
+          ``1C``, ``H1C``, ``HAv``, ``GAv``, ``GGAv``, ``G3Av``,
+          ``HGAv``, ``HGGAv``, ``1C1R``, ``H1C1R``, ``1C2R``, ``2C``.
+          The scalar formulas assume each individual has the full
+          complement of known grandparents at the relevant depth and
+          diverge from the matrix engine on:
           (a) shallow pedigrees where many founders have unknown
               grandparents (constants like ``4*FS`` over-subtract);
               ``H1C`` in particular may clamp to ``0`` on pedigrees
@@ -1345,19 +1368,35 @@ class PedigreeGraph:
 
         Returns a dict containing all 23 codes; codes above
         ``max_degree`` are ``0``.  Populates
-        ``self._pair_count_cache[("streaming", max_degree, 0.0)]`` (the
-        scalar path returns full-graph counts; subsample-restricted
-        callers should fall back to ``extract_pairs``).
+        ``self._pair_count_cache[("streaming", max_degree, 0.0)]``.
 
         Args:
-            max_degree: 1-5; default 2 (matches ``count_pairs``).
-            scope: ``"subsample"`` (default) or ``"full"``.
+            max_degree: 0-5; default 2 (matches :meth:`count_pairs`).
+                Degree 0 still computes the cheap MZ / MO / FO / FS
+                codes; the cap controls the expensive matrix products
+                at degree 2 and above.
+            scope: ``"full"`` (default) or ``"subsample"``.  On
+                non-subsample graphs the two are equivalent.  On
+                ``from_subsample`` graphs, ``"subsample"`` raises
+                ``NotImplementedError``.
         """
+        if scope not in ("subsample", "full"):
+            raise ValueError(f"scope must be 'subsample' or 'full', got {scope!r}")
+        max_degree = _validate_max_degree(max_degree)
+        if scope == "subsample" and self._sample_mask is not None:
+            raise NotImplementedError(
+                "count_pairs_streaming(scope='subsample') is not supported on "
+                "graphs constructed via from_subsample; the scalar path is "
+                "full-graph only.  Use count_pairs() for subsample-restricted "
+                "counts, or call count_pairs_streaming(scope='full') for the "
+                "underlying full-pedigree counts.",
+            )
+
         key = ("streaming", int(max_degree), 0.0)
         entry = self._pair_count_cache.get(key)
         if entry is not None:
-            raw, sub = entry
-            return dict(sub) if scope == "subsample" else dict(raw)
+            raw, _sub = entry
+            return dict(raw)
 
         t_total = time.perf_counter()
         n = self.n
@@ -1428,7 +1467,7 @@ class PedigreeGraph:
             )
 
         if max_degree < 2:
-            return self._finalise_scalar_counts(counts, scope, max_degree, t_total)
+            return self._finalise_scalar_counts(counts, max_degree, t_total)
 
         # ---- Degree 2: GP, Av -----------------------------------------
         counts["GP"] = int(self._A2.nnz)
@@ -1449,7 +1488,7 @@ class PedigreeGraph:
             counts["Av"] = int(((pair_k - 1) * pair_sum_d1).sum())
 
         if max_degree < 3:
-            return self._finalise_scalar_counts(counts, scope, max_degree, t_total)
+            return self._finalise_scalar_counts(counts, max_degree, t_total)
 
         # ---- Degree 3: GGP, HAv, GAv, 1C, H1C -------------------------
         counts["GGP"] = int(self._A3.nnz)
@@ -1490,7 +1529,7 @@ class PedigreeGraph:
         )
 
         if max_degree < 4:
-            return self._finalise_scalar_counts(counts, scope, max_degree, t_total)
+            return self._finalise_scalar_counts(counts, max_degree, t_total)
 
         # ---- Degree 4: GGGP, HGAv, GGAv, 1C1R -------------------------
         counts["GGGP"] = int(self._A4.nnz)
@@ -1513,7 +1552,7 @@ class PedigreeGraph:
         counts["HGAv"] = m_hgav + f_hgav - 2 * counts["GAv"]
 
         if max_degree < 5:
-            return self._finalise_scalar_counts(counts, scope, max_degree, t_total)
+            return self._finalise_scalar_counts(counts, max_degree, t_total)
 
         # ---- Degree 5: G3GP, HGGAv, G3Av, H1C1R, 1C2R, 2C -------------
         counts["G3GP"] = int(self._A5.nnz)
@@ -1544,7 +1583,7 @@ class PedigreeGraph:
             - counts["HGAv"],
         )
 
-        return self._finalise_scalar_counts(counts, scope, max_degree, t_total)
+        return self._finalise_scalar_counts(counts, max_degree, t_total)
 
     @staticmethod
     def _per_sex_anchor_sums(
@@ -1580,19 +1619,22 @@ class PedigreeGraph:
     def _finalise_scalar_counts(
         self,
         counts: dict[str, int],
-        scope: Literal["subsample", "full"],
         max_degree: int,
         t_total: float,
     ) -> dict[str, int]:
-        """Persist scalar streaming counts to the keyed cache and return per scope."""
-        raw = dict(counts)
-        sub = dict(counts)
-        self._pair_count_cache[("streaming", int(max_degree), 0.0)] = (raw, sub)
+        """Persist scalar streaming counts to the keyed cache and return them.
+
+        The streaming path is full-graph only (``scope='subsample'`` is
+        rejected on ``from_subsample`` graphs at the public entrypoint),
+        so ``raw`` and ``sub`` slots in the cache hold the same dict.
+        """
+        cached = dict(counts)
+        self._pair_count_cache[("streaming", int(max_degree), 0.0)] = (cached, cached)
         logger.info(
             "count_pairs_streaming total: %.3fs",
             time.perf_counter() - t_total,
         )
-        return dict(raw) if scope == "full" else dict(sub)
+        return dict(cached)
 
     # ------------------------------------------------------------------
     # Alternative constructor
