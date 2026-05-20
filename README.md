@@ -135,10 +135,12 @@ a `FutureWarning`.
 
 6. **Performance.**  Scaling claims (BFS faster than matrix above
    ~5M individuals, where the matrix engine OOMs) are unverified at
-   the time of v0.2.0.  The matrix engine is faster at n=2M
-   (head-to-head benchmark in `external/pedsum/STATUS.md`).  Treat
-   this engine as an experimental scalability spike, not a tuned
-   alternative.
+   the time of v0.2.0.  The matrix engine is faster at n=2M in the
+   only head-to-head we have run.  See open issues
+   [#2 (numba kernel parallelisation)](https://github.com/rwaples/pedigree-graph/issues/2)
+   and [#3 (10M+ scaling)](https://github.com/rwaples/pedigree-graph/issues/3).
+   Treat this engine as an experimental scalability spike, not a
+   tuned alternative.
 
 ## License
 

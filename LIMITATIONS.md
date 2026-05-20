@@ -105,6 +105,33 @@ default.  Callers needing BFS-distinct semantics on inbred input must
 use ``pedigree_graph.experimental.count_pairs_bfs`` and accept the
 matrix-vs-BFS difference for those four codes.
 
+## ``int8`` overflow risk in BFS ``P_k`` boolean matmul
+
+The BFS engine (`pedigree_graph.experimental.count_pairs_bfs`) uses
+``np.int8`` for ``P_k.data`` during the boolean matmul stages.
+Theoretically vulnerable to silent path-count overflow under extreme
+consanguinity: more than 127 distinct paths to a single ``(i, X)`` pair
+before the ``M.data[:] = 1`` clamp will wrap.
+
+Empirically not seen on any tested pedigree. Switch to ``int32`` if it
+ever bites — the change is a one-line dtype swap at the matmul site;
+memory cost is 4× on the intermediate matrices.
+
+## ``compute_n_ancestors`` memory scales with ``sum_i n_ancestors[i]``
+
+``PedigreeGraph.compute_n_ancestors`` is a sparse boolean transitive
+closure of the parent graph (``_lineage_kernel._compute_n_ancestors``).
+Memory scales with ``sum_i n_ancestors[i]``, so very deep / very wide
+pedigrees can hit RAM limits:
+
+- N=100K, G=10, random mating → 2.2 s, peak RSS ~0.5 GB.
+- N=10M with saturated ancestry → extrapolates beyond commodity hardware.
+
+A retirement-style DP (analogous to the F kernel's row-retirement
+optimisation in ``_kinship_kernel``) would bound peak memory to the
+live frontier rather than the cumulative ancestor set. Deferred until
+a user hits the wall.
+
 ## Half-founders and missing parents
 
 Both engines accept half-founders (one parent known, one missing).
@@ -139,10 +166,17 @@ OOM-prone because the full-pedigree intermediate doesn't shrink.
 - Effective size estimator scaling — covered by
   ``pedigree_graph._effective_size`` and the ``skip_ne_coancestry``
   knob.
-- BFS engine internal limitations — see ``external/pedsum/STATUS.md``
-  for the historical follow-ups against this package.
+- BFS engine internal limitations — see the ``int8`` overflow section
+  above for the path-count overflow case, and GitHub issues
+  [#2 (numba kernel parallelisation)](https://github.com/rwaples/pedigree-graph/issues/2)
+  and [#3 (10M+ scaling test)](https://github.com/rwaples/pedigree-graph/issues/3)
+  for open performance / scalability questions.
 
 ## Last updated
+
+2026-05-20 — ``int8`` overflow risk and ``compute_n_ancestors``
+scalability sections added; BFS internal follow-ups re-homed from
+retired ``external/pedsum/STATUS.md`` to GitHub issues #2 and #3.
 
 2026-05-19 — ``count_pairs_streaming`` precision contract
 reconciled; ``Av`` documented as approximate; stale
