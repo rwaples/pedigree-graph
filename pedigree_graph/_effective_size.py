@@ -53,6 +53,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+import numba
 import numpy as np
 
 from pedigree_graph._cohort_utils import CohortWindow, eligible_cohort_range
@@ -153,10 +154,12 @@ def _sex_specific_family_table(
     """
     n = len(generation)
     sex = np.asarray(sex, dtype=np.int8)
+    mother = np.asarray(mother)
+    father = np.asarray(father)
 
     if cohort_mode == "compact_generation":
         cohort_arr = np.asarray(generation)
-        g_max = int(cohort_arr.max())
+        g_max = int(cohort_arr.max()) if n else 0
         cohort_labels: list[int] = list(range(g_max))
     elif cohort_mode == "arbitrary":
         if cohort is None:
@@ -164,66 +167,34 @@ def _sex_specific_family_table(
         cohort_arr = np.asarray(cohort)
         cohort_labels = [int(c) for c in np.unique(cohort_arr[cohort_arr >= 0])]
     else:
-        raise ValueError(
-            f"cohort_mode must be 'compact_generation' or 'arbitrary'; got {cohort_mode!r}"
-        )
+        raise ValueError(f"cohort_mode must be 'compact_generation' or 'arbitrary'; got {cohort_mode!r}")
 
-    # Per-cohort parent arrays + global parent → local index maps.
-    cohort_males: dict[int, np.ndarray] = {}
-    cohort_females: dict[int, np.ndarray] = {}
-    parent_to_male_local = np.full(n, -1, dtype=np.int32)
-    parent_to_female_local = np.full(n, -1, dtype=np.int32)
+    father_present = father >= 0
+    mother_present = mother >= 0
+    male_offspring = sex == 1
+
+    # Lifetime offspring counts by parent row.  Counting globally and slicing
+    # per cohort afterwards keeps this correct for both compact-generation and
+    # arbitrary-birth-year cohort modes.
+    k_mm_all = np.bincount(father[father_present & male_offspring], minlength=n).astype(np.int64)
+    k_mf_all = np.bincount(father[father_present & ~male_offspring], minlength=n).astype(np.int64)
+    k_fm_all = np.bincount(mother[mother_present & male_offspring], minlength=n).astype(np.int64)
+    k_ff_all = np.bincount(mother[mother_present & ~male_offspring], minlength=n).astype(np.int64)
+
+    out: dict[int, dict[str, np.ndarray]] = {}
     for c in cohort_labels:
         in_c = cohort_arr == c
         m_arr = np.where(in_c & (sex == 1))[0]
         f_arr = np.where(in_c & (sex == 0))[0]
-        cohort_males[c] = m_arr
-        cohort_females[c] = f_arr
-        parent_to_male_local[m_arr] = np.arange(len(m_arr), dtype=np.int32)
-        parent_to_female_local[f_arr] = np.arange(len(f_arr), dtype=np.int32)
-
-    k_mm: dict[int, np.ndarray] = {c: np.zeros(len(cohort_males[c]), dtype=np.int64) for c in cohort_labels}
-    k_mf: dict[int, np.ndarray] = {c: np.zeros(len(cohort_males[c]), dtype=np.int64) for c in cohort_labels}
-    k_fm: dict[int, np.ndarray] = {c: np.zeros(len(cohort_females[c]), dtype=np.int64) for c in cohort_labels}
-    k_ff: dict[int, np.ndarray] = {c: np.zeros(len(cohort_females[c]), dtype=np.int64) for c in cohort_labels}
-
-    # Single pass over individuals with at least one parent edge; the
-    # parent-presence filter is a safe superset of "non-founder" and
-    # works for both compact_generation and arbitrary cohort modes.
-    offs_idx = np.where((np.asarray(father) >= 0) | (np.asarray(mother) >= 0))[0]
-
-    for i in offs_idx:
-        o_sex = sex[i]
-        f = int(father[i])
-        m = int(mother[i])
-        if f >= 0:
-            lf = int(parent_to_male_local[f])
-            if lf >= 0:
-                fp = int(cohort_arr[f])
-                if o_sex == 1:
-                    k_mm[fp][lf] += 1
-                else:
-                    k_mf[fp][lf] += 1
-        if m >= 0:
-            lm = int(parent_to_female_local[m])
-            if lm >= 0:
-                mp = int(cohort_arr[m])
-                if o_sex == 1:
-                    k_fm[mp][lm] += 1
-                else:
-                    k_ff[mp][lm] += 1
-
-    return {
-        c: {
-            "males_in_parent_gen": cohort_males[c],
-            "females_in_parent_gen": cohort_females[c],
-            "k_mm": k_mm[c],
-            "k_mf": k_mf[c],
-            "k_fm": k_fm[c],
-            "k_ff": k_ff[c],
+        out[c] = {
+            "males_in_parent_gen": m_arr,
+            "females_in_parent_gen": f_arr,
+            "k_mm": k_mm_all[m_arr],
+            "k_mf": k_mf_all[m_arr],
+            "k_fm": k_fm_all[f_arr],
+            "k_ff": k_ff_all[f_arr],
         }
-        for c in cohort_labels
-    }
+    return out
 
 
 def _regress_log_one_minus(values: np.ndarray, t: np.ndarray) -> tuple[float, float]:
@@ -819,6 +790,171 @@ def _per_gen_founder_means(
     return m_g, founder_idx
 
 
+@numba.njit(cache=True)
+def _ct_ensure_pool_capacity(pool, cursor, needed):
+    """Grow the CT ancestor-set arena when ``cursor + needed`` would overflow."""
+    required = cursor + needed
+    if required <= pool.shape[0]:
+        return pool
+
+    new_capacity = pool.shape[0] * 2
+    while new_capacity < required:
+        new_capacity *= 2
+    new_pool = np.empty(new_capacity, dtype=np.int32)
+    new_pool[:cursor] = pool[:cursor]
+    return new_pool
+
+
+@numba.njit(cache=True)
+def _ct_merge_to_pool(pool, cursor, a_start, a_len, b_start, b_len):
+    """Merge two sorted unique CT ancestor sets into ``pool[cursor:]``."""
+    pool = _ct_ensure_pool_capacity(pool, cursor, a_len + b_len)
+    i = 0
+    j = 0
+    out = cursor
+    # Founder local indices are always >= 0, so -1 is a safe "no previous" sentinel.
+    last = np.int32(-1)
+
+    while i < a_len and j < b_len:
+        av = pool[a_start + i]
+        bv = pool[b_start + j]
+        if av < bv:
+            v = av
+            i += 1
+        elif bv < av:
+            v = bv
+            j += 1
+        else:
+            v = av
+            i += 1
+            j += 1
+        if v != last:
+            pool[out] = v
+            out += 1
+            last = v
+
+    while i < a_len:
+        v = pool[a_start + i]
+        i += 1
+        if v != last:
+            pool[out] = v
+            out += 1
+            last = v
+
+    while j < b_len:
+        v = pool[b_start + j]
+        j += 1
+        if v != last:
+            pool[out] = v
+            out += 1
+            last = v
+
+    return pool, out - cursor
+
+
+@numba.njit(cache=True)
+def _ct_accumulators_kernel(gen, mother, father, founder_local_of, self_coancestry, g_max, n_founders):
+    """Numba core for Caballero-Toro descendant self-coancestry accumulators."""
+    n = len(gen)
+    sums = np.zeros((g_max + 1, n_founders), dtype=np.float64)
+    counts = np.zeros((g_max + 1, n_founders), dtype=np.int64)
+
+    n_children = np.zeros(n, dtype=np.int64)
+    for i in range(n):
+        m = mother[i]
+        if m >= 0:
+            n_children[m] += 1
+        f = father[i]
+        if f >= 0:
+            n_children[f] += 1
+    n_remaining = n_children.copy()
+
+    starts = np.full(n, -1, dtype=np.int64)
+    lens = np.zeros(n, dtype=np.int32)
+    pool = np.empty(max(n, 16), dtype=np.int32)
+    cursor = 0
+
+    peak_set_size = 0
+    peak_live = 0
+    active_count = 0
+    total_pair_visits = 0
+
+    # PedigreeGraph guarantees topological row order (parents precede children),
+    # so a single forward row sweep is sufficient even when generation labels are
+    # sparse or skip-generation edges are present.
+    for i in range(n):
+        start = -1
+        length = 0
+        f_local = founder_local_of[i]
+        if f_local >= 0:
+            pool = _ct_ensure_pool_capacity(pool, cursor, 1)
+            start = cursor
+            pool[cursor] = np.int32(f_local)
+            cursor += 1
+            length = 1
+        else:
+            m = mother[i]
+            f = father[i]
+            m_start = -1
+            m_len = 0
+            f_start = -1
+            f_len = 0
+            if m >= 0:
+                m_start = starts[m]
+                m_len = lens[m]
+            if f >= 0:
+                f_start = starts[f]
+                f_len = lens[f]
+
+            if m_len > 0 and f_len > 0:
+                if m_start == f_start and m_len == f_len:
+                    start = m_start
+                    length = m_len
+                else:
+                    start = cursor
+                    pool, length = _ct_merge_to_pool(pool, cursor, m_start, m_len, f_start, f_len)
+                    cursor += length
+            elif m_len > 0:
+                start = m_start
+                length = m_len
+            elif f_len > 0:
+                start = f_start
+                length = f_len
+
+        if length > 0:
+            g = gen[i]
+            sc = self_coancestry[i]
+            for k in range(length):
+                a = pool[start + k]
+                sums[g, a] += sc
+                counts[g, a] += 1
+            total_pair_visits += length
+            if length > peak_set_size:
+                peak_set_size = length
+
+        m = mother[i]
+        if m >= 0:
+            n_remaining[m] -= 1
+            if n_remaining[m] == 0 and lens[m] > 0:
+                lens[m] = 0
+                active_count -= 1
+        f = father[i]
+        if f >= 0:
+            n_remaining[f] -= 1
+            if n_remaining[f] == 0 and lens[f] > 0:
+                lens[f] = 0
+                active_count -= 1
+
+        if n_children[i] > 0 and length > 0:
+            starts[i] = start
+            lens[i] = length
+            active_count += 1
+            if active_count > peak_live:
+                peak_live = active_count
+
+    return sums, counts, peak_set_size, peak_live, total_pair_visits
+
+
 def _caballero_toro_accumulators(
     pg: PedigreeGraph,
     founder_idx: np.ndarray,
@@ -829,10 +965,9 @@ def _caballero_toro_accumulators(
     For each generation g and founder f, accumulates the count of
     descendants of f in gen g and the sum of their self-coancestry
     ``(1 + F_i) / 2``.  Avoids materializing the dense
-    ``(n × n_founders)`` contribution matrix by maintaining per-individual
-    ancestor sets only over the working frontier; sets are retired via a
-    per-individual remaining-child counter once the last child has been
-    processed.
+    ``(n × n_founders)`` contribution matrix by maintaining sorted
+    per-individual Founder-Ancestor sets in a Numba arena and retiring
+    them from the live frontier once the last child has been processed.
 
     "Descendant of f" is graph reachability — equivalent to ``c[i, f] >
     0`` because the forward recursion only adds non-negatives, so a
@@ -854,88 +989,34 @@ def _caballero_toro_accumulators(
     """
     n = pg.n
     n_founders = len(founder_idx)
-    gen = np.asarray(pg.generation)
-    mother = np.asarray(pg.mother)
-    father = np.asarray(pg.father)
+    gen = np.asarray(pg.generation, dtype=np.int64)
+    mother = np.asarray(pg.mother, dtype=np.int64)
+    father = np.asarray(pg.father, dtype=np.int64)
     g_max = int(gen.max()) if n > 0 else 0
 
-    sums = np.zeros((g_max + 1, n_founders), dtype=np.float64)
-    counts = np.zeros((g_max + 1, n_founders), dtype=np.int64)
     if n_founders == 0:
         return {
-            "sums": sums,
-            "counts": counts,
+            "sums": np.zeros((g_max + 1, 0), dtype=np.float64),
+            "counts": np.zeros((g_max + 1, 0), dtype=np.int64),
             "peak_ancestor_set_size": 0,
             "peak_live_ancestor_sets": 0,
             "total_ancestor_pair_visits": 0,
             "founder_idx": founder_idx,
         }
 
-    self_coancestry = (1.0 + F) / 2.0
-
-    # Per-individual remaining-child counter for ancestor-set retirement.
-    n_children = np.zeros(n, dtype=np.int64)
-    for parents in (mother, father):
-        valid = parents >= 0
-        if valid.any():
-            np.add.at(n_children, parents[valid], 1)
-    n_remaining = n_children.copy()
-
-    # Reverse map: individual index → founder local index (or −1).
     founder_local_of = np.full(n, -1, dtype=np.int64)
-    founder_local_of[founder_idx] = np.arange(n_founders, dtype=np.int64)
+    founder_local_of[np.asarray(founder_idx, dtype=np.int64)] = np.arange(n_founders, dtype=np.int64)
+    self_coancestry = (1.0 + np.asarray(F, dtype=np.float64)) / 2.0
 
-    ancestor_sets: dict[int, np.ndarray] = {}
-    peak_set_size = 0
-    peak_live = 0
-    total_pair_visits = 0
-
-    cohorts = [np.flatnonzero(gen == g) for g in range(g_max + 1)]
-
-    # perf: numba candidate — Python loop over n individuals with dict ops.
-    for g in range(g_max + 1):
-        for i_np in cohorts[g]:
-            i = int(i_np)
-            f_local = int(founder_local_of[i])
-            if f_local >= 0:
-                anc = np.array([f_local], dtype=np.int32)
-            else:
-                m = int(mother[i])
-                f = int(father[i])
-                anc_m = ancestor_sets.get(m) if m >= 0 else None
-                anc_f = ancestor_sets.get(f) if f >= 0 else None
-                if anc_m is not None and anc_f is not None:
-                    anc = np.union1d(anc_m, anc_f).astype(np.int32, copy=False)
-                elif anc_m is not None:
-                    anc = anc_m
-                elif anc_f is not None:
-                    anc = anc_f
-                else:
-                    anc = np.empty(0, dtype=np.int32)
-
-            if anc.size > 0:
-                sums[g, anc] += self_coancestry[i]
-                counts[g, anc] += 1
-                total_pair_visits += int(anc.size)
-                if anc.size > peak_set_size:
-                    peak_set_size = int(anc.size)
-
-            # Retire parents whose last child has now been processed.
-            for p_raw in (mother[i], father[i]):
-                p = int(p_raw)
-                if p < 0:
-                    continue
-                n_remaining[p] -= 1
-                if n_remaining[p] == 0 and p in ancestor_sets:
-                    del ancestor_sets[p]
-
-            # Keep i's ancestor set only if it still has children to feed.
-            if n_children[i] > 0 and anc.size > 0:
-                ancestor_sets[i] = anc
-
-            if len(ancestor_sets) > peak_live:
-                peak_live = len(ancestor_sets)
-
+    sums, counts, peak_set_size, peak_live, total_pair_visits = _ct_accumulators_kernel(
+        gen,
+        mother,
+        father,
+        founder_local_of,
+        self_coancestry,
+        g_max,
+        n_founders,
+    )
     return {
         "sums": sums,
         "counts": counts,
