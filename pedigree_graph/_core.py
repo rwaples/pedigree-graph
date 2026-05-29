@@ -210,9 +210,13 @@ class PedigreeGraph:
         # Subsample state — set only by from_subsample. When _sample_mask is
         # set, extract_pairs filters to pairs where both endpoints are active.
         # When _subsample_remap is set, extract_pairs additionally remaps
-        # graph row indices to caller-input row indices.
+        # graph row indices to caller-input row indices.  _subsample_inverse is
+        # the inverse table (caller/df row -> graph row); compute_pair_kinship
+        # uses it to map caller-coordinate pairs back onto the full-graph
+        # kinship matrix, which is always built in graph coordinates.
         self._sample_mask: np.ndarray | None = None
         self._subsample_remap: np.ndarray | None = None
+        self._subsample_inverse: np.ndarray | None = None
 
         # Lazy kinship cache — populated by kinship_matrix(); keyed by
         # the resolved min_kinship threshold.
@@ -1269,15 +1273,16 @@ class PedigreeGraph:
 
         # Remap graph row indices to caller-input row indices when a remap is set.
         # After this, pair indices are in caller-input coordinates regardless
-        # of which constructor was used.
+        # of which constructor was used.  The remap can permute rows, so
+        # re-canonicalize (lo, hi) to preserve the lo < hi invariant that
+        # downstream pair-key encoders rely on.
         if self._subsample_remap is not None:
             remap = self._subsample_remap
             for k, (idx1, idx2) in pairs.items():
                 if len(idx1) > 0:
-                    pairs[k] = (
-                        remap[idx1].astype(np.intp),
-                        remap[idx2].astype(np.intp),
-                    )
+                    r1 = remap[idx1].astype(np.intp)
+                    r2 = remap[idx2].astype(np.intp)
+                    pairs[k] = (np.minimum(r1, r2), np.maximum(r1, r2))
 
         # Cache subsample-filtered counts so count_pairs(scope="subsample") is O(1).
         subsample_pair_counts = {k: len(v[0]) for k, v in pairs.items()}
@@ -1768,6 +1773,14 @@ class PedigreeGraph:
         id_to_df_row[df_ids] = np.arange(len(df_ids), dtype=np.intp)
         pg._subsample_remap = id_to_df_row[full_ids]
 
+        # Build the inverse df-row → full-graph-row table so consumers that
+        # need graph coordinates (e.g. compute_pair_kinship indexing the
+        # full kinship matrix) can map caller-coordinate pairs back.
+        graph_rows_in_sub = np.flatnonzero(pg._subsample_remap >= 0)
+        inverse = np.full(len(df_ids), -1, dtype=np.intp)
+        inverse[pg._subsample_remap[graph_rows_in_sub]] = graph_rows_in_sub
+        pg._subsample_inverse = inverse
+
         return pg
 
     # ------------------------------------------------------------------
@@ -1973,10 +1986,18 @@ class PedigreeGraph:
             return {code: np.full(len(idx1), PAIR_KINSHIP.get(code, 0.0)) for code, (idx1, _) in pairs.items()}
 
         K = self.kinship_matrix(min_kinship=0.0).tocsr()
+        # extract_pairs returns caller-input coordinates on from_subsample
+        # graphs, but K is always built in full-graph coordinates.  Map back
+        # through the inverse remap before indexing.  K is symmetric, so the
+        # canonical (lo, hi) ordering of the input pairs is irrelevant here.
+        inverse = self._subsample_inverse
         result: dict[str, np.ndarray] = {}
         for code, (idx1, idx2) in pairs.items():
             if len(idx1) == 0:
                 result[code] = np.array([], dtype=np.float64)
                 continue
+            if inverse is not None:
+                idx1 = inverse[idx1]
+                idx2 = inverse[idx2]
             result[code] = np.array(K[idx1, idx2]).ravel()
         return result

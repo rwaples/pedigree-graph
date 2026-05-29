@@ -1103,6 +1103,32 @@ class TestComputePairKinship:
         # G1 full sibs (2, 3) — both non-inbred, so FS kinship = 0.25
         assert all(v == pytest.approx(0.25) for v in out["FS"])
 
+    def test_reversed_subsample_pair_kinship_uses_graph_coords(self):
+        # PGQ-001 regression: extract_pairs returns caller (df-row) coordinates
+        # on a from_subsample graph, but the kinship matrix is built in
+        # full-graph coordinates.  A reordered subsample must still yield the
+        # correct exact kinship — exercising the inbred/MZ slow path.
+        full = self._inbred_pedigree()
+        K_full = PedigreeGraph(full).kinship_matrix(min_kinship=0.0).tocsr()
+        assert K_full[4, 5] == pytest.approx(0.625)
+
+        # Reversed subsample of the MZ twins: df rows are [id 5, id 4].
+        sub = full[full["id"].isin([4, 5])].iloc[::-1].reset_index(drop=True)
+        pg = PedigreeGraph.from_subsample(full, sub)
+        pairs = pg.extract_pairs(max_degree=1)
+        out = pg.compute_pair_kinship(pairs)
+        assert out["MZ"].tolist() == [pytest.approx(0.625)]
+
+    def test_reordered_subsample_pairs_are_canonically_ordered(self):
+        # The graph→caller remap can permute rows; remapped pairs must keep
+        # the lo < hi invariant that downstream pair-key encoders rely on.
+        full = self._inbred_pedigree()
+        sub = full[full["id"].isin([2, 3, 4, 5])].iloc[::-1].reset_index(drop=True)
+        pg = PedigreeGraph.from_subsample(full, sub)
+        pairs = pg.extract_pairs(max_degree=2)
+        for code, (idx1, idx2) in pairs.items():
+            assert np.all(idx1 <= idx2), f"{code} not canonically ordered after remap"
+
     def test_compute_inbreeding_idempotent(self):
         df = self._inbred_pedigree()
         pg = PedigreeGraph(df)
