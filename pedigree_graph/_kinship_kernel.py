@@ -886,92 +886,55 @@ def _assemble_csc(
     vals: np.ndarray,
     row_start: np.ndarray,
     row_count: np.ndarray,
-    phen_pos: np.ndarray,
-    to_grm: bool,
 ):
-    """Assemble CSC arrays from per-row DP storage, optionally slicing.
+    """Assemble the full-symmetric kinship CSC arrays from per-row DP storage.
 
-    If ``phen_pos`` is non-empty, only rows/cols in ``phen_pos`` are kept
-    (the result is a principal submatrix indexed by phen_pos).  The
-    row/column indices in the output are 0..len(phen_pos)-1.
+    The DP stores each individual's kept columns (sorted ascending) in
+    ``cols[row_start[i] : row_start[i] + row_count[i]]`` with the matching
+    kinship in ``vals``.  The kinship matrix is symmetric, so row ``j``
+    equals column ``j``: iterating the stored rows and emitting each
+    entry ``(i, j)`` into CSC column ``j`` at row ``i`` reconstructs the
+    full symmetric matrix.
 
-    If ``to_grm`` is True, off-diagonal values are scaled by 2 (kinship
-    → GRM); diagonal stays as (1 + F_i)/2 * 2 = 1 + F_i (which is the
-    standard GRM diagonal).
+    Indices/indptr are int32 to halve K's footprint vs int64 (≈ 1.65 GB
+    saved at N=100K); counts and the prefix-sum run in int64 so the
+    overflow guard (:func:`_checked_int32_indptr_from_counts`) fires
+    before any int32 prefix write can wrap.  At G_ped=6 we see
+    nnz ≈ 690 × N, so overflow only kicks in beyond N ≈ 3M.
     """
-    n_phen = phen_pos.shape[0]
-    # Build full_to_phen[i] = k if row i of the full matrix maps to
-    # row k in the output, else -1.
-    n_full = row_start.shape[0]
-    full_to_phen = np.full(n_full, -1, dtype=np.int32)
-    for k in range(n_phen):
-        full_to_phen[phen_pos[k]] = np.int32(k)
+    n = row_start.shape[0]
 
-    # First pass: count entries per column in the sliced matrix.
-    # The kinship rows are sorted by column, so we iterate and count
-    # only those (i, j) with both i and j in phen_pos.
-    #
-    # Indices/indptr use int32 throughout to halve K's footprint vs int64
-    # (≈ 1.65 GB saved at N=100K).  Count and prefix-sum in int64 so the
-    # overflow guard runs before int32 prefix writes can wrap.
-    # At G_ped=6 we see nnz ≈ 690 × N, so overflow only kicks in beyond
-    # N≈3M.
-    col_counts = np.zeros(n_phen, dtype=np.int64)
-    for i_full in range(n_full):
-        i_phen = full_to_phen[i_full]
-        if i_phen < 0:
-            continue
-        rs = row_start[i_full]
-        rc = row_count[i_full]
+    # First pass: count entries per column.
+    col_counts = np.zeros(n, dtype=np.int64)
+    for i in range(n):
+        rs = row_start[i]
+        rc = row_count[i]
         for p in range(rc):
-            j_full = cols[rs + p]
-            j_phen = full_to_phen[j_full]
-            if j_phen >= 0:
-                col_counts[j_phen] += np.int64(1)
+            j = cols[rs + p]
+            col_counts[j] += np.int64(1)
 
     indptr = _checked_int32_indptr_from_counts(col_counts)
-    nnz = indptr[n_phen]
+    nnz = indptr[n]
 
     indices = np.empty(nnz, dtype=np.int32)
     values = np.empty(nnz, dtype=np.float32)
 
-    # Second pass: fill.  For CSC with column j holding rows from
-    # (phen → full) mapping, we need to iterate the *column* of the
-    # full matrix — but we only have rows.  Luckily, the kinship matrix
-    # is symmetric, so column j == row j.  Iterate the rows and emit
-    # transposed entries.
-    #
-    # To keep column-major order preserved per column, maintain a
-    # running pointer per column.
-    col_write = np.zeros(n_phen, dtype=np.int32)
-    for i_full in range(n_full):
-        i_phen = full_to_phen[i_full]
-        if i_phen < 0:
-            continue
-        rs = row_start[i_full]
-        rc = row_count[i_full]
+    # Second pass: fill.  Emit each stored entry (i, j) into CSC column j
+    # at row i, advancing a per-column write cursor.  Because the outer
+    # loop visits i monotonically, rows within each column come out
+    # ascending — exactly CSC's required per-column ordering, so no
+    # post-sort is needed.
+    col_write = np.zeros(n, dtype=np.int32)
+    for i in range(n):
+        rs = row_start[i]
+        rc = row_count[i]
         for p in range(rc):
-            j_full = cols[rs + p]
-            j_phen = full_to_phen[j_full]
-            if j_phen < 0:
-                continue
-            # Entry at (i_phen, j_phen).  CSC stores this in column j_phen
-            # at row index i_phen.
-            pos = indptr[j_phen] + col_write[j_phen]
-            indices[pos] = i_phen
-            v = vals[rs + p]
-            if to_grm:
-                # GRM = 2·K (off-diag and diagonal both scale; the
-                # diagonal becomes 2 · (1 + F_i)/2 = 1 + F_i).
-                v *= np.float32(2.0)
-            values[pos] = v
-            col_write[j_phen] += 1
+            j = cols[rs + p]
+            pos = indptr[j] + col_write[j]
+            indices[pos] = i
+            values[pos] = vals[rs + p]
+            col_write[j] += 1
 
-    # Rows within each column need to be sorted; fast path: the row
-    # order emerged from the outer i_full iteration, which is
-    # monotonically increasing.  Since phen_pos is usually in ascending
-    # order, i_phen ends up ascending too.  Check this; if not, we'd
-    # need a post-sort.  (For general phen_pos orders, add a sort pass.)
     return indptr, indices, values
 
 
@@ -1135,17 +1098,13 @@ def _build_kinship_csc(
         ``(indptr, indices, data)`` suitable for
         ``scipy.sparse.csc_matrix((data, indices, indptr), shape=(n, n))``.
         Storage is full-symmetric (both triangles); indices within each
-        column are sorted ascendingly (under the common case of the
-        kernel iterating ``phen_pos = arange(n)``).
+        column are sorted ascending.
     """
     r = _run_dp_core(
         n, m_idx, f_idx, tw_idx, generation, min_kinship, init_cap_per_row,
         config=_DP_CONFIG_CSC,
     )
-    phen_pos = np.arange(n, dtype=np.int32)
-    indptr, indices, values = _assemble_csc(
-        r.cols, r.vals, r.row_start, r.row_count, phen_pos, False,
-    )
+    indptr, indices, values = _assemble_csc(r.cols, r.vals, r.row_start, r.row_count)
     return indptr, indices, values
 
 
