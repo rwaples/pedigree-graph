@@ -30,6 +30,7 @@ import scipy.sparse as sp
 
 from pedigree_graph._bfs_kernel import _enumerate_pairs_kernel
 from pedigree_graph._core import PAIR_KINSHIP, PedigreeGraph
+from pedigree_graph._pair_utils import dedup_pairs
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -353,7 +354,7 @@ def count_pairs_bfs(
     if av_lo_parts:
         av_lo = np.concatenate(av_lo_parts)
         av_hi = np.concatenate(av_hi_parts)
-        av_lo, av_hi = PedigreeGraph._dedup_pairs(av_lo, av_hi)
+        av_lo, av_hi = dedup_pairs(av_lo, av_hi)
         av_lo, av_hi = PedigreeGraph._subtract_pairs((av_lo, av_hi), (po_lo, po_hi))
     else:
         av_lo = av_hi = np.array([], dtype=np.intp)
@@ -398,7 +399,7 @@ def count_pairs_bfs(
             return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
         ax = np.concatenate(i_parts)
         ay = np.concatenate(j_parts)
-        return PedigreeGraph._dedup_pairs(ax, ay)
+        return dedup_pairs(ax, ay)
 
     gp_lo, gp_hi = _lineal_pairs_lo_hi(P[2])
     ggp_lo, ggp_hi = _lineal_pairs_lo_hi(P[3])
