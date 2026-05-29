@@ -142,6 +142,15 @@ a `FutureWarning`.
    Treat this engine as an experimental scalability spike, not a
    tuned alternative.
 
+## Architecture
+
+For contributors: [`docs/architecture.md`](docs/architecture.md) maps the
+module layout and the hidden contracts (coordinate space, exact vs
+approximate counts, path-count vs distinct-ancestor semantics, sparse-ID
+handling, default sex), each with its source of truth and regression test.
+The relationship/coordinate vocabulary is in [`CONTEXT.md`](CONTEXT.md);
+design decisions are in [`docs/adr/`](docs/adr/).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
