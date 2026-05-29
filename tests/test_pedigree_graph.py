@@ -968,6 +968,125 @@ class TestGenerationInterval:
         assert gi1 is gi2  # cached_property returns the same object
 
 
+class TestInputValidation:
+    """PGQ-002: constructor input boundary and sparse-safe id remapping."""
+
+    _BASE = {
+        "mother": [-1, -1],
+        "father": [-1, -1],
+        "twin": [-1, -1],
+        "sex": [0, 0],
+        "generation": [0, 0],
+    }
+
+    def test_duplicate_ids_raise(self):
+        df = pd.DataFrame({"id": [0, 0], **self._BASE})
+        with pytest.raises(ValueError, match="duplicate id"):
+            PedigreeGraph(df)
+
+    def test_negative_ids_raise(self):
+        df = pd.DataFrame({"id": [-1, 0], **self._BASE})
+        with pytest.raises(ValueError, match="nonnegative"):
+            PedigreeGraph(df)
+
+    def test_non_integer_ids_raise(self):
+        df = pd.DataFrame({"id": [0.0, 1.0], **self._BASE})
+        with pytest.raises(ValueError, match="integer"):
+            PedigreeGraph(df)
+
+    def test_mismatched_column_length_raises(self):
+        data = {
+            "id": np.array([0, 1]),
+            "mother": np.array([-1]),  # short
+            "father": np.array([-1, -1]),
+            "twin": np.array([-1, -1]),
+            "sex": np.array([0, 0]),
+            "generation": np.array([0, 0]),
+        }
+        with pytest.raises(ValueError, match="length"):
+            PedigreeGraph(data)
+
+    def test_missing_required_column_raises(self):
+        with pytest.raises(ValueError, match="mother"):
+            PedigreeGraph({"id": np.array([0, 1])})
+
+    def test_sparse_high_ids_do_not_allocate_dense_table(self):
+        # Pre-fix this allocated a max(id)+1 (~2e9) int32 table → ~8 GB / OOM.
+        # searchsorted keeps it O(n log n).
+        ids = np.array([0, 1, 2_000_000_000, 2_000_000_001])
+        pg = PedigreeGraph.from_arrays(
+            ids=ids,
+            mothers=np.array([-1, -1, 0, 0]),
+            fathers=np.array([-1, -1, 1, 1]),
+            generation=np.array([0, 0, 1, 1]),
+        )
+        assert pg.mother.tolist() == [-1, -1, 0, 0]
+        assert pg.father.tolist() == [-1, -1, 1, 1]
+
+    def test_unsorted_ids_remap_correctly(self):
+        # searchsorted must honor argsort order, not assume sorted ids.
+        df = pd.DataFrame(
+            {
+                "id": [5, 2, 9, 7],
+                "mother": [-1, -1, 5, 2],
+                "father": [-1, -1, 2, 5],
+                "twin": [-1, -1, -1, -1],
+                "sex": [0, 0, 0, 0],
+                "generation": [0, 0, 1, 1],
+            }
+        )
+        pg = PedigreeGraph(df)
+        # row 2 (id 9): mother id 5 -> row 0, father id 2 -> row 1
+        assert pg.mother.tolist() == [-1, -1, 0, 1]
+        assert pg.father.tolist() == [-1, -1, 1, 0]
+
+    def test_absent_parent_ids_remap_leniently(self):
+        # Partial pedigree (falconer's PedigreeGraph(df) path): parents
+        # outside the rows remap to -1, but orig ids drive sib grouping.
+        df = pd.DataFrame(
+            {
+                "id": [10, 11],
+                "mother": [99, 99],  # 99 not a row
+                "father": [98, 98],  # 98 not a row
+                "twin": [-1, -1],
+                "sex": [0, 0],
+                "generation": [1, 1],
+            }
+        )
+        pg = PedigreeGraph(df)
+        assert pg.mother.tolist() == [-1, -1]
+        assert pg._orig_mother.tolist() == [99, 99]
+
+    def test_absent_twin_id_remaps_leniently(self):
+        df = pd.DataFrame(
+            {
+                "id": [0, 1],
+                "mother": [-1, -1],
+                "father": [-1, -1],
+                "twin": [7, -1],  # 7 not a row (co-twin outside sample)
+                "sex": [0, 0],
+                "generation": [0, 0],
+            }
+        )
+        pg = PedigreeGraph(df)
+        assert pg.twin.tolist() == [-1, -1]
+
+    def test_duplicate_full_pedigree_ids_raise_in_from_subsample(self):
+        full = pd.DataFrame(
+            {
+                "id": [0, 0, 1],  # duplicate full-pedigree id
+                "mother": [-1, -1, 0],
+                "father": [-1, -1, -1],
+                "twin": [-1, -1, -1],
+                "sex": [0, 0, 0],
+                "generation": [0, 0, 1],
+            }
+        )
+        sub = full.iloc[2:].reset_index(drop=True)
+        with pytest.raises(ValueError, match="duplicate id"):
+            PedigreeGraph.from_subsample(full, sub)
+
+
 class TestFromSubsample:
     @pytest.fixture
     def lineage_pedigree(self):

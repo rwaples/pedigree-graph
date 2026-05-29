@@ -68,6 +68,79 @@ def _coerce_to_array_dict(data: dict[str, np.ndarray] | pd.DataFrame) -> dict[st
     return result
 
 
+def _validate_id_column(ids: np.ndarray) -> np.ndarray:
+    """Validate the ``id`` column and return it as ``int64``.
+
+    The id column is the boundary the whole graph is indexed by, so it is
+    validated strictly: it must be a 1-D integer array of unique,
+    nonnegative values.  A duplicate id silently lets a later row win the
+    id→row map; a negative id wraps around as a numpy negative index.  Both
+    are rejected here rather than producing a quietly corrupt graph.
+    """
+    ids = np.asarray(ids)
+    if ids.ndim != 1:
+        raise ValueError(f"id column must be 1-D, got shape {ids.shape}")
+    if ids.dtype.kind not in ("i", "u"):
+        raise ValueError(f"id column must be integer-typed, got dtype {ids.dtype!r}")
+    if ids.size:
+        if int(ids.min()) < 0:
+            raise ValueError(f"id column must be nonnegative; smallest id is {int(ids.min())}")
+        n_unique = len(np.unique(ids))
+        if n_unique != len(ids):
+            raise ValueError(f"id column has {len(ids) - n_unique} duplicate id(s)")
+    return ids.astype(np.int64, copy=False)
+
+
+def _validate_required_columns(arrays: dict[str, np.ndarray], n: int) -> None:
+    """Check required columns are present and all columns share length ``n``."""
+    for col in _REQUIRED_COLUMNS:
+        if col not in arrays:
+            raise ValueError(f"input is missing the required {col!r} column")
+        if len(arrays[col]) != n:
+            raise ValueError(
+                f"column {col!r} has length {len(arrays[col])}, expected {n} (id column length)"
+            )
+    for col in _OPTIONAL_COLUMNS:
+        if col in arrays and len(arrays[col]) != n:
+            raise ValueError(
+                f"column {col!r} has length {len(arrays[col])}, expected {n} (id column length)"
+            )
+
+
+def _map_ids_to_rows(
+    target_ids: np.ndarray,
+    query_ids: np.ndarray,
+    dtype: np.dtype | type = np.int32,
+) -> np.ndarray:
+    """Map each query id to its row position in *target_ids* via searchsorted.
+
+    *target_ids* must be unique (caller validates via
+    :func:`_validate_id_column`).  Negative query ids (the ``-1`` "no
+    relation" sentinel) and ids absent from *target_ids* both map to ``-1``.
+
+    Uses ``searchsorted`` over the sorted target ids rather than a dense
+    ``max(id)+1`` lookup table, so sparse / very large ids cost O(n log n)
+    instead of allocating an array sized to the largest id.  Absent ids
+    remap leniently to ``-1`` so partial pedigrees (a subsample missing a
+    parent or co-twin) construct without error.
+    """
+    target_ids = np.asarray(target_ids)
+    query = np.asarray(query_ids)
+    out = np.full(len(query), -1, dtype=dtype)
+    if len(target_ids) == 0 or len(query) == 0:
+        return out
+    order = np.argsort(target_ids, kind="stable")
+    sorted_ids = target_ids[order]
+    sel = np.where(query >= 0)[0]
+    if sel.size == 0:
+        return out
+    q = query[sel]
+    pos = np.clip(np.searchsorted(sorted_ids, q), 0, len(sorted_ids) - 1)
+    found = sorted_ids[pos] == q
+    out[sel[found]] = order[pos[found]].astype(dtype, copy=False)
+    return out
+
+
 def _known_parent_edges(
     parent_arr: np.ndarray,
     birth_year: np.ndarray,
@@ -203,9 +276,12 @@ class PedigreeGraph:
 
     def __init__(self, data: dict[str, np.ndarray] | pd.DataFrame) -> None:
         arrays = _coerce_to_array_dict(data)
-        ids_arr = np.asarray(arrays["id"])
+        if "id" not in arrays:
+            raise ValueError("input is missing the required 'id' column")
+        ids_arr = _validate_id_column(arrays["id"])
         n = len(ids_arr)
         self.n = n
+        _validate_required_columns(arrays, n)
 
         # Subsample state — set only by from_subsample. When _sample_mask is
         # set, extract_pairs filters to pairs where both endpoints are active.
@@ -245,29 +321,21 @@ class PedigreeGraph:
         self._n_ancestors: np.ndarray | None = None
         self._n_descendants: np.ndarray | None = None
 
-        # Build ID → row index mapping (int32: row indices fit in 2.1B)
+        # Row indices are int32 (fit in 2.1B); reject pedigrees too tall.
         self._ids = ids_arr
         if n > np.iinfo(np.int32).max:
             raise ValueError(f"Pedigree has {n:,} rows, exceeding int32 max for row indices")
-        id_to_row = np.full(int(ids_arr.max()) + 1, -1, dtype=np.int32)
-        id_to_row[ids_arr] = np.arange(n, dtype=np.int32)
-
-        def _remap(col_vals: np.ndarray) -> np.ndarray:
-            """Map IDs to row indices; -1 stays -1."""
-            out = np.full(len(col_vals), -1, dtype=np.int32)
-            valid = (col_vals >= 0) & (col_vals < len(id_to_row))
-            out[valid] = id_to_row[col_vals[valid]]
-            return out
 
         # Original pedigree parent IDs (for sibling classification —
         # valid even when the parent isn't in the sample).
         self._orig_mother = np.asarray(arrays["mother"])
         self._orig_father = np.asarray(arrays["father"])
 
-        # Remap parent/twin IDs to row indices (for sparse matrices)
-        self.mother = _remap(self._orig_mother)
-        self.father = _remap(self._orig_father)
-        self.twin = _remap(np.asarray(arrays["twin"]))
+        # Remap parent/twin IDs to row indices via searchsorted.  Absent
+        # references (parent/co-twin outside a subsample) remap to -1.
+        self.mother = _map_ids_to_rows(ids_arr, self._orig_mother, np.int32)
+        self.father = _map_ids_to_rows(ids_arr, self._orig_father, np.int32)
+        self.twin = _map_ids_to_rows(ids_arr, np.asarray(arrays["twin"]), np.int32)
         self.sex = np.asarray(arrays["sex"]).astype(np.int8)
         self.generation = np.asarray(arrays["generation"]).astype(np.int32)
 
@@ -1740,10 +1808,10 @@ class PedigreeGraph:
                 missing from *full_pedigree*.
         """
         df_arrays = _coerce_to_array_dict(df)
-        df_ids = np.asarray(df_arrays["id"])
-        if len(df_ids) != len(np.unique(df_ids)):
-            dup_count = len(df_ids) - len(np.unique(df_ids))
-            raise ValueError(f"from_subsample: df has {dup_count} duplicate id(s)")
+        if "id" not in df_arrays:
+            raise ValueError("from_subsample: df is missing the required 'id' column")
+        # Same id-column contract as the constructor (unique, nonnegative).
+        df_ids = _validate_id_column(df_arrays["id"])
 
         full_arrays = _coerce_to_array_dict(full_pedigree)
         full_ids = np.asarray(full_arrays["id"])
@@ -1757,7 +1825,9 @@ class PedigreeGraph:
                     f"full_pedigree (first {min(len(missing), 10)}: {preview})"
                 )
 
+        # Constructing the full graph validates the full pedigree's id column.
         pg = cls(full_arrays)
+        full_ids = pg._ids  # validated int64 copy
 
         if len(df_ids) == 0:
             # Empty subsample → mask filters everything; remap unused.
@@ -1767,11 +1837,9 @@ class PedigreeGraph:
 
         pg._sample_mask = np.isin(full_ids, df_ids)
 
-        # Build full-graph-row → df-row table.
-        max_id = int(max(int(full_ids.max()), int(df_ids.max()))) + 1
-        id_to_df_row = np.full(max_id, -1, dtype=np.intp)
-        id_to_df_row[df_ids] = np.arange(len(df_ids), dtype=np.intp)
-        pg._subsample_remap = id_to_df_row[full_ids]
+        # Build full-graph-row → df-row table via the same searchsorted remap
+        # used for parent ids: target = df ids, query = full ids.
+        pg._subsample_remap = _map_ids_to_rows(df_ids, full_ids, np.intp)
 
         # Build the inverse df-row → full-graph-row table so consumers that
         # need graph coordinates (e.g. compute_pair_kinship indexing the
