@@ -129,8 +129,9 @@ def count_pairs_bfs(
     On non-inbred pedigrees the counts match
     :meth:`PedigreeGraph.count_pairs` exactly. On inbred pedigrees BFS counts
     *distinct* shared ancestors at depth ≥ 2 while the matrix engine counts
-    *paths* (multiplicity); the four cousin-style codes
-    (``1C1R``, ``H1C1R``, ``1C2R``, ``2C``) may diverge.
+    *paths* (multiplicity); the codes that may diverge are exactly those in
+    :func:`pedigree_graph._registry.bfs_divergent_codes`
+    (``1C1R``, ``H1C1R``, ``1C2R``, ``2C``).
 
     Args:
         pg: A :class:`PedigreeGraph` built directly (not via

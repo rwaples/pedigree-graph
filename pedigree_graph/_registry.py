@@ -19,8 +19,13 @@ import numpy as np
 
 __all__ = [
     "PAIR_KINSHIP",
+    "REL_PLAN",
     "REL_REGISTRY",
+    "EngineSupport",
     "RelType",
+    "bfs_divergent_codes",
+    "streaming_approximate_codes",
+    "streaming_exact_codes",
 ]
 
 
@@ -102,3 +107,83 @@ def _validate_max_degree(max_degree: int) -> int:
             f"got {max_degree!r}",
         )
     return md
+
+
+# ---------------------------------------------------------------------------
+# Engine plan: how each engine handles a code, beyond the structural RelType
+# ---------------------------------------------------------------------------
+
+
+class EngineSupport(NamedTuple):
+    """Per-code engine handling, beyond the structural :class:`RelType`.
+
+    The matrix engine (``count_pairs`` / ``extract_pairs``) is the
+    reference: it counts *paths* through shared ancestors and is exact for
+    every code on every input.  This record captures where the other two
+    engines deviate, so the divergence lives in one place instead of being
+    re-stated in three docstrings (PGQ-004).
+    """
+
+    streaming_exact: bool
+    """``count_pairs_streaming`` is bit-identical to the matrix engine for
+    this code.  ``False`` → the scalar formula is approximate (it assumes a
+    full complement of known ancestors and diverges on shallow / inbred /
+    twin-having pedigrees; see :meth:`count_pairs_streaming`)."""
+
+    bfs_diverges_under_inbreeding: bool
+    """``count_pairs_bfs`` counts *distinct* shared ancestors while the
+    matrix engine counts *paths*; the two differ for this code on inbred
+    input.  ``False`` → BFS matches the matrix engine on every input."""
+
+
+# Keyed by relationship code; must cover exactly the REL_REGISTRY key set
+# (asserted in tests).  Matrix engine is the exact paths-counting reference.
+REL_PLAN: dict[str, EngineSupport] = {
+    # --- degree 0 / 1: lineal + sibling, exact everywhere ---
+    "MZ": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "MO": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "FO": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "FS": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "MHS": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "PHS": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    # --- degree 2 ---
+    "GP": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "Av": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    # --- degree 3 ---
+    "GGP": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "HAv": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "GAv": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "1C": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    # --- degree 4 ---
+    "GGGP": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "HGAv": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "GGAv": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "H1C": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "1C1R": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=True),
+    # --- degree 5 ---
+    "G3GP": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "HGGAv": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "G3Av": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "H1C1R": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=True),
+    "1C2R": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=True),
+    "2C": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=True),
+}
+
+
+def streaming_exact_codes() -> frozenset[str]:
+    """Codes for which ``count_pairs_streaming`` matches the matrix engine exactly."""
+    return frozenset(code for code, plan in REL_PLAN.items() if plan.streaming_exact)
+
+
+def streaming_approximate_codes() -> frozenset[str]:
+    """Codes for which ``count_pairs_streaming`` is an approximation."""
+    return frozenset(code for code, plan in REL_PLAN.items() if not plan.streaming_exact)
+
+
+def bfs_divergent_codes() -> frozenset[str]:
+    """Codes where ``count_pairs_bfs`` can diverge from the matrix engine.
+
+    BFS counts distinct ancestors and the matrix engine counts paths, so
+    these codes differ on inbred input.
+    """
+    return frozenset(code for code, plan in REL_PLAN.items() if plan.bfs_diverges_under_inbreeding)

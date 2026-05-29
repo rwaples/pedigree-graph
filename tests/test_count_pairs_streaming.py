@@ -20,13 +20,19 @@ def test_streaming_returns_all_23_codes(small_pedigree):
 
 
 def test_streaming_exact_codes_match_matrix(small_pedigree):
-    """Lineal + sibling + MZ codes are exact even on inbred fixtures."""
+    """Lineal + sibling + MZ codes are exact even on inbred fixtures.
+
+    The exact-code set is sourced from the relationship plan
+    (``streaming_exact_codes``), not re-listed here, so the contract has a
+    single source of truth (PGQ-004).
+    """
+    from pedigree_graph._registry import streaming_exact_codes
+
     pg_s = PedigreeGraph(small_pedigree)
     pg_m = PedigreeGraph(small_pedigree)
     s = pg_s.count_pairs_streaming(max_degree=5, scope="full")
     m = pg_m.count_pairs(max_degree=5, scope="full")
-    for code in ("MZ", "MO", "FO", "FS", "MHS", "PHS",
-                 "GP", "GGP", "GGGP", "G3GP"):
+    for code in streaming_exact_codes():
         assert s[code] == m[code], (
             f"streaming {code}={s[code]} but matrix engine returns {m[code]}"
         )

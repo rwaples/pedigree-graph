@@ -736,14 +736,15 @@ class PedigreeGraph:
         ``NotImplementedError``; use :meth:`count_pairs` for
         subsample-restricted counts.
 
-        **Precision contract**:
+        **Precision contract** (single source of truth:
+        ``REL_PLAN`` / :func:`streaming_exact_codes` in ``_registry``):
 
         - Exact (bit-identical to :meth:`count_pairs` on every input)
-          for 10 codes: ``MZ``, ``MO``, ``FO``, ``FS``, ``MHS``,
-          ``PHS``, ``GP``, ``GGP``, ``GGGP``, ``G3GP``.
-        - Approximate for 13 cousin / collateral codes: ``Av``,
-          ``1C``, ``H1C``, ``HAv``, ``GAv``, ``GGAv``, ``G3Av``,
-          ``HGAv``, ``HGGAv``, ``1C1R``, ``H1C1R``, ``1C2R``, ``2C``.
+          for the 10 codes in :func:`streaming_exact_codes` — the lineal
+          (``MZ``, ``MO``, ``FO``, ``GP``, ``GGP``, ``GGGP``, ``G3GP``)
+          and sibling (``FS``, ``MHS``, ``PHS``) codes.
+        - Approximate for the 13 cousin / collateral codes in
+          :func:`streaming_approximate_codes`.
           The scalar formulas assume each individual has the full
           complement of known grandparents at the relevant depth and
           diverge from the matrix engine on:
