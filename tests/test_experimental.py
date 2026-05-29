@@ -20,11 +20,14 @@ import pandas as pd
 import pytest
 
 from pedigree_graph import PAIR_KINSHIP, PedigreeGraph
+from pedigree_graph._registry import bfs_divergent_codes
 from pedigree_graph.experimental import count_pairs_bfs
 
 # Cousin-style codes that may diverge between matrix and BFS engines under
 # inbreeding (matrix counts paths; BFS counts distinct shared ancestors).
-COUSIN_CODES = {"1C1R", "H1C1R", "1C2R", "2C"}
+# Sourced from the relationship plan (PGQ-004/009) so the test stays
+# synchronized with the engine's documented divergence set.
+COUSIN_CODES = set(bfs_divergent_codes())
 NON_COUSIN_CODES = set(PAIR_KINSHIP) - COUSIN_CODES
 
 
@@ -323,7 +326,7 @@ def test_count_after_subtract_handles_subtract_with_larger_hi():
     correctly. Regression test for the latent bug in pedsum's
     _count_after_subtract.
     """
-    from pedigree_graph.experimental import _count_after_subtract
+    from pedigree_graph._bfs_engine import _count_after_subtract
 
     # Candidate: pairs (1,2), (3,4). Subtract list: (1,2) (overlap), and
     # (5, 100) (overlaps the candidate space; hi=100 > candidate hi=4).
