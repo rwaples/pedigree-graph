@@ -36,6 +36,7 @@ from pedigree_graph import (
     ne_variance_family_size,
 )
 from pedigree_graph._effective_size import (
+    CTAccumulators,
     _caballero_toro_accumulators,
     _founder_idx,
     _per_gen_founder_means,
@@ -92,7 +93,7 @@ def _ref_per_gen_means(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray]:
     return m_g, founder_idx
 
 
-def _ref_ct_accumulators(pg: PedigreeGraph, F: np.ndarray) -> dict:
+def _ref_ct_accumulators(pg: PedigreeGraph, F: np.ndarray) -> CTAccumulators:
     """Reference (sums, counts) built from the dense matrix."""
     c, founder_idx = _ref_founder_contribution_matrix(pg)
     gen = np.asarray(pg.generation)
@@ -111,7 +112,15 @@ def _ref_ct_accumulators(pg: PedigreeGraph, F: np.ndarray) -> dict:
                 idx = in_g[mask]
                 sums[g, f_local] = float(self_coancestry[idx].sum())
                 counts[g, f_local] = int(idx.size)
-    return {"sums": sums, "counts": counts, "founder_idx": founder_idx}
+    # CT estimator only reads sums/counts; telemetry fields are zeroed.
+    return CTAccumulators(
+        sums=sums,
+        counts=counts,
+        peak_ancestor_set_size=0,
+        peak_live_ancestor_sets=0,
+        total_ancestor_pair_visits=0,
+        founder_idx=founder_idx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -255,9 +264,9 @@ def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None
     new = _caballero_toro_accumulators(pg, founder_idx, F)
     ref = _ref_ct_accumulators(pg, F)
 
-    np.testing.assert_array_equal(new["founder_idx"], ref["founder_idx"])
-    np.testing.assert_array_equal(new["counts"], ref["counts"])
-    np.testing.assert_allclose(new["sums"], ref["sums"], atol=1e-12, rtol=0.0)
+    np.testing.assert_array_equal(new.founder_idx, ref.founder_idx)
+    np.testing.assert_array_equal(new.counts, ref.counts)
+    np.testing.assert_allclose(new.sums, ref.sums, atol=1e-12, rtol=0.0)
 
 
 def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
@@ -281,7 +290,8 @@ def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
         np.asarray(pg.father, dtype=np.int32),
         np.asarray(pg.twin, dtype=np.int32),
         np.asarray(pg.generation, dtype=np.int32),
-        0.0, None,
+        0.0,
+        None,
         config=KinshipDPConfig(retire=True, lazy=False, debug_asserts=False),
     )
     return _finalize_from_sum_theta(r.sum_theta, r.depth, r.tw_idx)
@@ -298,11 +308,20 @@ def test_per_gen_mean_kinship_retire_matches_legacy(
     pg = parity_pedigree
     theta_retiring = pg.per_gen_mean_kinship()
     theta_legacy = _compute_theta_per_gen(
-        pg.n, pg.mother, pg.father, pg.twin, pg.generation, 0.0,
+        pg.n,
+        pg.mother,
+        pg.father,
+        pg.twin,
+        pg.generation,
+        0.0,
         _debug_no_retire=True,
     )
     np.testing.assert_allclose(
-        theta_retiring, theta_legacy, rtol=0, atol=1e-12, equal_nan=True,
+        theta_retiring,
+        theta_legacy,
+        rtol=0,
+        atol=1e-12,
+        equal_nan=True,
     )
 
 
@@ -318,7 +337,7 @@ def test_per_gen_mean_kinship_lazy_matches_eager_retire(
     """
     pg = parity_pedigree
     theta_lazy = pg.per_gen_mean_kinship()  # production: lazy=True
-    theta_eager = _theta_retire_eager(pg)   # test-only: lazy=False
+    theta_eager = _theta_retire_eager(pg)  # test-only: lazy=False
     np.testing.assert_array_equal(theta_lazy, theta_eager)
 
 
@@ -331,10 +350,16 @@ def test_per_gen_mean_kinship_retire_matches_K_reference(
     theta_retiring = pg.per_gen_mean_kinship()
     K = pg.kinship_matrix()
     theta_K = _per_gen_mean_kinship(
-        K, np.asarray(pg.generation), np.asarray(pg.twin),
+        K,
+        np.asarray(pg.generation),
+        np.asarray(pg.twin),
     )
     np.testing.assert_allclose(
-        theta_retiring, theta_K, rtol=0, atol=1e-12, equal_nan=True,
+        theta_retiring,
+        theta_K,
+        rtol=0,
+        atol=1e-12,
+        equal_nan=True,
     )
 
 
@@ -359,16 +384,26 @@ def test_compute_theta_per_gen_debug_no_retire_independent_of_caches(
     poisoned_K = sp.csc_matrix(K.shape, dtype=K.dtype)
     pg._kinship_cache[0.0] = poisoned_K
     theta_legacy = _compute_theta_per_gen(
-        pg.n, pg.mother, pg.father, pg.twin, pg.generation, 0.0,
+        pg.n,
+        pg.mother,
+        pg.father,
+        pg.twin,
+        pg.generation,
+        0.0,
         _debug_no_retire=True,
     )
     assert not np.allclose(theta_legacy, -999.0, equal_nan=True)
     np.testing.assert_array_equal(
-        pg._theta_per_gen_cache[0.0], np.full_like(cached, -999.0),
+        pg._theta_per_gen_cache[0.0],
+        np.full_like(cached, -999.0),
     )
     assert pg._kinship_cache[0.0] is poisoned_K
     np.testing.assert_allclose(
-        theta_legacy, theta_retiring, rtol=0, atol=1e-12, equal_nan=True,
+        theta_legacy,
+        theta_retiring,
+        rtol=0,
+        atol=1e-12,
+        equal_nan=True,
     )
 
 
@@ -380,11 +415,20 @@ def test_compute_theta_per_gen_debug_asserts_pass_on_well_formed_pedigree(
     pg = parity_pedigree
     theta_default = pg.per_gen_mean_kinship()
     theta_asserts = _compute_theta_per_gen(
-        pg.n, pg.mother, pg.father, pg.twin, pg.generation, 0.0,
+        pg.n,
+        pg.mother,
+        pg.father,
+        pg.twin,
+        pg.generation,
+        0.0,
         _debug_asserts=True,
     )
     np.testing.assert_allclose(
-        theta_default, theta_asserts, rtol=0, atol=1e-12, equal_nan=True,
+        theta_default,
+        theta_asserts,
+        rtol=0,
+        atol=1e-12,
+        equal_nan=True,
     )
 
 
@@ -399,14 +443,8 @@ def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> No
 
     # Reference path: feed dense-derived structures through the public API.
     m_g_ref, founder_idx_ref = _ref_per_gen_means(pg)
-    res_ltc_ref = ne_long_term_contributions(
-        pg, mean_contributions=(m_g_ref, founder_idx_ref)
-    )
+    res_ltc_ref = ne_long_term_contributions(pg, mean_contributions=(m_g_ref, founder_idx_ref))
     ref_acc = _ref_ct_accumulators(pg, F)
-    # Pad with the metric keys the helper would add (CT estimator only reads sums/counts).
-    ref_acc.setdefault("peak_ancestor_set_size", 0)
-    ref_acc.setdefault("peak_live_ancestor_sets", 0)
-    ref_acc.setdefault("total_ancestor_pair_visits", 0)
     res_ct_ref = ne_caballero_toro(pg, ct_accumulators=ref_acc)
 
     # LTC dataclass parity
@@ -468,25 +506,25 @@ def test_sex_specific_family_table_attributes_skip_gen_offspring() -> None:
 
     # Parent gen 0: females are individuals 1 and 3 (in that order).
     gen0 = table[0]
-    np.testing.assert_array_equal(gen0["females_in_parent_gen"], np.array([1, 3]))
+    np.testing.assert_array_equal(gen0.females_in_parent_gen, np.array([1, 3]))
     # Female 1 (idx 0): children 4 (M, gen 1) + 5 (F, gen 1) → k_fm=1, k_ff=1.
     # Female 3 (idx 1): children 7 (F, gen 1) + 8 (M, gen 3 SKIP) → k_fm=1, k_ff=1.
-    np.testing.assert_array_equal(gen0["k_fm"], np.array([1, 1]))
-    np.testing.assert_array_equal(gen0["k_ff"], np.array([1, 1]))
+    np.testing.assert_array_equal(gen0.k_fm, np.array([1, 1]))
+    np.testing.assert_array_equal(gen0.k_ff, np.array([1, 1]))
 
     # Parent gen 0: males are individuals 0 and 2.  Male 0 sires 4+5;
     # male 2 sires only 7.
-    np.testing.assert_array_equal(gen0["males_in_parent_gen"], np.array([0, 2]))
-    np.testing.assert_array_equal(gen0["k_mm"], np.array([1, 0]))
-    np.testing.assert_array_equal(gen0["k_mf"], np.array([1, 1]))
+    np.testing.assert_array_equal(gen0.males_in_parent_gen, np.array([0, 2]))
+    np.testing.assert_array_equal(gen0.k_mm, np.array([1, 0]))
+    np.testing.assert_array_equal(gen0.k_mf, np.array([1, 1]))
 
     # Parent gen 2: only individual 6 (M).  Sires children 8 (M, gen 3)
     # and 9 (F, gen 3) — both via skip-gen mothers.  Captured here at
     # the parent's own cohort.
     gen2 = table[2]
-    np.testing.assert_array_equal(gen2["males_in_parent_gen"], np.array([6]))
-    np.testing.assert_array_equal(gen2["k_mm"], np.array([1]))
-    np.testing.assert_array_equal(gen2["k_mf"], np.array([1]))
+    np.testing.assert_array_equal(gen2.males_in_parent_gen, np.array([6]))
+    np.testing.assert_array_equal(gen2.k_mm, np.array([1]))
+    np.testing.assert_array_equal(gen2.k_mf, np.array([1]))
 
 
 @pytest.fixture
@@ -596,20 +634,20 @@ def test_sentinel_metrics_at_n2000_g8() -> None:
 
     # Output shapes: linear in (g_max+1, n_founders), never (N · g_max, n_founders).
     assert m_g.shape == (n_gens + 1, n_founders)
-    assert ct["sums"].shape == (n_gens + 1, n_founders)
-    assert ct["counts"].shape == (n_gens + 1, n_founders)
+    assert ct.sums.shape == (n_gens + 1, n_founders)
+    assert ct.counts.shape == (n_gens + 1, n_founders)
 
     # Output bytes scale with (g_max · n_founders), not N · n_founders.
-    output_bytes = m_g.nbytes + ct["sums"].nbytes + ct["counts"].nbytes
+    output_bytes = m_g.nbytes + ct.sums.nbytes + ct.counts.nbytes
     assert output_bytes < (n_gens + 1) * n_founders * (8 + 8 + 8) + 1024
 
     # Live ancestor-set metrics: bounded by N (population cap) — the
     # streaming structure never needs (n · n_founders) cells live at once.
-    assert 0 <= ct["peak_ancestor_set_size"] <= n_founders
-    assert 0 <= ct["peak_live_ancestor_sets"] <= pg.n
+    assert 0 <= ct.peak_ancestor_set_size <= n_founders
+    assert 0 <= ct.peak_live_ancestor_sets <= pg.n
     # Total work: ancestor-pair visits.  Strictly bounded above by N · n_founders
     # (saturated case); typically far less.
-    assert ct["total_ancestor_pair_visits"] <= pg.n * n_founders
+    assert ct.total_ancestor_pair_visits <= pg.n * n_founders
 
 
 # ---------------------------------------------------------------------------
@@ -686,9 +724,9 @@ _RSS_SCRIPT = textwrap.dedent(
     m_g, _ = _per_gen_founder_means(pg, founder_idx=founder_idx)
     ct = _caballero_toro_accumulators(pg, founder_idx, F)
     print(f"RSS_KB={read_vm_hwm_kb()}")
-    print(f"PEAK_ANC_SET={ct['peak_ancestor_set_size']}")
-    print(f"PEAK_LIVE_SETS={ct['peak_live_ancestor_sets']}")
-    print(f"PAIR_VISITS={ct['total_ancestor_pair_visits']}")
+    print(f"PEAK_ANC_SET={ct.peak_ancestor_set_size}")
+    print(f"PEAK_LIVE_SETS={ct.peak_live_ancestor_sets}")
+    print(f"PAIR_VISITS={ct.total_ancestor_pair_visits}")
     """
 ).strip()
 
@@ -727,10 +765,7 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
     rss_line = next(line for line in proc.stdout.splitlines() if line.startswith("RSS_KB="))
     rss_kb = int(rss_line.split("=", 1)[1])
     rss_mb = rss_kb / 1024.0
-    assert rss_mb < 256.0, (
-        f"new helpers peak RSS {rss_mb:.1f} MB exceeded 256 MB threshold; "
-        f"stdout=\n{proc.stdout}"
-    )
+    assert rss_mb < 256.0, f"new helpers peak RSS {rss_mb:.1f} MB exceeded 256 MB threshold; stdout=\n{proc.stdout}"
 
 
 @pytest.mark.slow

@@ -51,7 +51,7 @@ __all__ = [
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import numba
 import numpy as np
@@ -63,6 +63,109 @@ if TYPE_CHECKING:
     import scipy.sparse as sp
 
     from pedigree_graph._core import PedigreeGraph
+
+
+# ---------------------------------------------------------------------------
+# Typed payload models
+#
+# Internal contracts for the intermediate structures the estimators pass
+# around (PGQ-005).  These replace the former stringly typed dicts so a
+# missing or misnamed field is a construction-time error rather than a
+# silent ``KeyError`` deep inside an estimator.  Not part of the public
+# package API; importable from this module for tests and downstream typing.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class FamilySizeEntry:
+    """One parent cohort's sex-of-offspring family-size quadrants.
+
+    Produced by :func:`_sex_specific_family_table` (one entry per parent
+    cohort) and consumed by :func:`_sigma2_from_quadrants`.  The four
+    ``k_*`` arrays are per-parent lifetime offspring counts; arrays are
+    aligned *within sex* — ``k_mm``/``k_mf`` index the same males as
+    ``males_in_parent_gen`` (length ``n_m``), and ``k_fm``/``k_ff`` the
+    same females as ``females_in_parent_gen`` (length ``n_f``).
+
+    Attributes:
+        males_in_parent_gen: ``(n_m,)`` intp — row indices of males in
+            the cohort.
+        females_in_parent_gen: ``(n_f,)`` intp — row indices of females
+            in the cohort.
+        k_mm: ``(n_m,)`` int64 — male offspring per male.
+        k_mf: ``(n_m,)`` int64 — female offspring per male.
+        k_fm: ``(n_f,)`` int64 — male offspring per female.
+        k_ff: ``(n_f,)`` int64 — female offspring per female.
+    """
+
+    males_in_parent_gen: np.ndarray
+    females_in_parent_gen: np.ndarray
+    k_mm: np.ndarray
+    k_mf: np.ndarray
+    k_fm: np.ndarray
+    k_ff: np.ndarray
+
+
+# Per-parent-cohort table keyed on cohort label (generation index in
+# ``compact_generation`` mode, birth year in ``arbitrary`` mode).
+FamilySizeTable = dict[int, FamilySizeEntry]
+
+
+class Sigma2Decomposition(NamedTuple):
+    """Caballero 1994 eq. 6 reassembly terms for one cohort.
+
+    Returned by :func:`_sigma2_from_quadrants`.  Callers reassemble the
+    per-sex lifetime-offspring variance as ``σ²_m = v_mm + v_mf +
+    2·cov_m`` and ``σ²_f = v_fm + v_ff + 2·cov_f``.  Remains
+    tuple-unpackable for positional call sites.
+
+    Attributes:
+        v_mm, v_mf, v_fm, v_ff: sample variances (ddof=1) of the four
+            offspring-count quadrants.
+        cov_m: ``Cov(k_mm, k_mf)``; ``cov_f``: ``Cov(k_fm, k_ff)``.
+        kbar_m, kbar_f: mean total lifetime offspring per male / female.
+        n_m, n_f: cohort male / female counts (each ``≥ 2``).
+    """
+
+    v_mm: float
+    v_mf: float
+    v_fm: float
+    v_ff: float
+    cov_m: float
+    cov_f: float
+    kbar_m: float
+    kbar_f: float
+    n_m: int
+    n_f: int
+
+
+@dataclass(frozen=True, slots=True)
+class CTAccumulators:
+    """Caballero & Toro per-(generation, founder) self-coancestry sums.
+
+    Produced by :func:`_caballero_toro_accumulators` and consumed by
+    :func:`ne_caballero_toro`.  ``sums`` and ``counts`` share the same
+    ``(g_max + 1, n_founders)`` layout; founder columns align with
+    ``founder_idx``.  The ``peak_*`` / ``total_*`` fields are descriptive
+    arena telemetry (scaling diagnostics), not used in the Ne formula.
+
+    Attributes:
+        sums: ``(g_max + 1, n_founders)`` float64 — Σ self-coancestry of
+            founder f's descendants in generation g.
+        counts: ``(g_max + 1, n_founders)`` int64 — descendant count of
+            founder f in generation g.
+        peak_ancestor_set_size: largest single founder-ancestor set seen.
+        peak_live_ancestor_sets: max simultaneously live sets in the arena.
+        total_ancestor_pair_visits: Σ over individuals of ancestor-set size.
+        founder_idx: ``(n_founders,)`` intp — founder row indices.
+    """
+
+    sums: np.ndarray
+    counts: np.ndarray
+    peak_ancestor_set_size: int
+    peak_live_ancestor_sets: int
+    total_ancestor_pair_visits: int
+    founder_idx: np.ndarray
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +202,9 @@ def _per_gen_mean_kinship(
     pair_mask &= ~((twin_idx[rows] >= 0) & (twin_idx[rows] == cols))
     pair_gens = generation[rows[pair_mask]].astype(np.intp)
     sum_theta = np.bincount(
-        pair_gens, weights=vals[pair_mask].astype(np.float64), minlength=g_max + 1,
+        pair_gens,
+        weights=vals[pair_mask].astype(np.float64),
+        minlength=g_max + 1,
     )
     return _finalize_from_sum_theta(sum_theta, generation, twin_idx)
 
@@ -112,7 +217,7 @@ def _sex_specific_family_table(
     *,
     cohort: np.ndarray | None = None,
     cohort_mode: Literal["compact_generation", "arbitrary"] = "compact_generation",
-) -> dict[int, dict[str, np.ndarray]]:
+) -> FamilySizeTable:
     """Per-parent-cohort counts of male/female offspring per parent.
 
     For each parent cohort ``c``, tally the lifetime offspring of every
@@ -142,15 +247,8 @@ def _sex_specific_family_table(
               eligibility filtering handles right-censoring).
 
     Returns:
-        Dict keyed on parent cohort label.  Each entry is a dict with
-        arrays:
-
-        * ``males_in_parent_gen`` — row indices of males in cohort
-        * ``females_in_parent_gen`` — row indices of females in cohort
-        * ``k_mm`` — per-male count of male offspring
-        * ``k_mf`` — per-male count of female offspring
-        * ``k_fm`` — per-female count of male offspring
-        * ``k_ff`` — per-female count of female offspring
+        A :data:`FamilySizeTable` (``dict`` keyed on parent cohort
+        label) whose values are :class:`FamilySizeEntry` records.
     """
     n = len(generation)
     sex = np.asarray(sex, dtype=np.int8)
@@ -181,19 +279,19 @@ def _sex_specific_family_table(
     k_fm_all = np.bincount(mother[mother_present & male_offspring], minlength=n).astype(np.int64)
     k_ff_all = np.bincount(mother[mother_present & ~male_offspring], minlength=n).astype(np.int64)
 
-    out: dict[int, dict[str, np.ndarray]] = {}
+    out: FamilySizeTable = {}
     for c in cohort_labels:
         in_c = cohort_arr == c
         m_arr = np.where(in_c & (sex == 1))[0]
         f_arr = np.where(in_c & (sex == 0))[0]
-        out[c] = {
-            "males_in_parent_gen": m_arr,
-            "females_in_parent_gen": f_arr,
-            "k_mm": k_mm_all[m_arr],
-            "k_mf": k_mf_all[m_arr],
-            "k_fm": k_fm_all[f_arr],
-            "k_ff": k_ff_all[f_arr],
-        }
+        out[c] = FamilySizeEntry(
+            males_in_parent_gen=m_arr,
+            females_in_parent_gen=f_arr,
+            k_mm=k_mm_all[m_arr],
+            k_mf=k_mf_all[m_arr],
+            k_fm=k_fm_all[f_arr],
+            k_ff=k_ff_all[f_arr],
+        )
     return out
 
 
@@ -425,27 +523,22 @@ def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
         )
 
 
-def _sigma2_from_quadrants(
-    entry: dict[str, np.ndarray],
-) -> tuple[float, float, float, float, float, float, float, float, int, int] | None:
+def _sigma2_from_quadrants(entry: FamilySizeEntry) -> Sigma2Decomposition | None:
     """Caballero 1994 eq. 6 reassembly from sex-of-offspring quadrants.
 
     Computes the per-sex lifetime-offspring variance ``σ²_s = V(k_ss) +
     V(k_sf) + 2·Cov(k_ss, k_sf)`` and the per-sex offspring-count mean
-    ``k̄_s`` from one row of :func:`_sex_specific_family_table` output.
-    Returns ``None`` when the cohort lacks two of either sex (Ne is
-    undefined for that transition).
+    ``k̄_s`` from one :class:`FamilySizeEntry`.  Returns ``None`` when the
+    cohort lacks two of either sex (Ne is undefined for that transition).
 
     Returns:
-        ``(v_mm, v_mf, v_fm, v_ff, cov_m, cov_f, kbar_m, kbar_f, n_m,
-        n_f)`` — six variance/covariance terms, two means, two cohort
-        sizes.  Callers reassemble ``σ²_m`` and ``σ²_f`` from the
-        appropriate sum.
+        A :class:`Sigma2Decomposition` (six variance/covariance terms,
+        two means, two cohort sizes), or ``None``.
     """
-    kmm = entry["k_mm"]
-    kmf = entry["k_mf"]
-    kfm = entry["k_fm"]
-    kff = entry["k_ff"]
+    kmm = entry.k_mm
+    kmf = entry.k_mf
+    kfm = entry.k_fm
+    kff = entry.k_ff
     n_m = len(kmm)
     n_f = len(kfm)
     if n_m < 2 or n_f < 2:
@@ -458,7 +551,18 @@ def _sigma2_from_quadrants(
     v_ff = float(kff.var(ddof=1))
     cov_m = float(np.cov(kmm, kmf, ddof=1)[0, 1])
     cov_f = float(np.cov(kfm, kff, ddof=1)[0, 1])
-    return v_mm, v_mf, v_fm, v_ff, cov_m, cov_f, kbar_m, kbar_f, n_m, n_f
+    return Sigma2Decomposition(
+        v_mm=v_mm,
+        v_mf=v_mf,
+        v_fm=v_fm,
+        v_ff=v_ff,
+        cov_m=cov_m,
+        cov_f=cov_f,
+        kbar_m=kbar_m,
+        kbar_f=kbar_f,
+        n_m=n_m,
+        n_f=n_f,
+    )
 
 
 def _waples_vk2_expectation(vk1: float, kbar1: float, kbar2: float = 2.0) -> float:
@@ -959,7 +1063,7 @@ def _caballero_toro_accumulators(
     pg: PedigreeGraph,
     founder_idx: np.ndarray,
     F: np.ndarray,
-) -> dict[str, Any]:
+) -> CTAccumulators:
     """Streaming forward sweep producing per-(g, f) self-coancestry sums.
 
     For each generation g and founder f, accumulates the count of
@@ -979,13 +1083,7 @@ def _caballero_toro_accumulators(
         F: Per-individual inbreeding coefficients (length ``pg.n``).
 
     Returns:
-        Dict with:
-        * ``sums``: shape ``(g_max + 1, n_founders)``, float64.
-        * ``counts``: shape ``(g_max + 1, n_founders)``, int64.
-        * ``peak_ancestor_set_size``: max size of any single ancestor set.
-        * ``peak_live_ancestor_sets``: max simultaneously live sets.
-        * ``total_ancestor_pair_visits``: Σ over i of len(ancestor_set[i]).
-        * ``founder_idx``: copy of input.
+        A :class:`CTAccumulators` record.
     """
     n = pg.n
     n_founders = len(founder_idx)
@@ -995,14 +1093,14 @@ def _caballero_toro_accumulators(
     g_max = int(gen.max()) if n > 0 else 0
 
     if n_founders == 0:
-        return {
-            "sums": np.zeros((g_max + 1, 0), dtype=np.float64),
-            "counts": np.zeros((g_max + 1, 0), dtype=np.int64),
-            "peak_ancestor_set_size": 0,
-            "peak_live_ancestor_sets": 0,
-            "total_ancestor_pair_visits": 0,
-            "founder_idx": founder_idx,
-        }
+        return CTAccumulators(
+            sums=np.zeros((g_max + 1, 0), dtype=np.float64),
+            counts=np.zeros((g_max + 1, 0), dtype=np.int64),
+            peak_ancestor_set_size=0,
+            peak_live_ancestor_sets=0,
+            total_ancestor_pair_visits=0,
+            founder_idx=founder_idx,
+        )
 
     founder_local_of = np.full(n, -1, dtype=np.int64)
     founder_local_of[np.asarray(founder_idx, dtype=np.int64)] = np.arange(n_founders, dtype=np.int64)
@@ -1017,14 +1115,14 @@ def _caballero_toro_accumulators(
         g_max,
         n_founders,
     )
-    return {
-        "sums": sums,
-        "counts": counts,
-        "peak_ancestor_set_size": int(peak_set_size),
-        "peak_live_ancestor_sets": int(peak_live),
-        "total_ancestor_pair_visits": int(total_pair_visits),
-        "founder_idx": founder_idx,
-    }
+    return CTAccumulators(
+        sums=sums,
+        counts=counts,
+        peak_ancestor_set_size=int(peak_set_size),
+        peak_live_ancestor_sets=int(peak_live),
+        total_ancestor_pair_visits=int(total_pair_visits),
+        founder_idx=founder_idx,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1224,9 +1322,7 @@ class NeCaballeroToroResult:
         return {
             "ne": _optional_float(self.ne),
             "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
-            "mean_self_coancestry_per_gen": [
-                _optional_float(v) for v in self.mean_self_coancestry_per_gen
-            ],
+            "mean_self_coancestry_per_gen": [_optional_float(v) for v in self.mean_self_coancestry_per_gen],
             "n_founders_with_descendants_per_gen": [int(v) for v in self.n_founders_with_descendants_per_gen],
             "slope": _optional_float(self.slope),
         }
@@ -1558,7 +1654,7 @@ def ne_hill_overlapping(pg: PedigreeGraph, vk_scale: bool = False) -> NeHillResu
 
 def ne_caballero_toro(
     pg: PedigreeGraph,
-    ct_accumulators: dict[str, Any] | None = None,
+    ct_accumulators: CTAccumulators | None = None,
 ) -> NeCaballeroToroResult:
     """Caballero & Toro 2002 self-coancestry rate Ne (Ne_CT).
 
@@ -1574,8 +1670,8 @@ def ne_caballero_toro(
         F = pg.compute_inbreeding()
         ct_accumulators = _caballero_toro_accumulators(pg, founder_idx, F)
 
-    sums = ct_accumulators["sums"]
-    counts = ct_accumulators["counts"]
+    sums = ct_accumulators.sums
+    counts = ct_accumulators.counts
     g_max = sums.shape[0] - 1
 
     valid = counts > 0
@@ -1628,12 +1724,26 @@ def ne_caballero_toro(
 # ---------------------------------------------------------------------------
 
 
+# Union of the eight estimator result dataclasses.  The values of the
+# ``compute_all_ne`` dict are always one of these — never an untyped dict.
+NeResult = (
+    NeInbreedingResult
+    | NeCoancestryResult
+    | NeVarianceResult
+    | NeSexRatioResult
+    | NeIndividualDeltaFResult
+    | NeLTCResult
+    | NeHillResult
+    | NeCaballeroToroResult
+)
+
+
 def compute_all_ne(
     pg: PedigreeGraph,
     skip_ne_coancestry: bool = False,
     n_threads: int = 1,
     hill_vk_scale: bool = False,
-) -> dict[str, Any]:
+) -> dict[str, NeResult]:
     """Run all eight Ne estimators on ``pg``.
 
     Builds the founder-contribution structures once and reuses them for
@@ -1705,13 +1815,10 @@ def compute_all_ne(
     if not skip_ne_coancestry:
         tasks["ne_coancestry"] = (ne_coancestry, (pg,), {"theta_per_gen": theta_per_gen})
 
-    results: dict[str, Any] = {}
+    results: dict[str, NeResult] = {}
     max_workers = min(n_threads, len(tasks))
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            name: executor.submit(func, *args, **kwargs)
-            for name, (func, args, kwargs) in tasks.items()
-        }
+        futures = {name: executor.submit(func, *args, **kwargs) for name, (func, args, kwargs) in tasks.items()}
         for name, future in futures.items():
             results[name] = future.result()
 

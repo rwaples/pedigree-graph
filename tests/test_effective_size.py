@@ -21,7 +21,17 @@ from pedigree_graph import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
-from pedigree_graph._effective_size import _per_gen_mean_kinship
+from pedigree_graph._effective_size import (
+    CTAccumulators,
+    FamilySizeEntry,
+    NeInbreedingResult,
+    Sigma2Decomposition,
+    _caballero_toro_accumulators,
+    _founder_idx,
+    _per_gen_mean_kinship,
+    _sex_specific_family_table,
+    _sigma2_from_quadrants,
+)
 from pedigree_graph._kinship_kernel import (
     _compute_eqg,
     _compute_theta_per_gen,
@@ -523,15 +533,13 @@ def test_ne_hill_eligible_cohort_filtering():
     # Cohort 1910 — 4 kids of cohort-1900 parents
     pairs_1910 = [(0, 2), (1, 3), (0, 2), (1, 3)]
     records.extend(
-        {"id": 4 + i, "sex": 1 if i < 2 else 0, "generation": 1, "birth_year": 1910,
-         "father": f, "mother": m}
+        {"id": 4 + i, "sex": 1 if i < 2 else 0, "generation": 1, "birth_year": 1910, "father": f, "mother": m}
         for i, (f, m) in enumerate(pairs_1910)
     )
     # Cohort 1920 — 4 kids of cohort-1910 parents
     pairs_1920 = [(4, 6), (5, 7), (4, 6), (5, 7)]
     records.extend(
-        {"id": 8 + i, "sex": 1 if i < 2 else 0, "generation": 2, "birth_year": 1920,
-         "father": f, "mother": m}
+        {"id": 8 + i, "sex": 1 if i < 2 else 0, "generation": 2, "birth_year": 1920, "father": f, "mother": m}
         for i, (f, m) in enumerate(pairs_1920)
     )
     df = _df_by(records)
@@ -612,8 +620,8 @@ def test_sex_specific_family_table_compact_mode_unchanged():
     assert set(table.keys()) == set(range(g_max))
     # Each cohort has the expected sex counts (1 male + 1 female per gen).
     for p in range(g_max):
-        assert len(table[p]["males_in_parent_gen"]) == 1
-        assert len(table[p]["females_in_parent_gen"]) == 1
+        assert len(table[p].males_in_parent_gen) == 1
+        assert len(table[p].females_in_parent_gen) == 1
 
 
 def test_sex_specific_family_table_arbitrary_mode_includes_max_label():
@@ -636,10 +644,10 @@ def test_sex_specific_family_table_arbitrary_mode_includes_max_label():
     # Keys are 1970..1975 (g_max INCLUDED).
     assert set(table.keys()) == {1970, 1971, 1972, 1973, 1974, 1975}
     # The youngest cohort (1975 = gen 5) has no offspring → all-zero k's.
-    np.testing.assert_array_equal(table[1975]["k_mm"], [0])
-    np.testing.assert_array_equal(table[1975]["k_mf"], [0])
-    np.testing.assert_array_equal(table[1975]["k_fm"], [0])
-    np.testing.assert_array_equal(table[1975]["k_ff"], [0])
+    np.testing.assert_array_equal(table[1975].k_mm, [0])
+    np.testing.assert_array_equal(table[1975].k_mf, [0])
+    np.testing.assert_array_equal(table[1975].k_fm, [0])
+    np.testing.assert_array_equal(table[1975].k_ff, [0])
 
 
 def test_sex_specific_family_table_arbitrary_mode_filters_sentinels():
@@ -661,8 +669,8 @@ def test_sex_specific_family_table_arbitrary_mode_filters_sentinels():
     assert -1 not in table
     # The id=0 founder (male) is no longer in cohort 0, so cohort 0 has
     # only the female founder.
-    assert len(table[0]["males_in_parent_gen"]) == 0
-    assert len(table[0]["females_in_parent_gen"]) == 1
+    assert len(table[0].males_in_parent_gen) == 0
+    assert len(table[0].females_in_parent_gen) == 1
 
 
 def test_sex_specific_family_table_arbitrary_mode_requires_cohort():
@@ -872,12 +880,137 @@ def test_compute_all_ne_threaded_matches_serial_when_coancestry_skipped():
     df = _build_random_mating_pedigree(rng, n_male=12, n_female=12, n_offspring=48)
 
     serial = {
-        k: v.to_dict()
-        for k, v in compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True, n_threads=1).items()
+        k: v.to_dict() for k, v in compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True, n_threads=1).items()
     }
     threaded = {
-        k: v.to_dict()
-        for k, v in compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True, n_threads=4).items()
+        k: v.to_dict() for k, v in compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True, n_threads=4).items()
     }
 
     assert threaded == serial
+
+
+# ---------------------------------------------------------------------------
+# PGQ-005: typed payload models replace stringly typed dicts
+# ---------------------------------------------------------------------------
+
+
+class TestTypedPayloadModels:
+    """The estimator-internal contracts are typed, not stringly keyed.
+
+    Acceptance criteria: no estimator reaches into a ``dict[str, Any]``
+    for required fields; shapes/dtypes are documented on the model; a
+    missing required field fails clearly at construction.
+    """
+
+    def test_family_table_entries_are_typed(self):
+        pg = PedigreeGraph(_build_closed_line(n_gens=4))
+        table = _sex_specific_family_table(
+            np.asarray(pg.mother),
+            np.asarray(pg.father),
+            np.asarray(pg.sex),
+            np.asarray(pg.generation),
+        )
+        entry = next(iter(table.values()))
+        assert isinstance(entry, FamilySizeEntry)
+        # Within-sex array alignment (documented invariant).
+        assert len(entry.k_mm) == len(entry.males_in_parent_gen)
+        assert len(entry.k_mf) == len(entry.males_in_parent_gen)
+        assert len(entry.k_fm) == len(entry.females_in_parent_gen)
+        assert len(entry.k_ff) == len(entry.females_in_parent_gen)
+        # Documented dtypes.
+        assert entry.k_mm.dtype == np.int64
+        assert entry.k_ff.dtype == np.int64
+
+    def test_family_size_entry_missing_field_raises(self):
+        with pytest.raises(TypeError):
+            FamilySizeEntry(  # type: ignore[call-arg]
+                males_in_parent_gen=np.empty(0, dtype=np.intp),
+                females_in_parent_gen=np.empty(0, dtype=np.intp),
+                k_mm=np.empty(0, dtype=np.int64),
+                # k_mf intentionally omitted
+                k_fm=np.empty(0, dtype=np.int64),
+                k_ff=np.empty(0, dtype=np.int64),
+            )
+
+    def test_sigma2_from_quadrants_returns_none_below_two_per_sex(self):
+        pg = PedigreeGraph(_build_closed_line(n_gens=4))
+        table = _sex_specific_family_table(
+            np.asarray(pg.mother),
+            np.asarray(pg.father),
+            np.asarray(pg.sex),
+            np.asarray(pg.generation),
+        )
+        # _build_closed_line has one male + one female per cohort, so
+        # every cohort lacks two of a sex → decomposition is None.
+        for entry in table.values():
+            assert _sigma2_from_quadrants(entry) is None
+
+    def test_sigma2_decomposition_fields_named_and_unpackable(self):
+        # A cohort with ≥2 of each sex yields a real decomposition.
+        df = pd.DataFrame(
+            {
+                "id": np.arange(8),
+                "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2]),
+                "father": np.array([-1, -1, -1, -1, 1, 1, 3, 3]),
+                "twin": np.full(8, -1),
+                "sex": np.array([1, 0, 1, 0, 1, 0, 1, 0]),
+                "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1]),
+            }
+        )
+        pg = PedigreeGraph(df)
+        table = _sex_specific_family_table(
+            np.asarray(pg.mother),
+            np.asarray(pg.father),
+            np.asarray(pg.sex),
+            np.asarray(pg.generation),
+        )
+        decomp = _sigma2_from_quadrants(table[0])
+        assert isinstance(decomp, Sigma2Decomposition)
+        assert decomp.n_m == 2
+        assert decomp.n_f == 2
+        # Still tuple-unpackable for the positional call sites: the
+        # positional order matches the documented field order exactly.
+        assert tuple(decomp) == (
+            decomp.v_mm,
+            decomp.v_mf,
+            decomp.v_fm,
+            decomp.v_ff,
+            decomp.cov_m,
+            decomp.cov_f,
+            decomp.kbar_m,
+            decomp.kbar_f,
+            decomp.n_m,
+            decomp.n_f,
+        )
+
+    def test_ct_accumulators_are_typed(self):
+        pg = PedigreeGraph(_build_closed_line(n_gens=4))
+        F = pg.compute_inbreeding()
+        acc = _caballero_toro_accumulators(pg, _founder_idx(pg), F)
+        assert isinstance(acc, CTAccumulators)
+        g_max = int(np.asarray(pg.generation).max())
+        n_founders = len(_founder_idx(pg))
+        assert acc.sums.shape == (g_max + 1, n_founders)
+        assert acc.counts.shape == (g_max + 1, n_founders)
+        assert acc.sums.dtype == np.float64
+        assert acc.counts.dtype == np.int64
+
+    def test_ct_accumulators_missing_field_raises(self):
+        with pytest.raises(TypeError):
+            CTAccumulators(  # type: ignore[call-arg]
+                sums=np.zeros((1, 0)),
+                counts=np.zeros((1, 0), dtype=np.int64),
+                # peak/telemetry fields intentionally omitted
+                founder_idx=np.empty(0, dtype=np.intp),
+            )
+
+    def test_compute_all_ne_values_are_typed_results(self):
+        pg = PedigreeGraph(_build_closed_line(n_gens=4))
+        results = compute_all_ne(pg)
+        # Container stays a plain dict (public contract); values are
+        # never untyped dicts.
+        assert isinstance(results, dict)
+        for value in results.values():
+            assert not isinstance(value, dict)
+            assert hasattr(value, "to_dict")
+        assert isinstance(results["ne_inbreeding"], NeInbreedingResult)
