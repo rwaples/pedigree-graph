@@ -2,9 +2,12 @@
 
 Every estimator returns one of these frozen dataclasses, each carrying a
 per-generation (or per-cohort) series plus a scenario-level scalar
-aggregate and a ``to_dict()`` serializer producing YAML/JSON-safe
-values.  :class:`GenerationInterval` is the sex-split Hill 1979 ``L``
-returned by :attr:`PedigreeGraph.generation_interval`.
+aggregate.  Serialization is shared: the records mix in
+:class:`_SerializableResult`, whose ``to_dict`` walks the dataclass fields
+through :func:`_to_jsonable` (dtype-driven, non-finite floats → ``None``)
+instead of each record re-implementing the same coercions.
+:class:`GenerationInterval` is the sex-split Hill 1979 ``L`` returned by
+:attr:`PedigreeGraph.generation_interval`.
 
 These types are pure data + serialization; the estimators that build
 them live in the ``_ne_*`` sibling modules.
@@ -12,7 +15,7 @@ them live in the ``_ne_*`` sibling modules.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -24,16 +27,72 @@ if TYPE_CHECKING:
 def _optional_float(x: float | None) -> float | None:
     """``None`` for missing or non-finite; else ``float(x)``.
 
-    Used by every ``NeXxxResult.to_dict`` to coerce optional scalar Ne /
-    diagnostic fields to YAML-safe JSON values.
+    Used by :func:`_to_jsonable` to coerce optional scalar Ne / diagnostic
+    fields to YAML-safe JSON values.
     """
     if x is None or not np.isfinite(x):
         return None
     return float(x)
 
 
+def _to_jsonable(value: Any) -> Any:
+    """Coerce one result-dataclass field to a YAML/JSON-safe value.
+
+    The result records hold a small, uniform set of field shapes — optional
+    scalars (Ne and diagnostics), 1-D numeric series (per-generation or
+    per-cohort), integer counts, boolean flags, an optional nested
+    :class:`~pedigree_graph._cohort_utils.CohortWindow`, and the Hill age
+    table (``dict[str, np.ndarray]``).  Each result used to serialize these
+    by hand; centralising the rules here removes ~150 lines of near-identical
+    ``to_dict`` boilerplate and keeps the coercions consistent.
+
+    Numeric arrays follow their dtype: integer series become ``list[int]``,
+    floating series become ``list[float | None]`` (non-finite → ``None``, so
+    the output is always valid YAML/JSON rather than carrying ``nan``).
+    Scalars follow their Python type.  An unrecognised shape *raises* rather
+    than serializing silently, so a future field with an unusual type is
+    caught in review instead of shipped mis-serialized.
+    """
+    if value is None:
+        return None
+    # bool before int: bool is an int subclass and must stay a JSON bool.
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, np.ndarray):
+        if value.ndim != 1:
+            raise TypeError(f"_to_jsonable: expected a 1-D array, got {value.ndim}-D")
+        if value.dtype.kind in ("i", "u"):
+            return [int(v) for v in value]
+        return [_optional_float(v) for v in value]
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return _optional_float(value)
+    if isinstance(value, dict):
+        return {k: _to_jsonable(v) for k, v in value.items()}
+    asdict = getattr(value, "_asdict", None)  # NamedTuple records, e.g. CohortWindow
+    if callable(asdict):
+        return asdict()
+    raise TypeError(f"_to_jsonable: no serialization rule for {type(value).__name__}")
+
+
+class _SerializableResult:
+    """Mixin: serialize a result dataclass to a YAML-ready dict.
+
+    Walks the dataclass fields and coerces each via :func:`_to_jsonable`.
+    Mixed into the result records (which stay ``@dataclass(frozen=True,
+    slots=True)``) so they share one serializer instead of nine copies.
+    """
+
+    __slots__ = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize as a YAML-ready dict (numpy arrays → lists)."""
+        return {f.name: _to_jsonable(getattr(self, f.name)) for f in fields(self)}
+
+
 @dataclass(frozen=True, slots=True)
-class GenerationInterval:
+class GenerationInterval(_SerializableResult):
     """Sex-split generation interval (Hill 1979 ``L``).
 
     ``T_m`` is the mean of ``child.birth_year − sire.birth_year`` over
@@ -51,18 +110,9 @@ class GenerationInterval:
     T_f: float
     n_edges: int
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict."""
-        return {
-            "T": float(self.T),
-            "T_m": float(self.T_m),
-            "T_f": float(self.T_f),
-            "n_edges": int(self.n_edges),
-        }
-
 
 @dataclass(frozen=True, slots=True)
-class NeInbreedingResult:
+class NeInbreedingResult(_SerializableResult):
     """Inbreeding-rate (Ne_I) result.
 
     Attributes:
@@ -79,19 +129,9 @@ class NeInbreedingResult:
     slope: float
     n_generations_used: int
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict (numpy arrays → list)."""
-        return {
-            "ne": _optional_float(self.ne),
-            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
-            "mean_f_per_gen": [float(v) for v in self.mean_f_per_gen],
-            "slope": _optional_float(self.slope),
-            "n_generations_used": int(self.n_generations_used),
-        }
-
 
 @dataclass(frozen=True, slots=True)
-class NeCoancestryResult:
+class NeCoancestryResult(_SerializableResult):
     """Coancestry-rate (Ne_C) result.
 
     Attributes:
@@ -119,19 +159,9 @@ class NeCoancestryResult:
             n_generations_used=0,
         )
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict."""
-        return {
-            "ne": _optional_float(self.ne),
-            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
-            "mean_theta_per_gen": [_optional_float(v) for v in self.mean_theta_per_gen],
-            "slope": _optional_float(self.slope),
-            "n_generations_used": int(self.n_generations_used),
-        }
-
 
 @dataclass(frozen=True, slots=True)
-class NeVarianceResult:
+class NeVarianceResult(_SerializableResult):
     """Variance-of-family-size (Ne_V) result.
 
     Caballero 1994 eq. 6 with separate sexes.  ``V(k_m) = V(k_mm) +
@@ -155,22 +185,9 @@ class NeVarianceResult:
     cov_m: np.ndarray
     cov_f: np.ndarray
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict."""
-        return {
-            "ne": _optional_float(self.ne),
-            "ne_per_transition": [_optional_float(v) for v in self.ne_per_transition],
-            "v_mm": [float(v) for v in self.v_mm],
-            "v_mf": [float(v) for v in self.v_mf],
-            "v_fm": [float(v) for v in self.v_fm],
-            "v_ff": [float(v) for v in self.v_ff],
-            "cov_m": [float(v) for v in self.cov_m],
-            "cov_f": [float(v) for v in self.cov_f],
-        }
-
 
 @dataclass(frozen=True, slots=True)
-class NeSexRatioResult:
+class NeSexRatioResult(_SerializableResult):
     """Wright sex-ratio (Ne_sr) result.
 
     ``Ne_t = 4·Nm_t·Nf_t / (Nm_t + Nf_t)`` per generation; aggregate is
@@ -182,18 +199,9 @@ class NeSexRatioResult:
     n_male_per_gen: np.ndarray
     n_female_per_gen: np.ndarray
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict."""
-        return {
-            "ne": _optional_float(self.ne),
-            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
-            "n_male_per_gen": [int(v) for v in self.n_male_per_gen],
-            "n_female_per_gen": [int(v) for v in self.n_female_per_gen],
-        }
-
 
 @dataclass(frozen=True, slots=True)
-class NeIndividualDeltaFResult:
+class NeIndividualDeltaFResult(_SerializableResult):
     """Gutiérrez 2008/2009 individual ΔF (Ne_iΔF) result.
 
     Per individual i with EqG_i > 1 and F_i < 1:
@@ -207,18 +215,9 @@ class NeIndividualDeltaFResult:
     mean_eqg_per_gen: np.ndarray
     n_used_per_gen: np.ndarray
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict."""
-        return {
-            "ne": _optional_float(self.ne),
-            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
-            "mean_eqg_per_gen": [_optional_float(v) for v in self.mean_eqg_per_gen],
-            "n_used_per_gen": [int(v) for v in self.n_used_per_gen],
-        }
-
 
 @dataclass(frozen=True, slots=True)
-class NeLTCResult:
+class NeLTCResult(_SerializableResult):
     """Wray & Thompson 1990 long-term contribution (Ne_LTC) result.
 
     Founder contributions are propagated forward through the pedigree
@@ -236,19 +235,9 @@ class NeLTCResult:
     max_delta_final: float
     sum_c_squared: float
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict."""
-        return {
-            "ne": _optional_float(self.ne),
-            "asymptote_reached": bool(self.asymptote_reached),
-            "n_iterations": int(self.n_iterations),
-            "max_delta_final": _optional_float(self.max_delta_final),
-            "sum_c_squared": float(self.sum_c_squared),
-        }
-
 
 @dataclass(frozen=True, slots=True)
-class NeHillResult:
+class NeHillResult(_SerializableResult):
     """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
 
     Two operating modes:
@@ -318,51 +307,9 @@ class NeHillResult:
     age_table: dict[str, np.ndarray] | None = None
     n_offspring_pairs: int = 0
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict."""
-        out: dict[str, Any] = {
-            "ne": _optional_float(self.ne),
-            "generation_interval": float(self.generation_interval),
-            "collapses_to_ne_v": bool(self.collapses_to_ne_v),
-            "T_m": _optional_float(self.T_m),
-            "T_f": _optional_float(self.T_f),
-            "N1_m": _optional_float(self.N1_m),
-            "N1_f": _optional_float(self.N1_f),
-            "Vk_m": _optional_float(self.Vk_m),
-            "Vk_f": _optional_float(self.Vk_f),
-            "kbar_m": _optional_float(self.kbar_m),
-            "kbar_f": _optional_float(self.kbar_f),
-            "Ne_m": _optional_float(self.Ne_m),
-            "Ne_f": _optional_float(self.Ne_f),
-            "vk_scaled": bool(self.vk_scaled),
-            "cohort_window": None if self.cohort_window is None else self.cohort_window._asdict(),
-            "n_eligible_cohorts": int(self.n_eligible_cohorts),
-            "n_excluded_right_censored": int(self.n_excluded_right_censored),
-            "n_excluded_left_censored": int(self.n_excluded_left_censored),
-            "n_unknown_birth_year": int(self.n_unknown_birth_year),
-            "n_offspring_pairs": int(self.n_offspring_pairs),
-        }
-        for name in (
-            "cohort_years",
-            "ne_per_cohort",
-            "Ne_m_per_cohort",
-            "Ne_f_per_cohort",
-            "Vk_m_per_cohort",
-            "Vk_f_per_cohort",
-            "N1_m_per_cohort",
-            "N1_f_per_cohort",
-        ):
-            arr = getattr(self, name)
-            out[name] = None if arr is None else [float(v) for v in arr]
-        if self.age_table is None:
-            out["age_table"] = None
-        else:
-            out["age_table"] = {k: v.tolist() for k, v in self.age_table.items()}
-        return out
-
 
 @dataclass(frozen=True, slots=True)
-class NeCaballeroToroResult:
+class NeCaballeroToroResult(_SerializableResult):
     """Caballero & Toro 2002 self-coancestry rate (Ne_CT) result.
 
     For each founder f and generation g > 0, computes the mean self-
@@ -378,13 +325,3 @@ class NeCaballeroToroResult:
     mean_self_coancestry_per_gen: np.ndarray
     n_founders_with_descendants_per_gen: np.ndarray
     slope: float
-
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize as a YAML-ready dict."""
-        return {
-            "ne": _optional_float(self.ne),
-            "ne_per_gen": [_optional_float(v) for v in self.ne_per_gen],
-            "mean_self_coancestry_per_gen": [_optional_float(v) for v in self.mean_self_coancestry_per_gen],
-            "n_founders_with_descendants_per_gen": [int(v) for v in self.n_founders_with_descendants_per_gen],
-            "slope": _optional_float(self.slope),
-        }

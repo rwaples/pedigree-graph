@@ -213,7 +213,7 @@ def compute_all_ne(
     return results
 
 
-def _result_to_dict(result: Any) -> dict[str, Any]:
+def _result_to_dict(result: NeResult) -> dict[str, Any]:
     """Serialize any frozen Ne result; falls back to ``dataclasses.asdict``."""
     if hasattr(result, "to_dict"):
         return result.to_dict()
