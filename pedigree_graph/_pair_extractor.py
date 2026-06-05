@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any
+from functools import partial
+from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.sparse as sp
@@ -28,12 +30,15 @@ from pedigree_graph._pair_utils import (
     pairs_from_groups,
     remap_pairs_to_caller,
 )
-from pedigree_graph._registry import PAIR_KINSHIP
+from pedigree_graph._registry import PAIR_KINSHIP, REL_REGISTRY
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
 
 logger = logging.getLogger(__name__)
+
+# A per-code extraction thunk: returns one relationship's (idx1, idx2) arrays.
+_Thunk = Callable[[], tuple[np.ndarray, np.ndarray]]
 
 
 class MatrixPairExtractor:
@@ -225,6 +230,32 @@ class MatrixPairExtractor:
     # Top-level extraction
     # ------------------------------------------------------------------
 
+    def _run_parallel(self, tasks: dict[str, _Thunk]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        """Run each per-code extraction thunk concurrently; return ``{code: pairs}``.
+
+        One worker thread per requested code — numpy/scipy release the GIL
+        for the heavy sparse products, so the per-degree codes overlap.
+        Only the codes in *tasks* are computed; the caller pre-seeds every
+        registry code to empty, so any code omitted here stays empty.
+        """
+        if not tasks:
+            return {}
+        with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+            futures = {code: pool.submit(fn) for code, fn in tasks.items()}
+            return {code: fut.result() for code, fut in futures.items()}
+
+    @staticmethod
+    def _log_counts(
+        label: str,
+        pairs: dict[str, tuple[np.ndarray, np.ndarray]],
+        codes: tuple[str, ...],
+        t0: float,
+        suffix: str = "",
+    ) -> None:
+        """Emit an INFO line summarising per-code pair counts and elapsed time."""
+        summary = ", ".join(f"{code}={len(pairs[code][0])}" for code in codes)
+        logger.info("%s: %s (%.3fs)%s", label, summary, time.perf_counter() - t0, suffix)
+
     def extract(
         self,
         max_degree: int,
@@ -247,8 +278,13 @@ class MatrixPairExtractor:
         """
         pg = self.pg
         t_total = time.perf_counter()
-        pairs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         empty = np.array([], dtype=np.intp)
+        # Every registry code appears in the output; codes that are not
+        # computed (gated out by max_degree or min_kinship) stay empty.
+        # Pre-seeding here makes that contract structural and removes the
+        # per-degree "fill in the missing codes" bookkeeping along with its
+        # mirror-image ``else`` branches.
+        pairs: dict[str, tuple[np.ndarray, np.ndarray]] = dict.fromkeys(REL_REGISTRY, (empty, empty))
 
         def _needed(code: str) -> bool:
             return PAIR_KINSHIP.get(code, 0) >= min_kinship
@@ -273,49 +309,29 @@ class MatrixPairExtractor:
         t0 = time.perf_counter()
         full_sib, mat_hs, pat_hs = pg.sibling_pairs()
         pairs["FS"] = full_sib
-        pairs["MHS"] = mat_hs if need_hs else (empty, empty)
-        pairs["PHS"] = pat_hs if need_hs else (empty, empty)
-        logger.info(
-            "Siblings: %d full, %d maternal HS, %d paternal HS (%.3fs)",
-            len(pairs["FS"][0]),
-            len(pairs["MHS"][0]),
-            len(pairs["PHS"][0]),
-            time.perf_counter() - t0,
-        )
+        if need_hs:
+            pairs["MHS"] = mat_hs
+            pairs["PHS"] = pat_hs
+        self._log_counts("Siblings", pairs, ("FS", "MHS", "PHS"), t0)
 
         # ---- Degree 2 (kinship 1/8): GP, Av, 1C ----
         if max_degree >= 2:
             t0 = time.perf_counter()
-            need_cousins = _needed("1C")
-            need_gp = _needed("GP")
-            need_avunc = _needed("Av")
-
-            futures = {}
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                if need_cousins:
-                    futures["1C"] = pool.submit(self._cousin_pairs)
-                if need_gp:
-                    futures["GP"] = pool.submit(self._grandparent_grandchild_pairs)
-                if need_avunc:
-                    futures["Av"] = pool.submit(self._avuncular_pairs, full_sib)
-                for k, fut in futures.items():
-                    pairs[k] = fut.result()
-
-            for k in ("1C", "GP", "Av"):
-                if k not in pairs:
-                    pairs[k] = (empty, empty)
-
-            logger.info(
-                "Degree 2: cousins=%d, grandparent=%d, avuncular=%d (%.3fs)%s",
-                len(pairs["1C"][0]),
-                len(pairs["GP"][0]),
-                len(pairs["Av"][0]),
-                time.perf_counter() - t0,
-                f" [min_kinship={min_kinship}]" if min_kinship > 0 else "",
+            tasks: dict[str, _Thunk] = {}
+            if _needed("1C"):
+                tasks["1C"] = self._cousin_pairs
+            if _needed("GP"):
+                tasks["GP"] = self._grandparent_grandchild_pairs
+            if _needed("Av"):
+                tasks["Av"] = partial(self._avuncular_pairs, full_sib)
+            pairs.update(self._run_parallel(tasks))
+            self._log_counts(
+                "Degree 2",
+                pairs,
+                ("1C", "GP", "Av"),
+                t0,
+                suffix=f" [min_kinship={min_kinship}]" if min_kinship > 0 else "",
             )
-        else:
-            for k in ("1C", "GP", "Av"):
-                pairs[k] = (empty, empty)
 
         # ---- Degree 3+ setup (deferred to avoid work at default degree 2) ----
         if max_degree >= 3:
@@ -338,44 +354,28 @@ class MatrixPairExtractor:
         if max_degree >= 3:
             t0 = time.perf_counter()
             _ = pg._A3  # pre-trigger
-
-            futures: dict[str, Any] = {}
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                if _needed("GGP"):
-                    futures["GGP"] = pool.submit(self._lineal_pairs, 3)
-                if _needed("HAv"):
-                    futures["HAv"] = pool.submit(self._collateral_pairs, hsm, 1, 2, [po_pairs, gp_pairs])
-                if _needed("GAv"):
-                    futures["GAv"] = pool.submit(self._collateral_pairs, fsm, 1, 3, [po_pairs, gp_pairs, pairs["Av"]])
-                for k, fut in futures.items():
-                    pairs[k] = fut.result()
-            for code in ("GGP", "HAv", "GAv"):
-                if code not in pairs:
-                    pairs[code] = (empty, empty)
-
-            logger.info(
-                "Degree 3: GGP=%d, HAv=%d, GAv=%d (%.3fs)",
-                len(pairs["GGP"][0]),
-                len(pairs["HAv"][0]),
-                len(pairs["GAv"][0]),
-                time.perf_counter() - t0,
-            )
-        else:
-            for code in ("GGP", "HAv", "GAv"):
-                pairs[code] = (empty, empty)
+            tasks = {}
+            if _needed("GGP"):
+                tasks["GGP"] = partial(self._lineal_pairs, 3)
+            if _needed("HAv"):
+                tasks["HAv"] = partial(self._collateral_pairs, hsm, 1, 2, [po_pairs, gp_pairs])
+            if _needed("GAv"):
+                tasks["GAv"] = partial(self._collateral_pairs, fsm, 1, 3, [po_pairs, gp_pairs, pairs["Av"]])
+            pairs.update(self._run_parallel(tasks))
+            self._log_counts("Degree 3", pairs, ("GGP", "HAv", "GAv"), t0)
 
         # ---- Degree 4 (kinship 1/32): GGGP, HGAv, GGAv, H1C, 1C1R ----
+        # A2_A3T is built lazily by 1C1R (here) and/or H1C1R (degree 5); seed
+        # it before the degree-4 gate so the degree-5 block can reuse it.
+        A2_A3T = None
         if max_degree >= 4:
             t0 = time.perf_counter()
-            # Lazy: _A4 and A2_A3T triggered by types that need them
-            A2_A3T = None
             if _needed("1C1R"):
                 A2_A3T = pg._A2 @ pg._A3.T
 
             def _extract_h1c() -> tuple[np.ndarray, np.ndarray]:
-                # Use cached half-cousin pairs from _cousin_pairs() — already
-                # identified as pairs sharing exactly 1 grandparent, with
-                # sibling pairs excluded.
+                # Half-1C pairs cached by _cousin_pairs(): share exactly one
+                # grandparent, with sibling pairs already excluded.
                 return self._h1c_pairs_cache
 
             def _extract_1c1r() -> tuple[np.ndarray, np.ndarray]:
@@ -388,49 +388,31 @@ class MatrixPairExtractor:
                     subtract=[po_pairs, gp_pairs, pairs["GGP"], pairs["Av"], pairs["GAv"], sib_all, pairs["1C"]],
                 )
 
-            futures = {}
-            with ThreadPoolExecutor(max_workers=5) as pool:
-                if _needed("GGGP"):
-                    futures["GGGP"] = pool.submit(self._lineal_pairs, 4)
-                if _needed("HGAv"):
-                    futures["HGAv"] = pool.submit(
-                        self._collateral_pairs,
-                        hsm,
-                        1,
-                        3,
-                        [po_pairs, gp_pairs, pairs["GGP"], pairs["HAv"]],
-                    )
-                if _needed("GGAv"):
-                    futures["GGAv"] = pool.submit(
-                        self._collateral_pairs,
-                        fsm,
-                        1,
-                        4,
-                        [po_pairs, gp_pairs, pairs["GGP"], pairs["Av"], pairs["GAv"]],
-                    )
-                if _needed("H1C"):
-                    futures["H1C"] = pool.submit(_extract_h1c)
-                if _needed("1C1R"):
-                    futures["1C1R"] = pool.submit(_extract_1c1r)
-                for k, fut in futures.items():
-                    pairs[k] = fut.result()
-            for code in ("GGGP", "HGAv", "GGAv", "H1C", "1C1R"):
-                if code not in pairs:
-                    pairs[code] = (empty, empty)
-
-            logger.info(
-                "Degree 4: GGGP=%d, HGAv=%d, GGAv=%d, H1C=%d, 1C1R=%d (%.3fs)",
-                len(pairs["GGGP"][0]),
-                len(pairs["HGAv"][0]),
-                len(pairs["GGAv"][0]),
-                len(pairs["H1C"][0]),
-                len(pairs["1C1R"][0]),
-                time.perf_counter() - t0,
-            )
-        else:
-            A2_A3T = None
-            for code in ("GGGP", "HGAv", "GGAv", "H1C", "1C1R"):
-                pairs[code] = (empty, empty)
+            tasks = {}
+            if _needed("GGGP"):
+                tasks["GGGP"] = partial(self._lineal_pairs, 4)
+            if _needed("HGAv"):
+                tasks["HGAv"] = partial(
+                    self._collateral_pairs,
+                    hsm,
+                    1,
+                    3,
+                    [po_pairs, gp_pairs, pairs["GGP"], pairs["HAv"]],
+                )
+            if _needed("GGAv"):
+                tasks["GGAv"] = partial(
+                    self._collateral_pairs,
+                    fsm,
+                    1,
+                    4,
+                    [po_pairs, gp_pairs, pairs["GGP"], pairs["Av"], pairs["GAv"]],
+                )
+            if _needed("H1C"):
+                tasks["H1C"] = _extract_h1c
+            if _needed("1C1R"):
+                tasks["1C1R"] = _extract_1c1r
+            pairs.update(self._run_parallel(tasks))
+            self._log_counts("Degree 4", pairs, ("GGGP", "HGAv", "GGAv", "H1C", "1C1R"), t0)
 
         # ---- Degree 5 (kinship 1/64): 2C, G3GP, HGGAv, G3Av, H1C1R, 1C2R ----
         if max_degree >= 5:
@@ -483,51 +465,33 @@ class MatrixPairExtractor:
                     ],
                 )
 
-            futures = {}
-            with ThreadPoolExecutor(max_workers=6) as pool:
-                if _needed("2C"):
-                    futures["2C"] = pool.submit(self._second_cousin_pairs)
-                if _needed("G3GP"):
-                    futures["G3GP"] = pool.submit(self._lineal_pairs, 5)
-                if _needed("HGGAv"):
-                    futures["HGGAv"] = pool.submit(
-                        self._collateral_pairs,
-                        hsm,
-                        1,
-                        4,
-                        [po_pairs, gp_pairs, pairs["GGP"], pairs["GGGP"], pairs["HAv"], pairs["HGAv"]],
-                    )
-                if _needed("G3Av"):
-                    futures["G3Av"] = pool.submit(
-                        self._collateral_pairs,
-                        fsm,
-                        1,
-                        5,
-                        [po_pairs, gp_pairs, pairs["GGP"], pairs["GGGP"], pairs["Av"], pairs["GAv"], pairs["GGAv"]],
-                    )
-                if _needed("H1C1R"):
-                    futures["H1C1R"] = pool.submit(_extract_h1c1r)
-                if _needed("1C2R"):
-                    futures["1C2R"] = pool.submit(_extract_1c2r)
-                for k, fut in futures.items():
-                    pairs[k] = fut.result()
-            for code in ("2C", "G3GP", "HGGAv", "G3Av", "H1C1R", "1C2R"):
-                if code not in pairs:
-                    pairs[code] = (empty, empty)
-
-            logger.info(
-                "Degree 5: 2C=%d, G3GP=%d, HGGAv=%d, G3Av=%d, H1C1R=%d, 1C2R=%d (%.3fs)",
-                len(pairs["2C"][0]),
-                len(pairs["G3GP"][0]),
-                len(pairs["HGGAv"][0]),
-                len(pairs["G3Av"][0]),
-                len(pairs["H1C1R"][0]),
-                len(pairs["1C2R"][0]),
-                time.perf_counter() - t0,
-            )
-        else:
-            for code in ("2C", "G3GP", "HGGAv", "G3Av", "H1C1R", "1C2R"):
-                pairs[code] = (empty, empty)
+            tasks = {}
+            if _needed("2C"):
+                tasks["2C"] = self._second_cousin_pairs
+            if _needed("G3GP"):
+                tasks["G3GP"] = partial(self._lineal_pairs, 5)
+            if _needed("HGGAv"):
+                tasks["HGGAv"] = partial(
+                    self._collateral_pairs,
+                    hsm,
+                    1,
+                    4,
+                    [po_pairs, gp_pairs, pairs["GGP"], pairs["GGGP"], pairs["HAv"], pairs["HGAv"]],
+                )
+            if _needed("G3Av"):
+                tasks["G3Av"] = partial(
+                    self._collateral_pairs,
+                    fsm,
+                    1,
+                    5,
+                    [po_pairs, gp_pairs, pairs["GGP"], pairs["GGGP"], pairs["Av"], pairs["GAv"], pairs["GGAv"]],
+                )
+            if _needed("H1C1R"):
+                tasks["H1C1R"] = _extract_h1c1r
+            if _needed("1C2R"):
+                tasks["1C2R"] = _extract_1c2r
+            pairs.update(self._run_parallel(tasks))
+            self._log_counts("Degree 5", pairs, ("2C", "G3GP", "HGGAv", "G3Av", "H1C1R", "1C2R"), t0)
 
         # Save raw counts before sample_mask filtering (used by count_pairs(scope="full"))
         raw_pair_counts = {k: len(v[0]) for k, v in pairs.items()}
