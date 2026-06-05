@@ -243,6 +243,10 @@ class PedigreeGraph:
         # compute_n_descendants().
         self._n_ancestors: np.ndarray | None = None
         self._n_descendants: np.ndarray | None = None
+        # Lazy cache of known-parent edge filters, keyed "mother"/"father"
+        # (see _known_parent_edges_for); shared by the overlapping-generation
+        # diagnostics so the full-pedigree edge scan runs once per side.
+        self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
         # Row indices are int32 (fit in 2.1B); reject pedigrees too tall.
         self._ids = ids_arr
@@ -349,25 +353,19 @@ class PedigreeGraph:
         and ``_hill_age_table`` all call the same edge-filter and
         age-diff computation against the same arrays — at scale that's
         eight passes over the full pedigree.  Cached per-graph keyed on
-        ``"mother"``/``"father"``.  Bypassed when ``birth_year is None``
-        (the underlying helper still runs but the result is small).
+        ``"mother"``/``"father"`` (cache initialised in ``__init__``).
+        Bypassed when ``birth_year is None`` (the underlying helper still
+        runs but the result is small).
         """
-        cache = getattr(self, "_known_parent_edges_cache", None)
-        if cache is None:
-            cache = {}
-            self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = cache
-        hit = cache.get(parent_label)
+        hit = self._known_parent_edges_cache.get(parent_label)
         if hit is not None:
             return hit
         parent_arr = self.mother if parent_label == "mother" else self.father
         if self.birth_year is None:
-            result = (
-                np.array([], dtype=np.intp),
-                np.array([], dtype=np.int32),
-            )
+            result = (np.array([], dtype=np.intp), np.array([], dtype=np.int32))
         else:
             result = _known_parent_edges(parent_arr, self.birth_year)
-        cache[parent_label] = result
+        self._known_parent_edges_cache[parent_label] = result
         return result
 
     @cached_property
@@ -740,11 +738,12 @@ class PedigreeGraph:
         ``REL_PLAN`` / :func:`streaming_exact_codes` in ``_registry``):
 
         - Exact (bit-identical to :meth:`count_pairs` on every input)
-          for the 10 codes in :func:`streaming_exact_codes` — the lineal
-          (``MZ``, ``MO``, ``FO``, ``GP``, ``GGP``, ``GGGP``, ``G3GP``)
-          and sibling (``FS``, ``MHS``, ``PHS``) codes.
-        - Approximate for the 13 cousin / collateral codes in
-          :func:`streaming_approximate_codes`.
+          for the lineal and sibling codes — exactly the set returned by
+          :func:`~pedigree_graph._registry.streaming_exact_codes`, the
+          single source of truth (ADR 0003).  The codes are not
+          re-enumerated here so the docstring cannot drift from the registry.
+        - Approximate for the remaining cousin / collateral codes
+          (:func:`~pedigree_graph._registry.streaming_approximate_codes`).
           The scalar formulas assume each individual has the full
           complement of known grandparents at the relevant depth and
           diverge from the matrix engine on:

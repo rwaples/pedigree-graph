@@ -8,7 +8,7 @@ them.  ``_founder_idx`` is also consumed by the Caballero-Toro engine.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
@@ -16,6 +16,21 @@ from pedigree_graph._ne_results import NeLTCResult
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+
+
+class FounderContributionMeans(NamedTuple):
+    """Per-generation mean founder contributions plus the founder index.
+
+    ``m_g[g, f_local]`` is the mean over gen-g individuals of their expected
+    genome fraction from founder ``founder_idx[f_local]``; ``founder_idx``
+    maps each local founder column back to its graph row.  Returned by
+    :func:`_per_gen_founder_means` and accepted by
+    :func:`ne_long_term_contributions` as the ``mean_contributions`` payload —
+    a named record instead of an anonymous ``(array, array)`` tuple.
+    """
+
+    m_g: np.ndarray
+    founder_idx: np.ndarray
 
 
 def _founder_idx(pg: PedigreeGraph) -> np.ndarray:
@@ -26,7 +41,7 @@ def _founder_idx(pg: PedigreeGraph) -> np.ndarray:
 def _per_gen_founder_means(
     pg: PedigreeGraph,
     founder_idx: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> FounderContributionMeans:
     """Per-generation mean founder contribution via adjoint propagation.
 
     Returns ``(m_g, founder_idx)`` where
@@ -66,7 +81,7 @@ def _per_gen_founder_means(
 
     m_g = np.full((g_max + 1, n_founders), np.nan, dtype=np.float64)
     if n_founders == 0:
-        return m_g, founder_idx
+        return FounderContributionMeans(m_g, founder_idx)
 
     # Precompute per-generation member indices once — the inner sweep
     # reads the same cohorts O(g_max) times across the outer loop.
@@ -100,12 +115,12 @@ def _per_gen_founder_means(
             u[child] = 0.0
         m_g[g] = u[founder_idx]
 
-    return m_g, founder_idx
+    return FounderContributionMeans(m_g, founder_idx)
 
 
 def ne_long_term_contributions(
     pg: PedigreeGraph,
-    mean_contributions: tuple[np.ndarray, np.ndarray] | None = None,
+    mean_contributions: FounderContributionMeans | None = None,
     tol: float = 1e-6,
 ) -> NeLTCResult:
     """Wray & Thompson 1990 long-term contribution Ne (Ne_LTC).
