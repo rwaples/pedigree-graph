@@ -179,21 +179,12 @@ def compute_all_ne(
         # later direct ne_coancestry call shares the same array.
         theta_per_gen = pg.per_gen_mean_kinship()
 
-    if n_threads == 1:
-        ne_variance_result = ne_variance_family_size(pg)
-        if not skip_ne_coancestry:
-            ne_coancestry_result = ne_coancestry(pg, theta_per_gen=theta_per_gen)
-        return {
-            "ne_inbreeding": ne_inbreeding(pg),
-            "ne_coancestry": ne_coancestry_result,
-            "ne_variance_family_size": ne_variance_result,
-            "ne_sex_ratio": ne_sex_ratio(pg),
-            "ne_individual_delta_f": ne_individual_delta_f(pg),
-            "ne_long_term_contributions": ne_long_term_contributions(pg, mean_contributions=ltc_means),
-            "ne_hill_overlapping": ne_hill_overlapping(pg, vk_scale=hill_vk_scale),
-            "ne_caballero_toro": ne_caballero_toro(pg, ct_accumulators=ct_acc),
-        }
-
+    # One dispatch table drives both paths; serial and threaded run the same
+    # estimators with the same pre-computed payloads.  ne_coancestry joins the
+    # table only when not skipped — otherwise its slot is filled from the NaN
+    # sentinel below.  Order is irrelevant: the shared graph caches every
+    # estimator reads (F, founder summaries, θ̄) are populated above, before
+    # any estimator runs, which is also what makes the threaded path safe.
     tasks = {
         "ne_inbreeding": (ne_inbreeding, (pg,), {}),
         "ne_variance_family_size": (ne_variance_family_size, (pg,), {}),
@@ -206,12 +197,16 @@ def compute_all_ne(
     if not skip_ne_coancestry:
         tasks["ne_coancestry"] = (ne_coancestry, (pg,), {"theta_per_gen": theta_per_gen})
 
-    results: dict[str, NeResult] = {}
-    max_workers = min(n_threads, len(tasks))
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {name: executor.submit(func, *args, **kwargs) for name, (func, args, kwargs) in tasks.items()}
-        for name, future in futures.items():
-            results[name] = future.result()
+    if n_threads == 1:
+        results: dict[str, NeResult] = {
+            name: func(*args, **kwargs) for name, (func, args, kwargs) in tasks.items()
+        }
+    else:
+        results = {}
+        with ThreadPoolExecutor(max_workers=min(n_threads, len(tasks))) as executor:
+            futures = {name: executor.submit(func, *args, **kwargs) for name, (func, args, kwargs) in tasks.items()}
+            for name, future in futures.items():
+                results[name] = future.result()
 
     if skip_ne_coancestry:
         results["ne_coancestry"] = ne_coancestry_result
