@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from pedigree_graph._kinship_kernel import _compute_eqg, _finalize_from_sum_theta
-from pedigree_graph._ne_common import _harmonic_mean, _regress_log_one_minus
+from pedigree_graph._ne_common import _harmonic_mean, _scalar_ne_from_log_regression
 from pedigree_graph._ne_results import (
     NeCoancestryResult,
     NeInbreedingResult,
@@ -93,19 +93,14 @@ def ne_inbreeding(pg: PedigreeGraph) -> NeInbreedingResult:
         if df > 0:
             ne_per_gen[g] = 1.0 / (2.0 * df)
 
-    t = np.arange(1, g_max + 1, dtype=np.float64)
-    slope, _ = _regress_log_one_minus(mean_f[1:], t)
-    if np.isfinite(slope) and slope < 0:
-        ne_scalar: float | None = -1.0 / (2.0 * slope)
-    else:
-        ne_scalar = None
+    ne_scalar, slope, n_used = _scalar_ne_from_log_regression(mean_f)
 
     return NeInbreedingResult(
         ne=ne_scalar,
         ne_per_gen=ne_per_gen,
         mean_f_per_gen=mean_f,
         slope=slope,
-        n_generations_used=int(np.isfinite(np.log1p(-mean_f[1:])).sum()),
+        n_generations_used=n_used,
     )
 
 
@@ -153,19 +148,14 @@ def ne_coancestry(
         if d_theta > 0:
             ne_per_gen[g] = 1.0 / (2.0 * d_theta)
 
-    t = np.arange(1, g_max + 1, dtype=np.float64)
-    slope, _ = _regress_log_one_minus(mean_theta[1:], t)
-    if np.isfinite(slope) and slope < 0:
-        ne_scalar: float | None = -1.0 / (2.0 * slope)
-    else:
-        ne_scalar = None
+    ne_scalar, slope, n_used = _scalar_ne_from_log_regression(mean_theta)
 
     return NeCoancestryResult(
         ne=ne_scalar,
         ne_per_gen=ne_per_gen,
         mean_theta_per_gen=mean_theta,
         slope=slope,
-        n_generations_used=int(np.isfinite(np.log1p(-mean_theta[1:])).sum()),
+        n_generations_used=n_used,
     )
 
 

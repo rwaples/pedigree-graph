@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numba
 import numpy as np
 
-from pedigree_graph._ne_common import _regress_log_one_minus
+from pedigree_graph._ne_common import _scalar_ne_from_log_regression
 from pedigree_graph._ne_founders import _founder_idx
 from pedigree_graph._ne_results import NeCaballeroToroResult
 
@@ -332,12 +332,7 @@ def ne_caballero_toro(
         if d > 0:
             ne_per_gen[g] = 1.0 / (2.0 * d)
 
-    t = np.arange(1, g_max + 1, dtype=np.float64)
-    slope, _ = _regress_log_one_minus(mean_fs_per_gen[1:], t)
-    if np.isfinite(slope) and slope < 0:
-        ne_scalar: float | None = -1.0 / (2.0 * slope)
-    else:
-        ne_scalar = None
+    ne_scalar, slope, _ = _scalar_ne_from_log_regression(mean_fs_per_gen)
 
     return NeCaballeroToroResult(
         ne=ne_scalar,
