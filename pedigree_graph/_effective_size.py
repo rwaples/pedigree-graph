@@ -185,26 +185,26 @@ def compute_all_ne(
     # sentinel below.  Order is irrelevant: the shared graph caches every
     # estimator reads (F, founder summaries, θ̄) are populated above, before
     # any estimator runs, which is also what makes the threaded path safe.
+    # Each value is (estimator, kwargs); every estimator takes pg as its first
+    # positional argument, supplied at the call site below.
     tasks = {
-        "ne_inbreeding": (ne_inbreeding, (pg,), {}),
-        "ne_variance_family_size": (ne_variance_family_size, (pg,), {}),
-        "ne_sex_ratio": (ne_sex_ratio, (pg,), {}),
-        "ne_individual_delta_f": (ne_individual_delta_f, (pg,), {}),
-        "ne_long_term_contributions": (ne_long_term_contributions, (pg,), {"mean_contributions": ltc_means}),
-        "ne_hill_overlapping": (ne_hill_overlapping, (pg,), {"vk_scale": hill_vk_scale}),
-        "ne_caballero_toro": (ne_caballero_toro, (pg,), {"ct_accumulators": ct_acc}),
+        "ne_inbreeding": (ne_inbreeding, {}),
+        "ne_variance_family_size": (ne_variance_family_size, {}),
+        "ne_sex_ratio": (ne_sex_ratio, {}),
+        "ne_individual_delta_f": (ne_individual_delta_f, {}),
+        "ne_long_term_contributions": (ne_long_term_contributions, {"mean_contributions": ltc_means}),
+        "ne_hill_overlapping": (ne_hill_overlapping, {"vk_scale": hill_vk_scale}),
+        "ne_caballero_toro": (ne_caballero_toro, {"ct_accumulators": ct_acc}),
     }
     if not skip_ne_coancestry:
-        tasks["ne_coancestry"] = (ne_coancestry, (pg,), {"theta_per_gen": theta_per_gen})
+        tasks["ne_coancestry"] = (ne_coancestry, {"theta_per_gen": theta_per_gen})
 
     if n_threads == 1:
-        results: dict[str, NeResult] = {
-            name: func(*args, **kwargs) for name, (func, args, kwargs) in tasks.items()
-        }
+        results: dict[str, NeResult] = {name: func(pg, **kwargs) for name, (func, kwargs) in tasks.items()}
     else:
         results = {}
         with ThreadPoolExecutor(max_workers=min(n_threads, len(tasks))) as executor:
-            futures = {name: executor.submit(func, *args, **kwargs) for name, (func, args, kwargs) in tasks.items()}
+            futures = {name: executor.submit(func, pg, **kwargs) for name, (func, kwargs) in tasks.items()}
             for name, future in futures.items():
                 results[name] = future.result()
 

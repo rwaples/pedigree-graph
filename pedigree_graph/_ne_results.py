@@ -70,9 +70,9 @@ def _to_jsonable(value: Any) -> Any:
         return _optional_float(value)
     if isinstance(value, dict):
         return {k: _to_jsonable(v) for k, v in value.items()}
-    asdict = getattr(value, "_asdict", None)  # NamedTuple records, e.g. CohortWindow
-    if callable(asdict):
-        return asdict()
+    asdict_fn = getattr(value, "_asdict", None)  # NamedTuple records, e.g. CohortWindow
+    if callable(asdict_fn):
+        return asdict_fn()
     raise TypeError(f"_to_jsonable: no serialization rule for {type(value).__name__}")
 
 
