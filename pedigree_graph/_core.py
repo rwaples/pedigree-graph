@@ -35,6 +35,7 @@ from pedigree_graph._kinship_kernel import (
     _compute_F_meuwissen_luo,
     _compute_theta_per_gen,
 )
+from pedigree_graph._kinship_pairwise import pairwise_kinship
 from pedigree_graph._lineage_kernel import (
     _compute_n_ancestors,
     _compute_n_descendants,
@@ -1119,41 +1120,70 @@ class PedigreeGraph:
         self,
         pairs: dict[str, tuple[np.ndarray, np.ndarray]],
     ) -> dict[str, np.ndarray]:
-        """Exact kinship per extracted pair.
+        """Exact kinship for each requested pair.
 
-        Fast path (non-inbred, MZ-free): returns ``PAIR_KINSHIP[code]``
-        for each pair (MZ case handled via the registry's special case
-        = 0.5).  The MZ-free guard is required because ``compute_inbreeding``
-        is MZ-naive: an individual whose only inbreeding is via MZ
-        co-coalescence has ML F = 0 but the matrix kinship still records
-        ``K[twin_a, twin_b] = (1 + F)/2``.  Without the guard, the fast
-        path would return ``PAIR_KINSHIP[code]`` defaults that miss this
-        inbred-MZ-coalescence case.
+        Returns ``{code: float64 array}`` positionally aligned to the input
+        ``pairs[code]`` (orientation preserved).  Always exact — there is **no**
+        nominal-lookup fast path, because the nominal ``PAIR_KINSHIP[code]``
+        value is wrong for any pair related through *multiple* lineages even
+        without inbreeding (e.g. double first cousins have ``phi = 0.125``, not
+        the single-path ``1C`` value ``0.0625``).  Exact pairwise kinship can
+        therefore exceed the nominal code value because of inbreeding, MZ
+        co-coalescence, or multiple relationship paths.
 
-        Inbred path: reads values from the cached full kinship matrix.
-        MZ-correct because the kernel sets twin off-diagonals to the
-        inbred self-kinship ``(1 + F) / 2``.
+        Computation:
+
+        * if the exact full matrix ``kinship_matrix(0.0)`` is already cached,
+          sample it directly (it is symmetric, so input orientation is
+          irrelevant) — no ``.tocsr()`` duplication;
+        * otherwise compute exact kinship for *only* the requested pairs via the
+          direct memoized recurrence in :mod:`pedigree_graph._kinship_pairwise`,
+          never materializing the ``n x n`` matrix.
+
+        ``compute_inbreeding`` (MZ-naive ML) is **not** consulted: the recurrence
+        derives each ``F`` as ``phi(mother, father)`` exactly as the matrix DP
+        does.  Accepts arbitrary code keys, not only ``REL_REGISTRY`` ones.
 
         Call *after* :meth:`extract_pairs`.
         """
-        F = self.compute_inbreeding()
-
-        if np.all(F == 0) and not np.any(self.twin >= 0):
-            return {code: np.full(len(idx1), PAIR_KINSHIP.get(code, 0.0)) for code, (idx1, _) in pairs.items()}
-
-        K = self.kinship_matrix(min_kinship=0.0).tocsr()
         # extract_pairs returns caller-input coordinates on from_subsample
-        # graphs, but K is always built in full-graph coordinates.  Map back
-        # through the inverse remap before indexing.  K is symmetric, so the
-        # canonical (lo, hi) ordering of the input pairs is irrelevant here.
+        # graphs, but kinship is computed in full-graph coordinates.  Map back
+        # through the inverse remap before indexing/recurring.
         inverse = self._subsample_inverse
         result: dict[str, np.ndarray] = {}
+        graph_pairs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         for code, (idx1, idx2) in pairs.items():
             if len(idx1) == 0:
                 result[code] = np.array([], dtype=np.float64)
                 continue
+            a = np.asarray(idx1)
+            b = np.asarray(idx2)
             if inverse is not None:
-                idx1 = inverse[idx1]
-                idx2 = inverse[idx2]
-            result[code] = np.array(K[idx1, idx2]).ravel()
+                a = inverse[a]
+                b = inverse[b]
+            graph_pairs[code] = (a, b)
+
+        if not graph_pairs:
+            return result
+
+        # Reuse the exact full matrix if it already exists (avoid recompute and
+        # avoid duplicating it via .tocsr()).  K is symmetric.
+        cached_k = self._kinship_cache.get(0.0)
+        if cached_k is not None:
+            for code, (a, b) in graph_pairs.items():
+                result[code] = np.asarray(cached_k[a, b], dtype=np.float64).ravel()
+            return result
+
+        # Otherwise compute exact kinship for only the requested pairs.  Flatten
+        # all codes into a single kernel call so overlapping ancestor-pairs are
+        # memoized once across codes.
+        codes = list(graph_pairs.keys())
+        flat_a = np.concatenate([graph_pairs[c][0] for c in codes])
+        flat_b = np.concatenate([graph_pairs[c][1] for c in codes])
+        flat = pairwise_kinship(self.mother, self.father, self.twin, flat_a, flat_b)
+        offset = 0
+        for c in codes:
+            count = len(graph_pairs[c][0])
+            result[c] = flat[offset : offset + count]
+            offset += count
         return result

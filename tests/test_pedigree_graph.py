@@ -7,6 +7,11 @@ import pandas as pd
 import pytest
 
 from pedigree_graph import PedigreeGraph
+from pedigree_graph._kinship_pairwise import (
+    _pairwise_kinship_py,
+    _pairwise_kinship_with_stats,
+    pairwise_kinship,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1188,7 +1193,10 @@ class TestComputePairKinship:
             }
         )
 
-    def test_non_inbred_uses_fast_path(self):
+    def test_non_inbred_single_path_is_exact(self):
+        # Plain full sibs (no inbreeding, no duplicate paths): exact kinship
+        # equals the nominal 0.25.  (There is no nominal fast path anymore; the
+        # exact recurrence simply returns the same value here.)
         df = pd.DataFrame(
             {
                 "id": np.arange(4),
@@ -1201,8 +1209,6 @@ class TestComputePairKinship:
         )
         pg = PedigreeGraph(df)
         pairs = pg.extract_pairs(max_degree=1)
-        F = pg.compute_inbreeding()
-        assert np.all(F == 0)
         out = pg.compute_pair_kinship(pairs)
         # Full siblings → kinship 0.25
         assert np.all(out["FS"] == 0.25)
@@ -1299,3 +1305,387 @@ class TestComputePairKinship:
         )
         with pytest.raises(ValueError, match="topological order"):
             PedigreeGraph(df)
+
+    # -- exactness battery for the public compute_pair_kinship API --
+
+    def test_double_first_cousins_are_exact_not_nominal(self):
+        # The bug the removed fast path produced: double first cousins were
+        # returned as the nominal 1C value (0.0625) instead of their true 0.125.
+        pg = PedigreeGraph(_ped_double_first_cousins())
+        pairs = pg.extract_pairs(max_degree=3)
+        out = pg.compute_pair_kinship(pairs)
+        assert list(zip(pairs["1C"][0], pairs["1C"][1], strict=True)) == [(8, 9), (9, 10)]
+        np.testing.assert_array_equal(out["1C"], np.array([0.125, 0.125]))
+
+    def test_half_first_cousin_parent_offspring_custom_pairs(self):
+        # Disproof case via custom (non-extract_pairs) pairs: a sub-threshold
+        # 1/32 parental kinship must still raise the parent-offspring kinship to
+        # 0.265625 (a pruned matrix would return 0.25).
+        pg = PedigreeGraph(_ped_half_first_cousin_parents())
+        pairs = {"x": (np.array([7, 9]), np.array([8, 7]))}
+        out = pg.compute_pair_kinship(pairs)
+        np.testing.assert_allclose(out["x"], np.array([0.03125, 0.265625]))
+
+    def test_mz_twins_with_descendants_full_parity(self):
+        pg = PedigreeGraph(_ped_mz_twins_with_descendants())
+        K = pg.kinship_matrix(0.0).toarray()
+        pairs = pg.extract_pairs(max_degree=5)
+        out = pg.compute_pair_kinship(pairs)
+        for code, (idx1, idx2) in pairs.items():
+            if len(idx1):
+                np.testing.assert_allclose(out[code], K[idx1, idx2], atol=1e-6)
+
+    def test_consanguinity_full_parity(self):
+        pg = PedigreeGraph(_ped_sib_mating())
+        K = pg.kinship_matrix(0.0).toarray()
+        pairs = pg.extract_pairs(max_degree=5)
+        out = pg.compute_pair_kinship(pairs)
+        for code, (idx1, idx2) in pairs.items():
+            if len(idx1):
+                np.testing.assert_allclose(out[code], K[idx1, idx2], atol=1e-6)
+
+    def test_custom_dict_self_pair_and_unknown_code(self):
+        # Arbitrary code keys (not in REL_REGISTRY) and self-pairs are computed
+        # exactly; input orientation is preserved.
+        pg = PedigreeGraph(_ped_sib_mating())
+        pairs = {
+            "self": (np.array([4, 0]), np.array([4, 0])),  # F_4=0.25 -> 0.625
+            "reversed": (np.array([2, 4]), np.array([4, 2])),
+            "made_up_code": (np.array([2]), np.array([3])),  # full sibs -> 0.25
+        }
+        out = pg.compute_pair_kinship(pairs)
+        np.testing.assert_allclose(out["self"], np.array([0.625, 0.5]))
+        np.testing.assert_array_equal(out["reversed"], out["reversed"][::-1])
+        np.testing.assert_allclose(out["made_up_code"], np.array([0.25]))
+
+    def test_cached_matrix_path_matches_direct(self):
+        # Whether or not kinship_matrix(0.0) is pre-cached, the result is the
+        # same (the cached-CSC sampling branch vs the direct recurrence branch).
+        df = _ped_double_first_cousins()
+        pairs = PedigreeGraph(df).extract_pairs(max_degree=5)
+
+        pg_direct = PedigreeGraph(df)  # no matrix cached -> recurrence
+        out_direct = pg_direct.compute_pair_kinship(pairs)
+
+        pg_cached = PedigreeGraph(df)
+        pg_cached.kinship_matrix(0.0)  # populate the cache -> sampling branch
+        out_cached = pg_cached.compute_pair_kinship(pairs)
+
+        for code in pairs:
+            np.testing.assert_allclose(out_direct[code], out_cached[code], atol=1e-6)
+
+    def test_all_empty_returns_empty_per_code(self):
+        pg = PedigreeGraph(_ped_inbred_mz())
+        empty = (np.array([], dtype=np.int64), np.array([], dtype=np.int64))
+        out = pg.compute_pair_kinship({"FS": empty, "MZ": empty})
+        assert set(out) == {"FS", "MZ"}
+        for v in out.values():
+            assert v.dtype == np.float64
+            assert v.shape == (0,)
+
+
+# ---------------------------------------------------------------------------
+# Direct pairwise-kinship recurrence (_pairwise_kinship_py) vs matrix oracle
+# ---------------------------------------------------------------------------
+
+
+def _oracle_all_pairs(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """All upper-triangle (incl. diagonal) pairs, reference vs kinship_matrix(0.0).
+
+    Returns ``(got, exp, ii, jj)`` so callers can both assert parity and inspect
+    individual cells.
+    """
+    K = pg.kinship_matrix(0.0).toarray()
+    ii, jj = np.triu_indices(pg.n)
+    got = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, ii, jj)
+    exp = K[ii, jj]
+    return got, exp, ii, jj
+
+
+def _ped_inbred_mz() -> pd.DataFrame:
+    # G0: 0,1 founders; G1: 2,3 full-sibs of (0,1); G2: 4,5 MZ twins of (2,3).
+    return pd.DataFrame(
+        {
+            "id": np.arange(6),
+            "mother": np.array([-1, -1, 0, 0, 2, 2]),
+            "father": np.array([-1, -1, 1, 1, 3, 3]),
+            "twin": np.array([-1, -1, -1, -1, 5, 4]),
+            "sex": np.array([0, 1, 0, 1, 0, 1]),
+            "generation": np.array([0, 0, 1, 1, 2, 2]),
+        }
+    )
+
+
+def _ped_double_first_cousins() -> pd.DataFrame:
+    # 4,5 full sibs of (0,1); 6,7 full sibs of (2,3); 8=child(4,6),
+    # 9=child(5,7), 10=child(4,6).  (8,9) and (9,10) are DOUBLE first cousins
+    # (both parent-couples are full-sib pairs) -> phi = 0.125, twice the nominal
+    # 1C lookup of 0.0625.
+    return pd.DataFrame(
+        {
+            "id": np.arange(11),
+            "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2, 4, 5, 4]),
+            "father": np.array([-1, -1, -1, -1, 1, 1, 3, 3, 6, 7, 6]),
+            "twin": np.full(11, -1),
+            "sex": np.array([0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0]),
+            "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2]),
+        }
+    )
+
+
+def _ped_half_first_cousin_parents() -> pd.DataFrame:
+    # 0..4 founders; 5=child(0,1), 6=child(0,2) share founder 0 -> half sibs;
+    # 7=child(5,3), 8=child(6,4) -> half-first-cousins (phi=1/32);
+    # 9=child(7,8) -> phi(9,7) = 0.5*((1+F_7)/2 + phi(8,7)) = 0.265625.
+    # The disproof of threshold-pruning: a sub-threshold (1/32) parental kinship
+    # feeds an above-threshold parent-offspring kinship.
+    return pd.DataFrame(
+        {
+            "id": np.arange(10),
+            "mother": np.array([-1, -1, -1, -1, -1, 0, 0, 5, 6, 7]),
+            "father": np.array([-1, -1, -1, -1, -1, 1, 2, 3, 4, 8]),
+            "twin": np.full(10, -1),
+            "sex": np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1]),
+            "generation": np.array([0, 0, 0, 0, 0, 1, 1, 2, 2, 3]),
+        }
+    )
+
+
+def _ped_mz_twins_with_descendants() -> pd.DataFrame:
+    # 0,1 founders; 2,3 full sibs of (0,1); 4,5 MZ twins of (2,3);
+    # 6,7 unrelated founders (mates); 8=child(4,6), 9=child(5,7).
+    # 4 and 5 are genome-identical, so 8 and 9 are half-sib-equivalent with phi
+    # elevated above the non-inbred maternal-half-sib value by co-coalescence.
+    return pd.DataFrame(
+        {
+            "id": np.arange(10),
+            "mother": np.array([-1, -1, 0, 0, 2, 2, -1, -1, 4, 5]),
+            "father": np.array([-1, -1, 1, 1, 3, 3, -1, -1, 6, 7]),
+            "twin": np.array([-1, -1, -1, -1, 5, 4, -1, -1, -1, -1]),
+            "sex": np.array([0, 1, 0, 1, 0, 1, 1, 1, 0, 0]),
+            "generation": np.array([0, 0, 1, 1, 2, 2, 0, 0, 3, 3]),
+        }
+    )
+
+
+def _ped_sib_mating() -> pd.DataFrame:
+    # 0,1 founders; 2,3 full sibs; 4=child(2,3) (sib-mating, F_4=0.25).
+    return pd.DataFrame(
+        {
+            "id": np.arange(5),
+            "mother": np.array([-1, -1, 0, 0, 2]),
+            "father": np.array([-1, -1, 1, 1, 3]),
+            "twin": np.full(5, -1),
+            "sex": np.array([0, 1, 0, 1, 0]),
+            "generation": np.array([0, 0, 1, 1, 2]),
+        }
+    )
+
+
+_PAIRWISE_FIXTURES = [
+    _ped_inbred_mz,
+    _ped_double_first_cousins,
+    _ped_half_first_cousin_parents,
+    _ped_mz_twins_with_descendants,
+    _ped_sib_mating,
+]
+
+
+def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pd.DataFrame:
+    """Generate a small valid (topologically ordered) random pedigree.
+
+    Parent-index-only; no simace dependency.  Mixes inbreeding (mates drawn
+    from the same cohort) and occasional MZ twins so the fuzz exercises both
+    correction paths.  Children always get a higher id than their parents, so
+    the topological invariant holds.
+    """
+    n_founders = int(rng.integers(2, 5))
+    n_gen = int(rng.integers(1, 5))
+    per_gen = int(rng.integers(1, 4))
+    ids = list(range(n_founders))
+    mother = [-1] * n_founders
+    father = [-1] * n_founders
+    twin = [-1] * n_founders
+    gen = [0] * n_founders
+    sex = [int(rng.integers(0, 2)) for _ in range(n_founders)]
+    cur = list(range(n_founders))
+    next_id = n_founders
+    for g in range(1, n_gen + 1):
+        new_gen: list[int] = []
+        females = [i for i in cur if sex[i] == 0] or cur
+        males = [i for i in cur if sex[i] == 1] or cur
+        for _ in range(per_gen):
+            m = int(rng.choice(females))
+            f = int(rng.choice(males))
+            ids.append(next_id)
+            mother.append(m)
+            father.append(f)
+            twin.append(-1)
+            gen.append(g)
+            sex.append(int(rng.integers(0, 2)))
+            new_gen.append(next_id)
+            next_id += 1
+        # Occasionally turn the last two new individuals into MZ twins.
+        if len(new_gen) >= 2 and rng.random() < p_twin:
+            a, b = new_gen[-1], new_gen[-2]
+            mother[b] = mother[a]
+            father[b] = father[a]
+            twin[a] = b
+            twin[b] = a
+            sex[b] = sex[a]
+        cur = new_gen
+    return pd.DataFrame({"id": ids, "mother": mother, "father": father, "twin": twin, "sex": sex, "generation": gen})
+
+
+class TestPairwiseKinshipReference:
+    """`_pairwise_kinship_py` must equal `kinship_matrix(0.0)` on every pair.
+
+    The matrix DP is the independent exact oracle.  These cover the cases the
+    nominal-lookup fast path gets wrong (multiple relationship paths) and the
+    inbreeding / MZ-co-coalescence cases that motivated the routine.
+    """
+
+    _inbred_mz = staticmethod(_ped_inbred_mz)
+    _double_first_cousins = staticmethod(_ped_double_first_cousins)
+    _half_first_cousin_parents = staticmethod(_ped_half_first_cousin_parents)
+    _mz_twins_with_descendants = staticmethod(_ped_mz_twins_with_descendants)
+    _sib_mating = staticmethod(_ped_sib_mating)
+
+    def _phi(self, pg, a, b):
+        return _pairwise_kinship_py(pg.mother, pg.father, pg.twin, np.array([a]), np.array([b]))[0]
+
+    @pytest.mark.parametrize(
+        "fixture",
+        [
+            "_inbred_mz",
+            "_double_first_cousins",
+            "_half_first_cousin_parents",
+            "_mz_twins_with_descendants",
+            "_sib_mating",
+        ],
+    )
+    def test_all_pairs_match_matrix_oracle(self, fixture):
+        pg = PedigreeGraph(getattr(self, fixture)())
+        got, exp, _, _ = _oracle_all_pairs(pg)
+        # Dyadic rationals at these shallow depths are exact in both float32 and
+        # float64, so parity is effectively bit-exact; use a loose atol anyway.
+        np.testing.assert_allclose(got, exp, atol=1e-6)
+
+    def test_double_first_cousins_exceed_nominal(self):
+        pg = PedigreeGraph(self._double_first_cousins())
+        # Both double-cousin pairs: true phi 0.125, NOT the nominal 1C 0.0625.
+        assert self._phi(pg, 8, 9) == pytest.approx(0.125)
+        assert self._phi(pg, 9, 10) == pytest.approx(0.125)
+
+    def test_half_first_cousin_parent_offspring_not_pruned(self):
+        # Permanent guard against threshold-pruning regressions.
+        pg = PedigreeGraph(self._half_first_cousin_parents())
+        assert self._phi(pg, 7, 8) == pytest.approx(0.03125)  # half-1C parents
+        assert self._phi(pg, 9, 7) == pytest.approx(0.265625)  # NOT 0.25
+
+    def test_inbred_mz_self_and_cross_kinship(self):
+        pg = PedigreeGraph(self._inbred_mz())
+        # MZ twins (4,5) inbred F=0.25 -> cross-kinship = self-kinship = 0.625.
+        assert self._phi(pg, 4, 5) == pytest.approx(0.625)
+        assert self._phi(pg, 4, 4) == pytest.approx(0.625)
+        # Their non-inbred full-sib parents (2,3) stay at 0.25.
+        assert self._phi(pg, 2, 3) == pytest.approx(0.25)
+
+    def test_mz_descendants_elevated_above_nominal_cousin(self):
+        pg = PedigreeGraph(self._mz_twins_with_descendants())
+        # 8=child(4,6), 9=child(5,7) with 4,5 MZ twins (genome-identical) and
+        # 6,7 unrelated.  They share one genome source, so they are half-sib-
+        # equivalent: phi = 0.5 * 0.5 * phi(4,5) = 0.25 * 0.625 = 0.15625.
+        # That exceeds the non-inbred maternal-half-sib value of 0.125 because
+        # the shared twins are themselves inbred (F=0.25) — MZ co-coalescence.
+        assert self._phi(pg, 8, 9) == pytest.approx(0.15625)
+        assert self._phi(pg, 8, 9) > 0.125
+
+    def test_input_orientation_preserved(self):
+        # phi is symmetric; reversed input order must give the same value and
+        # not reorder the output.
+        pg = PedigreeGraph(self._sib_mating())
+        fwd = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, np.array([2, 4]), np.array([4, 2]))
+        rev = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, np.array([4, 2]), np.array([2, 4]))
+        np.testing.assert_array_equal(fwd, rev[::-1])
+
+    def test_self_pairs_return_diagonal(self):
+        pg = PedigreeGraph(self._sib_mating())
+        # F_4 = 0.25 (sib-mating) -> self-kinship 0.625; founders -> 0.5.
+        assert self._phi(pg, 4, 4) == pytest.approx(0.625)
+        assert self._phi(pg, 0, 0) == pytest.approx(0.5)
+
+    def test_empty_input_returns_empty_float64(self):
+        pg = PedigreeGraph(self._sib_mating())
+        out = _pairwise_kinship_py(
+            pg.mother, pg.father, pg.twin, np.array([], dtype=np.int64), np.array([], dtype=np.int64)
+        )
+        assert out.dtype == np.float64
+        assert out.shape == (0,)
+
+
+class TestPairwiseKinshipNumba:
+    """The numba kernel must be bit-identical to the pure-Python reference.
+
+    Both compute float64 with the same IEEE ops, so they agree to the last bit
+    regardless of traversal order — making `_pairwise_kinship_py` a true bit
+    oracle.  Parity against the (float32) matrix is checked at `atol=1e-6`.
+    """
+
+    @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
+    def test_numba_bit_exact_vs_python(self, build):
+        pg = PedigreeGraph(build())
+        ii, jj = np.triu_indices(pg.n)
+        py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, ii, jj)
+        nb = pairwise_kinship(pg.mother, pg.father, pg.twin, ii, jj)
+        # Bit-exact: no tolerance.
+        np.testing.assert_array_equal(nb, py)
+
+    @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
+    def test_numba_matches_matrix_oracle(self, build):
+        pg = PedigreeGraph(build())
+        K = pg.kinship_matrix(0.0).toarray()
+        ii, jj = np.triu_indices(pg.n)
+        nb = pairwise_kinship(pg.mother, pg.father, pg.twin, ii, jj)
+        np.testing.assert_allclose(nb, K[ii, jj], atol=1e-6)
+
+    def test_fuzz_numba_equals_python_and_oracle(self):
+        rng = np.random.default_rng(20240609)
+        checked = 0
+        for _ in range(200):
+            pg = PedigreeGraph(_random_pedigree(rng))
+            if pg.n < 2:
+                continue
+            K = pg.kinship_matrix(0.0).toarray()
+            ii, jj = np.triu_indices(pg.n)
+            py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, ii, jj)
+            nb = pairwise_kinship(pg.mother, pg.father, pg.twin, ii, jj)
+            np.testing.assert_array_equal(nb, py)  # bit-exact
+            np.testing.assert_allclose(nb, K[ii, jj], atol=1e-6)  # vs matrix
+            checked += 1
+        assert checked > 100  # the generator should mostly yield n >= 2
+
+    def test_input_orientation_preserved(self):
+        pg = PedigreeGraph(_ped_sib_mating())
+        fwd = pairwise_kinship(pg.mother, pg.father, pg.twin, np.array([2, 4]), np.array([4, 2]))
+        rev = pairwise_kinship(pg.mother, pg.father, pg.twin, np.array([4, 2]), np.array([2, 4]))
+        np.testing.assert_array_equal(fwd, rev[::-1])
+
+    def test_empty_input_returns_empty_float64(self):
+        pg = PedigreeGraph(_ped_sib_mating())
+        empty = np.array([], dtype=np.int64)
+        out = pairwise_kinship(pg.mother, pg.father, pg.twin, empty, empty)
+        assert out.dtype == np.float64
+        assert out.shape == (0,)
+
+    def test_stats_wrapper_reports_bounded_memo(self):
+        # On a moderately related pedigree the memo and stack stay small
+        # relative to n**2 — the scaling guarantee in miniature.
+        rng = np.random.default_rng(7)
+        pg = PedigreeGraph(_random_pedigree(rng))
+        ii, jj = np.triu_indices(pg.n)
+        out, stats = _pairwise_kinship_with_stats(pg.mother, pg.father, pg.twin, ii, jj)
+        assert out.shape == ii.shape
+        assert stats["memo_entries"] <= pg.n * pg.n
+        assert stats["max_stack_depth"] >= 1
+        assert stats["memo_capacity"] >= stats["memo_entries"]
