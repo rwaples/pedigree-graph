@@ -80,6 +80,50 @@ was supposed to avoid.
   operates entirely at the Python layer — the `@njit` kernel still
   receives three plain bools, so dispatch is unaffected.
 
+## Empirical follow-up (2026-06-09): profiling corroborates the rejection
+
+A separate investigation asked whether any pedigree-graph hot path
+should be rewritten in C++ for speed.  A profiling harness
+(`benchmarks/profile_pedigree_graph.py`) was built over the consumed
+`PedigreeGraph` surface, run on simACE-simulated pedigrees at two
+scales (16k and 80k individuals).  Two findings bear directly on this
+ADR:
+
+1. **The DP kinship kernel *is* the dominant cost — a real, tempting
+   optimization target.**  In a representative 16k-individual cProfile
+   sequence, `_run_dp_core` (the `@njit` DP) was the single largest
+   self-time frame: **44.5s of 67.9s** wall.  This is exactly the kind
+   of hot kernel whose call boundary the rejected split proposed to
+   shave.
+
+2. **But the cost is super-linear and output-dominated, not dispatch-
+   or language-bound.**  `per_gen_mean_kinship` went **38.5s → 320s**
+   from 16k → 80k individuals (8.3× for 5× rows, ≈ O(n^1.4)).
+   `compute_pair_kinship` builds a **53.3M-nonzero** kinship matrix at
+   16k (≈21% dense) and OOMs at 80k.  The DP materialises a near-dense
+   matrix whose size grows super-linearly with population, because
+   pedigree relatedness density rises with N.
+
+A dispatch-level tweak — the rejected production/bench split, and by
+the same reasoning a like-for-like C++ port of the kernel — is noise
+against an output that scales like O(n^1.4).  This empirically
+confirms the original decision's premise: optimising the kernel's
+**call boundary** (or its host language) cannot move a cost that is
+set by the **size of what it produces**.  For contrast, the scipy
+sparse matmuls in `extract_pairs` were *not* a bottleneck (~1.6s at
+80k); the cost centre is the DP's algorithmic shape, not the sparse
+algebra around it.
+
+The genuine lever is algorithmic: avoid materialising the full kinship
+matrix when only specific pairs are needed (the twin/inbreeding-gated
+path in `_core.py:compute_pair_kinship`).  That work is scoped
+separately as a direct pairwise-kinship routine and, if pursued,
+warrants its own ADR.
+
+Harness + saved reports live under `benchmarks/` (gitignore-able, not
+committed); rerun with
+`python benchmarks/profile_pedigree_graph.py --scale {small,medium}`.
+
 ## References
 
 * The benchmark probe artifact (`bench_phase_c.py`) lives in the
