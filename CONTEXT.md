@@ -21,9 +21,11 @@ _Avoid_: subsample index, df index, external index
 ### Relationships
 
 **Relationship pair**:
-An unordered pair of individuals sharing a relationship category, stored
-canonically as `(lo, hi)` with `lo < hi`.
-_Avoid_: edge, link, tuple
+An unordered pair of individuals sharing a relationship category. Some pair
+arrays preserve relationship orientation (for example descendant→ancestor for
+lineal relationships); pair-key encodings canonicalize as `(lo, hi)` with
+`lo < hi`.
+_Avoid_: edge, link, tuple; assuming every pair array is already canonical
 
 **Relationship category**:
 A class of relationship identified by a short code (e.g. `FS`, `MHS`, `1C`),
@@ -36,9 +38,21 @@ _Avoid_: relationship type (when the code is meant), kind
 The kinship distance of a relationship category — `0` for MZ twins, `1` for
 parent-offspring and full sibs, and so on.
 
+**Nominal kinship**:
+The kinship coefficient implied by a relationship category's `(up, down,
+n_ancestors)` formula, assuming a single relationship path and no inbreeding
+or co-coalescence.
+_Avoid_: exact kinship
+
+**Exact pairwise kinship**:
+The kinship coefficient for a particular pair of individuals after summing all
+pedigree paths, including inbreeding, MZ co-coalescence, and duplicate
+relationship paths such as double cousins.
+_Avoid_: nominal kinship
+
 ## Relationships
 
-- A **relationship pair** holds two individuals and belongs to one **relationship category**.
+- A **relationship pair** holds two individuals and belongs to one **relationship category**; canonical ordering is a storage/encoding choice, not part of the relationship itself.
 - Every individual index is expressed in either **graph-space** or **caller-space**; the same individual generally has a different index in each.
 - A pair returned to a caller is in **caller-space**; the kinship matrix is indexed in **graph-space**. Converting between the two is required whenever both meet.
 
