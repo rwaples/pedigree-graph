@@ -9,13 +9,12 @@ underlying pedigree breaks one of those conditions.
 import numpy as np
 import pytest
 
-from pedigree_graph import PedigreeGraph
+from pedigree_graph import REL_REGISTRY, PedigreeGraph
 
 
 def test_streaming_returns_all_23_codes(small_pedigree):
     pg = PedigreeGraph(small_pedigree)
     counts = pg.count_pairs_streaming(max_degree=5)
-    from pedigree_graph import REL_REGISTRY
     assert set(counts.keys()) == set(REL_REGISTRY.keys())
 
 
@@ -33,9 +32,7 @@ def test_streaming_exact_codes_match_matrix(small_pedigree):
     s = pg_s.count_pairs_streaming(max_degree=5, scope="full")
     m = pg_m.count_pairs(max_degree=5, scope="full")
     for code in streaming_exact_codes():
-        assert s[code] == m[code], (
-            f"streaming {code}={s[code]} but matrix engine returns {m[code]}"
-        )
+        assert s[code] == m[code], f"streaming {code}={s[code]} but matrix engine returns {m[code]}"
 
 
 def test_streaming_cousin_codes_approximate(small_pedigree):
@@ -58,13 +55,13 @@ def test_streaming_cousin_codes_approximate(small_pedigree):
     assert s["H1C"] <= m["H1C"] + 1  # never over-counts on this fixture
 
 
-def test_streaming_max_degree_zero_higher_codes(small_pedigree):
+def test_streaming_max_degree_two_skips_degree_three_plus(small_pedigree):
     pg = PedigreeGraph(small_pedigree)
     counts = pg.count_pairs_streaming(max_degree=2)
     # Codes above degree 2 should be 0.
-    for code in ("GGP", "GGGP", "G3GP", "1C", "H1C", "1C1R", "H1C1R", "1C2R", "2C",
-                 "GAv", "GGAv", "G3Av", "HGAv", "HGGAv"):
-        assert counts[code] == 0, f"{code} should be 0 at max_degree=2, got {counts[code]}"
+    for code, rel in REL_REGISTRY.items():
+        if rel.degree > 2:
+            assert counts[code] == 0, f"{code} should be 0 at max_degree=2, got {counts[code]}"
 
 
 def test_cache_does_not_leak_between_engines(small_pedigree):
@@ -94,9 +91,7 @@ def test_matrix_cache_does_not_leak_across_max_degree(small_pedigree):
     assert deep == expected
     # Sanity: at least one degree-3+ code must be non-zero in the deep
     # call so the test actually exercises the bug (zero on shallow).
-    assert any(deep[c] > 0 for c in ("GGP", "GAv", "1C", "HAv")), (
-        "fixture too shallow to exercise cache-leak detection"
-    )
+    assert any(deep[c] > 0 for c in ("GGP", "GAv", "1C", "HAv")), "fixture too shallow to exercise cache-leak detection"
     assert any(shallow[c] == 0 for c in ("GGP", "GAv", "1C", "HAv"))
 
 
@@ -159,9 +154,8 @@ def test_streaming_default_scope_is_full(small_pedigree):
     explicit ``scope='full'``."""
     pg_default = PedigreeGraph(small_pedigree)
     pg_explicit = PedigreeGraph(small_pedigree)
-    assert (
-        pg_default.count_pairs_streaming(max_degree=5)
-        == pg_explicit.count_pairs_streaming(max_degree=5, scope="full")
+    assert pg_default.count_pairs_streaming(max_degree=5) == pg_explicit.count_pairs_streaming(
+        max_degree=5, scope="full"
     )
 
 
@@ -186,9 +180,8 @@ def test_streaming_full_scope_on_from_subsample_works(small_pedigree):
     half = df.iloc[: len(df) // 2].reset_index(drop=True)
     pg_sub = PedigreeGraph.from_subsample(df, half)
     pg_full = PedigreeGraph(df)
-    assert (
-        pg_sub.count_pairs_streaming(max_degree=5, scope="full")
-        == pg_full.count_pairs_streaming(max_degree=5, scope="full")
+    assert pg_sub.count_pairs_streaming(max_degree=5, scope="full") == pg_full.count_pairs_streaming(
+        max_degree=5, scope="full"
     )
 
 
@@ -197,9 +190,8 @@ def test_streaming_subsample_on_plain_graph_equals_full(small_pedigree):
     to ``scope='full'``."""
     pg_sub = PedigreeGraph(small_pedigree)
     pg_full = PedigreeGraph(small_pedigree)
-    assert (
-        pg_sub.count_pairs_streaming(max_degree=5, scope="subsample")
-        == pg_full.count_pairs_streaming(max_degree=5, scope="full")
+    assert pg_sub.count_pairs_streaming(max_degree=5, scope="subsample") == pg_full.count_pairs_streaming(
+        max_degree=5, scope="full"
     )
 
 
@@ -240,24 +232,31 @@ def test_count_pairs_streaming_invalid_max_degree(small_pedigree, bad):
         pg.count_pairs_streaming(max_degree=bad)
 
 
-def test_max_degree_zero_skips_degree_2_plus(small_pedigree):
-    """``max_degree=0`` is a legitimate query.
-
-    Cheap codes (``MZ`` and degree-1 ``MO``/``FO``/``FS``) are always
-    computed; the cap controls the expensive sparse matrix products at
-    degree 2 and above.  Assert the expensive codes are zero and MZ
-    matches between engines.
-    """
+def test_max_degree_zero_is_mz_only(small_pedigree):
+    """``max_degree=0`` is a legitimate MZ-only query."""
     pg_s = PedigreeGraph(small_pedigree)
     s = pg_s.count_pairs_streaming(max_degree=0)
     pg_m = PedigreeGraph(small_pedigree)
     m = pg_m.count_pairs(max_degree=0, scope="full")
     assert s["MZ"] == m["MZ"]
-    for code in ("GP", "Av", "GGP", "HAv", "GAv", "1C", "GGGP",
-                 "HGAv", "GGAv", "H1C", "1C1R", "G3GP", "HGGAv",
-                 "G3Av", "H1C1R", "1C2R", "2C"):
-        assert s[code] == 0, f"streaming {code}={s[code]} should be 0 at max_degree=0"
-        assert m[code] == 0, f"matrix {code}={m[code]} should be 0 at max_degree=0"
+    for code, rel in REL_REGISTRY.items():
+        if rel.degree > 0:
+            assert s[code] == 0, f"streaming {code}={s[code]} should be 0 at max_degree=0"
+            assert m[code] == 0, f"matrix {code}={m[code]} should be 0 at max_degree=0"
+
+
+def test_registry_aligned_degree_cutoffs(small_pedigree):
+    """Matrix and streaming counters gate every code by REL_REGISTRY.degree."""
+    for cutoff in range(5):
+        matrix_counts = PedigreeGraph(small_pedigree).count_pairs(max_degree=cutoff, scope="full")
+        streaming_counts = PedigreeGraph(small_pedigree).count_pairs_streaming(max_degree=cutoff)
+        for code, rel in REL_REGISTRY.items():
+            if rel.degree > cutoff:
+                assert matrix_counts[code] == 0, (cutoff, code, matrix_counts[code])
+                assert streaming_counts[code] == 0, (cutoff, code, streaming_counts[code])
+
+    assert PedigreeGraph(small_pedigree).count_pairs(max_degree=2, scope="full")["1C"] == 0
+    assert PedigreeGraph(small_pedigree).count_pairs()["1C"] > 0  # default max_degree=3 preserves 1C
 
 
 def test_max_degree_five_is_valid(small_pedigree):

@@ -36,7 +36,8 @@ _Avoid_: relationship type (when the code is meant), kind
 
 **Degree**:
 The kinship distance of a relationship category — `0` for MZ twins, `1` for
-parent-offspring and full sibs, and so on.
+parent-offspring and full sibs, and so on. A degree cutoff includes relationship
+categories whose degree is less than or equal to the cutoff.
 
 **Nominal kinship**:
 The kinship coefficient implied by a relationship category's `(up, down,

@@ -106,14 +106,10 @@ def _validate_required_columns(arrays: dict[str, np.ndarray], n: int) -> None:
         if col not in arrays:
             raise ValueError(f"input is missing the required {col!r} column")
         if len(arrays[col]) != n:
-            raise ValueError(
-                f"column {col!r} has length {len(arrays[col])}, expected {n} (id column length)"
-            )
+            raise ValueError(f"column {col!r} has length {len(arrays[col])}, expected {n} (id column length)")
     for col in _OPTIONAL_COLUMNS:
         if col in arrays and len(arrays[col]) != n:
-            raise ValueError(
-                f"column {col!r} has length {len(arrays[col])}, expected {n} (id column length)"
-            )
+            raise ValueError(f"column {col!r} has length {len(arrays[col])}, expected {n} (id column length)")
 
 
 def _map_ids_to_rows(
@@ -232,9 +228,7 @@ class PedigreeGraph:
         # same entry.  The streaming engine fixes min_kinship=0.0 (its
         # scalar formulas don't prune on kinship); the matrix engine
         # uses the requested min_kinship.
-        self._pair_count_cache: dict[
-            tuple[str, int, float], tuple[dict[str, int], dict[str, int]]
-        ] = {}
+        self._pair_count_cache: dict[tuple[str, int, float], tuple[dict[str, int], dict[str, int]]] = {}
         self._inbreeding: np.ndarray | None = None
         # Topological depth recomputed from edges; user-supplied
         # ``self.generation`` may be sparse/skipped/post-filtered and is
@@ -345,7 +339,8 @@ class PedigreeGraph:
         )
 
     def _known_parent_edges_for(
-        self, parent_label: Literal["mother", "father"],
+        self,
+        parent_label: Literal["mother", "father"],
     ) -> tuple[np.ndarray, np.ndarray]:
         """Cached :func:`_known_parent_edges` lookup by parent label.
 
@@ -640,7 +635,7 @@ class PedigreeGraph:
 
     def extract_pairs(
         self,
-        max_degree: int = 2,
+        max_degree: int = 3,
         min_kinship: float = 0.0,
     ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """Extract all relationship categories.
@@ -653,9 +648,13 @@ class PedigreeGraph:
         - ``from_arrays(ids, ...)``: positions in the input *ids* array.
 
         Args:
-            max_degree: Maximum kinship degree to extract (1-5). Degree 2
-                covers through 1st cousins, degree 5 through 2nd cousins.
-                Higher degrees require more expensive matrix products.
+            max_degree: Maximum kinship degree to extract (0-5). Includes
+                relationship categories whose registry degree is <= this
+                cutoff: 0=MZ only, 1=parent-offspring/full-sib, 2 adds
+                half-sibs/grandparent/avuncular, 3 adds 1st cousins and
+                other degree-3 categories, and 5 reaches 2nd cousins.
+                Higher degrees require more
+                expensive matrix products.
             min_kinship: Skip pair types with kinship coefficient below this
                 threshold. E.g., 0.125 skips 1st cousins (0.0625) and 2nd
                 cousins (0.016), avoiding their expensive sparse products.
@@ -686,7 +685,7 @@ class PedigreeGraph:
         for attr in ("_A", "_A2", "_A3", "_A4", "_A5", "_A2_shared", "_full_sib_matrix", "_half_sib_matrix"):
             self.__dict__.pop(attr, None)
 
-    def count_pairs(self, max_degree: int = 2, scope: Literal["subsample", "full"] = "subsample") -> dict[str, int]:
+    def count_pairs(self, max_degree: int = 3, scope: Literal["subsample", "full"] = "subsample") -> dict[str, int]:
         """Count all relationship categories.
 
         If ``extract_pairs()`` was already called on this instance, returns
@@ -718,7 +717,7 @@ class PedigreeGraph:
 
     def count_pairs_streaming(
         self,
-        max_degree: int = 2,
+        max_degree: int = 3,
         scope: Literal["subsample", "full"] = "full",
     ) -> dict[str, int]:
         """Memory-bounded relationship pair counts via pure scalar arithmetic.
@@ -766,10 +765,12 @@ class PedigreeGraph:
         ``self._pair_count_cache[("streaming", max_degree, 0.0)]``.
 
         Args:
-            max_degree: 0-5; default 2 (matches :meth:`count_pairs`).
-                Degree 0 still computes the cheap MZ / MO / FO / FS
-                codes; the cap controls the expensive matrix products
-                at degree 2 and above.
+            max_degree: 0-5; default 3 (matches :meth:`count_pairs`).
+                Includes relationship categories whose registry degree is
+                <= this cutoff: 0=MZ only, 1=parent-offspring/full-sib,
+                2 adds half-sibs/grandparent/avuncular, 3 adds 1st
+                cousins and other degree-3 categories, and 5 reaches 2nd
+                cousins.
             scope: ``"full"`` (default) or ``"subsample"``.  On
                 non-subsample graphs the two are equivalent.  On
                 ``from_subsample`` graphs, ``"subsample"`` raises
@@ -1025,11 +1026,17 @@ class PedigreeGraph:
         K = self._kinship_cache.get(key)
         if K is not None:
             theta = _per_gen_mean_kinship(
-                K, np.asarray(self.generation), np.asarray(self.twin),
+                K,
+                np.asarray(self.generation),
+                np.asarray(self.twin),
             )
         else:
             theta = _compute_theta_per_gen(
-                self.n, self.mother, self.father, self.twin, self.generation,
+                self.n,
+                self.mother,
+                self.father,
+                self.twin,
+                self.generation,
                 min_kinship,
             )
         self._theta_per_gen_cache[key] = theta
@@ -1056,9 +1063,7 @@ class PedigreeGraph:
         if self._inbreeding is None:
             if self._depth is None:
                 self._depth = _compute_depth(self.mother, self.father, self.n)
-            self._inbreeding = _compute_F_meuwissen_luo(
-                self.mother, self.father, self._depth, self.n
-            )
+            self._inbreeding = _compute_F_meuwissen_luo(self.mother, self.father, self._depth, self.n)
         return self._inbreeding
 
     def compute_n_descendants(self) -> np.ndarray:
@@ -1082,7 +1087,9 @@ class PedigreeGraph:
         """
         if self._n_descendants is None:
             n_desc64 = _compute_n_descendants(
-                self.mother, self.father, self.n,
+                self.mother,
+                self.father,
+                self.n,
             )
             if n_desc64.size and int(n_desc64.max()) > np.iinfo(np.int32).max:
                 raise OverflowError(
@@ -1112,7 +1119,9 @@ class PedigreeGraph:
         """
         if self._n_ancestors is None:
             self._n_ancestors = _compute_n_ancestors(
-                self.mother, self.father, self.n,
+                self.mother,
+                self.father,
+                self.n,
             )
         return self._n_ancestors
 

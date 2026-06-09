@@ -286,40 +286,54 @@ class MatrixPairExtractor:
         # mirror-image ``else`` branches.
         pairs: dict[str, tuple[np.ndarray, np.ndarray]] = dict.fromkeys(REL_REGISTRY, (empty, empty))
 
+        needed_codes = {
+            code
+            for code, rel in REL_REGISTRY.items()
+            if rel.degree <= max_degree and PAIR_KINSHIP.get(code, 0) >= min_kinship
+        }
+
         def _needed(code: str) -> bool:
-            return PAIR_KINSHIP.get(code, 0) >= min_kinship
+            return code in needed_codes
 
-        need_hs = _needed("MHS") and max_degree >= 2
+        needs_degree1_plus = any(REL_REGISTRY[code].degree >= 1 for code in needed_codes)
+        needs_degree2_plus = any(REL_REGISTRY[code].degree >= 2 for code in needed_codes)
+        needs_degree3_plus = any(REL_REGISTRY[code].degree >= 3 for code in needed_codes)
+        needs_degree4_plus = any(REL_REGISTRY[code].degree >= 4 for code in needed_codes)
+        needs_degree5 = any(REL_REGISTRY[code].degree >= 5 for code in needed_codes)
 
-        # Pre-trigger cached properties needed by downstream extractions.
+        # Pre-trigger cached properties needed by degree-2+ extractions.
         # _Am/_Af are only needed to build _A; delete after to free memory.
-        pg._ensure_parent_csr()
-        if max_degree >= 2:
+        if needs_degree2_plus:
+            pg._ensure_parent_csr()
             _ = pg._A2  # chains: _Am, _Af → _A → _A2
-        else:
-            _ = pg._A
-        del pg._Am, pg._Af
+        pg.__dict__.pop("_Am", None)
+        pg.__dict__.pop("_Af", None)
 
-        pairs["MZ"] = pg._mz_twin_pairs()
+        if _needed("MZ"):
+            pairs["MZ"] = pg._mz_twin_pairs()
 
-        mo, fo = pg._parent_offspring_pairs()
-        pairs["MO"] = mo
-        pairs["FO"] = fo
+        full_sib, mat_hs, pat_hs = empty, empty, empty
+        if needs_degree1_plus:
+            mo, fo = pg._parent_offspring_pairs()
+            if _needed("MO"):
+                pairs["MO"] = mo
+            if _needed("FO"):
+                pairs["FO"] = fo
 
-        t0 = time.perf_counter()
-        full_sib, mat_hs, pat_hs = pg.sibling_pairs()
-        pairs["FS"] = full_sib
-        if need_hs:
-            pairs["MHS"] = mat_hs
-            pairs["PHS"] = pat_hs
-        self._log_counts("Siblings", pairs, ("FS", "MHS", "PHS"), t0)
+            t0 = time.perf_counter()
+            full_sib, mat_hs, pat_hs = pg.sibling_pairs()
+            if _needed("FS"):
+                pairs["FS"] = full_sib
+            if _needed("MHS"):
+                pairs["MHS"] = mat_hs
+            if _needed("PHS"):
+                pairs["PHS"] = pat_hs
+            self._log_counts("Siblings", pairs, ("FS", "MHS", "PHS"), t0)
 
-        # ---- Degree 2 (kinship 1/8): GP, Av, 1C ----
-        if max_degree >= 2:
+        # ---- Degree 2 (kinship 1/8): GP, Av ----
+        if _needed("GP") or _needed("Av"):
             t0 = time.perf_counter()
             tasks: dict[str, _Thunk] = {}
-            if _needed("1C"):
-                tasks["1C"] = self._cousin_pairs
             if _needed("GP"):
                 tasks["GP"] = self._grandparent_grandchild_pairs
             if _needed("Av"):
@@ -328,13 +342,13 @@ class MatrixPairExtractor:
             self._log_counts(
                 "Degree 2",
                 pairs,
-                ("1C", "GP", "Av"),
+                ("GP", "Av"),
                 t0,
                 suffix=f" [min_kinship={min_kinship}]" if min_kinship > 0 else "",
             )
 
-        # ---- Degree 3+ setup (deferred to avoid work at default degree 2) ----
-        if max_degree >= 3:
+        # ---- Degree 3+ setup (deferred to avoid work below the 1C/GGP cutoff) ----
+        if needs_degree3_plus:
             po_pairs = (
                 np.concatenate([pairs["MO"][0], pairs["FO"][0]]),
                 np.concatenate([pairs["MO"][1], pairs["FO"][1]]),
@@ -344,14 +358,14 @@ class MatrixPairExtractor:
             pg._build_half_sib_matrix(mat_hs, pat_hs)
             hsm = pg._half_sib_matrix
         # sib_all only needed at degree 4+ (1C1R, H1C1R, 1C2R subtract lists)
-        if max_degree >= 4:
+        if needs_degree4_plus:
             sib_all = (
                 np.concatenate([pairs["FS"][0], pairs["MHS"][0], pairs["PHS"][0]]),
                 np.concatenate([pairs["FS"][1], pairs["MHS"][1], pairs["PHS"][1]]),
             )
 
-        # ---- Degree 3 (kinship 1/16): GGP, HAv, GAv ----
-        if max_degree >= 3:
+        # ---- Degree 3 (kinship 1/16): GGP, HAv, GAv, 1C ----
+        if needs_degree3_plus:
             t0 = time.perf_counter()
             _ = pg._A3  # pre-trigger
             tasks = {}
@@ -361,14 +375,16 @@ class MatrixPairExtractor:
                 tasks["HAv"] = partial(self._collateral_pairs, hsm, 1, 2, [po_pairs, gp_pairs])
             if _needed("GAv"):
                 tasks["GAv"] = partial(self._collateral_pairs, fsm, 1, 3, [po_pairs, gp_pairs, pairs["Av"]])
+            if _needed("1C"):
+                tasks["1C"] = self._cousin_pairs
             pairs.update(self._run_parallel(tasks))
-            self._log_counts("Degree 3", pairs, ("GGP", "HAv", "GAv"), t0)
+            self._log_counts("Degree 3", pairs, ("GGP", "HAv", "GAv", "1C"), t0)
 
         # ---- Degree 4 (kinship 1/32): GGGP, HGAv, GGAv, H1C, 1C1R ----
         # A2_A3T is built lazily by 1C1R (here) and/or H1C1R (degree 5); seed
         # it before the degree-4 gate so the degree-5 block can reuse it.
         A2_A3T = None
-        if max_degree >= 4:
+        if needs_degree4_plus:
             t0 = time.perf_counter()
             if _needed("1C1R"):
                 A2_A3T = pg._A2 @ pg._A3.T
@@ -415,7 +431,7 @@ class MatrixPairExtractor:
             self._log_counts("Degree 4", pairs, ("GGGP", "HGAv", "GGAv", "H1C", "1C1R"), t0)
 
         # ---- Degree 5 (kinship 1/64): 2C, G3GP, HGGAv, G3Av, H1C1R, 1C2R ----
-        if max_degree >= 5:
+        if needs_degree5:
             t0 = time.perf_counter()
             # _A5 triggered lazily by G3GP (_lineal_pairs(5))
             # A2_A3T needed by H1C1R only

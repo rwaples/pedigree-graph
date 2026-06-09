@@ -6,6 +6,15 @@ live on the corresponding GitHub release pages.
 
 ## v0.5.0 (unreleased)
 
+- **Registry-aligned `max_degree` semantics.**  `extract_pairs`,
+  `count_pairs`, and `count_pairs_streaming` now include exactly the
+  relationship categories whose `REL_REGISTRY[code].degree` is less
+  than or equal to the cutoff.  `max_degree=0` is MZ-only,
+  `max_degree=2` stops before 1st cousins, and `max_degree=3`
+  includes 1st cousins plus the other degree-3 categories.  The public
+  defaults changed from `2` to `3` to preserve the old default behavior
+  of including 1st cousins.
+
 - **`PedigreeGraph.compute_n_ancestors()`** — new cached method.
   Returns the per-individual count of *distinct* strict ancestors
   (`int32`, length `n`).  Backed by a sparse boolean transitive

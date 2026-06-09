@@ -59,9 +59,9 @@ pg = PedigreeGraph({
 # pg = PedigreeGraph(df)   # __init__ accepts both forms
 
 # Extract pairs by relationship type, up to a given degree
-pairs = pg.extract_pairs(max_degree=2)
+pairs = pg.extract_pairs(max_degree=3)
 print(pairs["FS"])     # full sibs:  (idx1, idx2)
-print(pairs["1C"])     # 1st cousins
+print(pairs["1C"])     # 1st cousins (degree 3)
 print(PAIR_KINSHIP["FS"])  # 0.25
 ```
 

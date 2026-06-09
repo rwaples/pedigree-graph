@@ -49,19 +49,17 @@ class StreamingPairCounter:
         t_total = time.perf_counter()
         n = pg.n
 
-        # Lazily rebuild _Am / _Af if extract_pairs deleted them.
-        pg._ensure_parent_csr()
-
         counts: dict[str, int] = dict.fromkeys(REL_REGISTRY, 0)
-        children_count = np.diff(pg._A.tocsc().indptr).astype(np.int64)
 
         # ---- Degree 0: MZ ---------------------------------------------
         mz_i, _ = pg._mz_twin_pairs()
         counts["MZ"] = len(mz_i)
+        if max_degree < 1:
+            return self._finalise(counts, t_total)
 
         # ---- Degree 1: MO, FO, FS -------------------------------------
-        counts["MO"] = int(pg._Am.nnz)
-        counts["FO"] = int(pg._Af.nnz)
+        counts["MO"] = int(np.count_nonzero(pg.mother >= 0))
+        counts["FO"] = int(np.count_nonzero(pg.father >= 0))
 
         sm = pg._orig_mother
         sf = pg._orig_father
@@ -81,16 +79,20 @@ class StreamingPairCounter:
             max_p = int(max(bk_m.max(), bk_f.max())) + 1
             family_key = bk_m.astype(np.int64) * max_p + bk_f.astype(np.int64)
             _, inverse, sizes = np.unique(
-                family_key, return_inverse=True, return_counts=True,
+                family_key,
+                return_inverse=True,
+                return_counts=True,
             )
             mating_pair_id[bk_idx] = inverse.astype(np.int64)
             pair_k = sizes.astype(np.int64)
             fs_count = int(((pair_k * (pair_k - 1)) // 2).sum())
         counts["FS"] = fs_count
 
+        if max_degree < 2:
+            return self._finalise(counts, t_total)
+
         # Sex-side and mating-pair member arrays are reused across every
-        # degree branch — compute them once.  Empty when no sample has the
-        # corresponding known parent (the per-degree blocks skip cleanly).
+        # higher-degree branch. Empty arrays make those blocks skip cleanly.
         m_known = nt_m >= 0
         f_known = nt_f >= 0
         has_m = bool(m_known.any())
@@ -103,21 +105,18 @@ class StreamingPairCounter:
         members_pid = mating_pair_id[members]
         has_pairs = len(pair_k) > 0
 
+        # ---- Degree 2: MHS, PHS, GP, Av -------------------------------
         if has_m:
             _, m_sizes = np.unique(m_parents, return_counts=True)
-            counts["MHS"] = (
-                int(((m_sizes * (m_sizes - 1)) // 2).sum()) - fs_count
-            )
+            counts["MHS"] = int(((m_sizes * (m_sizes - 1)) // 2).sum()) - fs_count
         if has_f:
             _, f_sizes = np.unique(f_parents, return_counts=True)
-            counts["PHS"] = (
-                int(((f_sizes * (f_sizes - 1)) // 2).sum()) - fs_count
-            )
+            counts["PHS"] = int(((f_sizes * (f_sizes - 1)) // 2).sum()) - fs_count
 
-        if max_degree < 2:
-            return self._finalise(counts, t_total)
-
-        # ---- Degree 2: GP, Av -----------------------------------------
+        # Lazily rebuild _Am / _Af if extract_pairs deleted them; needed for
+        # adjacency powers from degree 2 onward.
+        pg._ensure_parent_csr()
+        children_count = np.diff(pg._A.tocsc().indptr).astype(np.int64)
         counts["GP"] = int(pg._A2.nnz)
 
         pair_sum_d1 = np.array([], dtype=np.int64)
@@ -138,16 +137,22 @@ class StreamingPairCounter:
         if max_degree < 3:
             return self._finalise(counts, t_total)
 
-        # ---- Degree 3: GGP, HAv, GAv, 1C, H1C -------------------------
+        # ---- Degree 3: GGP, HAv, GAv, 1C ------------------------------
         counts["GGP"] = int(pg._A3.nnz)
         d2_count = np.diff(pg._A2.tocsc().indptr).astype(np.int64)
         d3_count = np.diff(pg._A3.tocsc().indptr).astype(np.int64)
 
         m_av, m_kp, _ = self._per_sex_anchor_sums(
-            has_m, m_parents, children_count, m_anchors,
+            has_m,
+            m_parents,
+            children_count,
+            m_anchors,
         )
         f_av, f_kp, _ = self._per_sex_anchor_sums(
-            has_f, f_parents, children_count, f_anchors,
+            has_f,
+            f_parents,
+            children_count,
+            f_anchors,
         )
         counts["HAv"] = m_av + f_av - 2 * counts["Av"]
 
@@ -165,21 +170,17 @@ class StreamingPairCounter:
                 ((pair_sum_d1 * pair_sum_d1 - pair_sum_d1_sq) // 2).sum(),
             )
 
+        if max_degree < 4:
+            return self._finalise(counts, t_total)
+
+        # ---- Degree 4: GGGP, HGAv, GGAv, H1C, 1C1R --------------------
         # H1C: pairs sharing exactly one distinct grandparent.
         h1c_naive = int(((d2_count * (d2_count - 1)) // 2).sum())
         counts["H1C"] = max(
             0,
-            h1c_naive
-            - 4 * counts["FS"]
-            - 2 * counts["MHS"]
-            - 2 * counts["PHS"]
-            - 2 * counts["1C"],
+            h1c_naive - 4 * counts["FS"] - 2 * counts["MHS"] - 2 * counts["PHS"] - 2 * counts["1C"],
         )
 
-        if max_degree < 4:
-            return self._finalise(counts, t_total)
-
-        # ---- Degree 4: GGGP, HGAv, GGAv, 1C1R -------------------------
         counts["GGGP"] = int(pg._A4.nnz)
         d4_count = np.diff(pg._A4.tocsc().indptr).astype(np.int64)
 
@@ -192,7 +193,8 @@ class StreamingPairCounter:
             counts["GGAv"] = int(((pair_k - 1) * pair_sum_d3).sum())
             naive_1c1r = int((pair_sum_d1 * pair_sum_d2).sum())
             counts["1C1R"] = max(
-                0, naive_1c1r - counts["Av"] - counts["GAv"],
+                0,
+                naive_1c1r - counts["Av"] - counts["GAv"],
             )
 
         m_hgav, _, _ = self._per_sex_anchor_sums(has_m, m_parents, d2_count, m_anchors, m_kp)
@@ -214,7 +216,8 @@ class StreamingPairCounter:
             counts["G3Av"] = int(((pair_k - 1) * pair_sum_d4).sum())
             naive_1c2r = int((pair_sum_d1 * pair_sum_d3).sum())
             counts["1C2R"] = max(
-                0, naive_1c2r - counts["GAv"] - counts["GGAv"],
+                0,
+                naive_1c2r - counts["GAv"] - counts["GGAv"],
             )
             counts["2C"] = int(((pair_sum_d2 * (pair_sum_d2 - 1)) // 2).sum())
 
@@ -225,10 +228,7 @@ class StreamingPairCounter:
         h1c1r_naive = int((d2_count * d3_count).sum())
         counts["H1C1R"] = max(
             0,
-            h1c1r_naive
-            - 2 * counts["1C1R"]
-            - counts["HAv"]
-            - counts["HGAv"],
+            h1c1r_naive - 2 * counts["1C1R"] - counts["HAv"] - counts["HGAv"],
         )
 
         return self._finalise(counts, t_total)
@@ -257,10 +257,7 @@ class StreamingPairCounter:
             empty = np.array([], dtype=np.int64)
             return 0, empty, empty
         weighted_per_parent = np.bincount(parents, weights=weights[anchors]).astype(np.int64)
-        kp = (
-            kp_cached if kp_cached is not None
-            else np.bincount(parents).astype(np.int64)
-        )
+        kp = kp_cached if kp_cached is not None else np.bincount(parents).astype(np.int64)
         total = int(((kp - 1).clip(min=0) * weighted_per_parent).sum())
         return total, kp, weighted_per_parent
 
