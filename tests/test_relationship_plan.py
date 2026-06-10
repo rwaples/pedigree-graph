@@ -37,7 +37,16 @@ def test_streaming_exact_and_approximate_partition_the_registry():
 def test_streaming_exact_codes_are_the_documented_ten():
     # The lineal + sibling + MZ codes, exact even on inbred input.
     assert streaming_exact_codes() == {
-        "MZ", "MO", "FO", "FS", "MHS", "PHS", "GP", "GGP", "GGGP", "G3GP",
+        "MZ",
+        "MO",
+        "FO",
+        "FS",
+        "MHS",
+        "PHS",
+        "GP",
+        "GGP",
+        "GGGP",
+        "G3GP",
     }
 
 

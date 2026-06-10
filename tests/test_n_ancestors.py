@@ -21,7 +21,8 @@ def _pg(ids, mothers, fathers):
 def test_founders_have_zero_ancestors():
     pg = _pg([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
     np.testing.assert_array_equal(
-        pg.compute_n_ancestors(), np.array([0, 0, 2], dtype=np.int32),
+        pg.compute_n_ancestors(),
+        np.array([0, 0, 2], dtype=np.int32),
     )
 
 

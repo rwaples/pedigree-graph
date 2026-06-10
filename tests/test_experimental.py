@@ -69,9 +69,7 @@ def test_bfs_matches_matrix_on_small_pedigree(small_pedigree):
     matrix_counts = PedigreeGraph(small_pedigree).count_pairs(max_degree=5)
     bfs_counts = _bfs(PedigreeGraph(small_pedigree))
     for code in PAIR_KINSHIP:
-        assert matrix_counts[code] == bfs_counts[code], (
-            f"{code}: matrix={matrix_counts[code]} bfs={bfs_counts[code]}"
-        )
+        assert matrix_counts[code] == bfs_counts[code], f"{code}: matrix={matrix_counts[code]} bfs={bfs_counts[code]}"
 
 
 # ---------------------------------------------------------------------------
@@ -122,39 +120,123 @@ def pedigree_with_half_2c():
     return pd.DataFrame(
         {
             "id": np.arange(n),
-            "mother": np.array([
-                -1, -1, 0, 0,            # 0-3
-                -1, -1, 4, 5,            # 4-7
-                -1, -1, 8, 9,            # 8-11
-                -1, -1, -1, 12, 12,      # 12-16
-                -1, -1, 17, 18,          # 17-20
-                -1, -1, 21, 22,          # 21-24
-            ]),
-            "father": np.array([
-                -1, -1, 1, 1,            # 0-3
-                -1, -1, 2, 3,            # 4-7
-                -1, -1, 6, 7,            # 8-11
-                -1, -1, -1, 13, 14,      # 12-16
-                -1, -1, 15, 16,          # 17-20
-                -1, -1, 19, 20,          # 21-24
-            ]),
+            "mother": np.array(
+                [
+                    -1,
+                    -1,
+                    0,
+                    0,  # 0-3
+                    -1,
+                    -1,
+                    4,
+                    5,  # 4-7
+                    -1,
+                    -1,
+                    8,
+                    9,  # 8-11
+                    -1,
+                    -1,
+                    -1,
+                    12,
+                    12,  # 12-16
+                    -1,
+                    -1,
+                    17,
+                    18,  # 17-20
+                    -1,
+                    -1,
+                    21,
+                    22,  # 21-24
+                ]
+            ),
+            "father": np.array(
+                [
+                    -1,
+                    -1,
+                    1,
+                    1,  # 0-3
+                    -1,
+                    -1,
+                    2,
+                    3,  # 4-7
+                    -1,
+                    -1,
+                    6,
+                    7,  # 8-11
+                    -1,
+                    -1,
+                    -1,
+                    13,
+                    14,  # 12-16
+                    -1,
+                    -1,
+                    15,
+                    16,  # 17-20
+                    -1,
+                    -1,
+                    19,
+                    20,  # 21-24
+                ]
+            ),
             "twin": np.full(n, -1),
-            "sex": np.array([
-                0, 1, 1, 1,
-                0, 0, 1, 1,
-                0, 0, 0, 0,
-                0, 1, 1, 1, 1,
-                0, 0, 1, 1,
-                0, 0, 0, 0,
-            ]),
-            "generation": np.array([
-                0, 0, 1, 1,
-                1, 1, 2, 2,
-                2, 2, 3, 3,
-                0, 0, 0, 1, 1,
-                1, 1, 2, 2,
-                2, 2, 3, 3,
-            ]),
+            "sex": np.array(
+                [
+                    0,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    0,
+                    0,
+                    0,
+                ]
+            ),
+            "generation": np.array(
+                [
+                    0,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    2,
+                    2,
+                    2,
+                    2,
+                    3,
+                    3,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    1,
+                    1,
+                    2,
+                    2,
+                    2,
+                    2,
+                    3,
+                    3,
+                ]
+            ),
         }
     )
 
@@ -205,31 +287,75 @@ def inbred_with_cousins_pedigree():
     return pd.DataFrame(
         {
             "id": np.arange(n),
-            "mother": np.array([
-                -1, -1, -1, -1, -1, -1,  # 0-5 founders
-                 0,  0,  0,              # 6-8 G1
-                 6,  3,                  # 9-10 G2
-                 9, 10,                  # 11-12 G3
-            ]),
-            "father": np.array([
-                -1, -1, -1, -1, -1, -1,  # 0-5 founders
-                 1,  1,  2,              # 6-8 G1
-                 7,  8,                  # 9-10 G2
-                 4,  5,                  # 11-12 G3
-            ]),
+            "mother": np.array(
+                [
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,  # 0-5 founders
+                    0,
+                    0,
+                    0,  # 6-8 G1
+                    6,
+                    3,  # 9-10 G2
+                    9,
+                    10,  # 11-12 G3
+                ]
+            ),
+            "father": np.array(
+                [
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,
+                    -1,  # 0-5 founders
+                    1,
+                    1,
+                    2,  # 6-8 G1
+                    7,
+                    8,  # 9-10 G2
+                    4,
+                    5,  # 11-12 G3
+                ]
+            ),
             "twin": np.full(n, -1),
-            "sex": np.array([
-                0, 1, 1, 0, 1, 1,        # 0=F,1=M,2=M,3=F,4=M,5=M
-                0, 1, 1,                 # 6=F,7=M,8=M
-                0, 0,                    # 9=F,10=F
-                0, 0,                    # 11,12 (sex irrelevant)
-            ]),
-            "generation": np.array([
-                0, 0, 0, 0, 0, 0,
-                1, 1, 1,
-                2, 2,
-                3, 3,
-            ]),
+            "sex": np.array(
+                [
+                    0,
+                    1,
+                    1,
+                    0,
+                    1,
+                    1,  # 0=F,1=M,2=M,3=F,4=M,5=M
+                    0,
+                    1,
+                    1,  # 6=F,7=M,8=M
+                    0,
+                    0,  # 9=F,10=F
+                    0,
+                    0,  # 11,12 (sex irrelevant)
+                ]
+            ),
+            "generation": np.array(
+                [
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    1,
+                    2,
+                    2,
+                    3,
+                    3,
+                ]
+            ),
         }
     )
 
@@ -240,8 +366,7 @@ def test_inbred_with_cousins_non_cousin_codes_match(inbred_with_cousins_pedigree
     bfs_counts = _bfs(PedigreeGraph(inbred_with_cousins_pedigree))
     for code in NON_COUSIN_CODES:
         assert matrix_counts[code] == bfs_counts[code], (
-            f"non-cousin code {code} differs: "
-            f"matrix={matrix_counts[code]} bfs={bfs_counts[code]}"
+            f"non-cousin code {code} differs: matrix={matrix_counts[code]} bfs={bfs_counts[code]}"
         )
 
 

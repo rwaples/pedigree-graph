@@ -96,11 +96,7 @@ def eligible_cohort_range(
     y_min = int(known.min())
     y_max = int(known.max())
 
-    diffs = [
-        d
-        for parent_label in ("mother", "father")
-        if (d := pg._known_parent_edges_for(parent_label)[1]).size > 0
-    ]
+    diffs = [d for parent_label in ("mother", "father") if (d := pg._known_parent_edges_for(parent_label)[1]).size > 0]
     if not diffs:
         raise ValueError(
             "eligible_cohort_range: no parent-child edges with both birth_years known; "

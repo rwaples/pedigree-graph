@@ -25,7 +25,8 @@ def test_terminals_have_zero_descendants():
     # 0, 1 are founders; 2 is their only child and a terminal.
     pg = _pg([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
     np.testing.assert_array_equal(
-        pg.compute_n_descendants(), np.array([1, 1, 0], dtype=np.int32),
+        pg.compute_n_descendants(),
+        np.array([1, 1, 0], dtype=np.int32),
     )
 
 
@@ -104,6 +105,7 @@ def test_overflow_raises(monkeypatch):
         return out
 
     import pedigree_graph._core as core
+
     monkeypatch.setattr(core, "_compute_n_descendants", fake_kernel)
     with pytest.raises(OverflowError, match="int32 max"):
         pg.compute_n_descendants()
@@ -120,6 +122,7 @@ def test_no_overflow_at_int32_max(monkeypatch):
         return out
 
     import pedigree_graph._core as core
+
     monkeypatch.setattr(core, "_compute_n_descendants", fake_kernel)
     result = pg.compute_n_descendants()
     assert result.dtype == np.int32

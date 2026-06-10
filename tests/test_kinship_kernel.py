@@ -178,7 +178,16 @@ def test_dp_kinship_row_start_is_int64():
     tw_idx = np.full(n, -1, dtype=np.int32)
     depth = np.array([0, 0, 1, 1], dtype=np.int32)
     _cols, _vals, row_start, _row_count, _sum_theta = _dp_kinship(
-        n, m_idx, f_idx, tw_idx, depth, 0.0, 16, False, False, False,
+        n,
+        m_idx,
+        f_idx,
+        tw_idx,
+        depth,
+        0.0,
+        16,
+        False,
+        False,
+        False,
         np.zeros(3, dtype=np.int64),
         np.int64(0),
     )
@@ -316,9 +325,7 @@ def _make_buffer(n_rows: int, init_cap: int, extra_cells: int = 0):
     total = n_rows * init_cap + extra_cells
     cols = np.full(total, -1, dtype=np.int32)
     vals = np.zeros(total, dtype=np.float32)
-    row_start = np.array(
-        [np.int64(i) * np.int64(init_cap) for i in range(n_rows)], dtype=np.int64
-    )
+    row_start = np.array([np.int64(i) * np.int64(init_cap) for i in range(n_rows)], dtype=np.int64)
     row_count = np.zeros(n_rows, dtype=np.int32)
     row_cap = np.full(n_rows, init_cap, dtype=np.int32)
     return cols, vals, row_start, row_count, row_cap, np.int64(total)
@@ -334,8 +341,15 @@ def test_append_entry_sentinel_silently_drops_retired_writes():
     starts, tops = _freelist_alloc(0, 0)  # placeholder — push/pop are no-ops
     buffers = _FreelistBuffers(starts, tops, np.int32(0), np.zeros(3, dtype=np.int64))
     cols_out, vals_out, next_alloc_out = _append_entry(
-        cols, vals, row_start, row_count, row_cap, next_alloc,
-        np.int32(1), np.int32(0), np.float32(0.25),
+        cols,
+        vals,
+        row_start,
+        row_count,
+        row_cap,
+        next_alloc,
+        np.int32(1),
+        np.int32(0),
+        np.float32(0.25),
         buffers,
     )
     # No write occurred anywhere; next_alloc unchanged.
@@ -364,8 +378,15 @@ def test_append_entry_relocation_pushes_old_slot_to_free_list():
     # slot (cap=4) is taken from next_alloc (free list bucket 1 is empty).
     buffers = _FreelistBuffers(starts, tops, np.int32(init_cap), np.zeros(3, dtype=np.int64))
     _cols, _vals, next_alloc_out = _append_entry(
-        cols, vals, row_start, row_count, row_cap, next_alloc,
-        np.int32(0), np.int32(30), np.float32(0.3),
+        cols,
+        vals,
+        row_start,
+        row_count,
+        row_cap,
+        next_alloc,
+        np.int32(0),
+        np.int32(30),
+        np.float32(0.3),
         buffers,
     )
     # Bucket 0 (cap=2) now has the old slot start=0.
@@ -385,7 +406,9 @@ def test_append_entry_relocation_reuses_freelist_slot_when_available():
     init_cap = 2
     n_rows = 3
     cols, vals, row_start, row_count, row_cap, next_alloc = _make_buffer(
-        n_rows, init_cap, extra_cells=4,
+        n_rows,
+        init_cap,
+        extra_cells=4,
     )
     free_slot_start = np.int64(n_rows * init_cap)  # 6 — inside the buffer
     starts, tops = _freelist_alloc(init_cap, 16)
@@ -400,8 +423,15 @@ def test_append_entry_relocation_reuses_freelist_slot_when_available():
     before_next_alloc = next_alloc
     buffers = _FreelistBuffers(starts, tops, np.int32(init_cap), np.zeros(3, dtype=np.int64))
     _cols, _vals, next_alloc_out = _append_entry(
-        cols, vals, row_start, row_count, row_cap, next_alloc,
-        np.int32(0), np.int32(30), np.float32(0.3),
+        cols,
+        vals,
+        row_start,
+        row_count,
+        row_cap,
+        next_alloc,
+        np.int32(0),
+        np.int32(30),
+        np.float32(0.3),
         buffers,
     )
     # The free-list slot was popped; bucket 1 is now empty.
@@ -424,7 +454,9 @@ def test_append_entry_lazy_allocates_never_allocated_row_via_freelist():
     n_rows = 2
     # Reserve one extra cap-sized cell for the free-list slot inside buffer.
     cols, vals, row_start, row_count, row_cap, next_alloc = _make_buffer(
-        n_rows, init_cap, extra_cells=init_cap,
+        n_rows,
+        init_cap,
+        extra_cells=init_cap,
     )
     # Row 1 transitions to never-allocated: row_start=-1, row_cap=init_cap.
     row_start[1] = np.int64(-1)
@@ -438,8 +470,15 @@ def test_append_entry_lazy_allocates_never_allocated_row_via_freelist():
     before_next_alloc = next_alloc
     buffers = _FreelistBuffers(starts, tops, np.int32(init_cap), np.zeros(3, dtype=np.int64))
     cols_out, vals_out, next_alloc_out = _append_entry(
-        cols, vals, row_start, row_count, row_cap, next_alloc,
-        np.int32(1), np.int32(7), np.float32(0.42),
+        cols,
+        vals,
+        row_start,
+        row_count,
+        row_cap,
+        next_alloc,
+        np.int32(1),
+        np.int32(7),
+        np.float32(0.42),
         buffers,
     )
     # Bucket 0 was popped; row 1 now lives at the free-list slot.
@@ -459,7 +498,9 @@ def test_append_entry_lazy_allocates_never_allocated_row_via_bump():
     init_cap = 4
     n_rows = 2
     cols, vals, row_start, row_count, row_cap, next_alloc = _make_buffer(
-        n_rows, init_cap, extra_cells=init_cap,
+        n_rows,
+        init_cap,
+        extra_cells=init_cap,
     )
     row_start[1] = np.int64(-1)
     row_count[1] = np.int32(0)
@@ -468,8 +509,15 @@ def test_append_entry_lazy_allocates_never_allocated_row_via_bump():
     before_next_alloc = next_alloc
     buffers = _FreelistBuffers(starts, tops, np.int32(init_cap), np.zeros(3, dtype=np.int64))
     cols_out, vals_out, next_alloc_out = _append_entry(
-        cols, vals, row_start, row_count, row_cap, next_alloc,
-        np.int32(1), np.int32(11), np.float32(0.5),
+        cols,
+        vals,
+        row_start,
+        row_count,
+        row_cap,
+        next_alloc,
+        np.int32(1),
+        np.int32(11),
+        np.float32(0.5),
         buffers,
     )
     # No free-list pops occurred.
@@ -495,9 +543,14 @@ def test_retire_rows_at_depth_skips_freelist_for_never_allocated_rows():
     row_cap = np.array([init_cap, init_cap], dtype=np.int32)
     starts, tops = _freelist_alloc(init_cap, 8)
     _retire_rows_at_depth(
-        np.int32(0), last_dcd,
-        row_start, row_count, row_cap,
-        starts, tops, np.int32(init_cap),
+        np.int32(0),
+        last_dcd,
+        row_start,
+        row_count,
+        row_cap,
+        starts,
+        tops,
+        np.int32(init_cap),
     )
     # Bucket 0 received exactly one push — row 0's slot, not row 1's -1.
     assert tops[0] == 1

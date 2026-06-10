@@ -17,7 +17,7 @@ dependencies = [
 test = [
     "pytest>=9,<10",
     "pytest-cov>=7,<8",
-    "ruff>=0.8",
+    "ruff>=0.15,<0.16",
     "pandas>=3.0,<4",
     "pyarrow>=17,<24",
 ]
@@ -35,10 +35,11 @@ markers = [
 
 [tool.ruff]
 target-version = "py313"
+required-version = ">=0.15,<0.16"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["F", "E", "W", "I", "UP", "B", "SIM", "RUF", "A", "C4", "PT", "PIE", "PERF", "TCH", "RSE", "RET", "D"]
+select = ["F", "E", "W", "I", "UP", "B", "SIM", "RUF", "A", "C4", "PT", "PIE", "PERF", "TC", "PLW", "RSE", "RET", "D"]
 ignore = [
     "E501",   # line too long — formatter handles wrapping
     "SIM108", # use ternary — often less readable
@@ -51,6 +52,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["B011", "RUF012", "D"]
 "tests/**/*.py" = ["D"]
+
+[tool.ruff.lint.flake8-type-checking]
+strict = true
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

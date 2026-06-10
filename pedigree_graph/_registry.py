@@ -103,8 +103,7 @@ def _validate_max_degree(max_degree: int) -> int:
     md = int(max_degree)
     if md < _MAX_DEGREE_MIN or md > _MAX_DEGREE_MAX:
         raise ValueError(
-            f"max_degree must be in [{_MAX_DEGREE_MIN}, {_MAX_DEGREE_MAX}], "
-            f"got {max_degree!r}",
+            f"max_degree must be in [{_MAX_DEGREE_MIN}, {_MAX_DEGREE_MAX}], got {max_degree!r}",
         )
     return md
 
