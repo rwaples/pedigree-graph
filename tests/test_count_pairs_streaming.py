@@ -79,6 +79,39 @@ def test_cache_does_not_leak_between_engines(small_pedigree):
     assert streaming_after == streaming_expected
 
 
+def test_pair_engines_release_transient_matrices(small_pedigree):
+    """Both pair-count entry points drop the transient adjacency powers on exit.
+
+    ``count_pairs_streaming`` builds ``_A``…``_A5`` via the scalar counter and
+    previously left them resident for the graph's lifetime (issue #4), unlike
+    ``extract_pairs`` which already releases them.  Pin the symmetry so the
+    streaming path can't silently regress and re-inflate peak memory of any
+    later inbreeding/Ne work on the same graph.  The counts are cached, so the
+    release is non-destructive — a subsequent pair call rebuilds lazily.
+    """
+    transient = ("_A", "_A2", "_A3", "_A4", "_A5")
+
+    pg_stream = PedigreeGraph(small_pedigree)
+    pg_stream.count_pairs_streaming(max_degree=5, scope="full")
+    assert not [a for a in transient if a in pg_stream.__dict__]
+
+    pg_extract = PedigreeGraph(small_pedigree)
+    pg_extract.extract_pairs(max_degree=5)
+    assert not [a for a in transient if a in pg_extract.__dict__]
+
+
+def test_streaming_release_does_not_corrupt_cached_counts(small_pedigree):
+    """Releasing the matrices must not disturb the cached counts.
+
+    A second streaming call hits the cache and must return the same dict the
+    first (compute-then-release) call produced.
+    """
+    pg = PedigreeGraph(small_pedigree)
+    first = pg.count_pairs_streaming(max_degree=5, scope="full")
+    second = pg.count_pairs_streaming(max_degree=5, scope="full")
+    assert first == second
+
+
 def test_matrix_cache_does_not_leak_across_max_degree(small_pedigree):
     """count_pairs(max_degree=M2) after count_pairs(max_degree=M1<M2)
     must compute the M2 result, not return the cached M1 result."""

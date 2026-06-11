@@ -4,7 +4,20 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## v0.5.0 (unreleased)
+## v0.5.2 (unreleased)
+
+- **`count_pairs_streaming()` releases its transient matrices on exit.**
+  The scalar streaming counter builds the adjacency powers `_A`…`_A5` and
+  now drops them via `_release_pair_matrices()` before returning, exactly
+  as `extract_pairs()` already did.  Previously they stayed resident for
+  the graph's lifetime, inflating peak memory of any later inbreeding / Ne
+  / lineage work on the same graph (~400–520 MiB on a 1M-row pedigree).
+  The counts remain cached and the matrices rebuild lazily via
+  `_ensure_parent_csr()` if pair work runs again, so callers that reached
+  into the private `_release_pair_matrices()` after a streaming call (e.g.
+  pedsum `summarize`) can drop that workaround.  Fixes #4.
+
+## v0.5.0
 
 - **Registry-aligned `max_degree` semantics.**  `extract_pairs`,
   `count_pairs`, and `count_pairs_streaming` now include exactly the

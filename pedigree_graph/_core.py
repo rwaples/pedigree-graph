@@ -762,7 +762,10 @@ class PedigreeGraph:
 
         Returns a dict containing all 23 codes; codes above
         ``max_degree`` are ``0``.  Populates
-        ``self._pair_count_cache[("streaming", max_degree, 0.0)]``.
+        ``self._pair_count_cache[("streaming", max_degree, 0.0)]`` and, like
+        :meth:`extract_pairs`, releases the transient adjacency powers it
+        builds before returning (:meth:`_release_pair_matrices`); a later
+        pair-work call rebuilds them lazily via :meth:`_ensure_parent_csr`.
 
         Args:
             max_degree: 0-5; default 3 (matches :meth:`count_pairs`).
@@ -797,6 +800,12 @@ class PedigreeGraph:
         counts = StreamingPairCounter(self).count(max_degree)
         # Streaming is full-graph only, so raw and subsample slots coincide.
         self._pair_count_cache[key] = (dict(counts), dict(counts))
+        # Release the transient adjacency powers the streaming counter built
+        # (_A…_A5), exactly as extract_pairs does — the counts are cached and
+        # nothing reads the matrices after this point.  Without it they stay
+        # resident for the graph's lifetime and inflate any later
+        # inbreeding/Ne work on the same graph.  See issue #4.
+        self._release_pair_matrices()
         return dict(counts)
 
     # ------------------------------------------------------------------
