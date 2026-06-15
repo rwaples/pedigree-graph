@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## v0.5.2 (unreleased)
+## v0.5.2
 
 - **`count_pairs_streaming()` releases its transient matrices on exit.**
   The scalar streaming counter builds the adjacency powers `_A`…`_A5` and
