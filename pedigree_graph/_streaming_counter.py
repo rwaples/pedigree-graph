@@ -176,8 +176,8 @@ class StreamingPairCounter:
         # ---- Degree 4: GGGP, HGAv, GGAv, H1C, 1C1R --------------------
         # H1C: pairs sharing exactly one distinct grandparent.
         h1c_naive = int(((d2_count * (d2_count - 1)) // 2).sum())
-        counts["H1C"] = max(
-            0,
+        counts["H1C"] = self._clamp_residual(
+            "H1C",
             h1c_naive - 4 * counts["FS"] - 2 * counts["MHS"] - 2 * counts["PHS"] - 2 * counts["1C"],
         )
 
@@ -192,8 +192,8 @@ class StreamingPairCounter:
             ).astype(np.int64)
             counts["GGAv"] = int(((pair_k - 1) * pair_sum_d3).sum())
             naive_1c1r = int((pair_sum_d1 * pair_sum_d2).sum())
-            counts["1C1R"] = max(
-                0,
+            counts["1C1R"] = self._clamp_residual(
+                "1C1R",
                 naive_1c1r - counts["Av"] - counts["GAv"],
             )
 
@@ -215,8 +215,8 @@ class StreamingPairCounter:
             ).astype(np.int64)
             counts["G3Av"] = int(((pair_k - 1) * pair_sum_d4).sum())
             naive_1c2r = int((pair_sum_d1 * pair_sum_d3).sum())
-            counts["1C2R"] = max(
-                0,
+            counts["1C2R"] = self._clamp_residual(
+                "1C2R",
                 naive_1c2r - counts["GAv"] - counts["GGAv"],
             )
             counts["2C"] = int(((pair_sum_d2 * (pair_sum_d2 - 1)) // 2).sum())
@@ -226,8 +226,8 @@ class StreamingPairCounter:
         counts["HGGAv"] = m_hggav + f_hggav - 2 * counts["GGAv"]
 
         h1c1r_naive = int((d2_count * d3_count).sum())
-        counts["H1C1R"] = max(
-            0,
+        counts["H1C1R"] = self._clamp_residual(
+            "H1C1R",
             h1c1r_naive - 2 * counts["1C1R"] - counts["HAv"] - counts["HGAv"],
         )
 
@@ -260,6 +260,30 @@ class StreamingPairCounter:
         kp = kp_cached if kp_cached is not None else np.bincount(parents).astype(np.int64)
         total = int(((kp - 1).clip(min=0) * weighted_per_parent).sum())
         return total, kp, weighted_per_parent
+
+    @staticmethod
+    def _clamp_residual(code: str, raw: int) -> int:
+        """Clamp an inclusion-exclusion residual count at zero, warning on underflow.
+
+        The cousin/collateral residual codes (``H1C``, ``1C1R``, ``1C2R``,
+        ``H1C1R``) subtract closer-relationship contributions with fixed
+        coefficients that are exact only on non-inbred, single-mating
+        pedigrees.  A negative raw residual means those corrections
+        over-counted: the scalar approximation has broken down for this code,
+        so the clamped ``0`` is unreliable rather than a true absence.  Warn
+        loudly so a reported ``0`` is never mistaken for a real zero.
+        """
+        if raw < 0:
+            logger.warning(
+                "count_pairs_streaming: %s residual underflowed to %d before clamping "
+                "to 0 — the scalar approximation has broken down for this code on this "
+                "pedigree (typically inbreeding or complex mating). Re-run with the "
+                "matrix engine (extract_pairs) for an exact %s count.",
+                code,
+                raw,
+                code,
+            )
+        return max(0, raw)
 
     @staticmethod
     def _finalise(counts: dict[str, int], t_total: float) -> dict[str, int]:

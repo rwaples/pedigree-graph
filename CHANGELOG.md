@@ -4,6 +4,20 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.5.3
+
+- **`count_pairs_streaming` warns when a cousin/collateral residual
+  underflows.**  The scalar engine derives `H1C`, `1C1R`, `1C2R`, and
+  `H1C1R` by inclusion–exclusion — subtracting closer-relationship
+  contributions with fixed coefficients that are exact only on non-inbred,
+  single-mating pedigrees.  On inbred or structurally complex real
+  pedigrees those corrections can over-count, driving the raw residual
+  negative; it was then silently clamped to `0`, indistinguishable from a
+  true absence (e.g. millions of `1C` but `H1C == 0`).  The clamp now logs a
+  `WARNING` naming the code and the underflow magnitude and points to the
+  matrix engine (`extract_pairs`) for an exact count.  Returned counts are
+  unchanged — only the diagnostic is new.
+
 ## v0.5.2
 
 - **`count_pairs_streaming()` releases its transient matrices on exit.**
