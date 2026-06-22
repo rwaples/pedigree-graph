@@ -45,12 +45,12 @@ def extract_from_sparse(
     Mutates *M* in place (zeroes diagonal). Callers should not reuse *M*.
     All subtract pairs are batched into a single ``np.isin`` call.
     """
-    M.setdiag(0)
-    M.eliminate_zeros()
-    if M.nnz == 0:
+    M.setdiag(0)  # ty: ignore[unresolved-attribute]
+    M.eliminate_zeros()  # ty: ignore[unresolved-attribute]
+    if M.nnz == 0:  # ty: ignore[unresolved-attribute]
         return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
 
-    a_i, a_j = M.nonzero()
+    a_i, a_j = M.nonzero()  # ty: ignore[unresolved-attribute]
     lo, hi = dedup_pairs(a_i, a_j)
 
     if subtract and len(lo) > 0:

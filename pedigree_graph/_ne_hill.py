@@ -171,6 +171,7 @@ def ne_hill_overlapping(pg: PedigreeGraph, vk_scale: bool = False) -> NeHillResu
         cohort_years_kept.append(int(c))
 
     by = pg.birth_year
+    assert by is not None  # generation_interval guard above is None iff birth_year is None
     n_unknown = int((by < 0).sum())
     known = by[by >= 0]
     n_left = int((known < window.c_min).sum())

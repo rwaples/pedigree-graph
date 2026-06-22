@@ -68,7 +68,7 @@ class MatrixPairExtractor:
     def _lineal_pairs(self, k: int) -> tuple[np.ndarray, np.ndarray]:
         """Direct ancestor-descendant pairs at exactly k hops."""
         Ak = self.pg._get_Ak(k)
-        desc_i, anc_j = Ak.nonzero()
+        desc_i, anc_j = Ak.nonzero()  # ty: ignore[unresolved-attribute]
         if len(desc_i) == 0:
             return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
         return desc_i.astype(np.intp), anc_j.astype(np.intp)
@@ -86,11 +86,11 @@ class MatrixPairExtractor:
         hops above individual A, where sibling type is determined by
         *sib_matrix* (full-sib or half-sib).
         """
-        if sib_matrix.nnz == 0:
+        if sib_matrix.nnz == 0:  # ty: ignore[unresolved-attribute]
             return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
         A_down_1 = self.pg._get_Ak(down - 1)
         A_up_1 = self.pg._get_Ak(up - 1)
-        M = A_down_1 @ sib_matrix @ A_up_1.T
+        M = A_down_1 @ sib_matrix @ A_up_1.T  # ty: ignore[unsupported-operator, unresolved-attribute]
         return extract_from_sparse(M, subtract=subtract)
 
     def _cousin_pairs(self) -> tuple[np.ndarray, np.ndarray]:
@@ -395,6 +395,7 @@ class MatrixPairExtractor:
                 return self._h1c_pairs_cache
 
             def _extract_1c1r() -> tuple[np.ndarray, np.ndarray]:
+                assert A2_A3T is not None  # set above under the same _needed("1C1R") guard
                 P_full = A2_A3T.copy()
                 P_full.setdiag(0)
                 P_full.data[P_full.data < 2] = 0
@@ -439,6 +440,7 @@ class MatrixPairExtractor:
                 A2_A3T = pg._A2 @ pg._A3.T
 
             def _extract_h1c1r() -> tuple[np.ndarray, np.ndarray]:
+                assert A2_A3T is not None  # set above when _needed("H1C1R")
                 P_half = A2_A3T.copy()
                 P_half.setdiag(0)
                 P_half.data[P_half.data != 1] = 0

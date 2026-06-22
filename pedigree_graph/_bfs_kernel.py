@@ -45,7 +45,7 @@ def _enumerate_pairs_kernel(
             otherwise we emit the full cross product.
     """
     sizes = np.empty(n, dtype=np.int64)
-    for X in prange(n):
+    for X in prange(n):  # ty: ignore[not-iterable]
         len_a = indptr_a[X + 1] - indptr_a[X]
         if symmetric:
             sizes[X] = len_a * (len_a - 1) // 2 if len_a >= 2 else 0
@@ -62,7 +62,7 @@ def _enumerate_pairs_kernel(
     out_i = np.empty(total, dtype=np.int64)
     out_j = np.empty(total, dtype=np.int64)
 
-    for X in prange(n):
+    for X in prange(n):  # ty: ignore[not-iterable]
         offset = offsets[X]
         a_start = indptr_a[X]
         a_end = indptr_a[X + 1]
