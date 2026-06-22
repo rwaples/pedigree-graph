@@ -21,6 +21,7 @@ test = [
     "pandas>=3.0,<4",
     "pyarrow>=17,<24",
 ]
+typecheck = ["ty==0.0.51"]
 
 [tool.setuptools.packages.find]
 include = ["pedigree_graph*"]
@@ -66,3 +67,13 @@ known-first-party = ["pedigree_graph"]
 quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.src]
+include = ["pedigree_graph"]
+exclude = ["tests"]
+
+[tool.ty.terminal]
+error-on-warning = false
