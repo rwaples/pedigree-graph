@@ -200,11 +200,11 @@ def compute_all_ne(
         tasks["ne_coancestry"] = (ne_coancestry, {"theta_per_gen": theta_per_gen})
 
     if n_threads == 1:
-        results: dict[str, NeResult] = {name: func(pg, **kwargs) for name, (func, kwargs) in tasks.items()}
+        results: dict[str, NeResult] = {name: func(pg, **kwargs) for name, (func, kwargs) in tasks.items()}  # ty: ignore[invalid-argument-type]
     else:
         results = {}
         with ThreadPoolExecutor(max_workers=min(n_threads, len(tasks))) as executor:
-            futures = {name: executor.submit(func, pg, **kwargs) for name, (func, kwargs) in tasks.items()}
+            futures = {name: executor.submit(func, pg, **kwargs) for name, (func, kwargs) in tasks.items()}  # ty: ignore[invalid-argument-type]
             for name, future in futures.items():
                 results[name] = future.result()
 

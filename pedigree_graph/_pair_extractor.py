@@ -312,7 +312,9 @@ class MatrixPairExtractor:
         if _needed("MZ"):
             pairs["MZ"] = pg._mz_twin_pairs()
 
-        full_sib, mat_hs, pat_hs = empty, empty, empty
+        # Tuple defaults match sibling_pairs()'s (maternal, paternal) shape; only
+        # ever read after the needs_degree1_plus branch repopulates them.
+        full_sib, mat_hs, pat_hs = (empty, empty), (empty, empty), (empty, empty)
         if needs_degree1_plus:
             mo, fo = pg._parent_offspring_pairs()
             if _needed("MO"):

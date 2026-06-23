@@ -206,7 +206,7 @@ def count_pairs_bfs(
         M.eliminate_zeros()
         return M.astype(np.int8)
 
-    P: list[sp.csr_matrix | None] = [None]  # 1-indexed: P[k] = P_k
+    P: list[sp.csr_matrix] = [sp.csr_matrix((n, n), dtype=np.int8)]  # 1-indexed pad: P[k] = P_k (P[0] unused)
     P.append(P1)
     for k in range(2, 6):
         t0 = time.perf_counter()
@@ -216,7 +216,7 @@ def count_pairs_bfs(
 
     # Pre-build CSR views of P_k.T (rows = anchor X, cols = descendants at depth k).
     t0 = time.perf_counter()
-    PT_csr: list[sp.csr_matrix | None] = [None] + [P[k].T.tocsr() for k in range(1, 6)]
+    PT_csr: list[sp.csr_matrix] = [sp.csr_matrix((n, n), dtype=np.int8)] + [P[k].T.tocsr() for k in range(1, 6)]
     logger.info("[bfs]   PT_csr (5 transposes) in %.2fs", time.perf_counter() - t0)
 
     def _desc(k: int, X: int) -> np.ndarray:

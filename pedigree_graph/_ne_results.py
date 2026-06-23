@@ -88,7 +88,7 @@ class _SerializableResult:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict (numpy arrays → lists)."""
-        return {f.name: _to_jsonable(getattr(self, f.name)) for f in fields(self)}
+        return {f.name: _to_jsonable(getattr(self, f.name)) for f in fields(self)}  # ty: ignore[invalid-argument-type]
 
 
 @dataclass(frozen=True, slots=True)
