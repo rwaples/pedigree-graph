@@ -11,8 +11,15 @@ kinship DP in :mod:`_kinship_kernel` is serial.
 
 __all__ = ["_enumerate_pairs_kernel"]
 
+from typing import TYPE_CHECKING
+
 import numpy as np
-from numba import njit, prange
+from numba import njit
+
+if TYPE_CHECKING:
+    prange = range
+else:
+    from numba import prange
 
 
 @njit(parallel=True, cache=True, boundscheck=False)
@@ -45,7 +52,7 @@ def _enumerate_pairs_kernel(
             otherwise we emit the full cross product.
     """
     sizes = np.empty(n, dtype=np.int64)
-    for X in prange(n):  # ty: ignore[not-iterable]
+    for X in prange(n):
         len_a = indptr_a[X + 1] - indptr_a[X]
         if symmetric:
             sizes[X] = len_a * (len_a - 1) // 2 if len_a >= 2 else 0
@@ -62,7 +69,7 @@ def _enumerate_pairs_kernel(
     out_i = np.empty(total, dtype=np.int64)
     out_j = np.empty(total, dtype=np.int64)
 
-    for X in prange(n):  # ty: ignore[not-iterable]
+    for X in prange(n):
         offset = offsets[X]
         a_start = indptr_a[X]
         a_end = indptr_a[X + 1]
