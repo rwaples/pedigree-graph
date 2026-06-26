@@ -8,7 +8,7 @@ counts are invariant under id relabelling (incl. large/sparse ids).
 from __future__ import annotations
 
 import numpy as np
-from conftest import pedigree_arrays, random_pedigree
+from conftest import pedigree_arrays, random_pedigree, relabel_pedigree
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -56,14 +56,6 @@ def test_full_vs_half_sib_classification(pg):
 @given(arrays=pedigree_arrays(), data=st.data())
 def test_pair_counts_id_relabel_invariant(arrays, data):
     ids, mo, fa, sex = arrays
-    n = len(ids)
     pg1 = PedigreeGraph.from_arrays(ids=ids, mothers=mo, fathers=fa, sex=sex)
-
-    perm = np.array(data.draw(st.permutations(range(n))), dtype=np.int64)
-    mult = data.draw(st.sampled_from([1, 1000, 1_000_000]))
-    new_ids = perm * mult + 3
-    new_mo = np.where(mo == -1, -1, new_ids[mo])
-    new_fa = np.where(fa == -1, -1, new_ids[fa])
-    pg2 = PedigreeGraph.from_arrays(ids=new_ids, mothers=new_mo, fathers=new_fa, sex=sex)
-
+    pg2 = relabel_pedigree(arrays, data)
     assert pg1.count_pairs(max_degree=5, scope="full") == pg2.count_pairs(max_degree=5, scope="full")

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from conftest import non_inbred_pedigree, pedigree_arrays, random_pedigree
+from conftest import non_inbred_pedigree, pedigree_arrays, random_pedigree, relabel_pedigree
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -101,18 +101,7 @@ def test_compute_pair_kinship_matches_matrix(arrays):
 @given(arrays=pedigree_arrays(), data=st.data())
 def test_id_remap_invariance(arrays, data):
     ids, mother, father, sex = arrays
-    n = len(ids)
     pg1 = PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
-
-    # Relabel id values via a bijection (possibly large/sparse) while keeping
-    # the rows in topological order; structure is unchanged row-for-row, so all
-    # outputs must be identical. Stresses the searchsorted _map_ids_to_rows path.
-    perm = np.array(data.draw(st.permutations(range(n))), dtype=np.int64)
-    mult = data.draw(st.sampled_from([1, 1000, 1_000_000]))
-    new_ids = perm * mult + 7
-    new_mother = np.where(mother == -1, -1, new_ids[mother])
-    new_father = np.where(father == -1, -1, new_ids[father])
-    pg2 = PedigreeGraph.from_arrays(ids=new_ids, mothers=new_mother, fathers=new_father, sex=sex)
-
+    pg2 = relabel_pedigree(arrays, data)
     assert np.array_equal(pg1.kinship_matrix(0.0).toarray(), pg2.kinship_matrix(0.0).toarray())
     assert pg1.count_pairs(max_degree=3) == pg2.count_pairs(max_degree=3)

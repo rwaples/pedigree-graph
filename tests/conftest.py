@@ -94,3 +94,21 @@ def random_pedigree(max_n=PEDIGREE_MAX_N):
 def non_inbred_pedigree(max_n=PEDIGREE_MAX_N):
     """Strategy of ``PedigreeGraph`` whose ``compute_inbreeding()`` is all-zero."""
     return pedigree_arrays(max_n=max_n, non_inbred=True).map(_arrays_to_graph)
+
+
+def relabel_pedigree(arrays, data):
+    """Build a graph from *arrays* with id *values* relabelled by a random bijection.
+
+    Draws a permutation and a multiplier from the Hypothesis *data* object and
+    maps id ``i`` to ``perm[i] * mult + 3`` (possibly large / sparse), updating
+    parent references to match.  Row order — hence topology and kinship — is
+    unchanged, so the relabelled graph must produce identical results; this
+    exercises the searchsorted ``_map_ids_to_rows`` path on non-trivial ids.
+    """
+    ids, mother, father, sex = arrays
+    perm = np.array(data.draw(st.permutations(range(len(ids)))), dtype=np.int64)
+    mult = data.draw(st.sampled_from([1, 1000, 1_000_000]))
+    new_ids = perm * mult + 3
+    new_mother = np.where(mother == -1, -1, new_ids[mother])
+    new_father = np.where(father == -1, -1, new_ids[father])
+    return PedigreeGraph.from_arrays(ids=new_ids, mothers=new_mother, fathers=new_father, sex=sex)

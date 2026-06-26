@@ -588,12 +588,13 @@ def _run_dp_core(
     # inbreeding term in the self-kinship diagonal.  Reorder rows into
     # generation-major order and let the CSC caller un-permute via DPResult.order
     # (the streaming theta path is generation-indexed and permutation-invariant).
+    identity = np.arange(n, dtype=np.intp)
     order: np.ndarray | None = np.argsort(depth, kind="stable").astype(np.intp)
-    if np.array_equal(order, np.arange(n, dtype=np.intp)):
+    if np.array_equal(order, identity):
         order = None
     else:
         inv = np.empty(n, dtype=np.intp)
-        inv[order] = np.arange(n, dtype=np.intp)
+        inv[order] = identity
         m_idx = _remap_parent_rows(m_idx, order, inv)
         f_idx = _remap_parent_rows(f_idx, order, inv)
         tw_idx = _remap_parent_rows(tw_idx, order, inv)
