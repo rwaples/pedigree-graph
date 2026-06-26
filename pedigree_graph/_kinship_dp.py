@@ -14,6 +14,7 @@ from typing import NamedTuple
 
 import numba
 import numpy as np
+import scipy.sparse as sp
 
 from pedigree_graph._kinship_allocator import (
     _append_entry,
@@ -73,6 +74,11 @@ class DPResult(NamedTuple):
     sum_theta: np.ndarray
     depth: np.ndarray
     tw_idx: np.ndarray
+    order: np.ndarray | None = None
+    """Generation-major row permutation applied before the kernel, or ``None``
+    when the caller's rows were already generation-monotonic.  ``cols`` /
+    ``vals`` / ``row_start`` / ``row_count`` (and ``depth`` / ``tw_idx``) are in
+    this permuted index space; the CSC caller un-permutes via ``order``."""
 
 
 _DP_CONFIG_CSC = KinshipDPConfig(retire=False, lazy=False, debug_asserts=False)
@@ -520,6 +526,18 @@ def _dp_kinship(
     return cols, vals, row_start, row_count, sum_theta
 
 
+def _remap_parent_rows(a: np.ndarray, order: np.ndarray, inv: np.ndarray) -> np.ndarray:
+    """Reorder a row-index array by *order* and translate its references via *inv*.
+
+    *a* holds row indices (mother/father/twin), ``-1`` for absent.  ``order``
+    is the new→old row permutation and ``inv`` its inverse (old→new); a stored
+    reference to old row ``p`` becomes new row ``inv[p]``.  Sentinels pass
+    through unchanged.
+    """
+    moved = a[order]
+    return np.ascontiguousarray(np.where(moved < 0, np.int32(-1), inv[moved].astype(np.int32)))
+
+
 def _run_dp_core(
     n: int,
     m_idx: np.ndarray,
@@ -559,6 +577,28 @@ def _run_dp_core(
         generation,
         init_cap_per_row,
     )
+
+    # The DP kernel assumes generation-monotonic row indexing: every relative
+    # discovered during a row's merge walk has a smaller index, so the diagonal
+    # (column j) is appended last and the row stays sorted.  Topological-but-not-
+    # generation-monotonic input (a valid from_arrays contract — parents merely
+    # precede children) violates this: a higher-indexed relative from an earlier
+    # generation lands after the diagonal, breaks the row sort, and the binary
+    # search that reads phi(mother, father) silently returns 0 — zeroing the
+    # inbreeding term in the self-kinship diagonal.  Reorder rows into
+    # generation-major order and let the CSC caller un-permute via DPResult.order
+    # (the streaming theta path is generation-indexed and permutation-invariant).
+    order: np.ndarray | None = np.argsort(depth, kind="stable").astype(np.intp)
+    if np.array_equal(order, np.arange(n, dtype=np.intp)):
+        order = None
+    else:
+        inv = np.empty(n, dtype=np.intp)
+        inv[order] = np.arange(n, dtype=np.intp)
+        m_idx = _remap_parent_rows(m_idx, order, inv)
+        f_idx = _remap_parent_rows(f_idx, order, inv)
+        tw_idx = _remap_parent_rows(tw_idx, order, inv)
+        depth = np.ascontiguousarray(depth[order])
+
     if grow_stats is None:
         grow_stats = np.zeros(3, dtype=np.int64)
     override = np.int64(initial_buffer_override or 0)
@@ -584,6 +624,7 @@ def _run_dp_core(
         sum_theta=sum_theta,
         depth=depth,
         tw_idx=tw_idx,
+        order=order,
     )
 
 
@@ -628,7 +669,18 @@ def _build_kinship_csc(
         config=_DP_CONFIG_CSC,
     )
     indptr, indices, values = _assemble_csc(r.cols, r.vals, r.row_start, r.row_count)
-    return indptr, indices, values
+    if r.order is None:
+        return indptr, indices, values
+
+    # The kernel ran in generation-major order; map the CSC back to caller order.
+    # K_sorted[a, b] = phi(order[a], order[b]); the caller wants K[i, j] = phi(i, j)
+    # = K_sorted[inv[i], inv[j]], i.e. row/column gather by the inverse permutation.
+    k_sorted = sp.csc_matrix((values, indices, indptr), shape=(n, n))
+    inv = np.empty(n, dtype=np.intp)
+    inv[r.order] = np.arange(n, dtype=np.intp)
+    k_caller = k_sorted[inv][:, inv].tocsc()
+    k_caller.sort_indices()
+    return k_caller.indptr, k_caller.indices, k_caller.data
 
 
 @numba.njit(cache=True)
