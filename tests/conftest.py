@@ -28,7 +28,7 @@ def small_pedigree() -> pd.DataFrame:
 
 
 @st.composite
-def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False):
+def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False, complete=False):
     """Draw ``(ids, mother, father, sex)`` for a valid topological pedigree.
 
     ``ids`` are ``0..n-1``; each non-founder's parents are drawn from
@@ -36,9 +36,12 @@ def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False):
     contract).  When ``non_inbred`` is set, a mate is chosen constructively
     from earlier individuals whose *closed* ancestor set (ancestors plus
     self) is disjoint from the partner's, so ``compute_inbreeding()`` is
-    all-zero by construction (no rejection loops).  Sex is role-consistent:
-    an id used only as a mother is female (0), only as a father is male (1),
-    otherwise random.
+    all-zero by construction (no rejection loops).  When ``complete`` is set,
+    every non-founder has *both* parents known (two distinct earlier rows) —
+    no half-missing parentage — so founder contributions sum to 1 per cohort;
+    such graphs may be inbred.  ``non_inbred`` and ``complete`` are not meant
+    to be combined.  Sex is role-consistent: an id used only as a mother is
+    female (0), only as a father is male (1), otherwise random.
     """
     n = draw(st.integers(min_value=1, max_value=max_n))
     mother = np.full(n, -1, dtype=np.int64)
@@ -46,6 +49,16 @@ def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False):
     closed: list[set[int]] = [{i} for i in range(n)]  # ancestors including self
 
     for i in range(1, n):
+        if complete:
+            # A non-founder needs two distinct earlier rows, so i < 2 is forced
+            # to be a founder; otherwise draw both parents (distinct).
+            if i < 2 or not draw(st.booleans()):
+                continue  # founder
+            m = draw(st.integers(min_value=0, max_value=i - 1))
+            f = draw(st.sampled_from([c for c in range(i) if c != m]))
+            mother[i] = m
+            father[i] = f
+            continue  # closed[] is only consumed by the non_inbred branch
         if not draw(st.booleans()):
             continue  # founder
         m = draw(st.integers(min_value=-1, max_value=i - 1))
@@ -94,6 +107,11 @@ def random_pedigree(max_n=PEDIGREE_MAX_N):
 def non_inbred_pedigree(max_n=PEDIGREE_MAX_N):
     """Strategy of ``PedigreeGraph`` whose ``compute_inbreeding()`` is all-zero."""
     return pedigree_arrays(max_n=max_n, non_inbred=True).map(_arrays_to_graph)
+
+
+def complete_parentage_pedigree(max_n=PEDIGREE_MAX_N):
+    """Strategy of ``PedigreeGraph`` where every non-founder has both parents known."""
+    return pedigree_arrays(max_n=max_n, complete=True).map(_arrays_to_graph)
 
 
 def relabel_pedigree(arrays, data):

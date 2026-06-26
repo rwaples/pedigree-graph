@@ -3,19 +3,37 @@
 ne_sex_ratio has an exact per-generation closed form (4*Nm*Nf/(Nm+Nf)) and is
 invariant to swapping the sexes; ne_inbreeding's mean-F-per-generation must match
 compute_inbreeding; and every compute_all_ne estimator returns None or a positive
-finite Ne.
+finite Ne.  Three further cross-cutting properties generalise the example suite
+over random pedigrees: ne_coancestry agrees across its three code paths
+(default-stream / K / pre-computed θ̄); compute_all_ne is thread-count
+invariant; and founder contributions are conserved (sum to 1 per cohort) under
+complete parentage.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from conftest import non_inbred_pedigree, pedigree_arrays, random_pedigree
+from conftest import (
+    complete_parentage_pedigree,
+    non_inbred_pedigree,
+    pedigree_arrays,
+    random_pedigree,
+)
 from hypothesis import given, settings
 
-from pedigree_graph import PedigreeGraph, compute_all_ne, ne_inbreeding, ne_sex_ratio
+from pedigree_graph import (
+    PedigreeGraph,
+    compute_all_ne,
+    ne_coancestry,
+    ne_inbreeding,
+    ne_long_term_contributions,
+    ne_sex_ratio,
+)
+from pedigree_graph._ne_founders import _per_gen_founder_means
 
 _SETTINGS = settings(deadline=None, max_examples=50)
+_HEAVY = settings(deadline=None, max_examples=30)
 
 # A randomly-generated pedigree can have uniform sex in/across a cohort; the
 # sex-aware estimators then legitimately return ne=None after a RuntimeWarning.
@@ -78,3 +96,54 @@ def test_compute_all_ne_none_or_positive(pg):
     for name, result in compute_all_ne(pg).items():
         ne = result.ne
         assert ne is None or (np.isfinite(ne) and ne > 0.0), name
+
+
+def _ne_close(a, b):
+    if a is None or b is None:
+        return a is None and b is None
+    return a == pytest.approx(b, rel=1e-9, abs=1e-12)
+
+
+@_HEAVY
+@given(pg=random_pedigree())
+def test_ne_coancestry_three_paths_agree(pg):
+    # The default streams θ̄ from the DP (the scale path that avoids
+    # materialising K); the other two pass K or a pre-computed θ̄.  All three
+    # must produce the same coancestry-rate Ne and the same per-cohort θ̄.
+    default = ne_coancestry(pg)
+    k_path = ne_coancestry(pg, K=pg.kinship_matrix(0.0))
+    theta_path = ne_coancestry(pg, theta_per_gen=pg.per_gen_mean_kinship())
+    assert _ne_close(default.ne, k_path.ne)
+    assert _ne_close(default.ne, theta_path.ne)
+    assert np.allclose(default.mean_theta_per_gen, k_path.mean_theta_per_gen, equal_nan=True)
+    assert np.allclose(default.mean_theta_per_gen, theta_path.mean_theta_per_gen, equal_nan=True)
+
+
+@_UNIFORM_SEX_OK
+@_HEAVY
+@given(pg=random_pedigree())
+def test_compute_all_ne_thread_count_invariant(pg):
+    # Independent estimators dispatched to worker threads must give bit-identical
+    # results to the serial path (a cache race would surface as a mismatch).
+    serial = compute_all_ne(pg, n_threads=1)
+    threaded = compute_all_ne(pg, n_threads=4)
+    assert serial.keys() == threaded.keys()
+    for name in serial:
+        assert serial[name].to_dict() == threaded[name].to_dict(), name
+
+
+@_HEAVY
+@given(pg=complete_parentage_pedigree())
+def test_founder_contributions_conserved(pg):
+    # With complete parentage (no half-missing parent), every individual's
+    # genome is fully partitioned among the founders, so the per-cohort mean
+    # founder contributions sum to 1 in each non-empty generation.
+    m_g, founder_idx = _per_gen_founder_means(pg)
+    gen = np.asarray(pg.generation)
+    for g in range(int(gen.max()) + 1):
+        if (gen == g).any() and np.isfinite(m_g[g]).all():
+            assert m_g[g].sum() == pytest.approx(1.0, abs=1e-9)
+    # Corollary: Σ_f c_f² ∈ [1/n_founders, 1] ⇒ Ne_LTC ∈ [0.5, n_founders/2].
+    res = ne_long_term_contributions(pg)
+    if res.asymptote_reached and res.ne is not None:
+        assert 0.5 - 1e-9 <= res.ne <= len(founder_idx) / 2.0 + 1e-9
