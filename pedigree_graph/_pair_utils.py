@@ -66,9 +66,15 @@ def extract_from_sparse(
             all_rm_lo = np.concatenate(rm_lo_parts)
             all_rm_hi = np.concatenate(rm_hi_parts)
             max_id = int(max(lo.max(), hi.max(), all_rm_lo.max(), all_rm_hi.max())) + 1
-            rm_keys = all_rm_lo.astype(np.int64) * max_id + all_rm_hi.astype(np.int64)
+            # We only need membership, not unique subtract keys.  Sorting the
+            # raw key array plus searchsorted is much faster than np.unique +
+            # np.isin at scale, and duplicate subtract keys are harmless.
+            rm_keys = np.sort(all_rm_lo.astype(np.int64) * max_id + all_rm_hi.astype(np.int64))
             cand_keys = lo.astype(np.int64) * max_id + hi.astype(np.int64)
-            keep = ~np.isin(cand_keys, rm_keys)
+            pos = np.searchsorted(rm_keys, cand_keys)
+            hit = pos < rm_keys.size
+            hit[hit] = rm_keys[pos[hit]] == cand_keys[hit]
+            keep = ~hit
             lo, hi = lo[keep], hi[keep]
     return lo, hi
 

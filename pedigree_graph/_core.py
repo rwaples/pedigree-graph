@@ -330,11 +330,11 @@ class PedigreeGraph:
         m_idx = np.where(self.mother >= 0)[0]
         f_idx = np.where(self.father >= 0)[0]
         self._Am = sp.csr_matrix(
-            (np.ones(len(m_idx), dtype=np.float64), (m_idx, self.mother[m_idx])),
+            (np.ones(len(m_idx), dtype=np.int32), (m_idx, self.mother[m_idx])),
             shape=(n, n),
         )
         self._Af = sp.csr_matrix(
-            (np.ones(len(f_idx), dtype=np.float64), (f_idx, self.father[f_idx])),
+            (np.ones(len(f_idx), dtype=np.int32), (f_idx, self.father[f_idx])),
             shape=(n, n),
         )
 
@@ -480,7 +480,7 @@ class PedigreeGraph:
         hs1 = np.concatenate([mat_hs[0], pat_hs[0]])
         hs2 = np.concatenate([mat_hs[1], pat_hs[1]])
         if len(hs1) > 0:
-            ones = np.ones(len(hs1), dtype=np.float64)
+            ones = np.ones(len(hs1), dtype=np.int32)
             H = sp.csr_matrix((ones, (hs1, hs2)), shape=(self.n, self.n))
             self._half_sib_matrix = H + H.T
         else:
@@ -598,7 +598,7 @@ class PedigreeGraph:
         # Build full-sib sparse matrix for _avuncular_pairs and collateral methods
         sib1, sib2 = full_sib
         if len(sib1) > 0:
-            ones = np.ones(len(sib1), dtype=np.float64)
+            ones = np.ones(len(sib1), dtype=np.int32)
             F = sp.csr_matrix((ones, (sib1, sib2)), shape=(self.n, self.n))
             self._full_sib_matrix = F + F.T
         else:
