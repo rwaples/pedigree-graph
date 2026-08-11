@@ -69,7 +69,7 @@ def _coerce_to_array_dict(data: dict[str, np.ndarray] | pd.DataFrame) -> dict[st
     performed in the dict path.
     """
     if isinstance(data, dict):
-        return data  # ty: ignore[invalid-return-type]
+        return data
     result = {col: data[col].values for col in _REQUIRED_COLUMNS}
     for col in _OPTIONAL_COLUMNS:
         if col in data.columns:
