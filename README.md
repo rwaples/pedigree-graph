@@ -45,14 +45,16 @@ pg = PedigreeGraph.from_arrays(
 )
 
 # Or from a dict of arrays (also pandas-free)
-pg = PedigreeGraph({
-    "id": np.array([0, 1, 2, 3]),
-    "mother": np.array([-1, -1, 0, 0]),
-    "father": np.array([-1, -1, 1, 1]),
-    "twin":   np.array([-1, -1, -1, -1]),
-    "sex":    np.array([0, 1, 0, 1], dtype=np.int8),
-    "generation": np.array([0, 0, 1, 1], dtype=np.int32),
-})
+pg = PedigreeGraph(
+    {
+        "id": np.array([0, 1, 2, 3]),
+        "mother": np.array([-1, -1, 0, 0]),
+        "father": np.array([-1, -1, 1, 1]),
+        "twin": np.array([-1, -1, -1, -1]),
+        "sex": np.array([0, 1, 0, 1], dtype=np.int8),
+        "generation": np.array([0, 0, 1, 1], dtype=np.int32),
+    }
+)
 
 # Or from a pandas DataFrame
 # pg = PedigreeGraph.from_dataframe(df)
@@ -60,8 +62,8 @@ pg = PedigreeGraph({
 
 # Extract pairs by relationship type, up to a given degree
 pairs = pg.extract_pairs(max_degree=3)
-print(pairs["FS"])     # full sibs:  (idx1, idx2)
-print(pairs["1C"])     # 1st cousins (degree 3)
+print(pairs["FS"])  # full sibs:  (idx1, idx2)
+print(pairs["1C"])  # 1st cousins (degree 3)
 print(PAIR_KINSHIP["FS"])  # 0.25
 ```
 
@@ -94,7 +96,7 @@ from pedigree_graph import PedigreeGraph
 from pedigree_graph.experimental import count_pairs_bfs
 
 pg = PedigreeGraph(df)
-counts = count_pairs_bfs(pg)        # dict[str, int] over 23 codes
+counts = count_pairs_bfs(pg)  # dict[str, int] over 23 codes
 ```
 
 `count_pairs_bfs` uses boolean sparse matmul (set-union semantics) plus
