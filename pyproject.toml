@@ -22,7 +22,7 @@ test = [
     "pandas>=3.0,<4",
     "pyarrow>=17,<26",
 ]
-typecheck = ["ty==0.0.51"]
+typecheck = ["ty==0.0.70"]
 
 [tool.setuptools.packages.find]
 include = ["pedigree_graph*"]
