@@ -8,10 +8,30 @@ kernel (``_kinship_dp``) and the Meuwissen-Luo walk (``_inbreeding_kernel``).
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
-import numba
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any, TypeVar
+
+    _F = TypeVar("_F", bound=Callable[..., Any])
+
+    def njit(*args: Any, **kwargs: Any) -> Callable[[_F], _F]:
+        """Identity decorator under type checking only.
+
+        numba 0.66 became a PEP 561 typed package, so ``njit`` now returns a
+        ``Dispatcher`` whose ParamSpec-based ``__call__`` cannot be checked
+        against numpy scalar arguments — every call between these kernels was
+        reported as a bad argument, even though numba's own type unifier
+        resolves them consistently (verified: one compiled signature, all
+        int64).  Aliasing to identity lets a type checker see the real Python
+        signatures instead, which is both quieter and stricter than the stub.
+        """
+
+else:
+    from numba import njit
 
 INIT_CAP_PER_ROW = 16
 
@@ -33,11 +53,11 @@ def _suggest_init_cap_per_row(g_ped: int) -> int:
     return max(16, min(4096, 1 << (g_ped + 4)))
 
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def _grow_global(
     cols: np.ndarray,
     vals: np.ndarray,
-    min_size: int,
+    min_size: np.int64,
     grow_stats: np.ndarray,
 ):
     """Return larger arrays copying existing contents, growing geometrically.
@@ -119,7 +139,7 @@ def _freelist_alloc(init_cap_per_row: int, n: int) -> tuple[np.ndarray, np.ndarr
     return starts, tops
 
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def _freelist_bucket(cap: np.int32, init_cap_per_row: np.int32) -> np.int32:
     """Return ``floor(log2(cap / init_cap_per_row))`` for power-of-two caps.
 
@@ -136,7 +156,7 @@ def _freelist_bucket(cap: np.int32, init_cap_per_row: np.int32) -> np.int32:
     return b
 
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def _freelist_push(
     freelist_starts: np.ndarray,
     freelist_tops: np.ndarray,
@@ -164,7 +184,7 @@ def _freelist_push(
     freelist_tops[b] = top + np.int32(1)
 
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def _freelist_pop(
     freelist_starts: np.ndarray,
     freelist_tops: np.ndarray,
@@ -191,7 +211,7 @@ def _freelist_pop(
     return start
 
 
-@numba.njit(cache=True, inline="always")
+@njit(cache=True, inline="always")
 def _acquire_slot(
     cap: np.int32,
     cols: np.ndarray,
@@ -201,7 +221,7 @@ def _acquire_slot(
     freelist_tops: np.ndarray,
     fl_init_cap: np.int32,
     grow_stats: np.ndarray,
-):
+) -> tuple[np.ndarray, np.ndarray, np.int64, np.int64]:
     """Acquire a slot of capacity ``cap`` for a row.
 
     Tries the size-bucketed free list first; falls back to bumping
@@ -224,7 +244,7 @@ def _acquire_slot(
     return cols, vals, next_alloc, dest
 
 
-@numba.njit(cache=True, inline="always")
+@njit(cache=True, inline="always")
 def _append_entry(
     cols: np.ndarray,
     vals: np.ndarray,
@@ -236,7 +256,7 @@ def _append_entry(
     col_idx: np.int32,
     val: np.float32,
     buffers,
-):
+) -> tuple[np.ndarray, np.ndarray, np.int64]:
     """Append (col_idx, val) to row_idx.
 
     Three row states:
@@ -319,7 +339,7 @@ def _append_entry(
     return cols, vals, next_alloc
 
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def _retire_rows_at_depth(
     d: np.int32,
     last_dcd: np.ndarray,
@@ -355,7 +375,7 @@ def _retire_rows_at_depth(
             row_cap[rk] = np.int32(0)
 
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def _sort_row_inplace(cols: np.ndarray, vals: np.ndarray, start: int, count: int):
     """Insertion sort on a single row's slice (for the rare twin fixup)."""
     for i in range(start + 1, start + count):

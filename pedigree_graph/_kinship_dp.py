@@ -10,11 +10,28 @@ CSC assembler (``_kinship_csc``).
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
-import numba
 import numpy as np
 import scipy.sparse as sp
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from typing import Any, TypeVar
+
+    _F = TypeVar("_F", bound=Callable[..., Any])
+
+    def njit(*args: Any, **kwargs: Any) -> Callable[[_F], _F]:
+        """Identity decorator under type checking only.
+
+        See ``_kinship_allocator.njit`` for the rationale: numba 0.66's stubs
+        type ``njit`` as returning a ``Dispatcher`` whose ParamSpec ``__call__``
+        cannot be checked against the numpy scalars threaded through this DP,
+        even though numba itself unifies them to a single int64 signature.
+        """
+
+else:
+    from numba import njit
 
 from pedigree_graph._kinship_allocator import (
     _append_entry,
@@ -110,7 +127,7 @@ def _validate_dp_args(
     return m_idx, f_idx, tw_idx, depth, int(init_cap_per_row)
 
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def _dp_kinship(
     n: int,
     m_idx: np.ndarray,
@@ -222,7 +239,7 @@ def _dp_kinship(
         # Each row starts at position i * init_cap.
         for i in range(n):
             row_start[i] = np.int64(i) * np.int64(init_cap)
-        next_alloc = np.int64(n) * init_cap
+        next_alloc = np.int64(n) * np.int64(init_cap)
 
     # Retirement state.  Placeholders under retire=False satisfy numba's
     # type unifier; push/pop are no-ops because fl_init_cap = 0.
@@ -684,7 +701,7 @@ def _build_kinship_csc(
     return k_caller.indptr, k_caller.indices, k_caller.data
 
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def _stream_sum_theta_per_gen(
     cols: np.ndarray,
     vals: np.ndarray,
