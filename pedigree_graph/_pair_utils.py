@@ -84,11 +84,17 @@ def pairs_from_groups(indices: np.ndarray, group_key: np.ndarray) -> tuple[np.nd
 
     Uses batch-by-size triu_indices for vectorized pair generation.
     """
+    if len(indices) == 0:
+        return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
+
     sort_idx = np.argsort(group_key, kind="mergesort")
     sorted_keys = group_key[sort_idx]
     sorted_indices = indices[sort_idx]
 
-    _, starts, counts = np.unique(sorted_keys, return_index=True, return_counts=True)
+    # sorted_keys is already sorted; diff-based run detection avoids
+    # np.unique re-sorting/hashing the array it was just handed.
+    starts = np.concatenate(([0], np.flatnonzero(sorted_keys[1:] != sorted_keys[:-1]) + 1))
+    counts = np.diff(np.append(starts, len(sorted_keys)))
 
     multi = counts >= 2
     starts = starts[multi]

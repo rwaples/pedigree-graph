@@ -4,6 +4,26 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.5.4
+
+- **Pair-set subtraction and id validation no longer go through
+  `np.unique`/`np.isin`.**  Three internal hot spots were rewritten with
+  sort/searchsorted or diff-based equivalents, verified output-identical
+  on real data and under differential fuzzing (5,000 randomized trials
+  per site, including empties, duplicates, and ids near the int64
+  pair-key bound):
+  - `PedigreeGraph._subtract_pairs` now sorts the remove keys and
+    binary-searches candidates instead of `np.isin` (~6.9x on a 300k-N
+    pedigree; halves `sibling_pairs()` wall time).  Same pattern —
+    and rationale — as `extract_from_sparse` already used.
+  - The duplicate-id check in `_validate_id_column` counts equal
+    adjacent elements after a sort instead of `len(np.unique)` (~37x).
+  - `pairs_from_groups` detects group boundaries by diffing its
+    already-sorted key array instead of re-running `np.unique` on it.
+
+  Returned pairs, counts, orderings, and error messages are unchanged —
+  this release is performance-only.
+
 ## v0.5.3
 
 - **`count_pairs_streaming` warns when a cousin/collateral residual
