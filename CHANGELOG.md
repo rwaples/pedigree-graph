@@ -6,6 +6,19 @@ live on the corresponding GitHub release pages.
 
 ## v0.5.4
 
+- **Self-kinship diagonal fixed for inbred individuals when rows are not
+  in generation-monotonic order.**  The matrix-DP kinship kernel assumed
+  every relative discovered during a row's merge walk had a smaller row
+  index, but `from_arrays` only requires topological order (parents
+  before children).  When a relative at an earlier generation had a
+  higher row index, the diagonal append broke the row's sorted order and
+  the binary search reading `phi(mother, father)` silently returned 0 —
+  so the self-kinship diagonal read `(1+0)/2` instead of `(1+F)/2`, and
+  the GRM diagonal consumed downstream was wrong for inbred individuals.
+  Off-diagonals and the pairwise `compute_pair_kinship` path were
+  unaffected, as was any pedigree loaded in generation order (the common
+  case, which now hits a zero-overhead fast path).
+
 - **Pair-set subtraction and id validation no longer go through
   `np.unique`/`np.isin`.**  Three internal hot spots were rewritten with
   sort/searchsorted or diff-based equivalents, verified output-identical
@@ -22,7 +35,7 @@ live on the corresponding GitHub release pages.
     already-sorted key array instead of re-running `np.unique` on it.
 
   Returned pairs, counts, orderings, and error messages are unchanged —
-  this release is performance-only.
+  this change is performance-only.
 
 ## v0.5.3
 
