@@ -658,7 +658,6 @@ def test_sentinel_metrics_at_n2000_g8() -> None:
 _RSS_SCRIPT = textwrap.dedent(
     """
     import numpy as np
-    import pandas as pd
     import sys
 
     from pedigree_graph import PedigreeGraph
@@ -681,48 +680,65 @@ _RSS_SCRIPT = textwrap.dedent(
 
 
     def build(n_per_gen, n_gens, seed):
+        # Returns plain arrays, deliberately not a DataFrame: importing
+        # pandas costs ~82 MB of RSS (it pulls pyarrow eagerly from 3.x
+        # on), which has nothing to do with the helpers under test.  The
+        # rng call order below matches the mating structure exactly, so
+        # the pedigree — and the accumulator counters — are unchanged.
         rng = np.random.default_rng(seed)
         n_male = n_per_gen // 2
         n_female = n_per_gen - n_male
-        records = []
+        ids, sexes, gens, mothers, fathers = [], [], [], [], []
         next_id = 0
         prev_m = list(range(next_id, next_id + n_male))
         prev_f = list(range(next_id + n_male, next_id + n_male + n_female))
         for mid in prev_m:
-            records.append({"id": mid, "sex": 1, "generation": 0,
-                             "mother": -1, "father": -1, "twin": -1})
+            ids.append(mid); sexes.append(1); gens.append(0)
+            mothers.append(-1); fathers.append(-1)
         for fid in prev_f:
-            records.append({"id": fid, "sex": 0, "generation": 0,
-                             "mother": -1, "father": -1, "twin": -1})
+            ids.append(fid); sexes.append(0); gens.append(0)
+            mothers.append(-1); fathers.append(-1)
         next_id = n_male + n_female
         for g in range(1, n_gens + 1):
             cur_m, cur_f = [], []
             for _ in range(n_male):
                 fa = int(rng.choice(prev_m))
                 mo = int(rng.choice(prev_f))
-                records.append({"id": next_id, "sex": 1, "generation": g,
-                                 "mother": mo, "father": fa, "twin": -1})
+                ids.append(next_id); sexes.append(1); gens.append(g)
+                mothers.append(mo); fathers.append(fa)
                 cur_m.append(next_id)
                 next_id += 1
             for _ in range(n_female):
                 fa = int(rng.choice(prev_m))
                 mo = int(rng.choice(prev_f))
-                records.append({"id": next_id, "sex": 0, "generation": g,
-                                 "mother": mo, "father": fa, "twin": -1})
+                ids.append(next_id); sexes.append(0); gens.append(g)
+                mothers.append(mo); fathers.append(fa)
                 cur_f.append(next_id)
                 next_id += 1
             prev_m, prev_f = cur_m, cur_f
-        return pd.DataFrame(records)
+        return (np.asarray(ids, dtype=np.int64),
+                np.asarray(mothers, dtype=np.int64),
+                np.asarray(fathers, dtype=np.int64),
+                np.asarray(gens, dtype=np.int32),
+                np.asarray(sexes, dtype=np.int8))
 
 
-    df = build(n_per_gen=2000, n_gens=8, seed=42)
-    pg = PedigreeGraph(df)
+    # Baseline high-water mark: everything imported, nothing allocated
+    # yet.  The assertion is on the *delta* over this, so dependency
+    # import cost cannot consume the budget.
+    base_kb = read_vm_hwm_kb()
+    ids, mothers, fathers, generation, sex = build(n_per_gen=2000, n_gens=8, seed=42)
+    # sex is unused by the three helpers below, but passing it avoids the
+    # all-female from_arrays default documented as a foot-gun.
+    pg = PedigreeGraph.from_arrays(ids=ids, mothers=mothers, fathers=fathers,
+                                   generation=generation, sex=sex)
     # Synthesize F via the lazy cache without forcing the full kinship
     # matrix (which is unrelated to this PR and dominates RSS at scale).
     F = np.zeros(pg.n, dtype=np.float64)
     founder_idx = _founder_idx(pg)
     m_g, _ = _per_gen_founder_means(pg, founder_idx=founder_idx)
     ct = _caballero_toro_accumulators(pg, founder_idx, F)
+    print(f"BASE_KB={base_kb}")
     print(f"RSS_KB={read_vm_hwm_kb()}")
     print(f"PEAK_ANC_SET={ct.peak_ancestor_set_size}")
     print(f"PEAK_LIVE_SETS={ct.peak_live_ancestor_sets}")
@@ -737,7 +753,7 @@ _RSS_SCRIPT = textwrap.dedent(
     reason="VmHWM is a Linux-specific metric in /proc/self/status",
 )
 def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
-    """Subprocess RSS at N=2000, G=8 with the new helpers in isolation.
+    """Subprocess RSS growth at N=2000, G=8 with the new helpers in isolation.
 
     Old dense `_founder_contribution_matrix` peak: (2000 * 9) * 2000 *
     8 bytes ≈ 290 MB just for ``c``.  The new helpers store only:
@@ -746,14 +762,26 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
     * ``sums`` + ``counts`` shape (g_max+1, n_founders) — ~0.27 MB
     * working ancestor sets — bounded by frontier × ancestry depth
 
-    Total working memory should be O(MB), comfortably under 200 MB
-    even with interpreter + numpy overhead.  Threshold set at 256 MB
-    for platform variance — the subprocess reliably lands within
-    250.0–250.1 MB in isolation, but suite-context runs (warmed
-    numba caches, accumulated page-cache state) tick up another
-    50–100 KB.  Excludes ``compute_all_ne`` because the sparse
-    kinship matrix at this scale is unrelated to this refactor and
-    would mask the result.
+    Asserts on the peak RSS *delta over the post-import baseline*, not on
+    total process RSS.  The earlier absolute threshold measured the
+    dependency stack far more than it measured this code: at the 256 MB
+    limit, 187 MB (73%) was interpreter + numpy + pandas + scipy + numba
+    import overhead, leaving the assertion to fail on a pandas 2 -> 3
+    upgrade (which pulls pyarrow eagerly, +29 MB) rather than on anything
+    in pedigree_graph.  It had already been raised once, 250 -> 256, for
+    the same reason.  A delta bound is immune to that churn and actually
+    detects a regression here — a return to dense allocation would add
+    hundreds of MB.
+
+    Observed delta is 62.4–62.8 MB across repeat runs (~0.5% spread);
+    the 120 MB bound leaves generous headroom for platform variance.
+    Excludes ``compute_all_ne`` because the sparse kinship matrix at this
+    scale is unrelated to this refactor and would mask the result.
+
+    Caveat inherent to VmHWM: it is a high-water mark, so if imports ever
+    peaked *above* the helpers' peak the delta would read ~0 and pass
+    trivially.  That is not the case here (imports ~119 MB, total
+    ~181 MB), but it is why the raw totals are reported on failure.
     """
     proc = subprocess.run(
         [sys.executable, "-c", _RSS_SCRIPT],
@@ -762,10 +790,17 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
         text=True,
         timeout=120,
     )
-    rss_line = next(line for line in proc.stdout.splitlines() if line.startswith("RSS_KB="))
-    rss_kb = int(rss_line.split("=", 1)[1])
-    rss_mb = rss_kb / 1024.0
-    assert rss_mb < 256.0, f"new helpers peak RSS {rss_mb:.1f} MB exceeded 256 MB threshold; stdout=\n{proc.stdout}"
+    values = dict(
+        line.split("=", 1) for line in proc.stdout.splitlines() if "=" in line
+    )
+    base_mb = int(values["BASE_KB"]) / 1024.0
+    rss_mb = int(values["RSS_KB"]) / 1024.0
+    delta_mb = rss_mb - base_mb
+    assert delta_mb < 120.0, (
+        f"new helpers peak RSS grew {delta_mb:.1f} MB over the "
+        f"{base_mb:.1f} MB import baseline (total {rss_mb:.1f} MB), "
+        f"exceeding the 120 MB delta bound; stdout=\n{proc.stdout}"
+    )
 
 
 @pytest.mark.slow
