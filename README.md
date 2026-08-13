@@ -15,7 +15,7 @@ by `(up, down, n_ancestors)`:
 ## Install
 
 ```bash
-pip install "pedigree-graph @ git+https://github.com/rwaples/pedigree-graph.git@v0.1.0"
+pip install pedigree-graph
 ```
 
 For development:

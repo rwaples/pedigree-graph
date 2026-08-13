@@ -4,6 +4,29 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.6.0
+
+- **First release published to PyPI.**  `pip install pedigree-graph` now
+  works, retiring the `git+https://...@vX.Y.Z` install form that consumers
+  had to carry because the project was unavailable on the index.
+  Distributions are built and uploaded by a tag-triggered GitHub Actions
+  workflow using PyPI trusted publishing (OIDC), so no API token is
+  stored in the repository or in CI secrets.  Downstream packages pinning
+  a git URL can move to a version range such as
+  `pedigree-graph>=0.6,<0.7`; the bound is worth keeping tight because
+  `PAIR_KINSHIP` and `extract_pairs` are consumed directly by simace,
+  fitace, and pedsum.
+- **Packaging metadata completed for the index listing.**  `readme`,
+  `license` (SPDX `MIT`), `license-files`, `authors`, `classifiers`, and
+  `[project.urls]` are now declared, so the PyPI page renders the README
+  and links back to the repository and this changelog.  The build backend
+  floor moved from `setuptools>=64` to `setuptools>=77`, which is where
+  PEP 639 SPDX license support lands.
+- **`py.typed` marker added.**  The package now advertises inline type
+  information under PEP 561, so type checkers read its annotations when
+  it is installed as a wheel rather than as an editable source checkout.
+  Runtime code is unchanged.
+
 ## v0.5.4
 
 - **Self-kinship diagonal fixed for inbred individuals when rows are not
