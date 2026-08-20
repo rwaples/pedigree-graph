@@ -226,7 +226,7 @@ def test_streaming_subsample_on_from_subsample_raises(small_pedigree):
     should pass ``scope='full'`` explicitly.
     """
     df = small_pedigree
-    half = df.iloc[: len(df) // 2].reset_index(drop=True)
+    half = df.head(len(df) // 2)
     pg = PedigreeGraph.from_subsample(df, half)
     with pytest.raises(NotImplementedError, match="from_subsample"):
         pg.count_pairs_streaming(scope="subsample")
@@ -236,7 +236,7 @@ def test_streaming_full_scope_on_from_subsample_works(small_pedigree):
     """``scope='full'`` is valid on a ``from_subsample`` graph and matches
     the full-graph result."""
     df = small_pedigree
-    half = df.iloc[: len(df) // 2].reset_index(drop=True)
+    half = df.head(len(df) // 2)
     pg_sub = PedigreeGraph.from_subsample(df, half)
     pg_full = PedigreeGraph(df)
     assert pg_sub.count_pairs_streaming(max_degree=5, scope="full") == pg_full.count_pairs_streaming(

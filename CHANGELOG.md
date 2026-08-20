@@ -4,6 +4,24 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Structural frame protocol (`FrameLike`), exported.**  Every constructor
+  (`PedigreeGraph(...)`, `from_dataframe`, `from_subsample`) now accepts any
+  column-addressable table exposing `.columns`, string `__getitem__`, and
+  column `.to_numpy()` — pandas *and* polars DataFrames both qualify — while
+  the package continues to import neither frame library at runtime.
+  `dict[str, np.ndarray]` input remains accepted everywhere.  Columns are
+  extracted via `.to_numpy()` (previously pandas-only `.values`); NA-free
+  pandas nullable-integer columns are now accepted.  A frame missing a
+  required column now reports the uniform `ValueError` instead of a raw
+  `KeyError`.  `from_dataframe` is kept as a compatibility name.
+  Coercion lives in the new focused `pedigree_graph/_frames.py` module.
+- Test fixtures serve polars frames (the family's primary library);
+  focused pandas compatibility coverage — including nullable integers —
+  lives in `tests/test_frame_inputs.py`.  `polars` joins pandas in the
+  `test` extra only; runtime dependencies are unchanged.
+
 ## v0.6.0
 
 - **First release published to PyPI.**  `pip install pedigree-graph` now

@@ -19,7 +19,7 @@ import sys
 import textwrap
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 import scipy.sparse as sp
 
@@ -128,7 +128,7 @@ def _ref_ct_accumulators(pg: PedigreeGraph, F: np.ndarray) -> CTAccumulators:
 # ---------------------------------------------------------------------------
 
 
-def _df(records: list[dict]) -> pd.DataFrame:
+def _df(records: list[dict]) -> pl.DataFrame:
     rows = [
         {
             "id": r["id"],
@@ -140,10 +140,10 @@ def _df(records: list[dict]) -> pd.DataFrame:
         }
         for r in records
     ]
-    return pd.DataFrame(rows)
+    return pl.DataFrame(rows)
 
 
-def _build_closed_line(n_gens: int = 5) -> pd.DataFrame:
+def _build_closed_line(n_gens: int = 5) -> pl.DataFrame:
     records = [
         {"id": 0, "sex": 1, "generation": 0},
         {"id": 1, "sex": 0, "generation": 0},
@@ -163,7 +163,7 @@ def _build_random_mating_pedigree(
     rng: np.random.Generator,
     n_per_gen: int,
     n_gens: int,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Multi-generation random-mating WF-ish pedigree (balanced sexes)."""
     n_male = n_per_gen // 2
     n_female = n_per_gen - n_male
@@ -193,7 +193,7 @@ def _build_random_mating_pedigree(
     return _df(records)
 
 
-def _build_skip_gen_pedigree() -> pd.DataFrame:
+def _build_skip_gen_pedigree() -> pl.DataFrame:
     """Hand-built pedigree with skip-gen edges.
 
     Layout (id : gen | parents):
@@ -790,9 +790,7 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
         text=True,
         timeout=120,
     )
-    values = dict(
-        line.split("=", 1) for line in proc.stdout.splitlines() if "=" in line
-    )
+    values = dict(line.split("=", 1) for line in proc.stdout.splitlines() if "=" in line)
     base_mb = int(values["BASE_KB"]) / 1024.0
     rss_mb = int(values["RSS_KB"]) / 1024.0
     delta_mb = rss_mb - base_mb

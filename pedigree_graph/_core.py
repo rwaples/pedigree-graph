@@ -15,6 +15,7 @@ from __future__ import annotations
 __all__ = [
     "PAIR_KINSHIP",
     "REL_REGISTRY",
+    "FrameLike",
     "PedigreeGraph",
     "RelType",
 ]
@@ -22,12 +23,18 @@ __all__ = [
 import logging
 import time
 from functools import cached_property
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import numpy as np
 import scipy.sparse as sp
 
 from pedigree_graph._effective_size import _per_gen_mean_kinship
+from pedigree_graph._frames import (
+    _OPTIONAL_COLUMNS,
+    _REQUIRED_COLUMNS,
+    FrameLike,
+    _coerce_to_array_dict,
+)
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
     _check_topological,
@@ -50,31 +57,7 @@ from pedigree_graph._registry import (
 )
 from pedigree_graph._streaming_counter import StreamingPairCounter
 
-if TYPE_CHECKING:
-    import pandas as pd
-
 logger = logging.getLogger(__name__)
-
-
-_REQUIRED_COLUMNS: tuple[str, ...] = ("id", "mother", "father", "twin", "sex", "generation")
-_OPTIONAL_COLUMNS: tuple[str, ...] = ("birth_year",)
-
-
-def _coerce_to_array_dict(data: dict[str, np.ndarray] | pd.DataFrame) -> dict[str, np.ndarray]:
-    """Normalize input to a dict of numpy arrays.
-
-    Accepts either a ``dict[str, np.ndarray]`` (returned as-is) or a
-    pandas ``DataFrame`` (each required column extracted via ``.values``;
-    optional columns extracted when present).  No pandas import is
-    performed in the dict path.
-    """
-    if isinstance(data, dict):
-        return data
-    result = {col: data[col].values for col in _REQUIRED_COLUMNS}
-    for col in _OPTIONAL_COLUMNS:
-        if col in data.columns:
-            result[col] = data[col].values
-    return result
 
 
 def _validate_id_column(ids: np.ndarray) -> np.ndarray:
@@ -191,12 +174,13 @@ class PedigreeGraph:
 
     Args:
         data: Either a ``dict[str, np.ndarray]`` keyed by ``id``, ``mother``,
-            ``father``, ``twin``, ``sex``, ``generation``, or a pandas
-            ``DataFrame`` with those columns.  The dict path requires no
-            pandas import.
+            ``father``, ``twin``, ``sex``, ``generation``, or any
+            :class:`FrameLike` table with those columns — pandas and polars
+            DataFrames both satisfy the structural protocol, and neither
+            library is imported by this package.
     """
 
-    def __init__(self, data: dict[str, np.ndarray] | pd.DataFrame) -> None:
+    def __init__(self, data: dict[str, np.ndarray] | FrameLike) -> None:
         arrays = _coerce_to_array_dict(data)
         if "id" not in arrays:
             raise ValueError("input is missing the required 'id' column")
@@ -822,12 +806,14 @@ class PedigreeGraph:
     # ------------------------------------------------------------------
 
     @classmethod
-    def from_dataframe(cls, df: pd.DataFrame) -> PedigreeGraph:
-        """Construct from a pandas ``DataFrame``.
+    def from_dataframe(cls, df: FrameLike) -> PedigreeGraph:
+        """Construct from a DataFrame (any :class:`FrameLike` table).
 
-        Explicit DataFrame entry point.  ``__init__`` also accepts
-        DataFrames directly via type dispatch; this classmethod is
-        provided for callers that want the intent in the call site.
+        Explicit DataFrame entry point — pandas and polars frames both
+        satisfy the structural protocol.  ``__init__`` also accepts frames
+        directly via type dispatch; this classmethod is provided (and kept
+        as a compatibility name) for callers that want the intent in the
+        call site.
         """
         return cls(df)
 
@@ -893,8 +879,8 @@ class PedigreeGraph:
     @classmethod
     def from_subsample(
         cls,
-        full_pedigree: dict[str, np.ndarray] | pd.DataFrame,
-        df: dict[str, np.ndarray] | pd.DataFrame,
+        full_pedigree: dict[str, np.ndarray] | FrameLike,
+        df: dict[str, np.ndarray] | FrameLike,
     ) -> PedigreeGraph:
         """Construct a graph over *full_pedigree*, restricted to *df*.
 

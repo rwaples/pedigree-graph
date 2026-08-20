@@ -4,6 +4,7 @@ import logging
 
 import numpy as np
 import pandas as pd
+import polars as pl
 import pytest
 
 from pedigree_graph import PedigreeGraph
@@ -16,9 +17,16 @@ from pedigree_graph._kinship_pairwise import (
 logger = logging.getLogger(__name__)
 
 
-def _extract_relationship_pairs_legacy(df: pd.DataFrame, seed: int = 42) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Legacy implementation kept for golden testing."""
-    ids_arr = df["id"].values.astype(np.int64)
+def _extract_relationship_pairs_legacy(df, seed: int = 42) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Legacy implementation kept for golden testing.
+
+    Deliberately pandas: an independent derivation of the same pairs using a
+    different toolchain than the production sparse-matrix path. The polars
+    fixture converts at this boundary only.
+    """
+    if not isinstance(df, pd.DataFrame):
+        df = df.to_pandas()
+    ids_arr = df["id"].to_numpy().astype(np.int64)
     id_to_row = np.full(ids_arr.max() + 1, -1, dtype=np.int32)
     id_to_row[ids_arr] = np.arange(len(df), dtype=np.int32)
 
@@ -32,13 +40,13 @@ def _extract_relationship_pairs_legacy(df: pd.DataFrame, seed: int = 42) -> dict
     pairs = {}
 
     twins = df[df["twin"] != -1]
-    ta = twins["id"].values.astype(int)
-    tb = twins["twin"].values.astype(int)
+    ta = twins["id"].to_numpy().astype(int)
+    tb = twins["twin"].to_numpy().astype(int)
     mask = ta < tb
     pairs["MZ"] = (resolve_rows(ta[mask]), resolve_rows(tb[mask]))
 
     non_twin_nf = df[(df["mother"] != -1) & (df["twin"] == -1)].copy()
-    non_twin_nf["_row"] = non_twin_nf.index.values
+    non_twin_nf["_row"] = non_twin_nf.index.to_numpy()
 
     full_rows_1, full_rows_2 = [], []
     mat_half_rows_1, mat_half_rows_2 = [], []
@@ -55,10 +63,10 @@ def _extract_relationship_pairs_legacy(df: pd.DataFrame, seed: int = 42) -> dict
         )
         mat_pairs = mat_pairs[mat_pairs["_row_1"] < mat_pairs["_row_2"]]
         same_father = mat_pairs["father_1"] == mat_pairs["father_2"]
-        full_rows_1.append(mat_pairs.loc[same_father, "_row_1"].values)
-        full_rows_2.append(mat_pairs.loc[same_father, "_row_2"].values)
-        mat_half_rows_1.append(mat_pairs.loc[~same_father, "_row_1"].values)
-        mat_half_rows_2.append(mat_pairs.loc[~same_father, "_row_2"].values)
+        full_rows_1.append(mat_pairs.loc[same_father, "_row_1"].to_numpy())
+        full_rows_2.append(mat_pairs.loc[same_father, "_row_2"].to_numpy())
+        mat_half_rows_1.append(mat_pairs.loc[~same_father, "_row_1"].to_numpy())
+        mat_half_rows_2.append(mat_pairs.loc[~same_father, "_row_2"].to_numpy())
 
     pat_half_rows_1, pat_half_rows_2 = [], []
     pat_counts = non_twin_nf.groupby("father").size()
@@ -73,8 +81,8 @@ def _extract_relationship_pairs_legacy(df: pd.DataFrame, seed: int = 42) -> dict
         )
         pat_pairs = pat_pairs[pat_pairs["_row_1"] < pat_pairs["_row_2"]]
         diff_mother = pat_pairs["mother_1"] != pat_pairs["mother_2"]
-        pat_half_rows_1.append(pat_pairs.loc[diff_mother, "_row_1"].values)
-        pat_half_rows_2.append(pat_pairs.loc[diff_mother, "_row_2"].values)
+        pat_half_rows_1.append(pat_pairs.loc[diff_mother, "_row_1"].to_numpy())
+        pat_half_rows_2.append(pat_pairs.loc[diff_mother, "_row_2"].to_numpy())
 
     pairs["FS"] = (
         np.concatenate(full_rows_1) if full_rows_1 else np.array([], dtype=int),
@@ -90,22 +98,22 @@ def _extract_relationship_pairs_legacy(df: pd.DataFrame, seed: int = 42) -> dict
     )
 
     all_nf = df[df["mother"] != -1]
-    child_rows = all_nf.index.values
-    mother_rows = resolve_rows(all_nf["mother"].values.astype(int))
-    father_rows = resolve_rows(all_nf["father"].values.astype(int))
+    child_rows = all_nf.index.to_numpy()
+    mother_rows = resolve_rows(all_nf["mother"].to_numpy().astype(int))
+    father_rows = resolve_rows(all_nf["father"].to_numpy().astype(int))
 
     m_valid = mother_rows >= 0
     f_valid = father_rows >= 0
     pairs["MO"] = (child_rows[m_valid], mother_rows[m_valid])
     pairs["FO"] = (child_rows[f_valid], father_rows[f_valid])
 
-    child_ids = all_nf["id"].values.astype(np.int64)
-    mother_ids = all_nf["mother"].values.astype(np.int64)
-    father_ids = all_nf["father"].values.astype(np.int64)
+    child_ids = all_nf["id"].to_numpy().astype(np.int64)
+    mother_ids = all_nf["mother"].to_numpy().astype(np.int64)
+    father_ids = all_nf["father"].to_numpy().astype(np.int64)
     n_children = len(child_ids)
 
-    df_mothers_col = df["mother"].values.astype(np.int64)
-    df_fathers_col = df["father"].values.astype(np.int64)
+    df_mothers_col = df["mother"].to_numpy().astype(np.int64)
+    df_fathers_col = df["father"].to_numpy().astype(np.int64)
     mother_row = resolve_rows(mother_ids)
     father_row = resolve_rows(father_ids)
 
@@ -227,8 +235,8 @@ class TestGoldenComparison:
         new_1c = _pairs_to_set(*new["1C"])
         new_h1c = _pairs_to_set(*new.get("H1C", (np.array([]), np.array([]))))
         new_all_cousins = new_1c | new_h1c
-        mother = df["mother"].values
-        father = df["father"].values
+        mother = df["mother"].to_numpy()
+        father = df["father"].to_numpy()
         # Filter out self-pairs and sibling-pairs from legacy
         legacy_proper = set()
         for a, b in legacy_cousins:
@@ -261,7 +269,7 @@ class TestNewRelationships:
         if len(gc) == 0:
             pytest.skip("No grandparent-grandchild pairs found")
 
-        gen = df["generation"].values
+        gen = df["generation"].to_numpy()
         gen_diff = np.abs(gen[gc] - gen[gp])
         assert np.all(gen_diff == 2), f"Generation diffs: {np.unique(gen_diff)}"
 
@@ -270,8 +278,8 @@ class TestNewRelationships:
         df = small_pedigree
         pairs = PedigreeGraph(df).extract_pairs()
         gc_arr, gp_arr = pairs["GP"]
-        mother = df["mother"].values
-        father = df["father"].values
+        mother = df["mother"].to_numpy()
+        father = df["father"].to_numpy()
 
         for gc, gp in zip(gc_arr[:100], gp_arr[:100], strict=True):
             m = mother[gc]
@@ -297,7 +305,7 @@ class TestNewRelationships:
         if len(a1) == 0:
             pytest.skip("No avuncular pairs found")
 
-        gen = df["generation"].values
+        gen = df["generation"].to_numpy()
         gen_diff = np.abs(gen[a1] - gen[a2])
         # Avuncular: uncle/aunt is same gen as parent, so 1 gen from nephew/niece
         assert np.all(gen_diff <= 1), f"Generation diffs: {np.unique(gen_diff)}"
@@ -313,8 +321,8 @@ class TestStructuralCorrectness:
         if len(idx1) == 0:
             pytest.skip("No full sib pairs")
 
-        mother = df["mother"].values
-        father = df["father"].values
+        mother = df["mother"].to_numpy()
+        father = df["father"].to_numpy()
         assert np.all(mother[idx1] == mother[idx2])
         assert np.all(father[idx1] == father[idx2])
 
@@ -322,8 +330,8 @@ class TestStructuralCorrectness:
         df = small_pedigree
         pairs = PedigreeGraph(df).extract_pairs()
 
-        mother = df["mother"].values
-        father = df["father"].values
+        mother = df["mother"].to_numpy()
+        father = df["father"].to_numpy()
 
         for key in ["MHS", "PHS"]:
             idx1, idx2 = pairs[key]
@@ -348,8 +356,8 @@ class TestStructuralCorrectness:
         if len(idx1) == 0:
             pytest.skip("No cousin pairs")
 
-        mother = df["mother"].values
-        father = df["father"].values
+        mother = df["mother"].to_numpy()
+        father = df["father"].to_numpy()
 
         for i in range(min(200, len(idx1))):
             a, b = idx1[i], idx2[i]
@@ -406,7 +414,7 @@ class TestNoSubsamplingLoss:
 class TestEdgeCases:
     def test_founders_only(self):
         """DataFrame with only founders should produce no pairs except possibly twins."""
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": np.arange(100),
                 "mother": np.full(100, -1),
@@ -453,7 +461,7 @@ class TestEdgeCases:
             fathers[child_id] = males[i]
             gen[child_id] = 1
 
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": ids,
                 "mother": mothers,
@@ -503,7 +511,7 @@ class TestKnownTinyPedigree:
             "sex": np.array([0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0]),
             "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2]),
         }
-        return pd.DataFrame(data)
+        return pl.DataFrame(data)
 
     def test_full_sib_count(self, tiny_pedigree):
         pairs = PedigreeGraph(tiny_pedigree).extract_pairs()
@@ -714,7 +722,7 @@ class TestSecondCousinFullVsHalf:
                 ]
             ),
         }
-        return pd.DataFrame(data)
+        return pl.DataFrame(data)
 
     def test_full_2c_included(self, pedigree_with_half_2c):
         """Full 2nd cousin pair (10, 11) must be in 2C."""
@@ -742,11 +750,11 @@ class TestSecondCousinFullVsHalf:
 
 class TestFromArrays:
     def test_round_trip_matches_dataframe_construction(self, small_pedigree):
-        ids = small_pedigree["id"].values
-        mothers = small_pedigree["mother"].values
-        fathers = small_pedigree["father"].values
-        twins = small_pedigree["twin"].values
-        generation = small_pedigree["generation"].values
+        ids = small_pedigree["id"].to_numpy()
+        mothers = small_pedigree["mother"].to_numpy()
+        fathers = small_pedigree["father"].to_numpy()
+        twins = small_pedigree["twin"].to_numpy()
+        generation = small_pedigree["generation"].to_numpy()
 
         pg_df = PedigreeGraph(small_pedigree)
         pg_arr = PedigreeGraph.from_arrays(ids, mothers, fathers, twins, generation)
@@ -799,7 +807,7 @@ class TestFromArrays:
         np.testing.assert_array_equal(pg.birth_year, [1990, 1990, 2010])
 
     def test_birth_year_round_trips_via_dataframe(self):
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": [0, 1, 2],
                 "mother": [-1, -1, 0],
@@ -985,17 +993,17 @@ class TestInputValidation:
     }
 
     def test_duplicate_ids_raise(self):
-        df = pd.DataFrame({"id": [0, 0], **self._BASE})
+        df = pl.DataFrame({"id": [0, 0], **self._BASE})
         with pytest.raises(ValueError, match="duplicate id"):
             PedigreeGraph(df)
 
     def test_negative_ids_raise(self):
-        df = pd.DataFrame({"id": [-1, 0], **self._BASE})
+        df = pl.DataFrame({"id": [-1, 0], **self._BASE})
         with pytest.raises(ValueError, match="nonnegative"):
             PedigreeGraph(df)
 
     def test_non_integer_ids_raise(self):
-        df = pd.DataFrame({"id": [0.0, 1.0], **self._BASE})
+        df = pl.DataFrame({"id": [0.0, 1.0], **self._BASE})
         with pytest.raises(ValueError, match="integer"):
             PedigreeGraph(df)
 
@@ -1030,7 +1038,7 @@ class TestInputValidation:
 
     def test_unsorted_ids_remap_correctly(self):
         # searchsorted must honor argsort order, not assume sorted ids.
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": [5, 2, 9, 7],
                 "mother": [-1, -1, 5, 2],
@@ -1048,7 +1056,7 @@ class TestInputValidation:
     def test_absent_parent_ids_remap_leniently(self):
         # Partial pedigree (falconer's PedigreeGraph(df) path): parents
         # outside the rows remap to -1, but orig ids drive sib grouping.
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": [10, 11],
                 "mother": [99, 99],  # 99 not a row
@@ -1063,7 +1071,7 @@ class TestInputValidation:
         assert pg._orig_mother.tolist() == [99, 99]
 
     def test_absent_twin_id_remaps_leniently(self):
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": [0, 1],
                 "mother": [-1, -1],
@@ -1077,7 +1085,7 @@ class TestInputValidation:
         assert pg.twin.tolist() == [-1, -1]
 
     def test_duplicate_full_pedigree_ids_raise_in_from_subsample(self):
-        full = pd.DataFrame(
+        full = pl.DataFrame(
             {
                 "id": [0, 0, 1],  # duplicate full-pedigree id
                 "mother": [-1, -1, 0],
@@ -1087,7 +1095,7 @@ class TestInputValidation:
                 "generation": [0, 0, 1],
             }
         )
-        sub = full.iloc[2:].reset_index(drop=True)
+        sub = full[2:]
         with pytest.raises(ValueError, match="duplicate id"):
             PedigreeGraph.from_subsample(full, sub)
 
@@ -1098,7 +1106,7 @@ class TestFromSubsample:
         # 3-gen lineage: founders 0, 2 first; then 1=child(0,2), 3=child(0,2),
         # 4=child(1,3).  Rows ordered so that parent row indices precede their
         # children (topological invariant required by PedigreeGraph).
-        return pd.DataFrame(
+        return pl.DataFrame(
             {
                 "id": np.array([0, 2, 1, 3, 4]),
                 "mother": np.array([-1, -1, 0, 0, 1]),
@@ -1110,7 +1118,7 @@ class TestFromSubsample:
         )
 
     def test_extract_pairs_filters_to_subsample(self, lineage_pedigree):
-        sub = lineage_pedigree[lineage_pedigree["id"].isin([1, 3, 4])].reset_index(drop=True)
+        sub = lineage_pedigree.filter(pl.col("id").is_in([1, 3, 4]))
         pg = PedigreeGraph.from_subsample(lineage_pedigree, sub)
         pairs = pg.extract_pairs(max_degree=2)
         # All extracted pair endpoints must be valid sub-row indices
@@ -1120,19 +1128,19 @@ class TestFromSubsample:
                 assert 0 <= j < len(sub), f"{code}: j={j} out of range"
 
     def test_empty_subsample_yields_no_pairs(self, lineage_pedigree):
-        empty = lineage_pedigree.iloc[:0]
+        empty = lineage_pedigree.head(0)
         pg = PedigreeGraph.from_subsample(lineage_pedigree, empty)
         pairs = pg.extract_pairs(max_degree=2)
         for code, (idx1, _) in pairs.items():
             assert len(idx1) == 0, f"{code} should be empty"
 
     def test_duplicate_ids_raises(self, lineage_pedigree):
-        dup = pd.concat([lineage_pedigree.iloc[:2], lineage_pedigree.iloc[:1]], ignore_index=True)
+        dup = pl.concat([lineage_pedigree.head(2), lineage_pedigree.head(1)])
         with pytest.raises(ValueError, match="duplicate id"):
             PedigreeGraph.from_subsample(lineage_pedigree, dup)
 
     def test_id_not_in_full_pedigree_raises(self, lineage_pedigree):
-        bogus = pd.DataFrame(
+        bogus = pl.DataFrame(
             {
                 "id": [99],
                 "mother": [-1],
@@ -1146,7 +1154,7 @@ class TestFromSubsample:
             PedigreeGraph.from_subsample(lineage_pedigree, bogus)
 
     def test_count_pairs_full_vs_subsample(self, lineage_pedigree):
-        sub = lineage_pedigree[lineage_pedigree["id"].isin([1, 3, 4])].reset_index(drop=True)
+        sub = lineage_pedigree.filter(pl.col("id").is_in([1, 3, 4]))
         pg = PedigreeGraph.from_subsample(lineage_pedigree, sub)
         full = pg.count_pairs(max_degree=2, scope="full")
         partial = pg.count_pairs(max_degree=2, scope="subsample")
@@ -1162,9 +1170,8 @@ class TestFromSubsample:
     def test_birth_year_round_trips_through_subsample(self, lineage_pedigree):
         # Attach birth_year to the full pedigree and ensure it survives
         # the subsample construction path.
-        full = lineage_pedigree.copy()
-        full["birth_year"] = np.array([1990, 1990, 2000, 2000, 2010])
-        sub = full[full["id"].isin([1, 3, 4])].reset_index(drop=True)
+        full = lineage_pedigree.with_columns(birth_year=pl.Series(np.array([1990, 1990, 2000, 2000, 2010])))
+        sub = full.filter(pl.col("id").is_in([1, 3, 4]))
         pg = PedigreeGraph.from_subsample(full, sub)
         assert pg.birth_year is not None
         # The subsample graph is built over the FULL pedigree, so
@@ -1182,7 +1189,7 @@ class TestComputePairKinship:
     def _inbred_pedigree(self):
         # Same layout as the kinship-kernel inbred-MZ test:
         # G0: 0,1 founders; G1: 2,3 full-sibs of (0,1); G2: 4,5 MZ twins of (2,3)
-        return pd.DataFrame(
+        return pl.DataFrame(
             {
                 "id": np.arange(6),
                 "mother": np.array([-1, -1, 0, 0, 2, 2]),
@@ -1197,7 +1204,7 @@ class TestComputePairKinship:
         # Plain full sibs (no inbreeding, no duplicate paths): exact kinship
         # equals the nominal 0.25.  (There is no nominal fast path anymore; the
         # exact recurrence simply returns the same value here.)
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": np.arange(4),
                 "mother": np.array([-1, -1, 0, 0]),
@@ -1238,7 +1245,7 @@ class TestComputePairKinship:
         assert K_full[4, 5] == pytest.approx(0.625)
 
         # Reversed subsample of the MZ twins: df rows are [id 5, id 4].
-        sub = full[full["id"].isin([4, 5])].iloc[::-1].reset_index(drop=True)
+        sub = full.filter(pl.col("id").is_in([4, 5])).reverse()
         pg = PedigreeGraph.from_subsample(full, sub)
         pairs = pg.extract_pairs(max_degree=1)
         out = pg.compute_pair_kinship(pairs)
@@ -1248,7 +1255,7 @@ class TestComputePairKinship:
         # The graph→caller remap can permute rows; remapped pairs must keep
         # the lo < hi invariant that downstream pair-key encoders rely on.
         full = self._inbred_pedigree()
-        sub = full[full["id"].isin([2, 3, 4, 5])].iloc[::-1].reset_index(drop=True)
+        sub = full.filter(pl.col("id").is_in([2, 3, 4, 5])).reverse()
         pg = PedigreeGraph.from_subsample(full, sub)
         pairs = pg.extract_pairs(max_degree=2)
         for code, (idx1, idx2) in pairs.items():
@@ -1262,7 +1269,7 @@ class TestComputePairKinship:
         np.testing.assert_array_equal(F1, F2)
 
     def test_kinship_matrix_max_degree_shortcut(self):
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": np.arange(4),
                 "mother": np.array([-1, 0, 1, 2]),
@@ -1293,7 +1300,7 @@ class TestComputePairKinship:
     def test_constructor_rejects_non_topological(self):
         # Parent index appears AFTER its child — violates the invariant
         # required by `_compute_F_meuwissen_luo`'s outer loop.
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": np.array([0, 1, 2, 3, 4, 5]),
                 "mother": np.array([-1, -1, 0, 5, -1, -1]),
@@ -1402,9 +1409,9 @@ def _oracle_all_pairs(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.nda
     return got, exp, ii, jj
 
 
-def _ped_inbred_mz() -> pd.DataFrame:
+def _ped_inbred_mz() -> pl.DataFrame:
     # G0: 0,1 founders; G1: 2,3 full-sibs of (0,1); G2: 4,5 MZ twins of (2,3).
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.arange(6),
             "mother": np.array([-1, -1, 0, 0, 2, 2]),
@@ -1416,12 +1423,12 @@ def _ped_inbred_mz() -> pd.DataFrame:
     )
 
 
-def _ped_double_first_cousins() -> pd.DataFrame:
+def _ped_double_first_cousins() -> pl.DataFrame:
     # 4,5 full sibs of (0,1); 6,7 full sibs of (2,3); 8=child(4,6),
     # 9=child(5,7), 10=child(4,6).  (8,9) and (9,10) are DOUBLE first cousins
     # (both parent-couples are full-sib pairs) -> phi = 0.125, twice the nominal
     # 1C lookup of 0.0625.
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.arange(11),
             "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2, 4, 5, 4]),
@@ -1433,13 +1440,13 @@ def _ped_double_first_cousins() -> pd.DataFrame:
     )
 
 
-def _ped_half_first_cousin_parents() -> pd.DataFrame:
+def _ped_half_first_cousin_parents() -> pl.DataFrame:
     # 0..4 founders; 5=child(0,1), 6=child(0,2) share founder 0 -> half sibs;
     # 7=child(5,3), 8=child(6,4) -> half-first-cousins (phi=1/32);
     # 9=child(7,8) -> phi(9,7) = 0.5*((1+F_7)/2 + phi(8,7)) = 0.265625.
     # The disproof of threshold-pruning: a sub-threshold (1/32) parental kinship
     # feeds an above-threshold parent-offspring kinship.
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.arange(10),
             "mother": np.array([-1, -1, -1, -1, -1, 0, 0, 5, 6, 7]),
@@ -1451,12 +1458,12 @@ def _ped_half_first_cousin_parents() -> pd.DataFrame:
     )
 
 
-def _ped_mz_twins_with_descendants() -> pd.DataFrame:
+def _ped_mz_twins_with_descendants() -> pl.DataFrame:
     # 0,1 founders; 2,3 full sibs of (0,1); 4,5 MZ twins of (2,3);
     # 6,7 unrelated founders (mates); 8=child(4,6), 9=child(5,7).
     # 4 and 5 are genome-identical, so 8 and 9 are half-sib-equivalent with phi
     # elevated above the non-inbred maternal-half-sib value by co-coalescence.
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.arange(10),
             "mother": np.array([-1, -1, 0, 0, 2, 2, -1, -1, 4, 5]),
@@ -1468,9 +1475,9 @@ def _ped_mz_twins_with_descendants() -> pd.DataFrame:
     )
 
 
-def _ped_sib_mating() -> pd.DataFrame:
+def _ped_sib_mating() -> pl.DataFrame:
     # 0,1 founders; 2,3 full sibs; 4=child(2,3) (sib-mating, F_4=0.25).
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.arange(5),
             "mother": np.array([-1, -1, 0, 0, 2]),
@@ -1491,7 +1498,7 @@ _PAIRWISE_FIXTURES = [
 ]
 
 
-def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pd.DataFrame:
+def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pl.DataFrame:
     """Generate a small valid (topologically ordered) random pedigree.
 
     Parent-index-only; no simace dependency.  Mixes inbreeding (mates drawn
@@ -1534,7 +1541,7 @@ def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pd.DataFr
             twin[b] = a
             sex[b] = sex[a]
         cur = new_gen
-    return pd.DataFrame({"id": ids, "mother": mother, "father": father, "twin": twin, "sex": sex, "generation": gen})
+    return pl.DataFrame({"id": ids, "mother": mother, "father": father, "twin": twin, "sex": sex, "generation": gen})
 
 
 class TestPairwiseKinshipReference:

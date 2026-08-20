@@ -37,6 +37,7 @@ test = [
     "ruff>=0.16,<0.17",
     "hypothesis>=6,<7",
     "pandas>=3.0,<4",
+    "polars>=1.43.2,<2",
     "pyarrow>=17,<26",
 ]
 typecheck = ["ty==0.0.70"]

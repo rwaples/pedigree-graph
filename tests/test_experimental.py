@@ -16,7 +16,7 @@ from __future__ import annotations
 import warnings
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 
 from pedigree_graph import PAIR_KINSHIP, PedigreeGraph
@@ -38,9 +38,9 @@ def _bfs(pg: PedigreeGraph) -> dict[str, int]:
         return count_pairs_bfs(pg)
 
 
-def _tiny_lineage_df() -> pd.DataFrame:
+def _tiny_lineage_df() -> pl.DataFrame:
     """3-individual lineage: 0,1 founders → 2 child."""
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.array([0, 1, 2]),
             "mother": np.array([-1, -1, 0]),
@@ -81,7 +81,7 @@ def test_bfs_matches_matrix_on_small_pedigree(small_pedigree):
 def tiny_pedigree():
     """3-generation pedigree; see TestKnownTinyPedigree for the layout."""
     n = 11
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.arange(n),
             "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2, 4, 5, 4]),
@@ -117,7 +117,7 @@ def pedigree_with_half_2c():
     must be in 2C, half-2C pair (23,24) must be excluded.
     """
     n = 25
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.arange(n),
             "mother": np.array(
@@ -284,7 +284,7 @@ def inbred_with_cousins_pedigree():
       bfs:    1C1R=0, H1C1R=2, 2C=0
     """
     n = 13
-    return pd.DataFrame(
+    return pl.DataFrame(
         {
             "id": np.arange(n),
             "mother": np.array(
@@ -414,7 +414,7 @@ def test_max_degree_lt_5_raises_not_implemented():
 
 
 def test_subsample_raises_not_implemented(small_pedigree):
-    sub = small_pedigree.head(50).copy()
+    sub = small_pedigree.head(50)
     pg = PedigreeGraph.from_subsample(small_pedigree, sub)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)

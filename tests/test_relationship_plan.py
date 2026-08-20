@@ -8,7 +8,7 @@ engines agree on the registry key set.
 """
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 
 from pedigree_graph import PedigreeGraph
@@ -68,7 +68,7 @@ class TestAllEnginesReturnRegistryKeySet:
     def _pedigree(self):
         # Small 3-generation pedigree with full sibs and cousins; built
         # directly (BFS does not support from_subsample).
-        return pd.DataFrame(
+        return pl.DataFrame(
             {
                 "id": np.arange(10),
                 "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2, 4, 6]),

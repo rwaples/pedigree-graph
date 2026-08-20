@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 from hypothesis import strategies as st
 
@@ -18,13 +18,15 @@ PEDIGREE_MAX_N = 25
 
 
 @pytest.fixture
-def small_pedigree() -> pd.DataFrame:
+def small_pedigree() -> pl.DataFrame:
     """Snapshot of simace.run_simulation(seed=42, N=1000, G_ped=3, G_sim=3, ...).
 
     Captured once and shipped as a parquet so tests don't need a runtime
-    dependency on simace.  Byte-identical to the upstream fixture.
+    dependency on simace.  Byte-identical to the upstream fixture. Served as
+    a polars frame — the family's primary library; focused pandas coverage
+    lives in test_frame_inputs.py.
     """
-    return pd.read_parquet(_DATA_DIR / "small_pedigree.parquet")
+    return pl.read_parquet(_DATA_DIR / "small_pedigree.parquet")
 
 
 @st.composite

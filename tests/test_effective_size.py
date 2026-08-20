@@ -6,7 +6,7 @@ expectations.  Per the master plan, finite-sample tolerances are loose
 """
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 
 from pedigree_graph import (
@@ -38,7 +38,7 @@ from pedigree_graph._kinship_kernel import (
 )
 
 
-def _df(records: list[dict]) -> pd.DataFrame:
+def _df(records: list[dict]) -> pl.DataFrame:
     """Build a pedigree DataFrame from per-row dicts (defaults filled)."""
     rows = [
         {
@@ -51,10 +51,10 @@ def _df(records: list[dict]) -> pd.DataFrame:
         }
         for r in records
     ]
-    return pd.DataFrame(rows)
+    return pl.DataFrame(rows)
 
 
-def _df_by(records: list[dict]) -> pd.DataFrame:
+def _df_by(records: list[dict]) -> pl.DataFrame:
     """Build a pedigree DataFrame including a ``birth_year`` column."""
     rows = [
         {
@@ -68,7 +68,7 @@ def _df_by(records: list[dict]) -> pd.DataFrame:
         }
         for r in records
     ]
-    return pd.DataFrame(rows)
+    return pl.DataFrame(rows)
 
 
 def _toy_birth_year_pedigree(
@@ -76,7 +76,7 @@ def _toy_birth_year_pedigree(
     cohort_a: int = 1900,
     cohort_b: int = 1910,
     paternity: str = "balanced",
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Build a 2-cohort pedigree with controlled σ²_m, σ²_f for eq. (10) tests.
 
     Cohort A: 2 males (ids 0,1) + 2 females (ids 2,3).  Cohort B: 4 offspring.
@@ -172,7 +172,7 @@ def _build_random_mating_pedigree(
     n_male: int,
     n_female: int,
     n_offspring: int,
-) -> pd.DataFrame:
+) -> pl.DataFrame:
     """Two-generation random-mating pedigree with multinomial parent picks.
 
     Each offspring picks one father uniformly, one mother uniformly,
@@ -274,7 +274,7 @@ def test_toy3_skewed_male_NeV_below_sex_ratio():
 # ---------------------------------------------------------------------------
 
 
-def _build_closed_line(n_gens: int = 5) -> pd.DataFrame:
+def _build_closed_line(n_gens: int = 5) -> pl.DataFrame:
     """Closed-line full-sib mating: 2 founders, 1 male + 1 female per gen for ``n_gens``."""
     records = [
         {"id": 0, "sex": 1, "generation": 0},
@@ -947,7 +947,7 @@ class TestTypedPayloadModels:
 
     def test_sigma2_decomposition_fields_named_and_unpackable(self):
         # A cohort with ≥2 of each sex yields a real decomposition.
-        df = pd.DataFrame(
+        df = pl.DataFrame(
             {
                 "id": np.arange(8),
                 "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2]),
