@@ -9,7 +9,7 @@ on a co-coalescence case where the two paths legitimately disagree.
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import pytest
 import scipy.sparse as sp
 
@@ -115,12 +115,11 @@ def test_deeper_chain_15gen():
     assert np.allclose(F, np.zeros(n))
 
 
-def test_parity_with_matrix_path_no_mz(small_pedigree: pd.DataFrame):
+def test_parity_with_matrix_path_no_mz(small_pedigree):
     # Strip MZ twin info from the fixture so matrix and ML F must agree
     # exactly (MZ-aware vs MZ-naive disagreement only kicks in for
     # MZ-coalescence cases).
-    df = small_pedigree.copy()
-    df["twin"] = -1
+    df = small_pedigree.with_columns(pl.lit(-1).cast(small_pedigree.schema["twin"]).alias("twin"))
     pg = PedigreeGraph(df)
     F_ml = pg.compute_inbreeding()
     K = pg.kinship_matrix(min_kinship=0.0)
@@ -132,7 +131,7 @@ def test_mz_naive_documented_difference():
     # MZ co-coalescence: 2, 3 are MZ twins (parents 0, 1); 4 = (2, 3).
     # Matrix (MZ-aware): K[2, 3] = self-kin = 0.5 → F[4] = 0.5.
     # ML (MZ-naive): treats 2, 3 as full-sibs → F[4] = 0.25.
-    df = pd.DataFrame(
+    df = pl.DataFrame(
         {
             "id": [0, 1, 2, 3, 4],
             "mother": [-1, -1, 0, 0, 2],

@@ -48,7 +48,7 @@ import tracemalloc
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
+import polars as pl
 import psutil
 from simace.simulation.simulate import run_simulation
 
@@ -294,7 +294,7 @@ def _flatten_pairs(pairs: dict) -> tuple[np.ndarray, np.ndarray]:
     return a, b
 
 
-def _deep_inbred_pedigree(n_gen: int = 22, per_gen: int = 40, n_founders: int = 6, seed: int = 1) -> pd.DataFrame:
+def _deep_inbred_pedigree(n_gen: int = 22, per_gen: int = 40, n_founders: int = 6, seed: int = 1) -> pl.DataFrame:
     """Build a deep, heavily-inbred pedigree for worst-case stress testing.
 
     Each generation mates only within the immediately preceding one, descending
@@ -328,7 +328,7 @@ def _deep_inbred_pedigree(n_gen: int = 22, per_gen: int = 40, n_founders: int = 
             new_gen.append(next_id)
             next_id += 1
         cur = new_gen
-    return pd.DataFrame({"id": ids, "mother": mother, "father": father, "twin": twin, "sex": sex, "generation": gen})
+    return pl.DataFrame({"id": ids, "mother": mother, "father": father, "twin": twin, "sex": sex, "generation": gen})
 
 
 def pairwise_diagnostics(df, max_degree: int, seed: int, py_cap: int = 10_000) -> str:

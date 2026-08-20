@@ -25,6 +25,7 @@ from pedigree_graph._cohort_utils import (
 from pedigree_graph._core import (
     PAIR_KINSHIP,
     REL_REGISTRY,
+    FrameLike,
     PedigreeGraph,
     RelType,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "PAIR_KINSHIP",
     "REL_REGISTRY",
     "CohortWindow",
+    "FrameLike",
     "GenerationInterval",
     "NeCaballeroToroResult",
     "NeCoancestryResult",
