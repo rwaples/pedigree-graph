@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.7.0
 
 - **Structural frame protocol (`FrameLike`), exported.**  Every constructor
   (`PedigreeGraph(...)`, `from_dataframe`, `from_subsample`) now accepts any
