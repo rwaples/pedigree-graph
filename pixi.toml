@@ -1,0 +1,16 @@
+# pedigree-graph development environment (simACE family ADR 0018): a
+# self-contained locked env installing this repo editable with its test +
+# typecheck extras. ty resolves the package as first-party source here, so no
+# compat-mode editable tricks are needed. Consumers install the PyPI wheel.
+[workspace]
+name = "pedigree-graph"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+requires-pixi = ">=0.76,<0.77"
+
+[dependencies]
+python = "3.13.*"
+pip = "*"
+
+[pypi-dependencies]
+pedigree-graph = { path = ".", editable = true, extras = ["test", "typecheck"] }

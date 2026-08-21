@@ -36,3 +36,6 @@ __pycache__/
 
 # Setuptools-scm
 _version.py
+
+# pixi env (ADR 0018 dev manifest)
+.pixi/
