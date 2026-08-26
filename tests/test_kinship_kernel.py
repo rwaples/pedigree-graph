@@ -7,9 +7,11 @@ MZ off-diagonal instead of the correct (1 + F)/2 = 0.625).
 """
 
 import numpy as np
+import polars as pl
 import pytest
 import scipy.sparse as sp
 
+from pedigree_graph import PedigreeGraph
 from pedigree_graph._kinship_kernel import (
     _append_entry,
     _build_kinship_csc,
@@ -79,6 +81,62 @@ def test_mz_twins_noninbred():
     assert K[3, 3] == 0.5
     assert K[0, 2] == K[0, 3] == 0.25
     assert K[1, 2] == K[1, 3] == 0.25
+
+
+def test_founder_mz_twins():
+    # Regression, rwaples/pedigree-graph#5: 0, 1 are MZ co-twins *and*
+    # founders.  The MZ twin pass used to run only inside the depth >= 1
+    # loop, so a depth-0 twin pair never got its edge and came back 0.0.
+    K = _build(
+        3,
+        mothers=[-1, -1, 0],
+        fathers=[-1, -1, 1],
+        twins=[1, 0, -1],
+        generation=[0, 0, 1],
+    )
+    assert K[0, 1] == 0.5
+    assert K[1, 0] == 0.5
+    # 2's parents are MZ co-twins, so it is inbred: F = 2*0.5 - ... via
+    # kinship(mother, father) = 0.5 -> self-kinship = (1 + 0.5) / 2.
+    assert K[2, 2] == 0.75
+
+
+def test_founder_mz_twins_propagate_to_descendants():
+    # The consequence of #5 that costs more than the missing edge itself:
+    # a zero at depth 0 propagates, so *everything below* a founder co-twin
+    # pair reads 0.0.  Founders 0/1 are MZ co-twins mating with unrelated
+    # 2/3; their children 4 and 5 are genetically half-sibs, phi = 0.125.
+    K = _build(
+        6,
+        mothers=[-1, -1, -1, -1, 2, 3],
+        fathers=[-1, -1, -1, -1, 0, 1],
+        twins=[1, 0, -1, -1, -1, -1],
+        generation=[0, 0, 0, 0, 1, 1],
+    )
+    assert K[0, 1] == 0.5
+    assert K[4, 5] == 0.125
+    assert K[5, 4] == 0.125
+
+
+def test_founder_mz_twins_match_pairwise_kinship():
+    # kinship_matrix() and compute_pair_kinship() disagreed on exactly these
+    # pairs; #5 was filed on that disagreement.  Both APIs, both cap paths.
+    ped = pl.DataFrame(
+        {
+            "id": [0, 1, 2, 3, 4, 5],
+            "mother": [-1, -1, -1, -1, 2, 3],
+            "father": [-1, -1, -1, -1, 0, 1],
+            "twin": [1, 0, -1, -1, -1, -1],
+            "sex": [0, 0, 1, 1, 0, 0],
+            "generation": [0, 0, 0, 0, 1, 1],
+        }
+    )
+    rows, cols = np.triu_indices(6)
+    exact = PedigreeGraph(ped).compute_pair_kinship({"all": (rows.astype(np.int64), cols.astype(np.int64))})["all"]
+
+    for kwargs in ({}, {"max_degree": 2}, {"max_degree": 3}):
+        K = PedigreeGraph(ped).kinship_matrix(**kwargs).toarray()
+        np.testing.assert_allclose(K[rows, cols], exact, err_msg=f"kinship_matrix({kwargs})")
 
 
 def test_inbred_mz_regression():

@@ -128,6 +128,125 @@ def _validate_dp_args(
 
 
 @njit(cache=True)
+def _mz_twin_pass(
+    d: np.int32,
+    n: int,
+    depth: np.ndarray,
+    tw_idx: np.ndarray,
+    cols: np.ndarray,
+    vals: np.ndarray,
+    row_start: np.ndarray,
+    row_count: np.ndarray,
+    row_cap: np.ndarray,
+    next_alloc: np.int64,
+    buffers,
+) -> tuple[np.ndarray, np.ndarray, np.int64]:
+    """Write the MZ off-diagonal for every twin pair at depth *d*.
+
+    ``kinship(j, tw) = self-kinship(j)`` (= 0.5 without inbreeding).  Both
+    rows are written, so row storage stays symmetric.
+
+    Runs once per depth, **depth 0 included**: founders can be MZ co-twins,
+    and their edge has to be in place before any child of either twin merge-
+    walks the parent row.  Skipping depth 0 does not merely lose the MZ
+    entry -- it propagates a zero through the whole subtree below the pair
+    (rwaples/pedigree-graph#5).
+    """
+    for j in range(n):
+        if depth[j] != d:
+            continue
+        tw = tw_idx[j]
+        if tw < 0 or tw == j:
+            continue
+        if row_start[j] < 0:
+            # No storage: a never-allocated or retired row under lazy alloc.
+            # Reachable at depth 0 only, where founder init skips a founder
+            # whose row no merge walk ever reads.  Nothing would read the
+            # edge either, and there is no diagonal to copy — skip.
+            continue
+        # kinship(j, tw) = self-kinship(j) — look up the diagonal via
+        # binary search (position 0 is NOT the diagonal; merge-walk
+        # appends ancestor entries first, diagonal ends up sorted
+        # according to its column index = j).
+        rs_j0 = row_start[j]
+        rc_j0 = row_count[j]
+        self_k = np.float32(0.5)  # fallback if not found (shouldn't happen)
+        lo_j = 0
+        hi_j = rc_j0
+        while lo_j < hi_j:
+            mid = (lo_j + hi_j) // 2
+            if cols[rs_j0 + mid] < j:
+                lo_j = mid + 1
+            else:
+                hi_j = mid
+        if lo_j < rc_j0 and cols[rs_j0 + lo_j] == j:
+            self_k = vals[rs_j0 + lo_j]
+        # Find insert position for tw in row j.
+        rs_j = row_start[j]
+        rc_j = row_count[j]
+        lo = 0
+        hi = rc_j
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if cols[rs_j + mid] < tw:
+                lo = mid + 1
+            else:
+                hi = mid
+        if lo < rc_j and cols[rs_j + lo] == tw:
+            # Already present (shouldn't happen for fresh twins, but
+            # be defensive).  Overwrite value.
+            vals[rs_j + lo] = self_k
+        else:
+            # Need to insert in-place; falls back to append then
+            # sort.  Only happens for twins so rare; cheap.
+            cols, vals, next_alloc = _append_entry(
+                cols,
+                vals,
+                row_start,
+                row_count,
+                row_cap,
+                next_alloc,
+                np.int32(j),
+                np.int32(tw),
+                self_k,
+                buffers,
+            )
+            # Re-sort row j (bubble the new entry into place).  Small
+            # per-row cost, rare.
+            _sort_row_inplace(cols, vals, row_start[j], row_count[j])
+        # Similarly for row tw, when it has storage of its own.
+        if row_start[tw] < 0:
+            continue
+        rs_t = row_start[tw]
+        rc_t = row_count[tw]
+        lo = 0
+        hi = rc_t
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if cols[rs_t + mid] < j:
+                lo = mid + 1
+            else:
+                hi = mid
+        if lo < rc_t and cols[rs_t + lo] == j:
+            vals[rs_t + lo] = self_k
+        else:
+            cols, vals, next_alloc = _append_entry(
+                cols,
+                vals,
+                row_start,
+                row_count,
+                row_cap,
+                next_alloc,
+                np.int32(tw),
+                np.int32(j),
+                self_k,
+                buffers,
+            )
+            _sort_row_inplace(cols, vals, row_start[tw], row_count[tw])
+    return cols, vals, next_alloc
+
+
+@njit(cache=True)
 def _dp_kinship(
     n: int,
     m_idx: np.ndarray,
@@ -298,6 +417,24 @@ def _dp_kinship(
                 buffers,
             )
 
+    # Depth-0 MZ twin pass: founders can be co-twins, and their edge has to
+    # be written before any child of either twin merge-walks the parent row.
+    # Runs before the depth-0 retirement below for the same reason the
+    # per-depth pass runs before its own retirement.
+    cols, vals, next_alloc = _mz_twin_pass(
+        np.int32(0),
+        n,
+        depth,
+        tw_idx,
+        cols,
+        vals,
+        row_start,
+        row_count,
+        row_cap,
+        next_alloc,
+        buffers,
+    )
+
     # Founders with no children at any later depth retire immediately;
     # their stored diagonal is never read by a merge walk.  Under lazy
     # alloc these were already skipped in init; the retire pass just
@@ -440,89 +577,19 @@ def _dp_kinship(
             )
 
         # MZ twin pass for this generation.
-        for j in range(n):
-            if depth[j] != d:
-                continue
-            tw = tw_idx[j]
-            if tw < 0 or tw == j:
-                continue
-            # kinship(j, tw) = self-kinship(j) — look up the diagonal via
-            # binary search (position 0 is NOT the diagonal; merge-walk
-            # appends ancestor entries first, diagonal ends up sorted
-            # according to its column index = j).
-            rs_j0 = row_start[j]
-            rc_j0 = row_count[j]
-            self_k = np.float32(0.5)  # fallback if not found (shouldn't happen)
-            lo_j = 0
-            hi_j = rc_j0
-            while lo_j < hi_j:
-                mid = (lo_j + hi_j) // 2
-                if cols[rs_j0 + mid] < j:
-                    lo_j = mid + 1
-                else:
-                    hi_j = mid
-            if lo_j < rc_j0 and cols[rs_j0 + lo_j] == j:
-                self_k = vals[rs_j0 + lo_j]
-            # Find insert position for tw in row j.
-            rs_j = row_start[j]
-            rc_j = row_count[j]
-            lo = 0
-            hi = rc_j
-            while lo < hi:
-                mid = (lo + hi) // 2
-                if cols[rs_j + mid] < tw:
-                    lo = mid + 1
-                else:
-                    hi = mid
-            if lo < rc_j and cols[rs_j + lo] == tw:
-                # Already present (shouldn't happen for fresh twins, but
-                # be defensive).  Overwrite value.
-                vals[rs_j + lo] = self_k
-            else:
-                # Need to insert in-place; falls back to append then
-                # sort.  Only happens for twins so rare; cheap.
-                cols, vals, next_alloc = _append_entry(
-                    cols,
-                    vals,
-                    row_start,
-                    row_count,
-                    row_cap,
-                    next_alloc,
-                    np.int32(j),
-                    np.int32(tw),
-                    self_k,
-                    buffers,
-                )
-                # Re-sort row j (bubble the new entry into place).  Small
-                # per-row cost, rare.
-                _sort_row_inplace(cols, vals, row_start[j], row_count[j])
-            # Similarly for row tw.
-            rs_t = row_start[tw]
-            rc_t = row_count[tw]
-            lo = 0
-            hi = rc_t
-            while lo < hi:
-                mid = (lo + hi) // 2
-                if cols[rs_t + mid] < j:
-                    lo = mid + 1
-                else:
-                    hi = mid
-            if lo < rc_t and cols[rs_t + lo] == j:
-                vals[rs_t + lo] = self_k
-            else:
-                cols, vals, next_alloc = _append_entry(
-                    cols,
-                    vals,
-                    row_start,
-                    row_count,
-                    row_cap,
-                    next_alloc,
-                    np.int32(tw),
-                    np.int32(j),
-                    self_k,
-                    buffers,
-                )
-                _sort_row_inplace(cols, vals, row_start[tw], row_count[tw])
+        cols, vals, next_alloc = _mz_twin_pass(
+            np.int32(d),
+            n,
+            depth,
+            tw_idx,
+            cols,
+            vals,
+            row_start,
+            row_count,
+            row_cap,
+            next_alloc,
+            buffers,
+        )
 
         # Runs AFTER the MZ twin pass so twin writes land before
         # retirement.  ``_grow_global`` preserves freed offsets safely

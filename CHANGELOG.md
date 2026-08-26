@@ -4,6 +4,28 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Fixed: founder MZ co-twins were dropped by the kinship DP** (#5).  The MZ
+  twin pass ran only inside the depth ≥ 1 loop, so a twin pair sitting at
+  depth 0 — both co-twins founders — never had its off-diagonal written.
+  `kinship_matrix()` returned `0.0` for the pair on the capped and uncapped
+  paths alike, disagreeing with `compute_pair_kinship()`, which was correct.
+
+  The missing edge was not the whole cost: because it was absent at depth 0,
+  every merge walk below the pair propagated the zero, so **descendants of
+  founder co-twins were unrelated to each other** in the returned matrix
+  (children of co-twins: `0.0` against an exact φ = 0.125).  Twins with
+  parents were never affected.
+
+  The pass is now a shared `_mz_twin_pass()` run once per depth, depth 0
+  included, before that depth's retirement.
+
+  **Numeric change for existing callers** on pedigrees containing founder
+  co-twins: `kinship_matrix()` gains those entries and everything derived from
+  them, and `per_gen_mean_kinship()` rises accordingly for the generations
+  below such a pair.  Pedigrees with no founder co-twin pair are unaffected.
+
 ## v0.7.0
 
 - **Structural frame protocol (`FrameLike`), exported.**  Every constructor
