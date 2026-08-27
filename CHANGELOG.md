@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.7.1
 
 - **Fixed: founder MZ co-twins were dropped by the kinship DP** (#5).  The MZ
   twin pass ran only inside the depth ≥ 1 loop, so a twin pair sitting at
