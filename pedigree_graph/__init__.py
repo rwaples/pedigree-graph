@@ -1,9 +1,17 @@
 """pedigree-graph: sparse-matrix-based pedigree relationship extraction.
 
 Public API:
-    PedigreeGraph     — parent→child DAG with relationship extraction
+    PedigreeGraph        — parent→child DAG with relationship extraction
+    RELATIONSHIPS        — immutable ordered registry of the 23 relationship
+        categories; iteration order is the same-degree precedence for
+        closest-category classification
+    RelationshipCategory — one category: code, label, degree, nominal kinship,
+        the up/down path shape, and the two positional roles
+
+0.7.1 compatibility (removed in 0.8.0) — detached snapshots of the registry,
+so mutating them changes nothing the engines read:
     REL_REGISTRY      — ordered registry of relationship types
-    PAIR_KINSHIP      — kinship coefficient by code (single source of truth)
+    PAIR_KINSHIP      — kinship coefficient by code
     RelType           — NamedTuple describing a single relationship class
 
 Errors (ADR 0006 — each carries a stable ``.code`` and immutable ``.fields``):
@@ -33,11 +41,8 @@ from pedigree_graph._cohort_utils import (
     eligible_cohort_range,
 )
 from pedigree_graph._core import (
-    PAIR_KINSHIP,
-    REL_REGISTRY,
     FrameLike,
     PedigreeGraph,
-    RelType,
 )
 from pedigree_graph._effective_size import (
     GenerationInterval,
@@ -64,11 +69,21 @@ from pedigree_graph._errors import (
     PedigreeValidationError,
     ResourceError,
 )
+from pedigree_graph._registry import (  # 0.8.0-DELETE
+    PAIR_KINSHIP,
+    REL_REGISTRY,
+    RelType,
+)
 from pedigree_graph._threads import configure_threads
+from pedigree_graph.relationships import (
+    RELATIONSHIPS,
+    RelationshipCategory,
+)
 
 __all__ = [
-    "PAIR_KINSHIP",
-    "REL_REGISTRY",
+    "PAIR_KINSHIP",  # 0.8.0-DELETE
+    "RELATIONSHIPS",
+    "REL_REGISTRY",  # 0.8.0-DELETE
     "CohortWindow",
     "FrameLike",
     "GenerationInterval",
@@ -83,7 +98,8 @@ __all__ = [
     "NeVarianceResult",
     "PedigreeGraph",
     "PedigreeValidationError",
-    "RelType",
+    "RelType",  # 0.8.0-DELETE
+    "RelationshipCategory",
     "ResourceError",
     "compute_all_ne",
     "configure_threads",

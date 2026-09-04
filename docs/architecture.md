@@ -21,7 +21,8 @@ Prefer adding a **new** focused module over extending an oversized one (see
 | `_input.py` | `PedigreeInput` and `parse_pedigree_input` / `parse_pedigree_arrays`: the **one** input boundary. Lossless integer coercion, range and uniqueness checks, id→row mapping (`_map_ids_to_rows`), cycle detection, MZ pair validation, optional-metadata normalization, and owned read-only storage. |
 | `_errors.py` | `PedigreeValidationError`, `MissingMetadataError`, `ResourceError` and the three code registries. **Single source of truth** for the structured-error codes and their required `.fields` (ADR [0006](adr/0006-public-api-and-coordinate-semantics.md)). |
 | `_threads.py` | Package-wide thread budget: `configure_threads(n)` > `PEDIGREE_GRAPH_THREADS` > `1`, committed on first use (ADR [0007](adr/0007-rust-core-host-boundary-and-release.md)). |
-| `_registry.py` | `RelType`, `REL_REGISTRY`, `PAIR_KINSHIP` (kinship coefficients) and `REL_PLAN` + helpers (per-code engine semantics). **Single source of truth** for codes, kinship, degree range, and engine divergence. |
+| `_registry.py` | `RelationshipCategory` and the immutable ordered `RELATIONSHIPS` mapping, the internal selectors, `REL_PLAN` + helpers (per-code engine semantics), and the detached 0.7.1 `RelType` / `REL_REGISTRY` / `PAIR_KINSHIP` snapshots. **Single source of truth** for codes, kinship, degree range, and engine divergence. |
+| `relationships.py` | The public relationship vocabulary: re-exports `RELATIONSHIPS` and `RelationshipCategory` from `_registry.py`, nothing else. |
 | `_pair_utils.py` | Free functions shared by the pair engines: `dedup_pairs`, `extract_from_sparse`, `pairs_from_groups`, `remap_pairs_to_caller`. |
 | `_pair_extractor.py` | `MatrixPairExtractor` — exact, path-counting matrix pair extraction. |
 | `_streaming_counter.py` | `StreamingPairCounter` — memory-bounded scalar counter (exact for 10 codes, approximate for the rest). |
@@ -49,7 +50,7 @@ one call site. Each has a documented source of truth and a regression test.
 | **Path-count vs distinct-ancestor** | Under inbreeding the BFS engine counts *distinct* shared ancestors while the matrix engine counts *paths*; they diverge on exactly 4 cousin codes. | `REL_PLAN[...].bfs_diverges_under_inbreeding` / `bfs_divergent_codes()` | `tests/test_experimental.py::test_inbred_with_cousins_{non_cousin_codes_match,cousin_codes_diverge}`; `tests/test_relationship_plan.py::test_bfs_divergent_codes_are_the_four_cousin_codes` |
 | **Dense vs sparse IDs** | IDs may be sparse/high-valued; construction must remap to a dense row space, never allocate a dense `max(id)`-sized table. | `_input.validate_id_field` / `_input._map_ids_to_rows` | `tests/test_pedigree_graph.py::TestInputValidation::test_sparse_high_ids_do_not_allocate_dense_table`, `…::test_unsorted_ids_remap_correctly` |
 | **Default all-zero sex** | `sex=` defaults to all-female; the sex-dependent Ne estimators warn (not error) so a forgotten `sex=` is diagnosable. | `_warn_if_uniform_sex` in `_ne_family_size.py` | `tests/test_from_arrays_sex.py::test_ne_{sex_ratio,variance_family_size}_warns_when_sex_defaulted`, `…::test_no_warning_when_sex_is_supplied` |
-| **Relationship code set** | All three engines (matrix, streaming, BFS) return exactly the `REL_REGISTRY` key set. | `REL_REGISTRY` in `_registry.py` | `tests/test_relationship_plan.py::TestAllEnginesReturnRegistryKeySet` |
+| **Relationship code set** | All three engines (matrix, streaming, BFS) return exactly the `RELATIONSHIPS` key set. | `RELATIONSHIPS` in `_registry.py` | `tests/test_relationship_plan.py::TestAllEnginesReturnRegistryKeySet` |
 | **Private topological order** | Input rows may arrive in any acyclic order. Kernels that need parents before children (inbreeding, descendant counts, pairwise kinship, the kinship DP, Caballero–Toro) run on parent arrays remapped into one stable depth-major order and map their per-row outputs back. Skipping the remap silently zeroes inbreeding terms; skipping the map-back silently misaligns every result. Supplied `generation` labels never enter it. | `build_topology` / `Topology` in `_topology.py`; `PedigreeGraph._topology` | `tests/test_topology.py`; `tests/test_row_order.py` |
 
 Statistical-correctness gotchas (booleanise-after-multiplicity, ≥2 shared
@@ -66,7 +67,7 @@ degree-gating cache side effects) are catalogued in the umbrella
   the default budget is flagged so the exception can be removed. Prefer a new
   focused module over pushing an existing one past the budget.
 * **Single source of truth for relationship semantics.** Add a new code in
-  `REL_REGISTRY` + `REL_PLAN` (a test asserts the two stay in lockstep) and
+  `RELATIONSHIPS` + `REL_PLAN` (a test asserts the two stay in lockstep) and
   implement it in each engine — do not re-document kinship or divergence in
   engine docstrings (ADR
   [0003](adr/0003-relationship-plan-documents-not-drives-engines.md)).

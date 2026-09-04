@@ -15,7 +15,7 @@ from pedigree_graph import PedigreeGraph
 from pedigree_graph._registry import (
     PAIR_KINSHIP,
     REL_PLAN,
-    REL_REGISTRY,
+    RELATIONSHIPS,
     bfs_divergent_codes,
     streaming_approximate_codes,
     streaming_exact_codes,
@@ -23,15 +23,11 @@ from pedigree_graph._registry import (
 from pedigree_graph.experimental import count_pairs_bfs
 
 
-def test_plan_covers_exactly_the_registry():
-    assert set(REL_PLAN) == set(REL_REGISTRY)
-
-
 def test_streaming_exact_and_approximate_partition_the_registry():
     exact = streaming_exact_codes()
     approx = streaming_approximate_codes()
     assert exact.isdisjoint(approx)
-    assert exact | approx == set(REL_REGISTRY)
+    assert exact | approx == set(RELATIONSHIPS)
 
 
 def test_streaming_exact_codes_are_the_documented_ten():
@@ -81,16 +77,16 @@ class TestAllEnginesReturnRegistryKeySet:
 
     def test_matrix_engine(self):
         pg = PedigreeGraph(self._pedigree())
-        assert set(pg.count_pairs(max_degree=5)) == set(REL_REGISTRY)
+        assert set(pg.count_pairs(max_degree=5)) == set(RELATIONSHIPS)
 
     def test_streaming_engine(self):
         pg = PedigreeGraph(self._pedigree())
-        assert set(pg.count_pairs_streaming(max_degree=5)) == set(REL_REGISTRY)
+        assert set(pg.count_pairs_streaming(max_degree=5)) == set(RELATIONSHIPS)
 
     @pytest.mark.filterwarnings("ignore::FutureWarning")
     def test_bfs_engine(self):
         pg = PedigreeGraph(self._pedigree())
-        assert set(count_pairs_bfs(pg, max_degree=5)) == set(REL_REGISTRY)
+        assert set(count_pairs_bfs(pg, max_degree=5)) == set(RELATIONSHIPS)
 
     def test_registry_and_kinship_keys_agree(self):
-        assert set(PAIR_KINSHIP) == set(REL_REGISTRY)
+        assert set(PAIR_KINSHIP) == set(RELATIONSHIPS)

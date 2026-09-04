@@ -35,7 +35,7 @@ import scipy.sparse as sp
 
 from pedigree_graph._bfs_kernel import _enumerate_pairs_kernel
 from pedigree_graph._pair_utils import dedup_pairs
-from pedigree_graph._registry import REL_REGISTRY
+from pedigree_graph._registry import RELATIONSHIPS
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -580,5 +580,5 @@ def count_pairs_bfs(
         "2C": sc_count,
     }
     # Sanity: the produced code set must match the relationship registry.
-    assert set(named) == set(REL_REGISTRY), "BFS produced an unexpected code set"
+    assert set(named) == set(RELATIONSHIPS), "BFS produced an unexpected code set"
     return named

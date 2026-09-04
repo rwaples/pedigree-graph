@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pedigree_graph._registry import REL_REGISTRY
+from pedigree_graph._registry import RELATIONSHIPS
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
@@ -49,7 +49,7 @@ class StreamingPairCounter:
         t_total = time.perf_counter()
         n = pg.n
 
-        counts: dict[str, int] = dict.fromkeys(REL_REGISTRY, 0)
+        counts: dict[str, int] = dict.fromkeys(RELATIONSHIPS, 0)
 
         # ---- Degree 0: MZ ---------------------------------------------
         mz_i, _ = pg._mz_twin_pairs()

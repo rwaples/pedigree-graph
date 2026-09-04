@@ -30,7 +30,7 @@ from pedigree_graph._pair_utils import (
     pairs_from_groups,
     remap_pairs_to_caller,
 )
-from pedigree_graph._registry import PAIR_KINSHIP, REL_REGISTRY
+from pedigree_graph._registry import RELATIONSHIPS
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
@@ -284,22 +284,22 @@ class MatrixPairExtractor:
         # Pre-seeding here makes that contract structural and removes the
         # per-degree "fill in the missing codes" bookkeeping along with its
         # mirror-image ``else`` branches.
-        pairs: dict[str, tuple[np.ndarray, np.ndarray]] = dict.fromkeys(REL_REGISTRY, (empty, empty))
+        pairs: dict[str, tuple[np.ndarray, np.ndarray]] = dict.fromkeys(RELATIONSHIPS, (empty, empty))
 
         needed_codes = {
             code
-            for code, rel in REL_REGISTRY.items()
-            if rel.degree <= max_degree and PAIR_KINSHIP.get(code, 0) >= min_kinship
+            for code, category in RELATIONSHIPS.items()
+            if category.degree <= max_degree and category.nominal_kinship >= min_kinship
         }
 
         def _needed(code: str) -> bool:
             return code in needed_codes
 
-        needs_degree1_plus = any(REL_REGISTRY[code].degree >= 1 for code in needed_codes)
-        needs_degree2_plus = any(REL_REGISTRY[code].degree >= 2 for code in needed_codes)
-        needs_degree3_plus = any(REL_REGISTRY[code].degree >= 3 for code in needed_codes)
-        needs_degree4_plus = any(REL_REGISTRY[code].degree >= 4 for code in needed_codes)
-        needs_degree5 = any(REL_REGISTRY[code].degree >= 5 for code in needed_codes)
+        needs_degree1_plus = any(RELATIONSHIPS[code].degree >= 1 for code in needed_codes)
+        needs_degree2_plus = any(RELATIONSHIPS[code].degree >= 2 for code in needed_codes)
+        needs_degree3_plus = any(RELATIONSHIPS[code].degree >= 3 for code in needed_codes)
+        needs_degree4_plus = any(RELATIONSHIPS[code].degree >= 4 for code in needed_codes)
+        needs_degree5 = any(RELATIONSHIPS[code].degree >= 5 for code in needed_codes)
 
         # Pre-trigger cached properties needed by degree-2+ extractions.
         # _Am/_Af are only needed to build _A; delete after to free memory.

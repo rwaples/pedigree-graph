@@ -47,6 +47,30 @@ live on the corresponding GitHub release pages.
   `generation`, and `n` still work and still mean rows, depth-fallback labels,
   and the row count; 0.8.0 removes them.
 
+- **Added: canonical relationship registry** (ADR 0006, slice 2).  The root
+  now exports `RELATIONSHIPS`, an immutable ordered mapping of all 23
+  relationship codes to frozen `RelationshipCategory` records, also importable
+  from `pedigree_graph.relationships`.  Each record carries `code`, `label`,
+  `degree`, `nominal_kinship`, `up`, `down`, `ancestor_count`, `first_role`,
+  and `second_role` (roles drawn from the closed `RelationshipRole` literal set
+  exported by `pedigree_graph.relationships`), replacing the two parallel `REL_REGISTRY` / `PAIR_KINSHIP`
+  lookups with one.  Iteration order is the documented same-degree precedence
+  for closest-category classification.  `first` is the pair member with at
+  least as many meioses to the shared ancestor(s), so `up` counts meioses from
+  `first` up to the ancestor(s), `down` counts them from the ancestor(s) down
+  to `second`, and `up >= down` holds for every category.  This flips the
+  stored collateral orientation: `Av` is now `up=2, down=1`, where 0.7.1's
+  `RelType` stored `up=1, down=2`.  Asymmetric categories name their two
+  positions (`offspring`/`mother`, `offspring`/`father`,
+  `descendant`/`ancestor`, `niece_nephew`/`aunt_uncle`,
+  `junior_cousin`/`senior_cousin`, where junior means generationally further
+  from the shared ancestors, not younger by birth year); the seven symmetric
+  categories carry `None` for both and report `symmetric` as `True`.
+  `REL_REGISTRY`, `PAIR_KINSHIP`, and `RelType` keep their 0.7.1 names, values,
+  and orientation, but are now detached snapshots built once from
+  `RELATIONSHIPS`: mutating them no longer changes the registry or any engine
+  output.  0.8.0 removes all three.
+
 - **Changed: MZ pairs are validated at construction.**  Every constructor now
   rejects a represented MZ reference that is self-directed
   (`mz_self_reference`), not reciprocated (`mz_nonreciprocal`, which is also how

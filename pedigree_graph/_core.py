@@ -13,11 +13,8 @@ Each relationship type is parameterised by (up, down, n_ancestors):
 from __future__ import annotations
 
 __all__ = [
-    "PAIR_KINSHIP",
-    "REL_REGISTRY",
     "FrameLike",
     "PedigreeGraph",
-    "RelType",
 ]
 
 import logging
@@ -50,12 +47,7 @@ from pedigree_graph._ne_common import _require_complete_generation_labels
 from pedigree_graph._pair_extractor import MatrixPairExtractor
 from pedigree_graph._pair_utils import pairs_from_groups
 from pedigree_graph._properties import PedigreeProperties
-from pedigree_graph._registry import (
-    PAIR_KINSHIP,
-    REL_REGISTRY,
-    RelType,
-    _validate_max_degree,
-)
+from pedigree_graph._registry import _validate_max_degree
 from pedigree_graph._streaming_counter import StreamingPairCounter
 from pedigree_graph._topology import build_topology
 

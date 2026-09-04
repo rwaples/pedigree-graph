@@ -1,98 +1,144 @@
 """Relationship-category registry: the shared vocabulary of pair codes.
 
-Every relationship category is parameterised by ``(up, down, n_ancestors)``:
-  - up:   meioses from individual A up to common ancestor(s), canonicalised up ≤ down
-  - down: meioses from common ancestor(s) down to individual B
-  - n_ancestors: 1 (half / lineal) or 2 (full, i.e. mated pair)
-  - kinship = n_ancestors × (1/2)^(up + down + 1)
+:data:`RELATIONSHIPS` is the canonical mapping of the 23 relationship codes to
+immutable :class:`RelationshipCategory` records.  Iteration order is
+kinship-descending and degree-ascending, and within one degree it is the
+documented precedence for closest-category classification: when a pair matches
+several categories of the same degree, the one appearing first in this order
+wins.
 
-Imported by ``_core`` (PedigreeGraph), both pair engines, and the package
-``__init__`` so the codes, kinship coefficients, and degree range have a
-single source of truth.
+Orientation: ``first`` is the pair member with at least as many meioses to the
+shared ancestor(s), ``up`` counts meioses from ``first`` up to the ancestor(s),
+and ``down`` counts meioses from the ancestor(s) down to ``second``.  So
+``up >= down`` holds for every category, with equality exactly for the seven
+symmetric ones.
+
+Imported by ``_core`` (PedigreeGraph), both pair engines, and the public
+:mod:`pedigree_graph.relationships` facade, so the codes, kinship coefficients,
+and degree range have a single source of truth.
 """
 
 from __future__ import annotations
 
-from typing import NamedTuple
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
-import numpy as np
+import numpy as np  # 0.8.0-DELETE
 
 from pedigree_graph._errors import PedigreeValidationError
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
 __all__ = [
     "PAIR_KINSHIP",
+    "RELATIONSHIPS",
     "REL_PLAN",
     "REL_REGISTRY",
     "EngineSupport",
     "RelType",
+    "RelationshipCategory",
+    "RelationshipRole",
     "bfs_divergent_codes",
+    "categories_up_to_degree",
+    "select_categories",
     "streaming_approximate_codes",
     "streaming_exact_codes",
 ]
 
 
-class RelType(NamedTuple):
-    """Relationship category defined by path through pedigree."""
+RelationshipRole = Literal[
+    "offspring",
+    "mother",
+    "father",
+    "descendant",
+    "ancestor",
+    "niece_nephew",
+    "aunt_uncle",
+    "junior_cousin",
+    "senior_cousin",
+]
+"""The closed set of positional roles an asymmetric category can assign."""
 
-    up: int  # meioses A → common ancestor(s)
-    down: int  # meioses common ancestor(s) → B
-    n_anc: int  # 1 = half/lineal, 2 = full (mated-pair ancestors)
-    code: str  # short dict key
-    label: str  # human-readable display label
+
+@dataclass(frozen=True, slots=True)
+class RelationshipCategory:
+    """One relationship category: its code, its path shape, and its two roles.
+
+    ``first`` is the pair member with at least as many meioses to the shared
+    ancestor(s); ``up`` counts meioses from ``first`` up to the ancestor(s) and
+    ``down`` counts them from the ancestor(s) down to ``second``.  ``up >= down``
+    therefore holds for every category, and the category is symmetric exactly
+    when ``up == down``.  For a cousin category, "junior" means generationally
+    further from the shared ancestors, not younger by birth year.
+
+    Attributes:
+        code: Short registry key, e.g. ``"FS"``.
+        label: Human-readable display label.
+        degree: Kinship distance: 0 for MZ twins, 1 for parent-offspring and
+            full sibs, and so on.
+        nominal_kinship: Kinship coefficient of a single connecting path
+            through the shared ancestor(s), with no inbreeding.
+        up: Meioses from ``first`` up to the shared ancestor(s).
+        down: Meioses from the shared ancestor(s) down to ``second``.
+        ancestor_count: 1 for half / lineal, 2 for a mated pair, 0 for MZ.
+        first_role: Role of the first pair member, ``None`` if symmetric.
+        second_role: Role of the second pair member, ``None`` if symmetric.
+    """
+
+    code: str
+    label: str
+    degree: int
+    nominal_kinship: float
+    up: int
+    down: int
+    ancestor_count: int
+    first_role: RelationshipRole | None
+    second_role: RelationshipRole | None
 
     @property
-    def kinship(self) -> float:
-        """Kinship coefficient derived from path length and ancestor count."""
-        if self.code == "MZ":
-            return 0.5
-        return self.n_anc * 0.5 ** (self.up + self.down + 1)
-
-    @property
-    def degree(self) -> int:
-        """Kinship degree (0 for MZ, 1 for parent-offspring/full-sib, etc.)."""
-        if self.code == "MZ":
-            return 0
-        return round(-1 - np.log2(self.kinship))
+    def symmetric(self) -> bool:
+        """Whether the two positions carry no distinct biological roles."""
+        return self.first_role is None
 
 
-# Ordered registry: kinship-descending, degree-ascending.
-# MZ twins are a special case (up=down=n_anc=0).
-REL_REGISTRY: dict[str, RelType] = {}
-for _rt in [
-    # --- special ---
-    RelType(0, 0, 0, "MZ", "MZ twin"),
-    # --- degree 1 (kinship 1/4) ---
-    RelType(1, 0, 1, "MO", "Mother-offspring"),
-    RelType(1, 0, 1, "FO", "Father-offspring"),
-    RelType(1, 1, 2, "FS", "Full sib"),
-    # --- degree 2 (kinship 1/8) ---
-    RelType(1, 1, 1, "MHS", "Maternal half sib"),
-    RelType(1, 1, 1, "PHS", "Paternal half sib"),
-    RelType(2, 0, 1, "GP", "Grandparent"),
-    RelType(1, 2, 2, "Av", "Avuncular"),
-    # --- degree 3 (kinship 1/16) ---
-    RelType(3, 0, 1, "GGP", "Great-grandparent"),
-    RelType(1, 2, 1, "HAv", "Half-avuncular"),
-    RelType(1, 3, 2, "GAv", "Great-avuncular"),
-    RelType(2, 2, 2, "1C", "1st cousin"),
-    # --- degree 4 (kinship 1/32) ---
-    RelType(4, 0, 1, "GGGP", "Great²-grandparent"),
-    RelType(1, 3, 1, "HGAv", "Half-great-avuncular"),
-    RelType(1, 4, 2, "GGAv", "Great²-avuncular"),
-    RelType(2, 2, 1, "H1C", "Half-1st-cousin"),
-    RelType(2, 3, 2, "1C1R", "1st cousin 1R"),
-    # --- degree 5 (kinship 1/64) ---
-    RelType(5, 0, 1, "G3GP", "Great³-grandparent"),
-    RelType(1, 4, 1, "HGGAv", "Half-great²-avuncular"),
-    RelType(1, 5, 2, "G3Av", "Great³-avuncular"),
-    RelType(2, 3, 1, "H1C1R", "Half-1st-cousin 1R"),
-    RelType(2, 4, 2, "1C2R", "1st cousin 2R"),
-    RelType(3, 3, 2, "2C", "2nd cousin"),
-]:
-    REL_REGISTRY[_rt.code] = _rt
+_RELATIONSHIPS: dict[str, RelationshipCategory] = {
+    category.code: category
+    for category in (
+        # --- degree 0 (kinship 1/2) ---
+        RelationshipCategory("MZ", "MZ twin", 0, 0.5, 0, 0, 0, None, None),
+        # --- degree 1 (kinship 1/4) ---
+        RelationshipCategory("MO", "Mother-offspring", 1, 0.25, 1, 0, 1, "offspring", "mother"),
+        RelationshipCategory("FO", "Father-offspring", 1, 0.25, 1, 0, 1, "offspring", "father"),
+        RelationshipCategory("FS", "Full sib", 1, 0.25, 1, 1, 2, None, None),
+        # --- degree 2 (kinship 1/8) ---
+        RelationshipCategory("MHS", "Maternal half sib", 2, 0.125, 1, 1, 1, None, None),
+        RelationshipCategory("PHS", "Paternal half sib", 2, 0.125, 1, 1, 1, None, None),
+        RelationshipCategory("GP", "Grandparent", 2, 0.125, 2, 0, 1, "descendant", "ancestor"),
+        RelationshipCategory("Av", "Avuncular", 2, 0.125, 2, 1, 2, "niece_nephew", "aunt_uncle"),
+        # --- degree 3 (kinship 1/16) ---
+        RelationshipCategory("GGP", "Great-grandparent", 3, 0.0625, 3, 0, 1, "descendant", "ancestor"),
+        RelationshipCategory("HAv", "Half-avuncular", 3, 0.0625, 2, 1, 1, "niece_nephew", "aunt_uncle"),
+        RelationshipCategory("GAv", "Great-avuncular", 3, 0.0625, 3, 1, 2, "niece_nephew", "aunt_uncle"),
+        RelationshipCategory("1C", "1st cousin", 3, 0.0625, 2, 2, 2, None, None),
+        # --- degree 4 (kinship 1/32) ---
+        RelationshipCategory("GGGP", "Great²-grandparent", 4, 0.03125, 4, 0, 1, "descendant", "ancestor"),
+        RelationshipCategory("HGAv", "Half-great-avuncular", 4, 0.03125, 3, 1, 1, "niece_nephew", "aunt_uncle"),
+        RelationshipCategory("GGAv", "Great²-avuncular", 4, 0.03125, 4, 1, 2, "niece_nephew", "aunt_uncle"),
+        RelationshipCategory("H1C", "Half-1st-cousin", 4, 0.03125, 2, 2, 1, None, None),
+        RelationshipCategory("1C1R", "1st cousin 1R", 4, 0.03125, 3, 2, 2, "junior_cousin", "senior_cousin"),
+        # --- degree 5 (kinship 1/64) ---
+        RelationshipCategory("G3GP", "Great³-grandparent", 5, 0.015625, 5, 0, 1, "descendant", "ancestor"),
+        RelationshipCategory("HGGAv", "Half-great²-avuncular", 5, 0.015625, 4, 1, 1, "niece_nephew", "aunt_uncle"),
+        RelationshipCategory("G3Av", "Great³-avuncular", 5, 0.015625, 5, 1, 2, "niece_nephew", "aunt_uncle"),
+        RelationshipCategory("H1C1R", "Half-1st-cousin 1R", 5, 0.015625, 3, 2, 1, "junior_cousin", "senior_cousin"),
+        RelationshipCategory("1C2R", "1st cousin 2R", 5, 0.015625, 4, 2, 2, "junior_cousin", "senior_cousin"),
+        RelationshipCategory("2C", "2nd cousin", 5, 0.015625, 3, 3, 2, None, None),
+    )
+}
 
-# Kinship lookup by code — single source of truth for all consumers
-PAIR_KINSHIP: dict[str, float] = {rt.code: rt.kinship for rt in REL_REGISTRY.values()}
+RELATIONSHIPS: Mapping[str, RelationshipCategory] = MappingProxyType(_RELATIONSHIPS)
 
 # Valid ``max_degree`` range for the public pair APIs.  Degree 0 = MZ only
 # (still a useful query — twins-only counts); degree 5 = full registry.
@@ -114,13 +160,60 @@ def _validate_max_degree(max_degree: int) -> int:
     return md
 
 
+def categories_up_to_degree(max_degree: int) -> tuple[RelationshipCategory, ...]:
+    """Select every category at or below *max_degree*.
+
+    Args:
+        max_degree: Degree cutoff, validated against ``[0, 5]``.
+
+    Returns:
+        The matching categories in registry order.
+
+    Raises:
+        PedigreeValidationError: *max_degree* is outside ``[0, 5]``
+            (code ``max_degree_out_of_range``).
+    """
+    cutoff = _validate_max_degree(max_degree)
+    return tuple(category for category in _RELATIONSHIPS.values() if category.degree <= cutoff)
+
+
+def select_categories(codes: Iterable[str]) -> tuple[RelationshipCategory, ...]:
+    """Select the categories named by *codes*.
+
+    Args:
+        codes: Relationship codes in any order; duplicates are ignored.
+
+    Returns:
+        The named categories in registry order, not in the order given.
+
+    Raises:
+        PedigreeValidationError: One or more codes are not registry codes
+            (code ``unknown_relationship_category``, with the offending codes
+            in ``fields["codes"]`` sorted lexically).
+        TypeError: A code is not a string.
+    """
+    requested = set()
+    for code in codes:
+        if not isinstance(code, str):
+            raise TypeError(f"relationship code must be str, got {type(code).__name__}")
+        requested.add(code)
+    unknown = requested - _RELATIONSHIPS.keys()
+    if unknown:
+        raise PedigreeValidationError(
+            "unknown_relationship_category",
+            f"unknown relationship category code(s): {', '.join(sorted(unknown))}",
+            codes=tuple(sorted(unknown)),
+        )
+    return tuple(category for code, category in _RELATIONSHIPS.items() if code in requested)
+
+
 # ---------------------------------------------------------------------------
-# Engine plan: how each engine handles a code, beyond the structural RelType
+# Engine plan: how each engine handles a code, beyond the structural category
 # ---------------------------------------------------------------------------
 
 
 class EngineSupport(NamedTuple):
-    """Per-code engine handling, beyond the structural :class:`RelType`.
+    """Per-code engine handling, beyond the structural :class:`RelationshipCategory`.
 
     The matrix engine (``count_pairs`` / ``extract_pairs``) is the
     reference: it counts *paths* through shared ancestors and is exact for
@@ -141,8 +234,8 @@ class EngineSupport(NamedTuple):
     input.  ``False`` → BFS matches the matrix engine on every input."""
 
 
-# Keyed by relationship code; must cover exactly the REL_REGISTRY key set
-# (asserted in tests).  Matrix engine is the exact paths-counting reference.
+# Keyed by relationship code; covers exactly the RELATIONSHIPS key set (asserted
+# below and in tests).  Matrix engine is the exact paths-counting reference.
 REL_PLAN: dict[str, EngineSupport] = {
     # --- degree 0 / 1: lineal + sibling, exact everywhere ---
     "MZ": EngineSupport(streaming_exact=True, bfs_diverges_under_inbreeding=False),
@@ -174,6 +267,8 @@ REL_PLAN: dict[str, EngineSupport] = {
     "2C": EngineSupport(streaming_exact=False, bfs_diverges_under_inbreeding=True),
 }
 
+assert REL_PLAN.keys() == _RELATIONSHIPS.keys(), "REL_PLAN and RELATIONSHIPS cover different codes"
+
 
 def streaming_exact_codes() -> frozenset[str]:
     """Codes for which ``count_pairs_streaming`` matches the matrix engine exactly."""
@@ -192,3 +287,43 @@ def bfs_divergent_codes() -> frozenset[str]:
     these codes differ on inbred input.
     """
     return frozenset(code for code, plan in REL_PLAN.items() if plan.bfs_diverges_under_inbreeding)
+
+
+# ---------------------------------------------------------------------------
+# 0.7.1 compatibility: detached snapshots, built once from RELATIONSHIPS
+# ---------------------------------------------------------------------------
+
+
+class RelType(NamedTuple):  # 0.8.0-DELETE
+    """Relationship category defined by path through pedigree."""
+
+    up: int  # meioses A → common ancestor(s)
+    down: int  # meioses common ancestor(s) → B
+    n_anc: int  # 1 = half/lineal, 2 = full (mated-pair ancestors)
+    code: str  # short dict key
+    label: str  # human-readable display label
+
+    @property
+    def kinship(self) -> float:
+        """Kinship coefficient derived from path length and ancestor count."""
+        if self.code == "MZ":
+            return 0.5
+        return self.n_anc * 0.5 ** (self.up + self.down + 1)
+
+    @property
+    def degree(self) -> int:
+        """Kinship degree (0 for MZ, 1 for parent-offspring/full-sib, etc.)."""
+        if self.code == "MZ":
+            return 0
+        return round(-1 - np.log2(self.kinship))
+
+
+def _as_rel_type(category: RelationshipCategory) -> RelType:  # 0.8.0-DELETE
+    """Restore the 0.7.1 orientation, which stored collateral categories up ≤ down."""
+    up, down = (category.up, 0) if category.down == 0 else (category.down, category.up)
+    return RelType(up, down, category.ancestor_count, category.code, category.label)
+
+
+REL_REGISTRY: dict[str, RelType] = {code: _as_rel_type(c) for code, c in _RELATIONSHIPS.items()}  # 0.8.0-DELETE
+
+PAIR_KINSHIP: dict[str, float] = {code: c.nominal_kinship for code, c in _RELATIONSHIPS.items()}  # 0.8.0-DELETE

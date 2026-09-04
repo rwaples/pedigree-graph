@@ -58,10 +58,12 @@ _Avoid_: edge, link, tuple; treating internal key order as relationship-role ord
 
 **Relationship category**:
 A class of relationship identified by a short code (e.g. `FS`, `MHS`, `1C`),
-defined by `(up, down, n_ancestors)` — meioses up to the common ancestor(s),
+defined by `(up, down, ancestor_count)` — meioses up to the common ancestor(s),
 meioses back down, and whether the connecting ancestor is a single individual
-(half / lineal) or a mated pair (full).
-_Avoid_: relationship type (when the code is meant), kind
+(half / lineal) or a mated pair (full). `first` is the pair member at least as
+far from the ancestor(s), so `up` counts meioses from `first` up, `down` counts
+them from the ancestor(s) down to `second`, and `up >= down` always holds.
+_Avoid_: relationship type (when the code is meant), kind, n_ancestors
 
 **Degree**:
 The kinship distance of a relationship category — `0` for MZ twins, `1` for
