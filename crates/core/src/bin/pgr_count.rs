@@ -48,12 +48,14 @@ fn main() {
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
-            "--max-degree" => {
-                max_degree = args[i + 1].parse().expect("--max-degree");
-                i += 2;
-            }
-            "--threads" => {
-                threads = args[i + 1].parse().expect("--threads");
+            flag @ ("--max-degree" | "--threads") => {
+                let value = args
+                    .get(i + 1)
+                    .unwrap_or_else(|| panic!("{flag} needs a value"));
+                match flag {
+                    "--max-degree" => max_degree = value.parse().expect("--max-degree"),
+                    _ => threads = value.parse().expect("--threads"),
+                }
                 i += 2;
             }
             other => {

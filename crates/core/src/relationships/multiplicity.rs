@@ -23,15 +23,9 @@ pub struct Mult(u8);
 impl Mult {
     pub const ZERO: Mult = Mult(0);
     pub const ONE: Mult = Mult(1);
-    pub const MANY: Mult = Mult(2);
 
     pub fn from_count(n: u64) -> Mult {
         Mult(n.min(2) as u8)
-    }
-
-    #[inline]
-    pub fn is_zero(self) -> bool {
-        self.0 == 0
     }
 
     #[inline]
@@ -42,10 +36,6 @@ impl Mult {
     #[inline]
     pub fn at_least_two(self) -> bool {
         self.0 >= 2
-    }
-
-    pub fn raw(self) -> u8 {
-        self.0
     }
 }
 

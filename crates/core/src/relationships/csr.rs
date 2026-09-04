@@ -41,10 +41,6 @@ impl Csr {
         }
     }
 
-    pub fn nnz(&self) -> usize {
-        self.indices.len()
-    }
-
     #[inline]
     pub fn row(&self, i: usize) -> (&[u32], &[Mult]) {
         let (s, e) = (self.indptr[i], self.indptr[i + 1]);
@@ -61,8 +57,8 @@ impl Csr {
             indptr[i + 1] += indptr[i];
         }
         let mut next = indptr.clone();
-        let mut indices = vec![0u32; self.nnz()];
-        let mut data = vec![Mult::ZERO; self.nnz()];
+        let mut indices = vec![0u32; self.indices.len()];
+        let mut data = vec![Mult::ZERO; self.indices.len()];
         for i in 0..n {
             let (cols, vals) = self.row(i);
             for (&j, &v) in cols.iter().zip(vals) {
