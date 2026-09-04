@@ -1226,7 +1226,7 @@ class TestComputePairKinship:
                 "mother": np.array([-1, -1, 0, 0, 2, 2]),
                 "father": np.array([-1, -1, 1, 1, 3, 3]),
                 "twin": np.array([-1, -1, -1, -1, 5, 4]),
-                "sex": np.array([0, 1, 0, 1, 0, 1]),
+                "sex": np.array([0, 1, 0, 1, 0, 0]),
                 "generation": np.array([0, 0, 1, 1, 2, 2]),
             }
         )
@@ -1342,7 +1342,7 @@ class TestComputePairKinship:
             }
         )
         pg = PedigreeGraph(df)
-        assert pg._depth.tolist() == [0, 0, 1, 1, 0, 0]
+        assert pg.depth.tolist() == [0, 0, 1, 1, 0, 0]
         assert pg.compute_pair_kinship({"PO": (np.array([3]), np.array([5]))})["PO"].tolist() == [0.25]
         assert pg.kinship_matrix(0.0)[3, 5] == np.float32(0.25)
 
@@ -1450,7 +1450,7 @@ def _ped_inbred_mz() -> pl.DataFrame:
             "mother": np.array([-1, -1, 0, 0, 2, 2]),
             "father": np.array([-1, -1, 1, 1, 3, 3]),
             "twin": np.array([-1, -1, -1, -1, 5, 4]),
-            "sex": np.array([0, 1, 0, 1, 0, 1]),
+            "sex": np.array([0, 1, 0, 1, 0, 0]),
             "generation": np.array([0, 0, 1, 1, 2, 2]),
         }
     )
@@ -1502,7 +1502,7 @@ def _ped_mz_twins_with_descendants() -> pl.DataFrame:
             "mother": np.array([-1, -1, 0, 0, 2, 2, -1, -1, 4, 5]),
             "father": np.array([-1, -1, 1, 1, 3, 3, -1, -1, 6, 7]),
             "twin": np.array([-1, -1, -1, -1, 5, 4, -1, -1, -1, -1]),
-            "sex": np.array([0, 1, 0, 1, 0, 1, 1, 1, 0, 0]),
+            "sex": np.array([0, 1, 0, 1, 0, 0, 1, 1, 0, 0]),
             "generation": np.array([0, 0, 1, 1, 2, 2, 0, 0, 3, 3]),
         }
     )

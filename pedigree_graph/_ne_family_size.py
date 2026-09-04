@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import numpy as np
 
-from pedigree_graph._ne_common import _harmonic_mean
+from pedigree_graph._ne_common import _harmonic_mean, _require_complete_generation_labels
 from pedigree_graph._ne_results import NeSexRatioResult, NeVarianceResult
 
 if TYPE_CHECKING:
@@ -308,6 +308,7 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     (consistent with a legitimate single-sex pedigree), so the warning
     is the only diagnostic.
     """
+    _require_complete_generation_labels(pg, "ne_variance_family_size")
     _warn_if_uniform_sex(pg, "ne_variance_family_size")
 
     table = _sex_specific_family_table(
@@ -371,6 +372,7 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
     that case (consistent with a legitimate single-sex pedigree), so
     the warning is the only diagnostic.
     """
+    _require_complete_generation_labels(pg, "ne_sex_ratio")
     _warn_if_uniform_sex(pg, "ne_sex_ratio")
 
     gen = np.asarray(pg.generation)

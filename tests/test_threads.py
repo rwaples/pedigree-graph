@@ -149,3 +149,24 @@ class TestFreshProcess:
         proc = run_child(PRINT_BUDGET)
         assert proc.returncode == 0
         assert proc.stdout.strip() == "1"
+
+
+ROOT_CONFIGURE_THEN_PRINT = (
+    "from pedigree_graph import configure_threads\n"
+    "from pedigree_graph._threads import thread_budget\n"
+    "configure_threads(2)\n"
+    "print(thread_budget())\n"
+)
+
+
+class TestRootExport:
+    def test_root_export_is_the_same_object(self):
+        import pedigree_graph
+
+        assert pedigree_graph.configure_threads is configure_threads
+        assert "configure_threads" in pedigree_graph.__all__
+
+    def test_root_configure_beats_env_var_in_a_fresh_process(self):
+        proc = run_child(ROOT_CONFIGURE_THEN_PRINT, env_threads="7")
+        assert proc.returncode == 0
+        assert proc.stdout.strip() == "2"

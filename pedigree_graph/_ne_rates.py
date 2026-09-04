@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from pedigree_graph._kinship_kernel import _compute_eqg, _finalize_from_sum_theta
-from pedigree_graph._ne_common import _harmonic_mean, _scalar_ne_from_log_regression
+from pedigree_graph._ne_common import (
+    _harmonic_mean,
+    _require_complete_generation_labels,
+    _scalar_ne_from_log_regression,
+)
 from pedigree_graph._ne_results import (
     NeCoancestryResult,
     NeInbreedingResult,
@@ -75,6 +79,7 @@ def ne_inbreeding(pg: PedigreeGraph) -> NeInbreedingResult:
     Aggregate Ne from the regression slope of ``ln(1 − F̄_t)`` on t for
     t ≥ 1 (founders excluded).
     """
+    _require_complete_generation_labels(pg, "ne_inbreeding")
     F = pg.compute_inbreeding()
     gen = np.asarray(pg.generation)
     g_max = int(gen.max())
@@ -127,6 +132,7 @@ def ne_coancestry(
         theta_per_gen: optional pre-computed per-generation mean
             kinship.  When supplied, K is ignored.
     """
+    _require_complete_generation_labels(pg, "ne_coancestry")
     gen = np.asarray(pg.generation)
     g_max = int(gen.max())
     if theta_per_gen is not None:
@@ -169,6 +175,7 @@ def ne_individual_delta_f(pg: PedigreeGraph) -> NeIndividualDeltaFResult:
     Per-cohort ``Ne_g = 1/(2 · mean_{i ∈ gen g} ΔF_i)``; aggregate is
     the harmonic mean across cohorts.
     """
+    _require_complete_generation_labels(pg, "ne_individual_delta_f")
     F = pg.compute_inbreeding()
     eqg = _compute_eqg(np.asarray(pg.mother), np.asarray(pg.father), pg.n)
     gen = np.asarray(pg.generation)

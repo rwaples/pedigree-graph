@@ -6,6 +6,62 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: canonical construction** (ADR 0006).  `PedigreeGraph.from_frame(frame,
+  *, sex_encoding="simace")` takes a dict of columns or any FrameLike table, and
+  `PedigreeGraph.from_arrays(*, ids=, mother_ids=, father_ids=, twin_ids=None,
+  sex=None, generation=None, birth_year=None, sex_encoding="simace")` takes the
+  columns separately.  Neither applies a default: an omitted or wholly unknown
+  `sex`, `generation`, or `birth_year` reads as absent rather than as a
+  fabricated column.  The 0.7.1 entry points — `PedigreeGraph(data)`,
+  `from_dataframe`, `from_subsample`, and the positional
+  `from_arrays(ids, mothers, fathers, ...)` — keep their names, their
+  depth-derived `generation` fallback, and their all-female `sex` default until
+  0.8.0 removes them.  `from_arrays` serves both call forms: the canonical one
+  is keyword-only and the 0.7.1 one is selected by any positional argument or by
+  `mothers=`/`fathers=`/`twins=`.  Mixing the two, or naming neither, is a
+  `TypeError`, as is passing `sex_encoding=` to the 0.7.1 form.
+
+- **Added: read-only properties** (ADR 0006).  A graph now exposes `ids`,
+  `mother_ids` / `father_ids` / `twin_ids` (int64, `-1` missing), `mother_rows` /
+  `father_rows` / `twin_rows` (int32, `-1` absent or external), `sex` (int8 or
+  `None`), `depth` (int32, always present), `generation_labels` (int32 or
+  `None`), `birth_year` (int32 or `None`), `n_individuals`, and `len(pg)`.  Each
+  array property hands back the graph's own storage — the same object on every
+  access, read-only, so writing into what you read raises instead of silently
+  changing the graph.  `depth` is structural and is computed on first access,
+  never at construction.  The 0.7.1 names `mother`, `father`, `twin`,
+  `generation`, and `n` still work and still mean rows, depth-fallback labels,
+  and the row count; 0.8.0 removes them.
+
+- **Changed: MZ pairs are validated at construction.**  Every constructor now
+  rejects a represented MZ reference that is self-directed
+  (`mz_self_reference`), not reciprocated (`mz_nonreciprocal`, which is also how
+  a third row pointing into a pair is reported), names different parents
+  (`mz_parent_mismatch`, with the offending roles in `parent_roles`), or pairs
+  two individuals of different known sex (`mz_sex_mismatch`).  Parents are
+  compared by id, so co-twins sharing one unrepresented parent agree.  A co-twin
+  outside the represented rows forms no pair and is not checked.
+  `compute_inbreeding()` no longer performs this check; it raised
+  `mz_nonreciprocal` and `mz_parent_mismatch` lazily in 0.7.1, and a pedigree
+  that used to construct and fail later now fails at construction.
+
+- **Changed: partly known generation labels are rejected.**  A supplied
+  `generation` column containing `-1` now raises
+  `MissingMetadataError("missing_generation_labels", status="partial")`, with
+  `missing_count`, from `per_gen_mean_kinship()`, every generation-indexed Ne
+  estimator, and `compute_all_ne`.  Previously the `-1` rows wrapped into the
+  last cohort bucket of the kinship DP theta sums and the Caballero-Toro
+  founder sweep, silently biasing `ne_caballero_toro` and `ne_inbreeding`,
+  while `ne_coancestry` and `per_gen_mean_kinship()` failed with an
+  unstructured `ValueError` from `np.bincount`.  A wholly absent column is
+  unchanged: the 0.7.1 estimators still fall back to structural depth.
+
+- **Added: `configure_threads` is exported from the package root.**  One
+  package-wide budget resolving `configure_threads(n)` >
+  `PEDIGREE_GRAPH_THREADS` > `1`, committed the first time it is read.
+  Repeating the committed value is accepted; changing it afterwards raises
+  `RuntimeError`.  There is no per-call thread argument (ADR 0007).
+
 - **Changed: any acyclic input row order is accepted.**  A parent no longer
   has to precede its child; construction rejects only genuine cycles.  Public
   outputs stay aligned to the input rows.  Internally the graph derives one

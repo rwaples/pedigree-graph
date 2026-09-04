@@ -773,7 +773,7 @@ def _streaming_theta(pg: PedigreeGraph) -> np.ndarray:
         np.asarray(pg.mother, dtype=np.int32),
         np.asarray(pg.father, dtype=np.int32),
         np.asarray(pg.twin, dtype=np.int32),
-        np.asarray(pg._depth, dtype=np.int32),
+        np.asarray(pg.depth, dtype=np.int32),
         0.0,
         labels=np.asarray(pg.generation, dtype=np.int32),
     )

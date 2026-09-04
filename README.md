@@ -40,12 +40,12 @@ from pedigree_graph import PedigreeGraph, REL_REGISTRY, PAIR_KINSHIP
 # Construct from arrays (no pandas needed)
 pg = PedigreeGraph.from_arrays(
     ids=np.array([0, 1, 2, 3, 4]),
-    mothers=np.array([-1, -1, 0, 0, 0]),
-    fathers=np.array([-1, -1, 1, 1, 1]),
+    mother_ids=np.array([-1, -1, 0, 0, 0]),
+    father_ids=np.array([-1, -1, 1, 1, 1]),
 )
 
-# Or from a dict of arrays (also pandas-free)
-pg = PedigreeGraph(
+# Or from a table: a dict of columns (pandas-free), or any pandas/polars frame
+pg = PedigreeGraph.from_frame(
     {
         "id": np.array([0, 1, 2, 3]),
         "mother": np.array([-1, -1, 0, 0]),
@@ -55,10 +55,13 @@ pg = PedigreeGraph(
         "generation": np.array([0, 0, 1, 1], dtype=np.int32),
     }
 )
+# pg = PedigreeGraph.from_frame(df)
 
-# Or from a pandas DataFrame
+# The 0.7.1 forms still work and keep their defaults (all-female sex, and
+# generation falling back to structural depth).  0.8.0 removes them.
+# pg = PedigreeGraph(df)
 # pg = PedigreeGraph.from_dataframe(df)
-# pg = PedigreeGraph(df)   # __init__ accepts both forms
+# pg = PedigreeGraph.from_arrays(ids, mothers, fathers)
 
 # Extract pairs by relationship type, up to a given degree
 pairs = pg.extract_pairs(max_degree=3)

@@ -19,9 +19,9 @@ When the input rows are already depth-major the permutation is the
 identity; ``order`` and ``inverse`` are then ``None`` and every routing
 helper returns its argument untouched.
 
-Depth and the permutation are built separately: the legacy ``generation``
-fallback needs depth at construction time, and paying for the sort there would
-tax every graph whether or not an order-dependent kernel is ever called.
+Depth and the permutation are built separately.  ``PedigreeGraph.depth`` is
+public and several callers want only it; paying for the depth-major sort there
+would tax every graph whether or not an order-dependent kernel is ever called.
 """
 
 from __future__ import annotations

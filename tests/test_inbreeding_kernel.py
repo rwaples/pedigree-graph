@@ -5,6 +5,8 @@ chains, and parity vs. the matrix kinship path.  The ADR 0008 fixtures pin
 the MZ-aware semantics: F from the genome-node walk equals the pairwise
 self-kinship identity ``2 * phi(i, i) - 1`` and the matrix diagonal on
 every MZ co-coalescence case, including founder twins and inbred twins.
+The MZ pair contract itself is a construction guard; ``test_construction.py``
+owns that table.
 """
 
 from __future__ import annotations
@@ -14,7 +16,7 @@ import polars as pl
 import pytest
 import scipy.sparse as sp
 
-from pedigree_graph import PedigreeGraph, PedigreeValidationError
+from pedigree_graph import PedigreeGraph
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
     _compute_depth,
@@ -234,24 +236,6 @@ def test_parity_with_matrix_path_with_mz(small_pedigree):
     F_ml = pg.compute_inbreeding()
     K = pg.kinship_matrix(min_kinship=0.0)
     assert np.allclose(F_ml, 2.0 * K.diagonal() - 1.0, atol=1e-10)
-
-
-@pytest.mark.parametrize(
-    ("twin", "code", "row"),
-    [
-        ([-1, -1, 3, -1, -1], "mz_nonreciprocal", 2),
-        ([-1, -1, -1, 4, 3], "mz_parent_mismatch", 3),
-    ],
-    ids=["non-reciprocal", "different parents"],
-)
-def test_compute_inbreeding_rejects_broken_mz_invariant(twin, code, row):
-    pg = PedigreeGraph(_mz_frame([0, 1, 2, 3, 4], [-1, -1, 0, 0, 1], [-1, -1, 1, 1, 0], twin))
-    with pytest.raises(PedigreeValidationError) as info:
-        pg.compute_inbreeding()
-    assert info.value.code == code
-    assert info.value.fields["row"] == row
-    if code == "mz_parent_mismatch":
-        assert info.value.fields["parent_roles"] == ("mother", "father")
 
 
 def test_absent_co_twin_is_not_an_mz_pair():

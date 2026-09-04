@@ -15,8 +15,10 @@ Prefer adding a **new** focused module over extending an oversized one (see
 
 | Module | Responsibility |
 |---|---|
-| `_core.py` | The `PedigreeGraph` class: graph data, parent CSR, kinship/inbreeding, constructors, and thin `extract_pairs` / `count_pairs` / `count_pairs_streaming` wrappers. Input validation lives in `_input.py`; the constructor fills the 0.7.1 attributes from the parsed result. |
-| `_input.py` | `PedigreeInput` and `parse_pedigree_input` / `parse_pedigree_arrays`: the **one** input boundary. Lossless integer coercion, range and uniqueness checks, id→row mapping (`_map_ids_to_rows`), cycle detection, optional-metadata normalization, and owned read-only storage. |
+| `_core.py` | The `PedigreeGraph` class: graph data, parent CSR, kinship/inbreeding, the canonical `from_frame` / `from_arrays` constructors, and thin `extract_pairs` / `count_pairs` / `count_pairs_streaming` wrappers. Input validation lives in `_input.py`; `_from_input` is the one builder every entry point funnels through, and it is where the 0.7.1 defaults are switched on or off. |
+| `_properties.py` | `PedigreeProperties`, the ADR [0006](adr/0006-public-api-and-coordinate-semantics.md) read-only property surface mixed into `PedigreeGraph`: the owned input arrays handed back unchanged, plus lazily computed structural `depth`. |
+| `_compat.py` | The body of the 0.7.1 `from_subsample`, kept apart so 0.8.0 removes it by deleting the module. |
+| `_input.py` | `PedigreeInput` and `parse_pedigree_input` / `parse_pedigree_arrays`: the **one** input boundary. Lossless integer coercion, range and uniqueness checks, id→row mapping (`_map_ids_to_rows`), cycle detection, MZ pair validation, optional-metadata normalization, and owned read-only storage. |
 | `_errors.py` | `PedigreeValidationError`, `MissingMetadataError`, `ResourceError` and the three code registries. **Single source of truth** for the structured-error codes and their required `.fields` (ADR [0006](adr/0006-public-api-and-coordinate-semantics.md)). |
 | `_threads.py` | Package-wide thread budget: `configure_threads(n)` > `PEDIGREE_GRAPH_THREADS` > `1`, committed on first use (ADR [0007](adr/0007-rust-core-host-boundary-and-release.md)). |
 | `_registry.py` | `RelType`, `REL_REGISTRY`, `PAIR_KINSHIP` (kinship coefficients) and `REL_PLAN` + helpers (per-code engine semantics). **Single source of truth** for codes, kinship, degree range, and engine divergence. |

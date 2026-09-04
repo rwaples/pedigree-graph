@@ -179,8 +179,8 @@ def warmup() -> float:
     # Warm the direct pairwise-kinship kernel explicitly (also reached via
     # compute_pair_kinship above, but warm it directly so the stats wrapper and
     # bare-kernel microbench below never pay first-call JIT).
-    pairwise_kinship(pg2.mother, pg2.father, pg2.twin, np.array([0, 1]), np.array([1, 2]))
-    _pairwise_kinship_with_stats(pg2.mother, pg2.father, pg2.twin, np.array([0]), np.array([1]))
+    pairwise_kinship(*_kernel_inputs(pg2, np.array([0, 1]), np.array([1, 2])))
+    _pairwise_kinship_with_stats(*_kernel_inputs(pg2, np.array([0]), np.array([1])))
     with contextlib.suppress(Exception):  # tiny pedigree may degenerate some estimators
         compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True)
     return time.perf_counter() - t0
@@ -284,6 +284,16 @@ def fmt_nnz_logs(records: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _kernel_inputs(pg, a, b):
+    """Parent arrays and pair endpoints in the graph's private topological order.
+
+    The pairwise kernels require parents to precede children; ``pg.mother`` and
+    friends are graph-space and only satisfy that by accident.
+    """
+    mother, father, twin = pg._topological_parents
+    return mother, father, twin, pg._topology.translate(a), pg._topology.translate(b)
+
+
 def _flatten_pairs(pairs: dict) -> tuple[np.ndarray, np.ndarray]:
     """Concatenate every code's (idx1, idx2) into flat graph-space arrays."""
     non_empty = [v for v in pairs.values() if len(v[0])]
@@ -341,11 +351,11 @@ def pairwise_diagnostics(df, max_degree: int, seed: int, py_cap: int = 10_000) -
     """
     pg = PedigreeGraph(df)
     pairs = pg.extract_pairs(max_degree=max_degree)
-    a, b = _flatten_pairs(pairs)
+    mother, father, twin, a, b = _kernel_inputs(pg, *_flatten_pairs(pairs))
     n, p = pg.n, a.shape[0]
 
     t0 = time.perf_counter()
-    _, stats = _pairwise_kinship_with_stats(pg.mother, pg.father, pg.twin, a, b)
+    _, stats = _pairwise_kinship_with_stats(mother, father, twin, a, b)
     nb_full = time.perf_counter() - t0
 
     if p > py_cap:
@@ -358,10 +368,10 @@ def pairwise_diagnostics(df, max_degree: int, seed: int, py_cap: int = 10_000) -
         cap_note = f"all {p:,} pairs"
 
     t0 = time.perf_counter()
-    nb_sub = pairwise_kinship(pg.mother, pg.father, pg.twin, sa, sb)
+    nb_sub = pairwise_kinship(mother, father, twin, sa, sb)
     nb_sub_t = time.perf_counter() - t0
     t0 = time.perf_counter()
-    py_sub = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, sa, sb)
+    py_sub = _pairwise_kinship_py(mother, father, twin, sa, sb)
     py_sub_t = time.perf_counter() - t0
     bit_exact = bool(np.array_equal(nb_sub, py_sub))
     speedup = py_sub_t / nb_sub_t if nb_sub_t > 0 else float("nan")
@@ -400,7 +410,7 @@ def stress_diagnostics(seed: int) -> str:
     overflowed = False
     try:
         t0 = time.perf_counter()
-        out_nb, stats = _pairwise_kinship_with_stats(pg.mother, pg.father, pg.twin, a, b)
+        out_nb, stats = _pairwise_kinship_with_stats(*_kernel_inputs(pg, a, b))
         nb_t = time.perf_counter() - t0
     except ValueError:
         overflowed = True

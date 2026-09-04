@@ -10,6 +10,12 @@ Errors (ADR 0006 — each carries a stable ``.code`` and immutable ``.fields``):
     PedigreeValidationError, MissingMetadataError (both ValueError),
     ResourceError (RuntimeError)
 
+Threads:
+    configure_threads — one package-wide budget, set before the first
+        parallel call.  Precedence: configure_threads(n) >
+        PEDIGREE_GRAPH_THREADS > 1.  Repeating the committed value is fine;
+        changing it after the budget is committed is a RuntimeError.
+
 Effective population size (Ne):
     Result classes: NeCaballeroToroResult, NeCoancestryResult, NeHillResult,
         NeIndividualDeltaFResult, NeInbreedingResult, NeLTCResult,
@@ -58,6 +64,7 @@ from pedigree_graph._errors import (
     PedigreeValidationError,
     ResourceError,
 )
+from pedigree_graph._threads import configure_threads
 
 __all__ = [
     "PAIR_KINSHIP",
@@ -79,6 +86,7 @@ __all__ = [
     "RelType",
     "ResourceError",
     "compute_all_ne",
+    "configure_threads",
     "eligible_cohort_range",
     "ne_caballero_toro",
     "ne_coancestry",

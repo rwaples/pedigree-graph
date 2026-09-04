@@ -28,16 +28,13 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import scipy.sparse as sp
 
+from pedigree_graph._compat import from_subsample as _from_subsample
 from pedigree_graph._effective_size import _per_gen_mean_kinship
 from pedigree_graph._errors import PedigreeValidationError, ResourceError
-from pedigree_graph._frames import (
-    FrameLike,
-    _coerce_to_array_dict,
-)
+from pedigree_graph._frames import FrameLike
 from pedigree_graph._input import (
-    _map_ids_to_rows,
+    parse_pedigree_arrays,
     parse_pedigree_input,
-    validate_id_field,
 )
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
@@ -49,8 +46,10 @@ from pedigree_graph._lineage_kernel import (
     _compute_n_ancestors,
     _compute_n_descendants,
 )
+from pedigree_graph._ne_common import _require_complete_generation_labels
 from pedigree_graph._pair_extractor import MatrixPairExtractor
 from pedigree_graph._pair_utils import pairs_from_groups
+from pedigree_graph._properties import PedigreeProperties
 from pedigree_graph._registry import (
     PAIR_KINSHIP,
     REL_REGISTRY,
@@ -58,12 +57,16 @@ from pedigree_graph._registry import (
     _validate_max_degree,
 )
 from pedigree_graph._streaming_counter import StreamingPairCounter
-from pedigree_graph._topology import build_topology, structural_depth
+from pedigree_graph._topology import build_topology
 
 if TYPE_CHECKING:
+    from pedigree_graph._input import PedigreeInput
     from pedigree_graph._topology import Topology
 
 logger = logging.getLogger(__name__)
+
+# 0.8.0-DELETE: the 0.7.1 from_arrays positional order.
+_LEGACY_ARRAY_ORDER = ("ids", "mothers", "fathers", "twins", "generation", "birth_year", "sex")
 
 
 def _known_parent_edges(
@@ -100,30 +103,57 @@ def _known_parent_edges(
     return edge_rows[both_known], (by_child[both_known] - by_parent[both_known]).astype(np.int32)
 
 
-class PedigreeGraph:
+class PedigreeGraph(PedigreeProperties):
     """Parent→child DAG for efficient relationship queries.
 
     Each individual is a vertex whose index equals its row index in the
     input.  Sparse CSR matrices encode parent-child edges for O(nnz)
     relationship extraction via matrix products.
 
+    Build one with :meth:`from_frame` or :meth:`from_arrays`.  Both validate
+    through :mod:`pedigree_graph._input` and hand the parsed result to
+    :meth:`_from_input`, so every graph reaches the engine the same way.
+    Neither invents a value: an absent optional column reads as absent.
+
     Args:
-        data: Either a ``dict[str, np.ndarray]`` or any :class:`FrameLike`
-            table — pandas and polars DataFrames both satisfy the structural
-            protocol, and neither library is imported by this package.
-            ``id``, ``mother``, and ``father`` are required; ``twin``,
-            ``sex``, ``generation``, and ``birth_year`` are optional and
-            other keys are ignored.  :mod:`pedigree_graph._input` owns every
-            guard on the values.
+        data: 0.8.0-DELETE — the loose constructor's argument.  Either a
+            ``dict[str, np.ndarray]`` or any :class:`FrameLike` table; pandas
+            and polars DataFrames both satisfy the structural protocol, and
+            neither library is imported by this package.  ``id``, ``mother``,
+            and ``father`` are required; ``twin``, ``sex``, ``generation``,
+            and ``birth_year`` are optional and other keys are ignored.
     """
 
     # 0.8.0-DELETE: the loose dict-or-frame constructor; 0.8 constructs through
     # from_frame / from_arrays only.
     def __init__(self, data: dict[str, np.ndarray] | FrameLike) -> None:
-        parsed = parse_pedigree_input(data)
+        self._initialize(parse_pedigree_input(data), legacy_defaults=True)
+
+    @classmethod
+    # 0.8.0-DELETE: the legacy_defaults keyword; 0.8 has no defaults to switch on.
+    def _from_input(cls, parsed: PedigreeInput, *, legacy_defaults: bool) -> PedigreeGraph:
+        """Build a graph over already-parsed input, the one path all constructors share.
+
+        Args:
+            parsed: Validated, owned input from :mod:`pedigree_graph._input`.
+            legacy_defaults: Whether absent metadata takes its 0.7.1 default
+                rather than reading as absent.  Only the compatibility entry
+                points set it.
+
+        Returns:
+            The constructed graph.
+        """
+        graph = cls.__new__(cls)
+        graph._initialize(parsed, legacy_defaults=legacy_defaults)
+        return graph
+
+    # 0.8.0-DELETE: the legacy_defaults keyword.
+    def _initialize(self, parsed: PedigreeInput, *, legacy_defaults: bool) -> None:
+        """Populate the graph's storage, caches, and parent matrices from *parsed*."""
         self._input = parsed
+        self._legacy_defaults = legacy_defaults  # 0.8.0-DELETE
         n = parsed.n_individuals
-        self.n = n
+        self.n = n  # 0.8.0-DELETE: renamed n_individuals.
 
         # Subsample state — set only by from_subsample. When _sample_mask is
         # set, extract_pairs filters to pairs where both endpoints are active.
@@ -161,19 +191,14 @@ class PedigreeGraph:
         # diagnostics so the full-pedigree edge scan runs once per side.
         self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
+        # 0.8.0-DELETE: the whole block, renamed to the ids / *_ids / *_rows
+        # properties; the kernels and 0.7.1 consumers still read these names.
         self._ids = parsed.ids
-        # Original pedigree parent IDs (for sibling classification — valid
-        # even when the parent isn't represented).
         self._orig_mother = parsed.mother_ids
         self._orig_father = parsed.father_ids
         self.mother = parsed.mother_rows
         self.father = parsed.father_rows
         self.twin = parsed.twin_rows
-        self.birth_year: np.ndarray | None = parsed.birth_year
-        # 0.8.0-DELETE: the 0.7.1 all-female sex default and depth-derived
-        # generation fallback; the 0.8 properties report absent metadata instead.
-        self.sex = parsed.sex if parsed.sex is not None else np.zeros(n, dtype=np.int8)
-        self.generation = parsed.generation if parsed.generation is not None else self._depth
 
         self._validate_birth_year_topology()
 
@@ -218,16 +243,6 @@ class PedigreeGraph:
             )
 
     @cached_property
-    def _depth(self) -> np.ndarray:
-        """Structural depth per graph row; founders 0.
-
-        Cached apart from :attr:`_topology` because the 0.7.1 ``generation``
-        fallback reads it at construction, where the depth-major sort would be
-        pure overhead for a graph no order-dependent kernel ever touches.
-        """
-        return structural_depth(self.mother, self.father, self.n)
-
-    @cached_property
     def _topology(self) -> Topology:
         """Structural depth plus the private stable depth-major row order.
 
@@ -235,7 +250,7 @@ class PedigreeGraph:
         that need parents to precede children run in this order and their
         outputs are mapped back.  Supplied generation labels never enter it.
         """
-        return build_topology(self._depth)
+        return build_topology(self.depth)
 
     @property
     def _rows_are_topological(self) -> bool:
@@ -770,67 +785,44 @@ class PedigreeGraph:
         return dict(counts)
 
     # ------------------------------------------------------------------
-    # Alternative constructor
+    # Alternative constructors
     # ------------------------------------------------------------------
+
+    @classmethod
+    def from_frame(
+        cls,
+        frame: FrameLike | dict[str, np.ndarray],
+        *,
+        sex_encoding: str = "simace",
+    ) -> PedigreeGraph:
+        """Construct from a table of columns.
+
+        Args:
+            frame: Any :class:`FrameLike` table (pandas and polars frames both
+                satisfy the structural protocol) or a ``dict[str, array-like]``.
+                ``id``, ``mother``, and ``father`` are required; ``twin``,
+                ``sex``, ``generation``, and ``birth_year`` are optional and
+                other columns are ignored.
+            sex_encoding: ``"simace"`` (``0`` female, ``1`` male, ``-1``
+                unknown) or ``"plink"`` (``2`` female, ``1`` male, ``0``
+                unknown).  Never inferred from the values.
+
+        Returns:
+            A graph whose absent optional columns read as absent: no sex
+            default, no generation fallback.
+
+        Raises:
+            PedigreeValidationError: For any invalid field, duplicate id,
+                shared parent id, cyclic parent reference, or broken MZ pair.
+            ResourceError: ``pedigree_too_large`` beyond the int32 row capacity.
+        """
+        return cls._from_input(parse_pedigree_input(frame, sex_encoding=sex_encoding), legacy_defaults=False)
 
     @classmethod
     # 0.8.0-DELETE: renamed to from_frame in 0.8.
     def from_dataframe(cls, df: FrameLike) -> PedigreeGraph:
-        """Construct from a DataFrame (any :class:`FrameLike` table).
-
-        Explicit DataFrame entry point — pandas and polars frames both
-        satisfy the structural protocol.  ``__init__`` also accepts frames
-        directly via type dispatch; this classmethod is provided (and kept
-        as a compatibility name) for callers that want the intent in the
-        call site.
-        """
+        """Construct from a DataFrame, the 0.7.1 name for :meth:`from_frame`."""
         return cls(df)
-
-    @classmethod
-    # 0.8.0-DELETE: the positional 0.7.1 signature, the generation fallback, and
-    # the all-female sex default; 0.8's from_arrays is keyword-only.
-    def from_arrays(
-        cls,
-        ids: np.ndarray,
-        mothers: np.ndarray,
-        fathers: np.ndarray,
-        twins: np.ndarray | None = None,
-        generation: np.ndarray | None = None,
-        birth_year: np.ndarray | None = None,
-        sex: np.ndarray | None = None,
-    ) -> PedigreeGraph:
-        """Construct a PedigreeGraph directly from numpy arrays.
-
-        Used by hot-loop callers (PA-FGRS, external-tool exports) that
-        don't have a ``pedigree.parquet`` DataFrame handy.  When
-        *generation* is None, it is derived from the parent graph via a
-        fixed-point sweep (founders = 0, offspring = max(parent_gen)+1).
-
-        *birth_year* is optional; sentinel ``-1`` marks unknown.  When
-        supplied, parent-child edges with both endpoints known are
-        validated to satisfy ``child.birth_year >= parent.birth_year``.
-
-        *sex* is optional and defaults to zeros (``int8``).  **Foot-gun
-        warning**: the default makes every individual female (sex=0),
-        which silently degenerates sex-aware estimators
-        (:func:`ne_sex_ratio`, :func:`ne_variance_family_size`) to
-        ``ne=None``.  Always pass ``sex=`` when constructing graphs that
-        will feed into ``compute_all_ne``.  Kinship-only callers
-        (relationship-pair extraction, GRMs, PA-FGRS) can ignore this —
-        their consumers do not read ``pg.sex``.
-        """
-        ids_arr = np.asarray(ids)
-        n = len(ids_arr)
-        data: dict[str, np.ndarray] = {
-            "id": ids_arr,
-            "mother": np.asarray(mothers),
-            "father": np.asarray(fathers),
-            "twin": np.full(n, -1, dtype=np.int64) if twins is None else np.asarray(twins),
-        }
-        for name, column in (("sex", sex), ("generation", generation), ("birth_year", birth_year)):
-            if column is not None:
-                data[name] = np.asarray(column)
-        return cls(data)
 
     @classmethod
     # 0.8.0-DELETE: replaced by full.view(ids=...) (ADR 0006).
@@ -839,75 +831,131 @@ class PedigreeGraph:
         full_pedigree: dict[str, np.ndarray] | FrameLike,
         df: dict[str, np.ndarray] | FrameLike,
     ) -> PedigreeGraph:
-        """Construct a graph over *full_pedigree*, restricted to *df*.
+        """Construct a graph over *full_pedigree* whose pair output covers only *df*.
 
-        Builds the full-pedigree graph (so multi-hop relationships are
-        detected through ancestors absent from *df*), then sets a private
-        sample mask + remap so that ``extract_pairs`` returns indices into
-        *df* (filtered to pairs where both endpoints are in *df*).
+        See :func:`pedigree_graph._compat.from_subsample`.
+        """
+        return _from_subsample(cls, full_pedigree, df)
+
+    @classmethod
+    def from_arrays(
+        cls,
+        # 0.8.0-DELETE: *legacy, the mothers/fathers/twins keywords, and the None
+        # default on sex_encoding that detects it; 0.8 keeps the canonical form alone.
+        *legacy: object,
+        ids: object | None = None,
+        mother_ids: object | None = None,
+        father_ids: object | None = None,
+        twin_ids: object | None = None,
+        sex: object | None = None,
+        generation: object | None = None,
+        birth_year: object | None = None,
+        sex_encoding: str | None = None,
+        mothers: object | None = None,
+        fathers: object | None = None,
+        twins: object | None = None,
+    ) -> PedigreeGraph:
+        """Construct from separate columns, for callers with no table to hand.
+
+        The canonical form is keyword-only and applies no defaults::
+
+            PedigreeGraph.from_arrays(ids=ids, mother_ids=m, father_ids=f)
+
+        The 0.7.1 form, recognised by ``mothers``/``fathers`` positionally or
+        by keyword, keeps its generation fallback and its all-female sex
+        default.  Naming both forms in one call, or neither, is a
+        :exc:`TypeError`.
 
         Args:
-            full_pedigree: Complete pedigree as ``dict[str, np.ndarray]`` or
-                pandas ``DataFrame``.
-            df: Subsample of *full_pedigree* in the same form.  Must have
-                unique IDs and each ID must appear in *full_pedigree*'s
-                ``id`` column.  Empty *df* is permitted and yields a graph
-                whose ``extract_pairs`` returns empty arrays.
+            *legacy: The 0.7.1 positional columns, in the order ``ids``,
+                ``mothers``, ``fathers``, ``twins``, ``generation``,
+                ``birth_year``, ``sex``.
+            ids: Row ids.
+            mother_ids: Mother ids, ``-1`` or a host null when missing.
+            father_ids: Father ids, as *mother_ids*.
+            twin_ids: MZ co-twin ids, as *mother_ids*.
+            sex: Sex codes in *sex_encoding*.
+            generation: Generation labels, ``-1`` when unknown.
+            birth_year: Birth years, ``-1`` when unknown.
+            sex_encoding: ``"simace"`` (the default) or ``"plink"``.
+                Canonical form only.
+            mothers: 0.7.1 name for *mother_ids*.
+            fathers: 0.7.1 name for *father_ids*.
+            twins: 0.7.1 name for *twin_ids*.
+
+        Returns:
+            The constructed graph.
 
         Raises:
-            ValueError: if *df* has duplicate IDs, or if any ID in *df* is
-                missing from *full_pedigree*.
+            TypeError: For a call that mixes the two forms, names neither, or
+                omits a required column.
+            PedigreeValidationError: As :meth:`from_frame`.
         """
-        df_arrays = _coerce_to_array_dict(df)
-        if "id" not in df_arrays:
-            raise PedigreeValidationError(
-                "missing_field",
-                "from_subsample: df is missing the required 'id' field",
-                field="id",
+        # 0.8.0-DELETE: everything from here to the end of the `if legacy_form`
+        # block is 0.7.1 call-form dispatch; 0.8 keeps only the two lines after it.
+        supplied: dict[str, object | None] = {
+            "ids": ids,
+            "mothers": mothers,
+            "fathers": fathers,
+            "twins": twins,
+            "generation": generation,
+            "birth_year": birth_year,
+            "sex": sex,
+        }
+        if len(legacy) > len(_LEGACY_ARRAY_ORDER):
+            raise TypeError(
+                f"from_arrays() takes at most {len(_LEGACY_ARRAY_ORDER)} positional arguments, got {len(legacy)}"
             )
-        # Same id-column contract as the constructor (unique, nonnegative).
-        df_ids = validate_id_field(df_arrays["id"])
+        for name, value in zip(_LEGACY_ARRAY_ORDER, legacy, strict=False):
+            if supplied[name] is not None:
+                raise TypeError(f"from_arrays() got multiple values for argument {name!r}")
+            supplied[name] = value
 
-        full_arrays = _coerce_to_array_dict(full_pedigree)
-        full_ids = np.asarray(full_arrays["id"])
-        if len(df_ids) > 0:
-            in_full = np.isin(df_ids, full_ids)
-            if not in_full.all():
-                positions = np.flatnonzero(~in_full)
-                first = int(positions[0])
-                raise PedigreeValidationError(
-                    "unknown_view_id",
-                    f"from_subsample: {positions.size} id(s) in df are not present in full_pedigree",
-                    id=int(df_ids[first]),
-                    position=first,
-                    missing_count=int(positions.size),
-                )
+        canonical = mother_ids is not None or father_ids is not None
+        legacy_form = bool(legacy) or any(supplied[name] is not None for name in ("mothers", "fathers", "twins"))
+        if canonical and legacy_form:
+            raise TypeError(
+                "from_arrays() takes either the canonical mother_ids=/father_ids= keywords or the "
+                "0.7.1 mothers/fathers form, not both"
+            )
+        if not canonical and not legacy_form:
+            raise TypeError("from_arrays() requires ids=, mother_ids=, and father_ids=")
 
-        # Constructing the full graph validates the full pedigree's id column.
-        pg = cls(full_arrays)
-        full_ids = pg._ids  # validated int64 copy
+        if legacy_form:
+            required = ("ids", "mothers", "fathers")
+            if any(supplied[name] is None for name in required):
+                raise TypeError(f"from_arrays() requires {', '.join(required)}")
+            if sex_encoding is not None:
+                raise TypeError("from_arrays() takes sex_encoding= only with the canonical mother_ids= form")
+            ids_arr = np.asarray(supplied["ids"])
+            data: dict[str, np.ndarray] = {
+                "id": ids_arr,
+                "mother": np.asarray(supplied["mothers"]),
+                "father": np.asarray(supplied["fathers"]),
+                "twin": np.full(len(ids_arr), -1, dtype=np.int64)
+                if supplied["twins"] is None
+                else np.asarray(supplied["twins"]),
+            }
+            for name in ("sex", "generation", "birth_year"):
+                if supplied[name] is not None:
+                    data[name] = np.asarray(supplied[name])
+            return cls(data)
 
-        if len(df_ids) == 0:
-            # Empty subsample → mask filters everything; remap unused.
-            pg._sample_mask = np.zeros(len(full_ids), dtype=bool)
-            pg._subsample_remap = np.full(len(full_ids), -1, dtype=np.intp)
-            return pg
-
-        pg._sample_mask = np.isin(full_ids, df_ids)
-
-        # Build full-graph-row → df-row table via the same searchsorted remap
-        # used for parent ids: target = df ids, query = full ids.
-        pg._subsample_remap = _map_ids_to_rows(df_ids, full_ids, np.intp)
-
-        # Build the inverse df-row → full-graph-row table so consumers that
-        # need graph coordinates (e.g. compute_pair_kinship indexing the
-        # full kinship matrix) can map caller-coordinate pairs back.
-        graph_rows_in_sub = np.flatnonzero(pg._subsample_remap >= 0)
-        inverse = np.full(len(df_ids), -1, dtype=np.intp)
-        inverse[pg._subsample_remap[graph_rows_in_sub]] = graph_rows_in_sub
-        pg._subsample_inverse = inverse
-
-        return pg
+        if ids is None or mother_ids is None or father_ids is None:
+            raise TypeError("from_arrays() requires ids=, mother_ids=, and father_ids=")
+        return cls._from_input(
+            parse_pedigree_arrays(
+                ids=ids,
+                mother_ids=mother_ids,
+                father_ids=father_ids,
+                twin_ids=twin_ids,
+                sex=sex,
+                generation=generation,
+                birth_year=birth_year,
+                sex_encoding="simace" if sex_encoding is None else sex_encoding,
+            ),
+            legacy_defaults=False,
+        )
 
     # ------------------------------------------------------------------
     # Sparse kinship, inbreeding, and exact pair kinship
@@ -951,7 +999,7 @@ class PedigreeGraph:
             self.mother,
             self.father,
             self.twin,
-            self._depth,
+            self.depth,
             min_kinship,
         )
         K = sp.csc_matrix((data, indices, indptr), shape=(self.n, self.n))
@@ -989,6 +1037,7 @@ class PedigreeGraph:
         cached = self._theta_per_gen_cache.get(key)
         if cached is not None:
             return cached
+        _require_complete_generation_labels(self, "per_gen_mean_kinship")
 
         t0 = time.perf_counter()
         K = self._kinship_cache.get(key)
@@ -1004,7 +1053,7 @@ class PedigreeGraph:
                 self.mother,
                 self.father,
                 self.twin,
-                self._depth,
+                self.depth,
                 min_kinship,
                 labels=self.generation,
             )
@@ -1027,54 +1076,16 @@ class PedigreeGraph:
         genome-node pedigree in which MZ co-twins share one node (ADR 0008).
         MZ-aware: equals ``2 * phi(i, i) - 1`` from :meth:`compute_pair_kinship`
         and from the :meth:`kinship_matrix` diagonal.  Result is cached on the
-        graph (``self._inbreeding``).
-
-        Raises:
-            PedigreeValidationError: ``mz_nonreciprocal`` or
-                ``mz_parent_mismatch`` if a represented MZ reference is not
-                reciprocal or the co-twins do not share both parent rows.  An
-                absent co-twin (``twin == -1``, e.g. outside a subsample) is
-                not an MZ pair and is fine.
+        graph (``self._inbreeding``).  Construction has already established the
+        MZ pair contract, so no co-twin reference reaching here is self-directed,
+        non-reciprocal, or parent-mismatched.
         """
         if self._inbreeding is None:
-            self._check_mz_invariant()
             topo = self._topology
             m_idx, f_idx, tw_idx = self._topological_parents
             F = _compute_F_meuwissen_luo(m_idx, f_idx, tw_idx, topo.gather(topo.depth), self.n)
             self._inbreeding = topo.per_row_to_graph(F)
         return self._inbreeding
-
-    def _check_mz_invariant(self) -> None:
-        """Reject MZ references that are not reciprocal, two-member, parent-identical."""
-        rows = np.flatnonzero(self.twin >= 0)
-        if rows.size == 0:
-            return
-        partner = self.twin[rows]
-        nonreciprocal = self.twin[partner] != rows
-        mismatched = {
-            "mother": self.mother[partner] != self.mother[rows],
-            "father": self.father[partner] != self.father[rows],
-        }
-        bad = nonreciprocal | mismatched["mother"] | mismatched["father"]
-        if not bad.any():
-            return
-        first = int(np.flatnonzero(bad)[0])
-        row = int(rows[first])
-        twin_row = int(partner[first])
-        located = {"row": row, "id": int(self._ids[row]), "twin_id": int(self._ids[twin_row])}
-        if nonreciprocal[first]:
-            raise PedigreeValidationError(
-                "mz_nonreciprocal",
-                f"MZ reference at row {row} is not reciprocal; compute_inbreeding requires "
-                "MZ pairs to be reciprocal, two-member, and parent-identical",
-                **located,
-            )
-        raise PedigreeValidationError(
-            "mz_parent_mismatch",
-            f"MZ co-twins at rows {row} and {twin_row} do not share both parents",
-            parent_roles=tuple(role for role, flags in mismatched.items() if flags[first]),
-            **located,
-        )
 
     def compute_n_descendants(self) -> np.ndarray:
         """Per-individual descendant count, **path-count semantics**.

@@ -424,6 +424,104 @@ def _check_cycle(ids: np.ndarray, mother_rows: np.ndarray, father_rows: np.ndarr
     )
 
 
+def _check_mz_pairs(
+    ids: np.ndarray,
+    mother_ids: np.ndarray,
+    father_ids: np.ndarray,
+    twin_rows: np.ndarray,
+    sex: np.ndarray | None,
+) -> None:
+    """Reject represented MZ references that break the ADR 0006 pair contract.
+
+    A reference is represented when its ``twin_rows`` entry resolved; an
+    external co-twin (``twin_ids >= 0``, ``twin_rows == -1``) forms no pair
+    here and is not checked. Each kind of violation is swept over every row
+    before the next kind runs, so a third row pointing into an otherwise valid
+    pair is reported as non-reciprocal rather than compared for parents against
+    a row that is not its partner. Reciprocity is what bounds a pair to two
+    members. The symmetric checks read only the lower row of each pair, so one
+    violation is reported once.
+
+    Parents are compared by id, so co-twins naming the same unrepresented
+    parent agree and co-twins naming different unrepresented parents do not.
+
+    Args:
+        ids: int64 row ids.
+        mother_ids: int64 mother ids, ``-1`` when missing.
+        father_ids: int64 father ids, as *mother_ids*.
+        twin_rows: int32 co-twin rows, ``-1`` when missing or external.
+        sex: sex codes in the stored ``0``/``1``/``-1`` encoding, or ``None``
+            when the field was omitted.
+
+    Raises:
+        PedigreeValidationError: ``mz_self_reference``, ``mz_nonreciprocal``,
+            ``mz_parent_mismatch``, or ``mz_sex_mismatch``.
+    """
+    rows = np.flatnonzero(twin_rows >= 0)
+    if rows.size == 0:
+        return
+    partner = twin_rows[rows].astype(np.int64, copy=False)
+
+    self_reference = partner == rows
+    if self_reference.any():
+        row = int(rows[int(np.argmax(self_reference))])
+        raise PedigreeValidationError(
+            "mz_self_reference",
+            f"row {row} names itself as its MZ co-twin",
+            row=row,
+            id=int(ids[row]),
+        )
+
+    nonreciprocal = twin_rows[partner] != rows
+    if nonreciprocal.any():
+        first = int(np.argmax(nonreciprocal))
+        row, twin_row = int(rows[first]), int(partner[first])
+        raise PedigreeValidationError(
+            "mz_nonreciprocal",
+            f"the MZ reference at row {row} is not reciprocated by row {twin_row}",
+            row=row,
+            id=int(ids[row]),
+            twin_id=int(ids[twin_row]),
+        )
+
+    lower = rows < partner
+    rows, partner = rows[lower], partner[lower]
+
+    mismatched = {
+        "mother": mother_ids[partner] != mother_ids[rows],
+        "father": father_ids[partner] != father_ids[rows],
+    }
+    parent_mismatch = mismatched["mother"] | mismatched["father"]
+    if parent_mismatch.any():
+        first = int(np.argmax(parent_mismatch))
+        row, twin_row = int(rows[first]), int(partner[first])
+        raise PedigreeValidationError(
+            "mz_parent_mismatch",
+            f"MZ co-twins at rows {row} and {twin_row} do not name the same parents",
+            row=row,
+            id=int(ids[row]),
+            twin_id=int(ids[twin_row]),
+            parent_roles=tuple(role for role, flags in mismatched.items() if flags[first]),
+        )
+
+    if sex is None:
+        return
+    both_known = (sex[rows] != -1) & (sex[partner] != -1)
+    sex_mismatch = both_known & (sex[rows] != sex[partner])
+    if sex_mismatch.any():
+        first = int(np.argmax(sex_mismatch))
+        row, twin_row = int(rows[first]), int(partner[first])
+        raise PedigreeValidationError(
+            "mz_sex_mismatch",
+            f"MZ co-twins at rows {row} and {twin_row} have different known sexes",
+            row=row,
+            id=int(ids[row]),
+            twin_id=int(ids[twin_row]),
+            sex=int(sex[row]),
+            twin_sex=int(sex[twin_row]),
+        )
+
+
 def _normalize_optional(values: np.ndarray | None, dtype: type) -> np.ndarray | None:
     """Own an optional metadata column, collapsing a wholly unknown one to ``None``."""
     if values is None or values.size == 0 or bool(np.all(values == -1)):
@@ -472,7 +570,9 @@ def parse_pedigree_input(
         ValueError: for an unknown *sex_encoding*, which is API misuse rather
             than a pedigree-data failure.
         PedigreeValidationError: for any invalid field, duplicate id, shared
-            parent id, or cyclic parent reference.
+            parent id, cyclic parent reference, or represented MZ reference
+            that is self-directed, non-reciprocal, parent-mismatched, or
+            sex-mismatched.
         ResourceError: ``pedigree_too_large`` when the row count exceeds the
             int32 row-coordinate capacity.
     """
@@ -543,6 +643,7 @@ def parse_pedigree_input(
     rows_topological = bool(_check_topological(mother_rows, father_rows, n))
     if not rows_topological:
         _check_cycle(ids, mother_rows, father_rows, n)
+    _check_mz_pairs(ids, values["mother"], values["father"], twin_rows, values.get("sex"))
 
     return PedigreeInput(
         ids=_own(ids, np.int64),

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
+from pedigree_graph._ne_common import _require_complete_generation_labels
 from pedigree_graph._ne_results import NeLTCResult
 
 if TYPE_CHECKING:
@@ -35,6 +36,7 @@ class FounderContributionMeans(NamedTuple):
 
 def _founder_idx(pg: PedigreeGraph) -> np.ndarray:
     """Indices of founders (gen-0 individuals)."""
+    _require_complete_generation_labels(pg, "founder_cohort")
     return np.where(np.asarray(pg.generation) == 0)[0].astype(np.intp)
 
 
@@ -134,6 +136,7 @@ def ne_long_term_contributions(
     When the asymptote is not reached before the last generation, ``ne``
     is ``None`` and ``asymptote_reached`` is ``False``.
     """
+    _require_complete_generation_labels(pg, "ne_long_term_contributions")
     if mean_contributions is None:
         m_g, founder_idx = _per_gen_founder_means(pg)
     else:

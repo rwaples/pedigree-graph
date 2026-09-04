@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import numba
 import numpy as np
 
-from pedigree_graph._ne_common import _scalar_ne_from_log_regression
+from pedigree_graph._ne_common import _require_complete_generation_labels, _scalar_ne_from_log_regression
 from pedigree_graph._ne_founders import _founder_idx
 from pedigree_graph._ne_results import NeCaballeroToroResult
 
@@ -247,6 +247,7 @@ def _caballero_toro_accumulators(
     Returns:
         A :class:`CTAccumulators` record.
     """
+    _require_complete_generation_labels(pg, "ne_caballero_toro")
     n = pg.n
     n_founders = len(founder_idx)
     topo = pg._topology

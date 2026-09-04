@@ -74,6 +74,8 @@ from functools import cache
 import numba
 import numpy as np
 
+from pedigree_graph._kinship_depth import _check_topological
+
 # Open-addressing memo load factor: grow when entries exceed this fraction of
 # capacity.  0.7 keeps linear-probe chains short without wasting much memory.
 _MEMO_LOAD_NUM = 7
@@ -111,8 +113,9 @@ def _pairwise_kinship_py(
         mother: int row-index array; ``-1`` for founder/missing.
         father: int row-index array; ``-1`` for founder/missing.
         twin: int MZ-partner row-index array; ``-1`` for non-twin.
-        pair_a: first endpoint of each requested pair (graph-space row indices).
-        pair_b: second endpoint of each requested pair (graph-space row indices).
+        pair_a: first endpoint of each requested pair, as row indices into the
+            same topologically ordered arrays.
+        pair_b: second endpoint of each requested pair, likewise.
 
     Returns:
         ``float64`` array of length ``len(pair_a)`` with exact ``phi`` per pair,
@@ -372,13 +375,18 @@ def _prepare_inputs(
     pair_a: np.ndarray,
     pair_b: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
-    """Coerce to contiguous int64 and validate the key-space against overflow."""
+    """Coerce to contiguous int64; reject non-topological rows and key-space overflow."""
     mother = np.ascontiguousarray(mother, dtype=np.int64)
     father = np.ascontiguousarray(father, dtype=np.int64)
     twin = np.ascontiguousarray(twin, dtype=np.int64)
     pair_a = np.ascontiguousarray(pair_a, dtype=np.int64)
     pair_b = np.ascontiguousarray(pair_b, dtype=np.int64)
     n = mother.shape[0]
+    if not _check_topological(mother, father, n):
+        raise ValueError(
+            "pairwise_kinship: parent arrays must be topologically ordered (parent row < child row); "
+            "pass PedigreeGraph._topological_parents and translated endpoints, not the graph-space arrays"
+        )
     # Canonical key lo * n + hi must fit int64.  PedigreeGraph already rejects
     # n > int32 max, so n*n <= 2**62 here, but guard explicitly anyway.
     if n > 0 and n > (np.iinfo(np.int64).max // n):
@@ -404,8 +412,9 @@ def pairwise_kinship(
         mother: int row-index array; ``-1`` for founder/missing.
         father: int row-index array; ``-1`` for founder/missing.
         twin: int MZ-partner row-index array; ``-1`` for non-twin.
-        pair_a: first endpoint of each requested pair (graph-space row indices).
-        pair_b: second endpoint of each requested pair (graph-space row indices).
+        pair_a: first endpoint of each requested pair, as row indices into the
+            same topologically ordered arrays.
+        pair_b: second endpoint of each requested pair, likewise.
 
     Returns:
         ``float64`` array of length ``len(pair_a)`` with exact ``phi`` per pair.

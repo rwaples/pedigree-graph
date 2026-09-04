@@ -453,7 +453,7 @@ def test_generation_labels_do_not_drive_structure(name, labelling):
     labelled = PedigreeGraph({**columns, "generation": labels})
 
     assert labelled.generation.tolist() == labels.tolist()
-    np.testing.assert_array_equal(labelled._depth, unlabelled._depth)
+    np.testing.assert_array_equal(labelled.depth, unlabelled.depth)
     np.testing.assert_array_equal(labelled.compute_inbreeding(), unlabelled.compute_inbreeding())
     assert _descendants_or_refusal(labelled) == _descendants_or_refusal(unlabelled)
 
