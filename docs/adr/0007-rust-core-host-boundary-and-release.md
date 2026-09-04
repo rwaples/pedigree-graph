@@ -109,6 +109,17 @@ helper sets `PEDIGREE_GRAPH_THREADS`. `estimate_effective_sizes` prepares
 prerequisites on this pool and applies the Python formulas serially; the
 separate Python worker pool is removed.
 
+Before the Rust core exists, the pure-Python 0.8.0 package already exposes
+`configure_threads` with the same precedence and reconfiguration rule. In
+0.8.0 it is a package-level budget that every Python-level worker pool on a
+new-API path reads (`ThreadPoolExecutor` sites in the pair extractor and the
+effective-size prerequisites). It never calls `numba.set_num_threads`: that
+global is process-wide, consumers such as simACE pin it themselves, and no
+production kernel in the package runs `parallel=True` (the one that does is
+the experimental BFS engine, which issue #7 removes). Adapters marked for
+deletion keep 0.7.1 execution behaviour and their own thread arguments until
+slice 7. When the Rayon pool lands, the same function configures it.
+
 Acceptance criterion, recommended pending final sign-off: integer outputs are
 bit-identical across thread counts; floating reductions use fixed partitions
 and ordered combination where practical. Any tolerance is declared per kernel

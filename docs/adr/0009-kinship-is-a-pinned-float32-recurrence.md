@@ -66,6 +66,18 @@ Consequences of that definition:
   deleted once 0.8.0 ships.
 * Zero is exact: a returned 0 means the exact kinship is 0, and reversed
   endpoint order gives identical bits.
+* Bit parity is a **within-graph** property. For one constructed graph, pair
+  and matrix values agree bit-for-bit, and so do the two endpoint orders.
+  Two graphs built from the same pedigree in different input-row orders are
+  a different case: the peel rule breaks depth ties by row, so a permutation
+  can change the evaluation order of a deep inbred pair and hence its
+  rounding path. Such graphs must agree within the recurrence envelope
+  `abs(a - b) <= 2 * (depth_a + depth_b + 1) * 2**-25`, the sum of one
+  half-ulp per rounding step along both peel paths. Relationship
+  categories, pair sets, and every integer output remain exactly invariant
+  under permutation. On the review corpus (571,305 random deep-inbred pairs)
+  7,735 pairs differed, by at most 4 ulps; that number is diagnostic, not a
+  contract, and tests report ULP distance alongside the envelope check.
 * Canonical `inbreeding()` stays the float64 Meuwissen-Luo walk of ADR 0008
   (1 s and 19 MB at 536k rows, against 6 s and 1.2 GB through self pairs).
   `F_i = 2·phi(i,i) − 1` remains a tested invariant with tolerance `2^-22`

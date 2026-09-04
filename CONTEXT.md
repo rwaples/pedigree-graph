@@ -72,13 +72,20 @@ categories whose degree is less than or equal to the cutoff.
 The kinship coefficient implied by a relationship category's `(up, down,
 n_ancestors)` formula, assuming a single relationship path and no inbreeding
 or co-coalescence.
-_Avoid_: exact kinship
+_Avoid_: exact kinship, pedigree-expected kinship
 
-**Exact pairwise kinship**:
-The kinship coefficient for a particular pair of individuals after summing all
-pedigree paths, including inbreeding, MZ co-coalescence (shared genome nodes), and
-duplicate relationship paths such as double cousins.
-_Avoid_: nominal kinship
+**Pedigree-expected kinship**:
+The kinship coefficient the package returns for a particular pair of
+individuals: the value of the pinned float32 recurrence (ADR 0009) over all
+pedigree paths, including inbreeding, MZ co-coalescence (shared genome nodes),
+and duplicate relationship paths such as double cousins. Within one graph the
+pair and matrix values are bit-identical.
+_Avoid_: nominal kinship, exact kinship, pedigree-specific kinship
+
+**Exact rational kinship**:
+The dyadic rational a pair's kinship would be with unbounded precision. A
+reference-oracle and analysis term; not a public API value.
+_Avoid_: using it for what `pair_kinship` returns
 
 ## Relationships
 

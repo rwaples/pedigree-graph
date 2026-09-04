@@ -39,8 +39,10 @@ host boundary. The API is therefore redesigned first, in pure Python, and
 
 **Break the public API once, in 0.8.0, with no deprecation shims.** The
 canonical vocabulary is `CONTEXT.md` (graph-space, view-space, structural
-depth, generation label, nominal vs pedigree-specific kinship, role-ordered
-relationship pair).
+depth, generation label, nominal vs pedigree-expected kinship, role-ordered
+relationship pair). "Pedigree-expected kinship" is the public term for the
+value the recurrence returns for a particular pair; "exact rational kinship"
+is reserved for reference oracles and analysis.
 
 ### Construction
 
@@ -137,12 +139,21 @@ eventual source.
   pairs. The value is the pinned float32 recurrence of ADR 0009, bit-identical
   to the matrix entry for the same pair. A collection query is one core call
   sharing one memo.
-* `kinship_matrix()` is complete (every nonzero pedigree kinship).
+* Three matrix families, no overloaded threshold argument:
+  `kinship_matrix()` is complete (every nonzero pedigree kinship);
   `relationship_kinship_matrix(...)` is structurally limited to the selected
-  closest categories, but every retained coefficient is the full-pedigree
-  value, never a propagation-pruned one. Both include the diagonal.
+  closest categories; `approximate_kinship_matrix(min_propagated_kinship=)`
+  keeps the propagation-pruned **support** of the 0.7.x `min_kinship` DP,
+  because that support is load-bearing for fitACE's REML and PCGC fits (the
+  support, not the values, moved a 10k-individual PCGC h2 by 0.033). In all
+  three, every retained coefficient is the pedigree-expected value from the
+  pinned recurrence, never a propagation-pruned one, and all include the
+  diagonal. The approximate family is full-graph-only and its docstring
+  states that the threshold applies to intermediate propagation values, is
+  not a final-value cutoff, and can admit or omit pairs relative to
+  thresholding pedigree-expected coefficients.
 * CSC contract: SciPy `csc_matrix`, float32 data, int32 indices/indptr, sorted
-  rows per column, read-only cached arrays. "Pedigree-specific" permits only
+  rows per column, read-only cached arrays. "Pedigree-expected" permits only
   the per-step float32 rounding of the pinned recurrence (ADR 0009); every
   entry equals the `pair_kinship` value for that pair.
 * Canonical `inbreeding()` is MZ-aware and satisfies `F_i = 2·phi(i,i) − 1`
@@ -195,8 +206,11 @@ requirements.
   graph was built. Consumers that relied on canonical `(lo, hi)` ordering of
   lineal pairs must read roles from the block.
 * Supplying `generation` no longer changes any relationship or kinship value.
-* `kinship_matrix(min_kinship=...)` semantics disappear; the relationship-
-  limited matrix is the supported sparse form and is compared, in the
+* `kinship_matrix(min_kinship=...)` disappears. Its positive-threshold use
+  maps to `approximate_kinship_matrix`, whose values are corrected to the
+  pedigree-expected recurrence, so fitACE REML/PCGC results shift by the
+  value correction (measured at 5e-5 on the 10k benchmark) and not by a
+  support change. The relationship-limited matrix is compared, in the
   performance gate, against fitACE's current exact construction rather than
   against pruned output.
 * The experimental BFS engine is kept only as far as the pure-Python break
