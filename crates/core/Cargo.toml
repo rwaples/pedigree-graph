@@ -1,0 +1,18 @@
+[package]
+name = "pedigree-graph-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Host-neutral pedigree relationship engine (ADR 0007)"
+
+[lib]
+name = "pedigree_graph_core"
+
+[[bin]]
+name = "pgr-count"
+path = "src/bin/pgr_count.rs"
+
+[dependencies]
+rayon = "1.10"
