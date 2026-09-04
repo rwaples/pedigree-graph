@@ -11,6 +11,7 @@ requires-pixi = ">=0.76,<0.77"
 [dependencies]
 python = "3.13.*"
 pip = "*"
+rust = ">=1.85"
 
 [pypi-dependencies]
 pedigree-graph = { path = ".", editable = true, extras = ["test", "typecheck"] }

@@ -6,6 +6,20 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: a Rust row-streaming relationship engine with exact,
+  memory-bounded pair counts** (ADR 0010; issues #11 and #9).  `crates/core`
+  (`pedigree-graph-core`) classifies every relationship pair up to degree 5
+  one individual at a time, so peak memory is linear in the pedigree size:
+  the 20M-row simACE pedigree counts all 23 categories exactly in 83 s on 12
+  threads within 2.9 GiB, where the matrix engine needed an estimated
+  150 GiB.  Counts are bit-identical to `count_pairs(max_degree=5)` on every
+  parity fixture and bit-identical across thread counts.  Path multiplicity
+  is saturated at two, which is provably exact for the engine's predicates
+  and removes the overflow question of issue #9.  Not yet reachable from
+  Python: `pgr-count` is a benchmark and parity CLI over the array dump from
+  `tests/parity/dump_relationship_inputs.py`; the binding lands with the
+  native scaffold.  The pixi manifest now provides the Rust toolchain.
+
 - **Added: canonical construction** (ADR 0006).  `PedigreeGraph.from_frame(frame,
   *, sex_encoding="simace")` takes a dict of columns or any FrameLike table, and
   `PedigreeGraph.from_arrays(*, ids=, mother_ids=, father_ids=, twin_ids=None,

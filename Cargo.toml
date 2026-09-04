@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["crates/core"]
+
+[workspace.package]
+version = "0.8.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/rwaples/pedigree-graph"
+
+[profile.release]
+opt-level = 3
+debug = 1

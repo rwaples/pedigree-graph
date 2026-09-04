@@ -39,3 +39,6 @@ _version.py
 
 # pixi env (ADR 0018 dev manifest)
 .pixi/
+
+# Rust
+target/

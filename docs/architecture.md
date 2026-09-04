@@ -30,6 +30,7 @@ Prefer adding a **new** focused module over extending an oversized one (see
 | `_effective_size.py` | Facade for the Ne estimators, split into `_ne_common`, `_ne_results`, `_ne_family_size`, `_ne_founders`, `_ne_caballero_toro`, `_ne_hill`, `_ne_rates`. |
 | `_topology.py` | `build_topology` and the `Topology` value: structural depth plus the private stable depth-major order and the graph ↔ topological row maps every order-dependent kernel routes through. |
 | `_lineage_kernel.py`, `_cohort_utils.py` | Ancestor/descendant counts; cohort-eligibility windows. |
+| `crates/core/src/relationships/` | Rust `pedigree-graph-core`: the row-streaming exact relationship engine and `pgr-count` CLI (ADR [0010](adr/0010-row-streaming-relationship-engine.md)). Parity fixtures under `crates/core/tests/fixtures/` come from `tests/parity/dump_relationship_inputs.py`. |
 
 The pair engines are **read-only collaborators** of `PedigreeGraph`: they
 hold a reference, read private matrices/accessors, and return results; the
