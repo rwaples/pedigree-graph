@@ -10,7 +10,7 @@ will fail loudly.
 import numpy as np
 import pytest
 
-from pedigree_graph import PedigreeGraph
+from pedigree_graph import PedigreeGraph, ResourceError
 
 
 def _pg(ids, mothers, fathers):
@@ -107,8 +107,11 @@ def test_overflow_raises(monkeypatch):
     import pedigree_graph._core as core
 
     monkeypatch.setattr(core, "_compute_n_descendants", fake_kernel)
-    with pytest.raises(OverflowError, match="int32 max"):
+    with pytest.raises(ResourceError) as info:
         pg.compute_n_descendants()
+    assert info.value.code == "arithmetic_overflow"
+    assert info.value.fields["operation"] == "compute_n_descendants"
+    assert info.value.fields["dtype"] == "int32"
 
 
 def test_no_overflow_at_int32_max(monkeypatch):

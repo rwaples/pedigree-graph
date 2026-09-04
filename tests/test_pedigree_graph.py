@@ -7,7 +7,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from pedigree_graph import PedigreeGraph
+from pedigree_graph import PedigreeGraph, PedigreeValidationError
 from pedigree_graph._kinship_pairwise import (
     _pairwise_kinship_py,
     _pairwise_kinship_with_stats,
@@ -833,23 +833,34 @@ class TestFromArrays:
 
     def test_birth_year_topology_violation_raises(self):
         # Child born before mother.
-        with pytest.raises(ValueError, match="birth_year topology violation"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph.from_arrays(
                 ids=np.array([0, 1, 2]),
                 mothers=np.array([-1, -1, 0]),
                 fathers=np.array([-1, -1, 1]),
                 birth_year=np.array([2010, 1990, 1990]),
             )
+        assert info.value.code == "birth_year_topology"
+        assert info.value.fields["parent_role"] == "mother"
+        assert info.value.fields["child_row"] == 2
+        assert info.value.fields["parent_row"] == 0
+        assert info.value.fields["child_id"] == 2
+        assert info.value.fields["parent_id"] == 0
+        assert info.value.fields["child_birth_year"] == 1990
+        assert info.value.fields["parent_birth_year"] == 2010
+        assert info.value.fields["violation_count"] == 1
 
-    def test_birth_year_topology_violation_message_mentions_father(self):
+    def test_birth_year_topology_violation_reports_the_father_role(self):
         # Child born before father (mother edge OK).
-        with pytest.raises(ValueError, match="father-child"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph.from_arrays(
                 ids=np.array([0, 1, 2]),
                 mothers=np.array([-1, -1, 0]),
                 fathers=np.array([-1, -1, 1]),
                 birth_year=np.array([1990, 2010, 1995]),
             )
+        assert info.value.code == "birth_year_topology"
+        assert info.value.fields["parent_role"] == "father"
 
     def test_birth_year_partial_parent_validated_against_known_only(self):
         # Child has only the mother known. Father edge unconstrained.
@@ -950,22 +961,18 @@ class TestGenerationInterval:
         assert gi.T == pytest.approx(21.5)  # noqa: SIM300 (gi.T is an attribute, not a constant)
 
     def test_includes_skip_generation_edges(self):
-        # Founder 0 (1900); child 1 (1920); grandchild 2 (1940);
-        # AND a skip-gen edge: 0 also fathered 2 directly.
-        # 0 → 1: 20y; 1 → 2: 20y; 0 → 2: 40y (skip-gen).
-        # Wait — that would conflict with father=0 and father=1 for id=2.
-        # Easier: build a pedigree with a skip-gen via the father field.
+        # Founder 0 (1900) and founder 1 (1920) are the parents of 2 (1940),
+        # so the mother edge spans two generations' worth of years.
         pg = PedigreeGraph.from_arrays(
             ids=np.array([0, 1, 2]),
-            mothers=np.array([-1, -1, 0]),  # mother of 2 is 0 (skip-gen since 1 also exists)
-            fathers=np.array([-1, -1, 0]),  # father of 2 is also 0 — same founder, self-mating
+            mothers=np.array([-1, -1, 0]),
+            fathers=np.array([-1, -1, 1]),
             birth_year=np.array([1900, 1920, 1940]),
         )
         gi = pg.generation_interval
         assert gi is not None
-        # Mother edge: 0 → 2, Δ = 40
-        # Father edge: 0 → 2, Δ = 40
-        assert gi.T_m == pytest.approx(40.0)
+        # Dam edge (T_f): 0 → 2, Δ = 40 (skip-gen); sire edge (T_m): 1 → 2, Δ = 20.
+        assert gi.T_m == pytest.approx(20.0)
         assert gi.T_f == pytest.approx(40.0)
         assert gi.n_edges == 2
 
@@ -994,18 +1001,30 @@ class TestInputValidation:
 
     def test_duplicate_ids_raise(self):
         df = pl.DataFrame({"id": [0, 0], **self._BASE})
-        with pytest.raises(ValueError, match="duplicate id"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph(df)
+        assert info.value.code == "duplicate_id"
+        assert info.value.fields["id"] == 0
+        assert info.value.fields["rows"] == (0, 1)
 
     def test_negative_ids_raise(self):
         df = pl.DataFrame({"id": [-1, 0], **self._BASE})
-        with pytest.raises(ValueError, match="nonnegative"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph(df)
+        assert info.value.code == "value_out_of_range"
+        assert info.value.fields["field"] == "id"
+        assert info.value.fields["minimum"] == 0
 
     def test_non_integer_ids_raise(self):
-        df = pl.DataFrame({"id": [0.0, 1.0], **self._BASE})
-        with pytest.raises(ValueError, match="integer"):
+        df = pl.DataFrame({"id": [0.0, 0.5], **self._BASE})
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph(df)
+        assert info.value.code == "invalid_integer_value"
+        assert info.value.fields["value"] == 0.5
+
+    def test_integral_float_ids_are_accepted(self):
+        df = pl.DataFrame({"id": [0.0, 1.0], **self._BASE})
+        assert PedigreeGraph(df)._ids.tolist() == [0, 1]
 
     def test_mismatched_column_length_raises(self):
         data = {
@@ -1016,12 +1035,18 @@ class TestInputValidation:
             "sex": np.array([0, 0]),
             "generation": np.array([0, 0]),
         }
-        with pytest.raises(ValueError, match="length"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph(data)
+        assert info.value.code == "length_mismatch"
+        assert info.value.fields["field"] == "mother"
+        assert info.value.fields["expected_length"] == 2
+        assert info.value.fields["actual_length"] == 1
 
     def test_missing_required_column_raises(self):
-        with pytest.raises(ValueError, match="mother"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph({"id": np.array([0, 1])})
+        assert info.value.code == "missing_field"
+        assert info.value.fields["field"] == "mother"
 
     def test_sparse_high_ids_do_not_allocate_dense_table(self):
         # Pre-fix this allocated a max(id)+1 (~2e9) int32 table → ~8 GB / OOM.
@@ -1096,8 +1121,9 @@ class TestInputValidation:
             }
         )
         sub = full[2:]
-        with pytest.raises(ValueError, match="duplicate id"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph.from_subsample(full, sub)
+        assert info.value.code == "duplicate_id"
 
 
 class TestFromSubsample:
@@ -1136,8 +1162,9 @@ class TestFromSubsample:
 
     def test_duplicate_ids_raises(self, lineage_pedigree):
         dup = pl.concat([lineage_pedigree.head(2), lineage_pedigree.head(1)])
-        with pytest.raises(ValueError, match="duplicate id"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph.from_subsample(lineage_pedigree, dup)
+        assert info.value.code == "duplicate_id"
 
     def test_id_not_in_full_pedigree_raises(self, lineage_pedigree):
         bogus = pl.DataFrame(
@@ -1150,8 +1177,12 @@ class TestFromSubsample:
                 "generation": [0],
             }
         )
-        with pytest.raises(ValueError, match="not present in full_pedigree"):
+        with pytest.raises(PedigreeValidationError) as info:
             PedigreeGraph.from_subsample(lineage_pedigree, bogus)
+        assert info.value.code == "unknown_view_id"
+        assert info.value.fields["id"] == 99
+        assert info.value.fields["position"] == 0
+        assert info.value.fields["missing_count"] == 1
 
     def test_count_pairs_full_vs_subsample(self, lineage_pedigree):
         sub = lineage_pedigree.filter(pl.col("id").is_in([1, 3, 4]))
@@ -1523,7 +1554,9 @@ def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pl.DataFr
         males = [i for i in cur if sex[i] == 1] or cur
         for _ in range(per_gen):
             m = int(rng.choice(females))
-            f = int(rng.choice(males))
+            # A child cannot name one individual in both parent roles.
+            mates = [i for i in males if i != m] or [i for i in cur if i != m]
+            f = int(rng.choice(mates)) if mates else -1
             ids.append(next_id)
             mother.append(m)
             father.append(f)

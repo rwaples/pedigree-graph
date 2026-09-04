@@ -12,7 +12,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from pedigree_graph import FrameLike, PedigreeGraph
+from pedigree_graph import FrameLike, PedigreeGraph, PedigreeValidationError
 
 # Two founder couples, two children each, one grandchild generation.
 _DATA = {
@@ -76,9 +76,15 @@ class TestOptionalAndDtypes:
         _assert_same_graph(PedigreeGraph(df))
 
     def test_missing_required_column_reports_uniformly(self):
-        for frame in (pd.DataFrame(_DATA).drop(columns=["twin"]), pl.DataFrame(_DATA).drop("twin")):
-            with pytest.raises(ValueError, match="missing the required 'twin' column"):
+        for frame in (pd.DataFrame(_DATA).drop(columns=["mother"]), pl.DataFrame(_DATA).drop("mother")):
+            with pytest.raises(PedigreeValidationError) as info:
                 PedigreeGraph(frame)
+            assert info.value.code == "missing_field"
+            assert info.value.fields["field"] == "mother"
+
+    def test_optional_columns_may_be_absent(self):
+        for frame in (pd.DataFrame(_DATA).drop(columns=["twin"]), pl.DataFrame(_DATA).drop("twin")):
+            _assert_same_graph(PedigreeGraph(frame))
 
 
 def test_framelike_is_exported_protocol():

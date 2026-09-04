@@ -6,6 +6,44 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: structured errors** (ADR 0006).  `PedigreeValidationError` and
+  `MissingMetadataError` (both `ValueError`) and `ResourceError` (a
+  `RuntimeError`) are exported from the package root.  Each carries a stable
+  `.code` string and an immutable `.fields` mapping naming the offending
+  field, row, value, or limit; messages are prose and are not a contract.
+  Construction failures, `max_degree` range failures, MZ-invariant failures,
+  and the `compute_n_descendants()` int32 overflow (previously an
+  `OverflowError`) now raise these instead of bare `ValueError` /
+  `OverflowError`.  Tests should assert `.code`, not the message text.
+
+- **Changed: only `id`, `mother`, and `father` are required.**  `twin`,
+  `sex`, `generation`, and `birth_year` are optional in every dict and frame
+  input; a frame column that is wholly missing (all `-1` or all host nulls)
+  now reads exactly like an omitted one.  The 0.7.1 attributes keep their
+  0.7.1 defaults for now — `pg.sex` is all-female, `pg.generation` falls back
+  to structural depth — but `pg.birth_year` is `None` for a wholly unknown
+  birth-year column, where 0.7.1 returned an all-`-1` array.
+
+- **Changed: numeric input is coerced losslessly and range-checked.**
+  Integer, integral-float, and object columns (pandas nullable, mixed
+  lists) are accepted; polars nulls and pandas `pd.NA` become the `-1`
+  missing sentinel everywhere except `id`, which has no missing value.
+  Non-integral floats, infinities, `bool` columns, strings, `uint64` values
+  above the int64 maximum, and out-of-range values are rejected with
+  `invalid_integer_value` or `value_out_of_range` naming the position.
+  `sex_encoding="plink"` maps `1 -> 1` male, `2 -> 0` female, `0 -> -1`
+  unknown; the default `"simace"` encoding stores `0` / `1` / `-1` as given.
+
+- **Added: cyclic parent references are rejected** with a `cycle` error
+  carrying one deterministic witness — the tuple of ids around the cycle,
+  the same for a given graph whatever order its rows arrive in.  A child
+  naming one id in both parent roles is `same_parent_id`, external ids
+  included.
+
+- **Changed: construction owns its arrays.**  Every column is copied into
+  contiguous, read-only storage, so mutating the caller's arrays after
+  construction cannot change the graph.
+
 - **Changed: `compute_inbreeding()` is MZ-aware** (#8, ADR 0008).  The
   Meuwissen–Luo walk now runs over the genome-node pedigree, in which MZ
   co-twins share one node, so `F` equals `2 * phi(i, i) - 1` from
@@ -23,9 +61,10 @@ live on the corresponding GitHub release pages.
   inbreeding section) shifts accordingly.  Wall time is unchanged; peak
   memory rises by about 2% on pedigrees that contain twins.
 
-  `compute_inbreeding()` now raises `ValueError` when a represented MZ
-  reference is not reciprocal or the co-twins do not share both parent
-  rows.  An absent co-twin (`twin == -1`) is not an MZ pair.
+  `compute_inbreeding()` now raises `PedigreeValidationError`
+  (`mz_nonreciprocal` or `mz_parent_mismatch`, both `ValueError`s) when a
+  represented MZ reference is not reciprocal or the co-twins do not share
+  both parent rows.  An absent co-twin (`twin == -1`) is not an MZ pair.
 
 ## v0.7.1
 

@@ -9,7 +9,7 @@ underlying pedigree breaks one of those conditions.
 import numpy as np
 import pytest
 
-from pedigree_graph import REL_REGISTRY, PedigreeGraph
+from pedigree_graph import REL_REGISTRY, PedigreeGraph, PedigreeValidationError
 
 
 def test_streaming_returns_all_23_codes(small_pedigree):
@@ -273,22 +273,27 @@ def test_streaming_av_within_approximate_bound(small_pedigree):
 @pytest.mark.parametrize("bad", [-1, 6, 100])
 def test_extract_pairs_invalid_max_degree(small_pedigree, bad):
     pg = PedigreeGraph(small_pedigree)
-    with pytest.raises(ValueError, match="max_degree must be"):
+    with pytest.raises(PedigreeValidationError) as info:
         pg.extract_pairs(max_degree=bad)
+    assert info.value.code == "max_degree_out_of_range"
+    assert info.value.fields["value"] == bad
+    assert (info.value.fields["minimum"], info.value.fields["maximum"]) == (0, 5)
 
 
 @pytest.mark.parametrize("bad", [-1, 6, 100])
 def test_count_pairs_invalid_max_degree(small_pedigree, bad):
     pg = PedigreeGraph(small_pedigree)
-    with pytest.raises(ValueError, match="max_degree must be"):
+    with pytest.raises(PedigreeValidationError) as info:
         pg.count_pairs(max_degree=bad)
+    assert info.value.code == "max_degree_out_of_range"
 
 
 @pytest.mark.parametrize("bad", [-1, 6, 100])
 def test_count_pairs_streaming_invalid_max_degree(small_pedigree, bad):
     pg = PedigreeGraph(small_pedigree)
-    with pytest.raises(ValueError, match="max_degree must be"):
+    with pytest.raises(PedigreeValidationError) as info:
         pg.count_pairs_streaming(max_degree=bad)
+    assert info.value.code == "max_degree_out_of_range"
 
 
 def test_max_degree_zero_is_mz_only(small_pedigree):

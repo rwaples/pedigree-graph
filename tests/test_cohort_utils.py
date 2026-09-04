@@ -37,9 +37,11 @@ class TestEligibleCohortRange:
         with pytest.raises(ValueError, match=r"requires pg\.birth_year"):
             eligible_cohort_range(pg)
 
-    def test_raises_when_no_known_birth_years(self):
+    def test_wholly_unknown_birth_year_reads_as_omitted(self):
+        # All-missing optional metadata normalizes to None, exactly like omission.
         pg = _three_gen_pedigree(np.array([-1, -1, -1]))
-        with pytest.raises(ValueError, match="no individuals have known birth_year"):
+        assert pg.birth_year is None
+        with pytest.raises(ValueError, match=r"requires pg\.birth_year"):
             eligible_cohort_range(pg)
 
     def test_raises_when_no_edges_with_both_birth_years(self):

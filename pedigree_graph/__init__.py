@@ -6,6 +6,10 @@ Public API:
     PAIR_KINSHIP      — kinship coefficient by code (single source of truth)
     RelType           — NamedTuple describing a single relationship class
 
+Errors (ADR 0006 — each carries a stable ``.code`` and immutable ``.fields``):
+    PedigreeValidationError, MissingMetadataError (both ValueError),
+    ResourceError (RuntimeError)
+
 Effective population size (Ne):
     Result classes: NeCaballeroToroResult, NeCoancestryResult, NeHillResult,
         NeIndividualDeltaFResult, NeInbreedingResult, NeLTCResult,
@@ -49,6 +53,11 @@ from pedigree_graph._effective_size import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
+from pedigree_graph._errors import (
+    MissingMetadataError,
+    PedigreeValidationError,
+    ResourceError,
+)
 
 __all__ = [
     "PAIR_KINSHIP",
@@ -56,6 +65,7 @@ __all__ = [
     "CohortWindow",
     "FrameLike",
     "GenerationInterval",
+    "MissingMetadataError",
     "NeCaballeroToroResult",
     "NeCoancestryResult",
     "NeHillResult",
@@ -65,7 +75,9 @@ __all__ = [
     "NeSexRatioResult",
     "NeVarianceResult",
     "PedigreeGraph",
+    "PedigreeValidationError",
     "RelType",
+    "ResourceError",
     "compute_all_ne",
     "eligible_cohort_range",
     "ne_caballero_toro",

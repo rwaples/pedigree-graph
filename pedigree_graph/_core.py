@@ -29,11 +29,15 @@ import numpy as np
 import scipy.sparse as sp
 
 from pedigree_graph._effective_size import _per_gen_mean_kinship
+from pedigree_graph._errors import PedigreeValidationError, ResourceError
 from pedigree_graph._frames import (
-    _OPTIONAL_COLUMNS,
-    _REQUIRED_COLUMNS,
     FrameLike,
     _coerce_to_array_dict,
+)
+from pedigree_graph._input import (
+    _map_ids_to_rows,
+    parse_pedigree_input,
+    validate_id_field,
 )
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
@@ -58,77 +62,6 @@ from pedigree_graph._registry import (
 from pedigree_graph._streaming_counter import StreamingPairCounter
 
 logger = logging.getLogger(__name__)
-
-
-def _validate_id_column(ids: np.ndarray) -> np.ndarray:
-    """Validate the ``id`` column and return it as ``int64``.
-
-    The id column is the boundary the whole graph is indexed by, so it is
-    validated strictly: it must be a 1-D integer array of unique,
-    nonnegative values.  A duplicate id silently lets a later row win the
-    id→row map; a negative id wraps around as a numpy negative index.  Both
-    are rejected here rather than producing a quietly corrupt graph.
-    """
-    ids = np.asarray(ids)
-    if ids.ndim != 1:
-        raise ValueError(f"id column must be 1-D, got shape {ids.shape}")
-    if ids.dtype.kind not in ("i", "u"):
-        raise ValueError(f"id column must be integer-typed, got dtype {ids.dtype!r}")
-    if ids.size:
-        if int(ids.min()) < 0:
-            raise ValueError(f"id column must be nonnegative; smallest id is {int(ids.min())}")
-        # sort + adjacent-equality beats np.unique's hash path ~35x here
-        sorted_ids = np.sort(ids)
-        n_dups = int(np.count_nonzero(sorted_ids[1:] == sorted_ids[:-1]))
-        if n_dups:
-            raise ValueError(f"id column has {n_dups} duplicate id(s)")
-    return ids.astype(np.int64, copy=False)
-
-
-def _validate_required_columns(arrays: dict[str, np.ndarray], n: int) -> None:
-    """Check required columns are present and all columns share length ``n``."""
-    for col in _REQUIRED_COLUMNS:
-        if col not in arrays:
-            raise ValueError(f"input is missing the required {col!r} column")
-        if len(arrays[col]) != n:
-            raise ValueError(f"column {col!r} has length {len(arrays[col])}, expected {n} (id column length)")
-    for col in _OPTIONAL_COLUMNS:
-        if col in arrays and len(arrays[col]) != n:
-            raise ValueError(f"column {col!r} has length {len(arrays[col])}, expected {n} (id column length)")
-
-
-def _map_ids_to_rows(
-    target_ids: np.ndarray,
-    query_ids: np.ndarray,
-    dtype: np.dtype | type = np.int32,
-) -> np.ndarray:
-    """Map each query id to its row position in *target_ids* via searchsorted.
-
-    *target_ids* must be unique (caller validates via
-    :func:`_validate_id_column`).  Negative query ids (the ``-1`` "no
-    relation" sentinel) and ids absent from *target_ids* both map to ``-1``.
-
-    Uses ``searchsorted`` over the sorted target ids rather than a dense
-    ``max(id)+1`` lookup table, so sparse / very large ids cost O(n log n)
-    instead of allocating an array sized to the largest id.  Absent ids
-    remap leniently to ``-1`` so partial pedigrees (a subsample missing a
-    parent or co-twin) construct without error.
-    """
-    target_ids = np.asarray(target_ids)
-    query = np.asarray(query_ids)
-    out = np.full(len(query), -1, dtype=dtype)
-    if len(target_ids) == 0 or len(query) == 0:
-        return out
-    order = np.argsort(target_ids, kind="stable")
-    sorted_ids = target_ids[order]
-    sel = np.where(query >= 0)[0]
-    if sel.size == 0:
-        return out
-    q = query[sel]
-    pos = np.clip(np.searchsorted(sorted_ids, q), 0, len(sorted_ids) - 1)
-    found = sorted_ids[pos] == q
-    out[sel[found]] = order[pos[found]].astype(dtype, copy=False)
-    return out
 
 
 def _known_parent_edges(
@@ -173,21 +106,22 @@ class PedigreeGraph:
     relationship extraction via matrix products.
 
     Args:
-        data: Either a ``dict[str, np.ndarray]`` keyed by ``id``, ``mother``,
-            ``father``, ``twin``, ``sex``, ``generation``, or any
-            :class:`FrameLike` table with those columns — pandas and polars
-            DataFrames both satisfy the structural protocol, and neither
-            library is imported by this package.
+        data: Either a ``dict[str, np.ndarray]`` or any :class:`FrameLike`
+            table — pandas and polars DataFrames both satisfy the structural
+            protocol, and neither library is imported by this package.
+            ``id``, ``mother``, and ``father`` are required; ``twin``,
+            ``sex``, ``generation``, and ``birth_year`` are optional and
+            other keys are ignored.  :mod:`pedigree_graph._input` owns every
+            guard on the values.
     """
 
+    # 0.8.0-DELETE: the loose dict-or-frame constructor; 0.8 constructs through
+    # from_frame / from_arrays only.
     def __init__(self, data: dict[str, np.ndarray] | FrameLike) -> None:
-        arrays = _coerce_to_array_dict(data)
-        if "id" not in arrays:
-            raise ValueError("input is missing the required 'id' column")
-        ids_arr = _validate_id_column(arrays["id"])
-        n = len(ids_arr)
+        parsed = parse_pedigree_input(data)
+        self._input = parsed
+        n = parsed.n_individuals
         self.n = n
-        _validate_required_columns(arrays, n)
 
         # Subsample state — set only by from_subsample. When _sample_mask is
         # set, extract_pairs filters to pairs where both endpoints are active.
@@ -229,34 +163,23 @@ class PedigreeGraph:
         # diagnostics so the full-pedigree edge scan runs once per side.
         self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
-        # Row indices are int32 (fit in 2.1B); reject pedigrees too tall.
-        self._ids = ids_arr
-        if n > np.iinfo(np.int32).max:
-            raise ValueError(f"Pedigree has {n:,} rows, exceeding int32 max for row indices")
+        self._ids = parsed.ids
+        # Original pedigree parent IDs (for sibling classification — valid
+        # even when the parent isn't represented).
+        self._orig_mother = parsed.mother_ids
+        self._orig_father = parsed.father_ids
+        self.mother = parsed.mother_rows
+        self.father = parsed.father_rows
+        self.twin = parsed.twin_rows
+        self.birth_year: np.ndarray | None = parsed.birth_year
+        # 0.8.0-DELETE: the 0.7.1 all-female sex default and depth-derived
+        # generation fallback; the 0.8 properties report absent metadata instead.
+        self.sex = parsed.sex if parsed.sex is not None else np.zeros(n, dtype=np.int8)
+        self.generation = (
+            parsed.generation if parsed.generation is not None else _compute_depth(self.mother, self.father, n)
+        )
 
-        # Original pedigree parent IDs (for sibling classification —
-        # valid even when the parent isn't in the sample).
-        self._orig_mother = np.asarray(arrays["mother"])
-        self._orig_father = np.asarray(arrays["father"])
-
-        # Remap parent/twin IDs to row indices via searchsorted.  Absent
-        # references (parent/co-twin outside a subsample) remap to -1.
-        self.mother = _map_ids_to_rows(ids_arr, self._orig_mother, np.int32)
-        self.father = _map_ids_to_rows(ids_arr, self._orig_father, np.int32)
-        self.twin = _map_ids_to_rows(ids_arr, np.asarray(arrays["twin"]), np.int32)
-        self.sex = np.asarray(arrays["sex"]).astype(np.int8)
-        self.generation = np.asarray(arrays["generation"]).astype(np.int32)
-
-        # Optional birth_year (sentinel -1 for unknown). NaN floats coerced
-        # to -1 so callers can pass a pandas Series with missing values.
-        if "birth_year" in arrays:
-            by_raw = np.asarray(arrays["birth_year"])
-            if by_raw.dtype.kind == "f":
-                by_raw = np.where(np.isnan(by_raw), -1, by_raw)
-            self.birth_year: np.ndarray | None = by_raw.astype(np.int32)
-        else:
-            self.birth_year = None
-
+        # 0.8.0-DELETE: slice 1b routes arbitrary acyclic row order.
         if not _check_topological(self.mother, self.father, n):
             raise ValueError("PedigreeGraph requires topological order: parents must precede children")
 
@@ -272,23 +195,35 @@ class PedigreeGraph:
 
         Only checks edges where both endpoints have known birth_year
         (sentinel ``-1`` skipped). Unknown-parent and unknown-child rows
-        contribute no constraints.
+        contribute no constraints.  The first violating edge in row order,
+        for the first violating parent role, is reported.
         """
         if self.birth_year is None:
             return
-        for parent_label in ("mother", "father"):
-            edge_rows, diffs = self._known_parent_edges_for(parent_label)
+        for parent_role in ("mother", "father"):
+            edge_rows, diffs = self._known_parent_edges_for(parent_role)
             if diffs.size == 0:
                 continue
             violations = diffs < 0
-            if np.any(violations):
-                n_bad = int(violations.sum())
-                first = int(np.argmax(violations))
-                raise ValueError(
-                    f"birth_year topology violation: {n_bad} {parent_label}-child "
-                    f"edge(s) have child.birth_year < {parent_label}.birth_year "
-                    f"(first: row {int(edge_rows[first])}, diff={int(diffs[first])})"
-                )
+            if not violations.any():
+                continue
+            first = int(np.argmax(violations))
+            child_row = int(edge_rows[first])
+            parent_arr = self.mother if parent_role == "mother" else self.father
+            parent_row = int(parent_arr[child_row])
+            raise PedigreeValidationError(
+                "birth_year_topology",
+                f"birth_year topology violation: {parent_role}-child edge at row {child_row} "
+                f"has child.birth_year below {parent_role}.birth_year",
+                parent_role=parent_role,
+                child_row=child_row,
+                parent_row=parent_row,
+                child_id=int(self._ids[child_row]),
+                parent_id=int(self._ids[parent_row]),
+                child_birth_year=int(self.birth_year[child_row]),
+                parent_birth_year=int(self.birth_year[parent_row]),
+                violation_count=int(violations.sum()),
+            )
 
     def _ensure_parent_csr(self) -> None:
         """Idempotent (re)build of ``self._Am`` and ``self._Af``.
@@ -806,6 +741,7 @@ class PedigreeGraph:
     # ------------------------------------------------------------------
 
     @classmethod
+    # 0.8.0-DELETE: renamed to from_frame in 0.8.
     def from_dataframe(cls, df: FrameLike) -> PedigreeGraph:
         """Construct from a DataFrame (any :class:`FrameLike` table).
 
@@ -818,6 +754,8 @@ class PedigreeGraph:
         return cls(df)
 
     @classmethod
+    # 0.8.0-DELETE: the positional 0.7.1 signature, the generation fallback, and
+    # the all-female sex default; 0.8's from_arrays is keyword-only.
     def from_arrays(
         cls,
         ids: np.ndarray,
@@ -849,34 +787,20 @@ class PedigreeGraph:
         their consumers do not read ``pg.sex``.
         """
         ids_arr = np.asarray(ids)
-        mothers_arr = np.asarray(mothers)
-        fathers_arr = np.asarray(fathers)
         n = len(ids_arr)
-        twins_arr = np.full(n, -1, dtype=np.int64) if twins is None else np.asarray(twins)
-        sex_arr = np.zeros(n, dtype=np.int8) if sex is None else np.asarray(sex, dtype=np.int8)
-
-        # Generation column may be unknown here — fill a placeholder,
-        # instantiate the graph (which remaps parents to row indices),
-        # then derive depth from the already-remapped parent arrays.
-        derive_generation = generation is None
         data: dict[str, np.ndarray] = {
             "id": ids_arr,
-            "mother": mothers_arr,
-            "father": fathers_arr,
-            "twin": twins_arr,
-            "sex": sex_arr,
-            "generation": (
-                np.zeros(n, dtype=np.int32) if derive_generation else np.asarray(generation, dtype=np.int32)
-            ),
+            "mother": np.asarray(mothers),
+            "father": np.asarray(fathers),
+            "twin": np.full(n, -1, dtype=np.int64) if twins is None else np.asarray(twins),
         }
-        if birth_year is not None:
-            data["birth_year"] = np.asarray(birth_year)
-        pg = cls(data)
-        if derive_generation:
-            pg.generation = _compute_depth(pg.mother, pg.father, n)
-        return pg
+        for name, column in (("sex", sex), ("generation", generation), ("birth_year", birth_year)):
+            if column is not None:
+                data[name] = np.asarray(column)
+        return cls(data)
 
     @classmethod
+    # 0.8.0-DELETE: replaced by full.view(ids=...) (ADR 0006).
     def from_subsample(
         cls,
         full_pedigree: dict[str, np.ndarray] | FrameLike,
@@ -903,20 +827,27 @@ class PedigreeGraph:
         """
         df_arrays = _coerce_to_array_dict(df)
         if "id" not in df_arrays:
-            raise ValueError("from_subsample: df is missing the required 'id' column")
+            raise PedigreeValidationError(
+                "missing_field",
+                "from_subsample: df is missing the required 'id' field",
+                field="id",
+            )
         # Same id-column contract as the constructor (unique, nonnegative).
-        df_ids = _validate_id_column(df_arrays["id"])
+        df_ids = validate_id_field(df_arrays["id"])
 
         full_arrays = _coerce_to_array_dict(full_pedigree)
         full_ids = np.asarray(full_arrays["id"])
         if len(df_ids) > 0:
             in_full = np.isin(df_ids, full_ids)
             if not in_full.all():
-                missing = df_ids[~in_full]
-                preview = missing[:10].tolist()
-                raise ValueError(
-                    f"from_subsample: {len(missing)} id(s) in df not present in "
-                    f"full_pedigree (first {min(len(missing), 10)}: {preview})"
+                positions = np.flatnonzero(~in_full)
+                first = int(positions[0])
+                raise PedigreeValidationError(
+                    "unknown_view_id",
+                    f"from_subsample: {positions.size} id(s) in df are not present in full_pedigree",
+                    id=int(df_ids[first]),
+                    position=first,
+                    missing_count=int(positions.size),
                 )
 
         # Constructing the full graph validates the full pedigree's id column.
@@ -1065,10 +996,11 @@ class PedigreeGraph:
         graph (``self._inbreeding``).
 
         Raises:
-            ValueError: if a represented MZ reference is not reciprocal or
-                the co-twins do not share both parent rows.  An absent
-                co-twin (``twin == -1``, e.g. outside a subsample) is not an
-                MZ pair and is fine.
+            PedigreeValidationError: ``mz_nonreciprocal`` or
+                ``mz_parent_mismatch`` if a represented MZ reference is not
+                reciprocal or the co-twins do not share both parent rows.  An
+                absent co-twin (``twin == -1``, e.g. outside a subsample) is
+                not an MZ pair and is fine.
         """
         if self._inbreeding is None:
             self._check_mz_invariant()
@@ -1083,18 +1015,31 @@ class PedigreeGraph:
         if rows.size == 0:
             return
         partner = self.twin[rows]
-        bad = (
-            (self.twin[partner] != rows)
-            | (self.mother[partner] != self.mother[rows])
-            | (self.father[partner] != self.father[rows])
-        )
-        if bad.any():
-            first = int(rows[np.flatnonzero(bad)[0]])
-            raise ValueError(
-                f"MZ reference at row {first} (id {self._ids[first]}) is not reciprocal "
-                "or the co-twins do not share both parents; compute_inbreeding requires "
+        nonreciprocal = self.twin[partner] != rows
+        mismatched = {
+            "mother": self.mother[partner] != self.mother[rows],
+            "father": self.father[partner] != self.father[rows],
+        }
+        bad = nonreciprocal | mismatched["mother"] | mismatched["father"]
+        if not bad.any():
+            return
+        first = int(np.flatnonzero(bad)[0])
+        row = int(rows[first])
+        twin_row = int(partner[first])
+        located = {"row": row, "id": int(self._ids[row]), "twin_id": int(self._ids[twin_row])}
+        if nonreciprocal[first]:
+            raise PedigreeValidationError(
+                "mz_nonreciprocal",
+                f"MZ reference at row {row} is not reciprocal; compute_inbreeding requires "
                 "MZ pairs to be reciprocal, two-member, and parent-identical",
+                **located,
             )
+        raise PedigreeValidationError(
+            "mz_parent_mismatch",
+            f"MZ co-twins at rows {row} and {twin_row} do not share both parents",
+            parent_roles=tuple(role for role, flags in mismatched.items() if flags[first]),
+            **located,
+        )
 
     def compute_n_descendants(self) -> np.ndarray:
         """Per-individual descendant count, **path-count semantics**.
@@ -1109,8 +1054,8 @@ class PedigreeGraph:
         graph (``self._n_descendants``).
 
         Raises:
-            OverflowError: if any per-individual path count exceeds
-                ``np.iinfo(np.int32).max``.  The kernel accumulates in
+            ResourceError: ``arithmetic_overflow`` if any per-individual path
+                count exceeds ``np.iinfo(np.int32).max``.  The kernel accumulates in
                 ``int64``; the cast to ``int32`` happens here after a
                 bounds check so deeply inbred / loop-heavy pedigrees
                 cannot silently wrap.
@@ -1122,13 +1067,16 @@ class PedigreeGraph:
                 self.n,
             )
             if n_desc64.size and int(n_desc64.max()) > np.iinfo(np.int32).max:
-                raise OverflowError(
+                raise ResourceError(
+                    "arithmetic_overflow",
                     "compute_n_descendants: at least one path count exceeds "
                     f"int32 max ({np.iinfo(np.int32).max:,}); the pedigree is "
                     "too inbred / loop-heavy for the int32-cached output.  "
                     "Inspect the int64 kernel output via "
                     "pedigree_graph._lineage_kernel._compute_n_descendants "
                     "if larger values are required.",
+                    operation="compute_n_descendants",
+                    dtype="int32",
                 )
             self._n_descendants = n_desc64.astype(np.int32)
         return self._n_descendants

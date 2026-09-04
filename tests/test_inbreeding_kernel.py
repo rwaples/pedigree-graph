@@ -14,7 +14,7 @@ import polars as pl
 import pytest
 import scipy.sparse as sp
 
-from pedigree_graph import PedigreeGraph
+from pedigree_graph import PedigreeGraph, PedigreeValidationError
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
     _compute_depth,
@@ -237,16 +237,21 @@ def test_parity_with_matrix_path_with_mz(small_pedigree):
 
 
 @pytest.mark.parametrize(
-    ("twin", "why"),
+    ("twin", "code", "row"),
     [
-        ([-1, -1, 3, -1, -1], "non-reciprocal"),
-        ([-1, -1, -1, 4, 3], "different parents"),
+        ([-1, -1, 3, -1, -1], "mz_nonreciprocal", 2),
+        ([-1, -1, -1, 4, 3], "mz_parent_mismatch", 3),
     ],
+    ids=["non-reciprocal", "different parents"],
 )
-def test_compute_inbreeding_rejects_broken_mz_invariant(twin, why):
+def test_compute_inbreeding_rejects_broken_mz_invariant(twin, code, row):
     pg = PedigreeGraph(_mz_frame([0, 1, 2, 3, 4], [-1, -1, 0, 0, 1], [-1, -1, 1, 1, 0], twin))
-    with pytest.raises(ValueError, match="reciprocal"):
+    with pytest.raises(PedigreeValidationError) as info:
         pg.compute_inbreeding()
+    assert info.value.code == code
+    assert info.value.fields["row"] == row
+    if code == "mz_parent_mismatch":
+        assert info.value.fields["parent_roles"] == ("mother", "father")
 
 
 def test_absent_co_twin_is_not_an_mz_pair():

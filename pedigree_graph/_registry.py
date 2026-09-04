@@ -17,6 +17,8 @@ from typing import NamedTuple
 
 import numpy as np
 
+from pedigree_graph._errors import PedigreeValidationError
+
 __all__ = [
     "PAIR_KINSHIP",
     "REL_PLAN",
@@ -102,8 +104,12 @@ def _validate_max_degree(max_degree: int) -> int:
     """Coerce *max_degree* to int and reject values outside ``[0, 5]``."""
     md = int(max_degree)
     if md < _MAX_DEGREE_MIN or md > _MAX_DEGREE_MAX:
-        raise ValueError(
+        raise PedigreeValidationError(
+            "max_degree_out_of_range",
             f"max_degree must be in [{_MAX_DEGREE_MIN}, {_MAX_DEGREE_MAX}], got {max_degree!r}",
+            value=max_degree,
+            minimum=_MAX_DEGREE_MIN,
+            maximum=_MAX_DEGREE_MAX,
         )
     return md
 
