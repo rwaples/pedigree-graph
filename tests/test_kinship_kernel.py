@@ -201,27 +201,31 @@ def test_min_kinship_prunes_offdiag():
     assert K_pruned[0, 2] == 0.125
 
 
-def test_generation_none_autoderives():
-    # Identical result when generation=None (kernel derives via fixed-point).
-    indptr_a, indices_a, data_a = _build_kinship_csc(
+def test_dp_reorders_topological_but_not_depth_major_rows():
+    # Rows 0,1 founders; row 2 = child(0,1); row 3 is a founder that sorts
+    # after its own child by input row order.  The DP must run in depth-major
+    # rows and hand the CSC back in caller rows.
+    depth_major = _build_kinship_csc(
         4,
-        np.array([-1, -1, 0, 2], dtype=np.int32),
+        np.array([-1, -1, 0, -1], dtype=np.int32),
         np.array([-1, -1, 1, -1], dtype=np.int32),
-        np.array([-1, -1, -1, -1], dtype=np.int32),
-        np.array([0, 0, 1, 2], dtype=np.int32),
+        np.full(4, -1, dtype=np.int32),
+        np.array([0, 0, 1, 0], dtype=np.int32),
         0.0,
     )
-    indptr_b, indices_b, data_b = _build_kinship_csc(
+    # Same pedigree with the child moved ahead of one of its parents.
+    permuted = _build_kinship_csc(
         4,
-        np.array([-1, -1, 0, 2], dtype=np.int32),
-        np.array([-1, -1, 1, -1], dtype=np.int32),
-        np.array([-1, -1, -1, -1], dtype=np.int32),
-        None,
+        np.array([-1, 2, -1, -1], dtype=np.int32),
+        np.array([-1, 3, -1, -1], dtype=np.int32),
+        np.full(4, -1, dtype=np.int32),
+        np.array([0, 1, 0, 0], dtype=np.int32),
         0.0,
     )
-    assert np.array_equal(indptr_a, indptr_b)
-    assert np.array_equal(indices_a, indices_b)
-    assert np.array_equal(data_a, data_b)
+    k_a = sp.csc_matrix((depth_major[2], depth_major[1], depth_major[0]), shape=(4, 4))
+    k_b = sp.csc_matrix((permuted[2], permuted[1], permuted[0]), shape=(4, 4))
+    assert k_a[0, 2] == k_b[2, 1]
+    assert k_a[2, 2] == k_b[1, 1]
 
 
 def test_dp_kinship_row_start_is_int64():
@@ -240,6 +244,7 @@ def test_dp_kinship_row_start_is_int64():
         m_idx,
         f_idx,
         tw_idx,
+        depth,
         depth,
         0.0,
         16,

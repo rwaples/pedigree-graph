@@ -111,6 +111,9 @@ class PedigreeInput:
             the field was omitted or wholly unknown.
         generation: int32 generation labels ``>= -1``, or ``None`` as ``sex``.
         birth_year: int32 birth years ``>= -1``, or ``None`` as ``sex``.
+        rows_topological: ``True`` when every parent row precedes its child
+            row, so a parents-before-children sweep may run on these rows
+            directly.
     """
 
     ids: np.ndarray
@@ -123,6 +126,7 @@ class PedigreeInput:
     sex: np.ndarray | None
     generation: np.ndarray | None
     birth_year: np.ndarray | None
+    rows_topological: bool
 
     @property
     def n_individuals(self) -> int:
@@ -536,7 +540,8 @@ def parse_pedigree_input(
     mother_rows = _map_ids_to_rows(ids, values["mother"], np.int32)
     father_rows = _map_ids_to_rows(ids, values["father"], np.int32)
     twin_rows = _map_ids_to_rows(ids, twin_ids, np.int32)
-    if not _check_topological(mother_rows, father_rows, n):
+    rows_topological = bool(_check_topological(mother_rows, father_rows, n))
+    if not rows_topological:
         _check_cycle(ids, mother_rows, father_rows, n)
 
     return PedigreeInput(
@@ -550,6 +555,7 @@ def parse_pedigree_input(
         sex=_normalize_optional(values.get("sex"), np.int8),
         generation=_normalize_optional(values.get("generation"), np.int32),
         birth_year=_normalize_optional(values.get("birth_year"), np.int32),
+        rows_topological=rows_topological,
     )
 
 

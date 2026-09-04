@@ -122,7 +122,8 @@ def _capture(pg_mod, fx: dict[str, np.ndarray], *, full_arrays: bool) -> tuple[d
     n_anc = np.asarray(g.compute_n_ancestors())
     try:
         n_desc = np.asarray(g.compute_n_descendants())
-    except OverflowError:
+    except (OverflowError, RuntimeError):
+        # 0.7.1 raised OverflowError; 0.8 raises ResourceError(RuntimeError).
         n_desc = None
         summary["n_descendants_overflow"] = True
     theta = np.asarray(g.per_gen_mean_kinship(), dtype=np.float64)

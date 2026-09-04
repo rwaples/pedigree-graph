@@ -1328,9 +1328,9 @@ class TestComputePairKinship:
             assert out["MHS"].dtype == np.float64
             assert len(out["MHS"]) == 0
 
-    def test_constructor_rejects_non_topological(self):
-        # Parent index appears AFTER its child — violates the invariant
-        # required by `_compute_F_meuwissen_luo`'s outer loop.
+    def test_constructor_accepts_a_parent_row_after_its_child(self):
+        # Row 3's mother is row 5: acyclic but not topological.  The private
+        # depth-major order carries every order-dependent kernel.
         df = pl.DataFrame(
             {
                 "id": np.array([0, 1, 2, 3, 4, 5]),
@@ -1341,8 +1341,10 @@ class TestComputePairKinship:
                 "generation": np.array([0, 0, 1, 1, 0, 0]),
             }
         )
-        with pytest.raises(ValueError, match="topological order"):
-            PedigreeGraph(df)
+        pg = PedigreeGraph(df)
+        assert pg._depth.tolist() == [0, 0, 1, 1, 0, 0]
+        assert pg.compute_pair_kinship({"PO": (np.array([3]), np.array([5]))})["PO"].tolist() == [0.25]
+        assert pg.kinship_matrix(0.0)[3, 5] == np.float32(0.25)
 
     # -- exactness battery for the public compute_pair_kinship API --
 

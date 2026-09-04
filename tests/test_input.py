@@ -397,12 +397,10 @@ class TestCycles:
         parsed = parse_pedigree_input(data)
         assert parsed.mother_rows.tolist() == [1, -1]
 
-    # 0.8.0-DELETE: slice 1b accepts arbitrary acyclic row order and this becomes a
-    # successful construction.
-    def test_acyclic_reordered_rows_still_fail_construction(self):
+    def test_acyclic_reordered_rows_construct_with_structural_depth(self):
         data = {"id": np.array([0, 1]), "mother": np.array([1, -1]), "father": np.array([-1, -1])}
-        with pytest.raises(ValueError, match="topological"):
-            PedigreeGraph(data)
+        pg = PedigreeGraph(data)
+        assert pg.generation.tolist() == [1, 0]
 
 
 class TestIdFieldValidation:

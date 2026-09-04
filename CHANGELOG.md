@@ -6,6 +6,33 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: any acyclic input row order is accepted.**  A parent no longer
+  has to precede its child; construction rejects only genuine cycles.  Public
+  outputs stay aligned to the input rows.  Internally the graph derives one
+  private stable depth-major order (`_topology.build_topology`) and runs the
+  kernels that need parents first — the Meuwissen-Luo inbreeding walk, the
+  descendant path-count sweep, the pairwise kinship recurrence, the kinship
+  DP, and the Caballero-Toro founder sweep — in that order, mapping their
+  results back to graph rows.  Ties inside a depth keep input row order and no
+  original id ever enters the ordering.
+
+- **Changed: a supplied `generation` label no longer affects any relationship
+  or kinship output.**  Structural depth drives the kinship DP and every other
+  order-dependent kernel; labels are metadata.  `per_gen_mean_kinship()` still
+  groups its cohorts by the supplied label, and so do the label-indexed
+  effective-size results.  Callers who passed labels that disagreed with
+  structural depth will see kinship and relationship results change to the
+  structurally correct values.
+
+  Two floating consequences of accepting arbitrary order, both governed by
+  ADR 0009: two graphs built from the same pedigree in different row orders
+  agree exactly on every integer, category and pair result, and agree on
+  kinship within the recurrence envelope
+  `abs(a - b) <= 2 * (depth_a + depth_b + 1) * 2**-25`.  The propagated
+  `kinship_matrix(min_kinship > 0)` support is approximate by construction
+  (ADR 0005) and is the one output whose *support* a permutation can move,
+  by a fraction of a percent on the test corpus.
+
 - **Added: structured errors** (ADR 0006).  `PedigreeValidationError` and
   `MissingMetadataError` (both `ValueError`) and `ResourceError` (a
   `RuntimeError`) are exported from the package root.  Each carries a stable

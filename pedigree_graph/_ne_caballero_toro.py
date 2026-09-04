@@ -139,9 +139,9 @@ def _ct_accumulators_kernel(gen, mother, father, founder_local_of, self_coancest
     active_count = 0
     total_pair_visits = 0
 
-    # PedigreeGraph guarantees topological row order (parents precede children),
-    # so a single forward row sweep is sufficient even when generation labels are
-    # sparse or skip-generation edges are present.
+    # Rows arrive in the caller's private topological order (parents precede
+    # children), so a single forward sweep is sufficient even when generation
+    # labels are sparse or skip-generation edges are present.
     for i in range(n):
         start = -1
         length = 0
@@ -233,19 +233,27 @@ def _caballero_toro_accumulators(
     0`` because the forward recursion only adds non-negatives, so a
     non-zero ⇔ at least one ancestor path exists.
 
+    The sweep runs in the graph's private topological order; ``sums`` and
+    ``counts`` are indexed by generation label and local founder index, so
+    they carry their graph-space meaning unchanged.
+
     Args:
         pg: Pedigree graph.
-        founder_idx: Founder indices (output of :func:`_founder_idx`).
-        F: Per-individual inbreeding coefficients (length ``pg.n``).
+        founder_idx: Founder indices (output of :func:`_founder_idx`), in
+            graph rows.
+        F: Per-individual inbreeding coefficients (length ``pg.n``), in
+            graph rows.
 
     Returns:
         A :class:`CTAccumulators` record.
     """
     n = pg.n
     n_founders = len(founder_idx)
-    gen = np.asarray(pg.generation, dtype=np.int64)
-    mother = np.asarray(pg.mother, dtype=np.int64)
-    father = np.asarray(pg.father, dtype=np.int64)
+    topo = pg._topology
+    gen = np.asarray(topo.gather(np.asarray(pg.generation)), dtype=np.int64)
+    m_idx, f_idx, _ = pg._topological_parents
+    mother = np.asarray(m_idx, dtype=np.int64)
+    father = np.asarray(f_idx, dtype=np.int64)
     g_max = int(gen.max()) if n > 0 else 0
 
     if n_founders == 0:
@@ -260,7 +268,12 @@ def _caballero_toro_accumulators(
 
     founder_local_of = np.full(n, -1, dtype=np.int64)
     founder_local_of[np.asarray(founder_idx, dtype=np.int64)] = np.arange(n_founders, dtype=np.int64)
-    self_coancestry = (1.0 + np.asarray(F, dtype=np.float64)) / 2.0
+    # Local founder numbering is graph-space, so gathering keeps founder k as
+    # founder k while the sweep itself runs in topological rows.  Both arrays
+    # are copied so the kernel sees one writeability whether or not the gather
+    # was a no-op (see _topology.readonly).
+    founder_local_of = np.array(topo.gather(founder_local_of), dtype=np.int64)
+    self_coancestry = np.array(topo.gather((1.0 + np.asarray(F, dtype=np.float64)) / 2.0), dtype=np.float64)
 
     sums, counts, peak_set_size, peak_live, total_pair_visits = _ct_accumulators_kernel(
         gen,

@@ -23,7 +23,7 @@ __all__ = [
 import logging
 import time
 from functools import cached_property
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import scipy.sparse as sp
@@ -41,8 +41,6 @@ from pedigree_graph._input import (
 )
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
-    _check_topological,
-    _compute_depth,
     _compute_F_meuwissen_luo,
     _compute_theta_per_gen,
 )
@@ -60,6 +58,10 @@ from pedigree_graph._registry import (
     _validate_max_degree,
 )
 from pedigree_graph._streaming_counter import StreamingPairCounter
+from pedigree_graph._topology import build_topology, structural_depth
+
+if TYPE_CHECKING:
+    from pedigree_graph._topology import Topology
 
 logger = logging.getLogger(__name__)
 
@@ -150,10 +152,6 @@ class PedigreeGraph:
         # uses the requested min_kinship.
         self._pair_count_cache: dict[tuple[str, int, float], tuple[dict[str, int], dict[str, int]]] = {}
         self._inbreeding: np.ndarray | None = None
-        # Topological depth recomputed from edges; user-supplied
-        # ``self.generation`` may be sparse/skipped/post-filtered and is
-        # not safe as a substitute for the ML F kernel.
-        self._depth: np.ndarray | None = None
         # Lazy lineage caches populated by compute_n_ancestors() and
         # compute_n_descendants().
         self._n_ancestors: np.ndarray | None = None
@@ -175,13 +173,7 @@ class PedigreeGraph:
         # 0.8.0-DELETE: the 0.7.1 all-female sex default and depth-derived
         # generation fallback; the 0.8 properties report absent metadata instead.
         self.sex = parsed.sex if parsed.sex is not None else np.zeros(n, dtype=np.int8)
-        self.generation = (
-            parsed.generation if parsed.generation is not None else _compute_depth(self.mother, self.father, n)
-        )
-
-        # 0.8.0-DELETE: slice 1b routes arbitrary acyclic row order.
-        if not _check_topological(self.mother, self.father, n):
-            raise ValueError("PedigreeGraph requires topological order: parents must precede children")
+        self.generation = parsed.generation if parsed.generation is not None else self._depth
 
         self._validate_birth_year_topology()
 
@@ -224,6 +216,47 @@ class PedigreeGraph:
                 parent_birth_year=int(self.birth_year[parent_row]),
                 violation_count=int(violations.sum()),
             )
+
+    @cached_property
+    def _depth(self) -> np.ndarray:
+        """Structural depth per graph row; founders 0.
+
+        Cached apart from :attr:`_topology` because the 0.7.1 ``generation``
+        fallback reads it at construction, where the depth-major sort would be
+        pure overhead for a graph no order-dependent kernel ever touches.
+        """
+        return structural_depth(self.mother, self.father, self.n)
+
+    @cached_property
+    def _topology(self) -> Topology:
+        """Structural depth plus the private stable depth-major row order.
+
+        Public coordinates are input rows in any acyclic order; the kernels
+        that need parents to precede children run in this order and their
+        outputs are mapped back.  Supplied generation labels never enter it.
+        """
+        return build_topology(self._depth)
+
+    @property
+    def _rows_are_topological(self) -> bool:
+        """True when every parent row precedes its child row in graph space.
+
+        Integer kernels whose only requirement is parents-before-children can
+        then sweep the graph arrays directly, with no permutation and no
+        scatter back.  The depth-major order is still used wherever pair and
+        matrix kinship must peel in the same coordinates.
+        """
+        return self._input.rows_topological
+
+    @cached_property
+    def _topological_parents(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """``(mother, father, twin)`` rewritten into the private topological order."""
+        topo = self._topology
+        return (
+            topo.to_topological(self.mother),
+            topo.to_topological(self.father),
+            topo.to_topological(self.twin),
+        )
 
     def _ensure_parent_csr(self) -> None:
         """Idempotent (re)build of ``self._Am`` and ``self._Af``.
@@ -918,7 +951,7 @@ class PedigreeGraph:
             self.mother,
             self.father,
             self.twin,
-            self.generation,
+            self._depth,
             min_kinship,
         )
         K = sp.csc_matrix((data, indices, indptr), shape=(self.n, self.n))
@@ -971,8 +1004,9 @@ class PedigreeGraph:
                 self.mother,
                 self.father,
                 self.twin,
-                self.generation,
+                self._depth,
                 min_kinship,
+                labels=self.generation,
             )
         self._theta_per_gen_cache[key] = theta
 
@@ -1004,9 +1038,10 @@ class PedigreeGraph:
         """
         if self._inbreeding is None:
             self._check_mz_invariant()
-            if self._depth is None:
-                self._depth = _compute_depth(self.mother, self.father, self.n)
-            self._inbreeding = _compute_F_meuwissen_luo(self.mother, self.father, self.twin, self._depth, self.n)
+            topo = self._topology
+            m_idx, f_idx, tw_idx = self._topological_parents
+            F = _compute_F_meuwissen_luo(m_idx, f_idx, tw_idx, topo.gather(topo.depth), self.n)
+            self._inbreeding = topo.per_row_to_graph(F)
         return self._inbreeding
 
     def _check_mz_invariant(self) -> None:
@@ -1061,11 +1096,11 @@ class PedigreeGraph:
                 cannot silently wrap.
         """
         if self._n_descendants is None:
-            n_desc64 = _compute_n_descendants(
-                self.mother,
-                self.father,
-                self.n,
-            )
+            if self._rows_are_topological:
+                n_desc64 = _compute_n_descendants(self.mother, self.father, self.n)
+            else:
+                m_idx, f_idx, _ = self._topological_parents
+                n_desc64 = self._topology.per_row_to_graph(_compute_n_descendants(m_idx, f_idx, self.n))
             if n_desc64.size and int(n_desc64.max()) > np.iinfo(np.int32).max:
                 raise ResourceError(
                     "arithmetic_overflow",
@@ -1165,9 +1200,11 @@ class PedigreeGraph:
         # all codes into a single kernel call so overlapping ancestor-pairs are
         # memoized once across codes.
         codes = list(graph_pairs.keys())
-        flat_a = np.concatenate([graph_pairs[c][0] for c in codes])
-        flat_b = np.concatenate([graph_pairs[c][1] for c in codes])
-        flat = pairwise_kinship(self.mother, self.father, self.twin, flat_a, flat_b)
+        topo = self._topology
+        flat_a = topo.translate(np.concatenate([graph_pairs[c][0] for c in codes]))
+        flat_b = topo.translate(np.concatenate([graph_pairs[c][1] for c in codes]))
+        m_idx, f_idx, tw_idx = self._topological_parents
+        flat = pairwise_kinship(m_idx, f_idx, tw_idx, flat_a, flat_b)
         offset = 0
         for c in codes:
             count = len(graph_pairs[c][0])

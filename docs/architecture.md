@@ -26,6 +26,7 @@ Prefer adding a **new** focused module over extending an oversized one (see
 | `_bfs_engine.py` / `experimental.py` | Experimental BFS counter (`count_pairs_bfs`); `experimental.py` is the thin public-experimental surface. |
 | `_kinship_kernel.py` | Facade re-exporting the numba kinship kernel, split into `_kinship_depth`, `_kinship_allocator`, `_kinship_csc`, `_kinship_dp` (DP + driver + theta), and `_inbreeding_kernel`. |
 | `_effective_size.py` | Facade for the Ne estimators, split into `_ne_common`, `_ne_results`, `_ne_family_size`, `_ne_founders`, `_ne_caballero_toro`, `_ne_hill`, `_ne_rates`. |
+| `_topology.py` | `build_topology` and the `Topology` value: structural depth plus the private stable depth-major order and the graph ↔ topological row maps every order-dependent kernel routes through. |
 | `_lineage_kernel.py`, `_cohort_utils.py` | Ancestor/descendant counts; cohort-eligibility windows. |
 
 The pair engines are **read-only collaborators** of `PedigreeGraph`: they
@@ -46,6 +47,7 @@ one call site. Each has a documented source of truth and a regression test.
 | **Dense vs sparse IDs** | IDs may be sparse/high-valued; construction must remap to a dense row space, never allocate a dense `max(id)`-sized table. | `_input.validate_id_field` / `_input._map_ids_to_rows` | `tests/test_pedigree_graph.py::TestInputValidation::test_sparse_high_ids_do_not_allocate_dense_table`, `…::test_unsorted_ids_remap_correctly` |
 | **Default all-zero sex** | `sex=` defaults to all-female; the sex-dependent Ne estimators warn (not error) so a forgotten `sex=` is diagnosable. | `_warn_if_uniform_sex` in `_ne_family_size.py` | `tests/test_from_arrays_sex.py::test_ne_{sex_ratio,variance_family_size}_warns_when_sex_defaulted`, `…::test_no_warning_when_sex_is_supplied` |
 | **Relationship code set** | All three engines (matrix, streaming, BFS) return exactly the `REL_REGISTRY` key set. | `REL_REGISTRY` in `_registry.py` | `tests/test_relationship_plan.py::TestAllEnginesReturnRegistryKeySet` |
+| **Private topological order** | Input rows may arrive in any acyclic order. Kernels that need parents before children (inbreeding, descendant counts, pairwise kinship, the kinship DP, Caballero–Toro) run on parent arrays remapped into one stable depth-major order and map their per-row outputs back. Skipping the remap silently zeroes inbreeding terms; skipping the map-back silently misaligns every result. Supplied `generation` labels never enter it. | `build_topology` / `Topology` in `_topology.py`; `PedigreeGraph._topology` | `tests/test_topology.py`; `tests/test_row_order.py` |
 
 Statistical-correctness gotchas (booleanise-after-multiplicity, ≥2 shared
 ancestors for full/half, `_get_Ak(0)` = identity, pair-key int64 overflow,

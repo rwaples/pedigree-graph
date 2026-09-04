@@ -33,10 +33,13 @@ def _compute_n_descendants(
     """Per-row descendant *path* count.
 
     Topological order is required (parents precede children in row
-    index — enforced by ``PedigreeGraph.__init__``).  We iterate row
-    indices in reverse, pushing each row's contribution up to its
-    parents.  When we visit i, every descendant of i has higher row
-    index and was therefore visited first, so ``n_desc[i]`` is final.
+    index).  Public rows may arrive in any acyclic order, so
+    ``PedigreeGraph.compute_n_descendants`` runs this on the parent
+    arrays remapped by :mod:`pedigree_graph._topology` and maps the
+    result back.  We iterate row indices in reverse, pushing each row's
+    contribution up to its parents.  When we visit i, every descendant
+    of i has a higher row index and was therefore visited first, so
+    ``n_desc[i]`` is final.
 
     Returns an ``int64`` array — path counts can exceed unique-descendant
     counts on inbred / loop-heavy pedigrees, so the int32 downcast is

@@ -289,12 +289,13 @@ def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
         np.asarray(pg.mother, dtype=np.int32),
         np.asarray(pg.father, dtype=np.int32),
         np.asarray(pg.twin, dtype=np.int32),
-        np.asarray(pg.generation, dtype=np.int32),
+        np.asarray(pg._depth, dtype=np.int32),
         0.0,
         None,
+        labels=np.asarray(pg.generation, dtype=np.int32),
         config=KinshipDPConfig(retire=True, lazy=False, debug_asserts=False),
     )
-    return _finalize_from_sum_theta(r.sum_theta, r.depth, r.tw_idx)
+    return _finalize_from_sum_theta(r.sum_theta, r.labels, r.tw_idx)
 
 
 def test_per_gen_mean_kinship_retire_matches_legacy(
@@ -312,9 +313,10 @@ def test_per_gen_mean_kinship_retire_matches_legacy(
         pg.mother,
         pg.father,
         pg.twin,
-        pg.generation,
+        pg._depth,
         0.0,
         _debug_no_retire=True,
+        labels=pg.generation,
     )
     np.testing.assert_allclose(
         theta_retiring,
@@ -388,9 +390,10 @@ def test_compute_theta_per_gen_debug_no_retire_independent_of_caches(
         pg.mother,
         pg.father,
         pg.twin,
-        pg.generation,
+        pg._depth,
         0.0,
         _debug_no_retire=True,
+        labels=pg.generation,
     )
     assert not np.allclose(theta_legacy, -999.0, equal_nan=True)
     np.testing.assert_array_equal(
@@ -419,9 +422,10 @@ def test_compute_theta_per_gen_debug_asserts_pass_on_well_formed_pedigree(
         pg.mother,
         pg.father,
         pg.twin,
-        pg.generation,
+        pg._depth,
         0.0,
         _debug_asserts=True,
+        labels=pg.generation,
     )
     np.testing.assert_allclose(
         theta_default,

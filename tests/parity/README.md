@@ -15,6 +15,9 @@
 - One `<fixture>.npz` per small fixture with the full arrays. Large fixtures
   have hashes and counts only.
 
+`tests/test_parity_v071.py` replays `generate_baseline._capture` against the
+installed package and asserts every count and hash in `manifest.json`.
+
 ## Regenerate
 
 ```bash
@@ -42,6 +45,10 @@ Regeneration must reproduce every hash in `manifest.json`. Bump
 
 - `deep_inbred_60g` overflows int32 in `compute_n_descendants` under 0.7.1;
   the manifest records `n_descendants_overflow: true` and no array.
+- The `inbreeding` hash does not reproduce on fixtures with MZ twins: ADR 0008
+  made `compute_inbreeding` MZ-aware after the baseline was frozen. That is the
+  one accepted divergence, and `tests/test_parity_v071.py` still requires every
+  row that is neither an MZ twin nor a descendant of one to match 0.7.1.
 - `count_pairs_streaming` clamps negative residuals on inbred fixtures and
   prints a warning; the clamped values are what is frozen.
 - `random_30k` takes about four minutes to freeze, nearly all of it in the

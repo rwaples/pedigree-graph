@@ -10,9 +10,11 @@ sparse subset of all related pairs.
 
 Algorithm (Karigl tabular kinship, on demand + memoized)
 --------------------------------------------------------
-For graph-space individuals ``a, b`` whose parent indices are topologically
-ordered (parent index < child index, guaranteed by ``PedigreeGraph``
-construction):
+For individuals ``a, b`` whose parent indices are topologically ordered (parent
+index < child index).  Public graph rows may arrive in any acyclic order, so
+``PedigreeGraph.compute_pair_kinship`` passes the parent arrays and the pair
+endpoints remapped by :mod:`pedigree_graph._topology`; results are positional
+and need no mapping back.
 
 * ``phi(a, a) = (1 + F_a) / 2``
 * ``F_a = phi(mother_a, father_a)``; a ``-1`` parent gives ``F_a = 0``

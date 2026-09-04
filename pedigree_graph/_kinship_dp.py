@@ -41,7 +41,8 @@ from pedigree_graph._kinship_allocator import (
     _suggest_init_cap_per_row,
 )
 from pedigree_graph._kinship_csc import _assemble_csc
-from pedigree_graph._kinship_depth import _compute_depth, _compute_last_direct_child_depth
+from pedigree_graph._kinship_depth import _compute_last_direct_child_depth
+from pedigree_graph._topology import owned_readonly, readonly, remap_rows
 
 
 class KinshipDPConfig(NamedTuple):
@@ -91,11 +92,12 @@ class DPResult(NamedTuple):
     sum_theta: np.ndarray
     depth: np.ndarray
     tw_idx: np.ndarray
+    labels: np.ndarray
     order: np.ndarray | None = None
-    """Generation-major row permutation applied before the kernel, or ``None``
-    when the caller's rows were already generation-monotonic.  ``cols`` /
-    ``vals`` / ``row_start`` / ``row_count`` (and ``depth`` / ``tw_idx``) are in
-    this permuted index space; the CSC caller un-permutes via ``order``."""
+    """Depth-major row permutation applied before the kernel, or ``None`` when
+    the caller's rows were already depth-major.  ``cols`` / ``vals`` /
+    ``row_start`` / ``row_count`` (and ``depth`` / ``tw_idx`` / ``labels``) are
+    in this permuted index space; the CSC caller un-permutes via ``order``."""
 
 
 _DP_CONFIG_CSC = KinshipDPConfig(retire=False, lazy=False, debug_asserts=False)
@@ -106,25 +108,26 @@ def _validate_dp_args(
     m_idx: np.ndarray,
     f_idx: np.ndarray,
     tw_idx: np.ndarray,
-    generation: np.ndarray | None,
+    depth: np.ndarray,
+    labels: np.ndarray | None,
     init_cap_per_row: int | None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
-    """Coerce arrays + resolve ``depth`` and ``init_cap_per_row`` defaults.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, int]:
+    """Coerce arrays + resolve the ``labels`` and ``init_cap_per_row`` defaults.
 
     Called by :func:`_run_dp_core` so every DP dispatch reaches the
     kernel with identical, contiguous inputs regardless of caller.
+    ``depth`` drives the traversal and must be structural; ``labels``
+    only groups the inline θ̄ accumulator and defaults to ``depth``.
     """
-    m_idx = np.ascontiguousarray(m_idx, dtype=np.int32)
-    f_idx = np.ascontiguousarray(f_idx, dtype=np.int32)
-    tw_idx = np.ascontiguousarray(tw_idx, dtype=np.int32)
-    if generation is None:
-        depth = _compute_depth(m_idx, f_idx, n)
-    else:
-        depth = np.ascontiguousarray(generation, dtype=np.int32)
+    m_idx = owned_readonly(m_idx, np.int32)
+    f_idx = owned_readonly(f_idx, np.int32)
+    tw_idx = owned_readonly(tw_idx, np.int32)
+    depth = owned_readonly(depth, np.int32)
+    labels = depth if labels is None else owned_readonly(labels, np.int32)
     if init_cap_per_row is None:
         g_ped = int(depth.max()) if n > 0 else 0
         init_cap_per_row = _suggest_init_cap_per_row(g_ped)
-    return m_idx, f_idx, tw_idx, depth, int(init_cap_per_row)
+    return m_idx, f_idx, tw_idx, depth, labels, int(init_cap_per_row)
 
 
 @njit(cache=True)
@@ -253,6 +256,7 @@ def _dp_kinship(
     f_idx: np.ndarray,
     tw_idx: np.ndarray,
     depth: np.ndarray,
+    label: np.ndarray,
     threshold: float,
     init_cap_per_row: int,
     retire: bool,
@@ -262,6 +266,10 @@ def _dp_kinship(
     initial_buffer_override: np.int64,
 ):
     """Build per-row sorted kinship arrays via gen-by-gen DP.
+
+    ``depth`` orders the traversal; ``label`` only buckets the inline
+    θ̄ accumulator, so a caller may group by cohort labels that do not
+    match structural depth.
 
     When ``retire`` is True, rows are freed at end-of-depth once their
     ``last_direct_child_depth`` is reached, and θ̄ accumulates inline
@@ -299,8 +307,8 @@ def _dp_kinship(
             (e.g. N ≈ 525K with init_cap_per_row=4096).  Retired rows
             have ``row_start = -1``.
         row_count: int32[n], entries per row.
-        sum_theta: float64[g_max + 1], inline within-cohort kinship sum
-            per generation (only populated when ``retire=True``; under
+        sum_theta: float64[label_max + 1], inline within-cohort kinship
+            sum per label (only populated when ``retire=True``; under
             ``retire=False`` this is a length-1 placeholder that the
             caller discards).
 
@@ -363,7 +371,8 @@ def _dp_kinship(
     # Retirement state.  Placeholders under retire=False satisfy numba's
     # type unifier; push/pop are no-ops because fl_init_cap = 0.
     if retire:
-        sum_theta = np.zeros(max_depth + np.int32(1), dtype=np.float64)
+        max_label = np.int32(label.max()) if n > 0 else np.int32(0)
+        sum_theta = np.zeros(max_label + np.int32(1), dtype=np.float64)
         # Bucket sizing: caps are bounded above by n, so
         # n_buckets = ceil(log2(n / init_cap)) + 1.
         n_buckets = np.int32(1)
@@ -461,6 +470,7 @@ def _dp_kinship(
             f = f_idx[j]
             if m < 0 and f < 0:
                 continue  # disconnected founder; self-kinship already 0.5
+            g_j = label[j]
 
             # Trips if ``last_direct_child_depth`` underestimates row
             # liveness — i.e. a row was retired while still needed.
@@ -524,9 +534,11 @@ def _dp_kinship(
                     continue
                 # ``k < j`` counts each unordered within-cohort non-twin
                 # pair exactly once; folding the sum into the merge walk
-                # lets retirement free row[k] before any rescan.
-                if retire and depth[k] == d and k != tw_idx[j] and k < j:
-                    sum_theta[d] += np.float64(val)
+                # lets retirement free row[k] before any rescan.  Every
+                # relative of j is discovered here, so a cohort-mate at a
+                # different depth is still counted exactly once.
+                if retire and label[k] == g_j and k != tw_idx[j] and k < j:
+                    sum_theta[g_j] += np.float64(val)
                 # Append (k, val) to row j.  Merge walk yields columns in
                 # ascending order, so row j stays sorted.
                 cols, vals, next_alloc = _append_entry(
@@ -610,27 +622,16 @@ def _dp_kinship(
     return cols, vals, row_start, row_count, sum_theta
 
 
-def _remap_parent_rows(a: np.ndarray, order: np.ndarray, inv: np.ndarray) -> np.ndarray:
-    """Reorder a row-index array by *order* and translate its references via *inv*.
-
-    *a* holds row indices (mother/father/twin), ``-1`` for absent.  ``order``
-    is the new→old row permutation and ``inv`` its inverse (old→new); a stored
-    reference to old row ``p`` becomes new row ``inv[p]``.  Sentinels pass
-    through unchanged.
-    """
-    moved = a[order]
-    return np.ascontiguousarray(np.where(moved < 0, np.int32(-1), inv[moved].astype(np.int32)))
-
-
 def _run_dp_core(
     n: int,
     m_idx: np.ndarray,
     f_idx: np.ndarray,
     tw_idx: np.ndarray,
-    generation: np.ndarray | None,
+    depth: np.ndarray,
     min_kinship: float,
     init_cap_per_row: int | None,
     *,
+    labels: np.ndarray | None = None,
     config: KinshipDPConfig,
     grow_stats: np.ndarray | None = None,
     initial_buffer_override: int | None = None,
@@ -653,25 +654,26 @@ def _run_dp_core(
     ``grow_stats`` and ``initial_buffer_override`` are bench-only
     knobs — production callers leave them at ``None``.
     """
-    m_idx, f_idx, tw_idx, depth, init_cap_per_row = _validate_dp_args(
+    m_idx, f_idx, tw_idx, depth, labels, init_cap_per_row = _validate_dp_args(
         n,
         m_idx,
         f_idx,
         tw_idx,
-        generation,
+        depth,
+        labels,
         init_cap_per_row,
     )
 
-    # The DP kernel assumes generation-monotonic row indexing: every relative
+    # The DP kernel assumes depth-monotonic row indexing: every relative
     # discovered during a row's merge walk has a smaller index, so the diagonal
     # (column j) is appended last and the row stays sorted.  Topological-but-not-
-    # generation-monotonic input (a valid from_arrays contract — parents merely
-    # precede children) violates this: a higher-indexed relative from an earlier
-    # generation lands after the diagonal, breaks the row sort, and the binary
-    # search that reads phi(mother, father) silently returns 0 — zeroing the
-    # inbreeding term in the self-kinship diagonal.  Reorder rows into
-    # generation-major order and let the CSC caller un-permute via DPResult.order
-    # (the streaming theta path is generation-indexed and permutation-invariant).
+    # depth-major input violates this: a higher-indexed relative from an earlier
+    # depth lands after the diagonal, breaks the row sort, and the binary search
+    # that reads phi(mother, father) silently returns 0 — zeroing the inbreeding
+    # term in the self-kinship diagonal.  Reorder rows into the package's stable
+    # depth-major order (:mod:`pedigree_graph._topology`) and let the CSC caller
+    # un-permute via DPResult.order; the streaming theta path is label-indexed
+    # and permutation-invariant.
     identity = np.arange(n, dtype=np.intp)
     order: np.ndarray | None = np.argsort(depth, kind="stable").astype(np.intp)
     if np.array_equal(order, identity):
@@ -679,10 +681,12 @@ def _run_dp_core(
     else:
         inv = np.empty(n, dtype=np.intp)
         inv[order] = identity
-        m_idx = _remap_parent_rows(m_idx, order, inv)
-        f_idx = _remap_parent_rows(f_idx, order, inv)
-        tw_idx = _remap_parent_rows(tw_idx, order, inv)
-        depth = np.ascontiguousarray(depth[order])
+        m_idx = remap_rows(m_idx, order, inv)
+        f_idx = remap_rows(f_idx, order, inv)
+        tw_idx = remap_rows(tw_idx, order, inv)
+        permuted_depth = readonly(np.ascontiguousarray(depth[order]))
+        labels = permuted_depth if labels is depth else readonly(np.ascontiguousarray(labels[order]))
+        depth = permuted_depth
 
     if grow_stats is None:
         grow_stats = np.zeros(3, dtype=np.int64)
@@ -693,6 +697,7 @@ def _run_dp_core(
         f_idx,
         tw_idx,
         depth,
+        labels,
         float(min_kinship),
         init_cap_per_row,
         bool(config.retire),
@@ -709,6 +714,7 @@ def _run_dp_core(
         sum_theta=sum_theta,
         depth=depth,
         tw_idx=tw_idx,
+        labels=labels,
         order=order,
     )
 
@@ -718,7 +724,7 @@ def _build_kinship_csc(
     m_idx: np.ndarray,
     f_idx: np.ndarray,
     tw_idx: np.ndarray,
-    generation: np.ndarray | None,
+    depth: np.ndarray,
     min_kinship: float,
     init_cap_per_row: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -729,8 +735,9 @@ def _build_kinship_csc(
         m_idx: 0..n-1 remapped mother row indices; -1 for missing/founder.
         f_idx: 0..n-1 remapped father row indices; -1 for missing/founder.
         tw_idx: 0..n-1 remapped MZ twin partner row indices; -1 for non-twin.
-        generation: per-individual generation depth (founders = 0).
-            If None, derived via a fixed-point sweep over the parent graph.
+        depth: per-individual structural depth (founders = 0), from
+            :func:`pedigree_graph._topology.build_topology`.  Supplied
+            generation labels are never a substitute.
         min_kinship: off-diagonal entries with ``value <= min_kinship``
             are dropped during the DP (kernel-side pruning).  Diagonal
             always kept.
@@ -748,7 +755,7 @@ def _build_kinship_csc(
         m_idx,
         f_idx,
         tw_idx,
-        generation,
+        depth,
         min_kinship,
         init_cap_per_row,
         config=_DP_CONFIG_CSC,
@@ -757,7 +764,7 @@ def _build_kinship_csc(
     if r.order is None:
         return indptr, indices, values
 
-    # The kernel ran in generation-major order; map the CSC back to caller order.
+    # The kernel ran in depth-major order; map the CSC back to caller order.
     # K_sorted[a, b] = phi(order[a], order[b]); the caller wants K[i, j] = phi(i, j)
     # = K_sorted[inv[i], inv[j]], i.e. row/column gather by the inverse permutation.
     k_sorted = sp.csc_matrix((values, indices, indptr), shape=(n, n))
@@ -882,11 +889,13 @@ def _compute_theta_per_gen(
     m_idx: np.ndarray,
     f_idx: np.ndarray,
     tw_idx: np.ndarray,
-    generation: np.ndarray | None,
+    depth: np.ndarray,
     min_kinship: float,
     init_cap_per_row: int | None = None,
     _debug_no_retire: bool = False,
     _debug_asserts: bool = False,
+    *,
+    labels: np.ndarray | None = None,
 ) -> np.ndarray:
     """Per-generation mean kinship θ̄_g without materializing K.
 
@@ -904,9 +913,11 @@ def _compute_theta_per_gen(
         m_idx: same semantics as :func:`_build_kinship_csc`.
         f_idx: same semantics as :func:`_build_kinship_csc`.
         tw_idx: same semantics as :func:`_build_kinship_csc`.
-        generation: same semantics as :func:`_build_kinship_csc`.
+        depth: same semantics as :func:`_build_kinship_csc`.
         min_kinship: same semantics as :func:`_build_kinship_csc`.
         init_cap_per_row: same semantics as :func:`_build_kinship_csc`.
+        labels: cohort labels the result is grouped by; ``None`` groups by
+            *depth*.  Labels never affect the traversal or any kinship value.
 
     Returns:
         Float64 array of length ``g_max + 1`` with mean θ̄_g per
@@ -918,9 +929,10 @@ def _compute_theta_per_gen(
             m_idx,
             f_idx,
             tw_idx,
-            generation,
+            depth,
             min_kinship,
             init_cap_per_row,
+            labels=labels,
             config=_DP_CONFIG_CSC,
         )
         return _per_gen_mean_kinship_from_dp(
@@ -928,7 +940,7 @@ def _compute_theta_per_gen(
             r.vals,
             r.row_start,
             r.row_count,
-            r.depth,
+            r.labels,
             r.tw_idx,
         )
     r = _run_dp_core(
@@ -936,9 +948,10 @@ def _compute_theta_per_gen(
         m_idx,
         f_idx,
         tw_idx,
-        generation,
+        depth,
         min_kinship,
         init_cap_per_row,
+        labels=labels,
         config=KinshipDPConfig(retire=True, lazy=True, debug_asserts=_debug_asserts),
     )
-    return _finalize_from_sum_theta(r.sum_theta, r.depth, r.tw_idx)
+    return _finalize_from_sum_theta(r.sum_theta, r.labels, r.tw_idx)
