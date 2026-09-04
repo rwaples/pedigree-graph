@@ -1058,17 +1058,43 @@ class PedigreeGraph:
         """Return the inbreeding coefficient *F* per individual.
 
         Computed via Meuwissen & Luo (1992) ancestor-walking on the LDL'
-        decomposition of the numerator relationship matrix; result is
-        cached on the graph (``self._inbreeding``).  MZ-naive — twins are
-        treated as full sibs.  Differs from the matrix-derived F only
-        for individuals whose only inbreeding path runs through both
-        members of an MZ twin pair as ancestors.
+        decomposition of the numerator relationship matrix, over the
+        genome-node pedigree in which MZ co-twins share one node (ADR 0008).
+        MZ-aware: equals ``2 * phi(i, i) - 1`` from :meth:`compute_pair_kinship`
+        and from the :meth:`kinship_matrix` diagonal.  Result is cached on the
+        graph (``self._inbreeding``).
+
+        Raises:
+            ValueError: if a represented MZ reference is not reciprocal or
+                the co-twins do not share both parent rows.  An absent
+                co-twin (``twin == -1``, e.g. outside a subsample) is not an
+                MZ pair and is fine.
         """
         if self._inbreeding is None:
+            self._check_mz_invariant()
             if self._depth is None:
                 self._depth = _compute_depth(self.mother, self.father, self.n)
-            self._inbreeding = _compute_F_meuwissen_luo(self.mother, self.father, self._depth, self.n)
+            self._inbreeding = _compute_F_meuwissen_luo(self.mother, self.father, self.twin, self._depth, self.n)
         return self._inbreeding
+
+    def _check_mz_invariant(self) -> None:
+        """Reject MZ references that are not reciprocal, two-member, parent-identical."""
+        rows = np.flatnonzero(self.twin >= 0)
+        if rows.size == 0:
+            return
+        partner = self.twin[rows]
+        bad = (
+            (self.twin[partner] != rows)
+            | (self.mother[partner] != self.mother[rows])
+            | (self.father[partner] != self.father[rows])
+        )
+        if bad.any():
+            first = int(rows[np.flatnonzero(bad)[0]])
+            raise ValueError(
+                f"MZ reference at row {first} (id {self._ids[first]}) is not reciprocal "
+                "or the co-twins do not share both parents; compute_inbreeding requires "
+                "MZ pairs to be reciprocal, two-member, and parent-identical",
+            )
 
     def compute_n_descendants(self) -> np.ndarray:
         """Per-individual descendant count, **path-count semantics**.
@@ -1153,9 +1179,9 @@ class PedigreeGraph:
           direct memoized recurrence in :mod:`pedigree_graph._kinship_pairwise`,
           never materializing the ``n x n`` matrix.
 
-        ``compute_inbreeding`` (MZ-naive ML) is **not** consulted: the recurrence
-        derives each ``F`` as ``phi(mother, father)`` exactly as the matrix DP
-        does.  Accepts arbitrary code keys, not only ``REL_REGISTRY`` ones.
+        ``compute_inbreeding`` is **not** consulted: the recurrence derives each
+        ``F`` as ``phi(mother, father)`` exactly as the matrix DP does, and all
+        three agree (ADR 0008).  Accepts arbitrary code keys, not only ``REL_REGISTRY`` ones.
 
         Call *after* :meth:`extract_pairs`.
         """

@@ -38,6 +38,14 @@ different from structural depth and never changes pedigree relationships or
 kinship.
 _Avoid_: structural depth
 
+**Genome node**:
+The unit of genetic identity in a pedigree. Every individual belongs to
+exactly one genome node, and MZ co-twins share one. Relationships that depend
+on identity by descent, such as inbreeding, are properties of the
+genome-node pedigree: the pedigree obtained by merging each MZ pair into one
+node with the pair's parents.
+_Avoid_: collapsed individual, MZ-collapsed row, twin class
+
 ### Relationships
 
 **Relationship pair**:
@@ -68,8 +76,8 @@ _Avoid_: exact kinship
 
 **Exact pairwise kinship**:
 The kinship coefficient for a particular pair of individuals after summing all
-pedigree paths, including inbreeding, MZ co-coalescence, and duplicate
-relationship paths such as double cousins.
+pedigree paths, including inbreeding, MZ co-coalescence (shared genome nodes), and
+duplicate relationship paths such as double cousins.
 _Avoid_: nominal kinship
 
 ## Relationships

@@ -145,9 +145,10 @@ eventual source.
   rows per column, read-only cached arrays. "Pedigree-specific" permits only
   the per-step float32 rounding of the pinned recurrence (ADR 0009); every
   entry equals the `pair_kinship` value for that pair.
-* Canonical `inbreeding()` is MZ-aware and satisfies `F_i = 2·phi(i,i) − 1`.
-  Issue #8 decides whether the MZ-naive Meuwissen–Luo implementation is
-  deleted or retained under an explicit non-canonical name.
+* Canonical `inbreeding()` is MZ-aware and satisfies `F_i = 2·phi(i,i) − 1`
+  as a tested invariant. It is computed by the Meuwissen–Luo walk over the
+  genome-node pedigree, and the MZ-naive implementation is deleted (ADR 0008,
+  resolving issue #8).
 * `pair_kinship` is recurrence-only and never reads a cached matrix; its
   result does not depend on call history (ADR 0009, resolving issue #6).
   Callers thresholding against a non-dyadic cutoff widen to float64 first.

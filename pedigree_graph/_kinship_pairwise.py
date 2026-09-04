@@ -30,7 +30,7 @@ construction):
 
 This is exact-by-construction against ``kinship_matrix(0.0)``: that path's DP
 computes the diagonal ``F`` as ``phi(mother, father)`` *inside the kernel*
-(``_kinship_dp._dp_kinship``), not from the MZ-naive ML ``compute_inbreeding``;
+(``_kinship_dp._dp_kinship``), not from ``compute_inbreeding`` (which agrees, ADR 0008);
 its merge walk is literally ``0.5 * (K[m, k] + K[f, k])``; and its MZ pass writes
 the twin off-diagonal to the inbred self-kinship. So this recurrence reproduces
 every one of those rules. ``compute_inbreeding`` is therefore *not* consulted

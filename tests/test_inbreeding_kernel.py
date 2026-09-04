@@ -1,9 +1,10 @@
 """Hand-derived F tests for the Meuwissen-Luo kernel.
 
 Covers founders, single-parent, classic non-trivial matings, deeper
-chains, and parity vs. the matrix kinship path on MZ-free fixtures.
-The MZ-naive semantics of ML are exercised against the MZ-aware matrix
-on a co-coalescence case where the two paths legitimately disagree.
+chains, and parity vs. the matrix kinship path.  The ADR 0008 fixtures pin
+the MZ-aware semantics: F from the genome-node walk equals the pairwise
+self-kinship identity ``2 * phi(i, i) - 1`` and the matrix diagonal on
+every MZ co-coalescence case, including founder twins and inbred twins.
 """
 
 from __future__ import annotations
@@ -19,15 +20,25 @@ from pedigree_graph._kinship_kernel import (
     _compute_depth,
     _compute_F_meuwissen_luo,
 )
+from pedigree_graph._kinship_pairwise import pairwise_kinship
 
 
-def _F(m, f, n=None):
+def _F(m, f, n=None, tw=None):
     m = np.asarray(m, dtype=np.int32)
     f = np.asarray(f, dtype=np.int32)
     if n is None:
         n = len(m)
+    tw = np.full(n, -1, dtype=np.int32) if tw is None else np.asarray(tw, dtype=np.int32)
     depth = _compute_depth(m, f, n)
-    return _compute_F_meuwissen_luo(m, f, depth, n)
+    return _compute_F_meuwissen_luo(m, f, tw, depth, n)
+
+
+def _F_via_pairwise(m, f, tw):
+    m = np.asarray(m, dtype=np.int32)
+    f = np.asarray(f, dtype=np.int32)
+    tw = np.asarray(tw, dtype=np.int32)
+    rows = np.arange(len(m), dtype=np.int64)
+    return 2.0 * pairwise_kinship(m, f, tw, rows, rows) - 1.0
 
 
 def _F_via_matrix(m, f, tw, gen, n=None):
@@ -127,25 +138,120 @@ def test_parity_with_matrix_path_no_mz(small_pedigree):
     assert np.allclose(F_ml, F_mat, atol=1e-10)
 
 
-def test_mz_naive_documented_difference():
-    # MZ co-coalescence: 2, 3 are MZ twins (parents 0, 1); 4 = (2, 3).
-    # Matrix (MZ-aware): K[2, 3] = self-kin = 0.5 → F[4] = 0.5.
-    # ML (MZ-naive): treats 2, 3 as full-sibs → F[4] = 0.25.
-    df = pl.DataFrame(
+def _mz_frame(ids, mother, father, twin):
+    m = np.asarray(mother, dtype=np.int32)
+    f = np.asarray(father, dtype=np.int32)
+    return pl.DataFrame(
         {
-            "id": [0, 1, 2, 3, 4],
-            "mother": [-1, -1, 0, 0, 2],
-            "father": [-1, -1, 1, 1, 3],
-            "twin": [-1, -1, 3, 2, -1],
-            "sex": [1, 0, 1, 0, 1],
-            "generation": [0, 0, 1, 1, 2],
+            "id": ids,
+            "mother": mother,
+            "father": father,
+            "twin": twin,
+            "sex": [0] * len(ids),
+            "generation": _compute_depth(m, f, len(ids)).tolist(),
         }
     )
-    pg = PedigreeGraph(df)
+
+
+# (name, mother, father, twin, {row: expected F}); ids are 0..n-1, parents precede children.
+ADR_0008_FIXTURES = [
+    (
+        "mz_ancestry_no_loop",
+        [-1, -1, -1, -1, 0, 0, -1, 4],
+        [-1, -1, -1, -1, 1, 1, -1, 2],
+        [-1, -1, -1, -1, 5, 4, -1, -1],
+        {7: 0.0},
+    ),
+    (
+        "mz_only_link",
+        [-1, -1, -1, -1, 0, 0, 4, 5, 6],
+        [-1, -1, -1, -1, 1, 1, 2, 3, 7],
+        [-1, -1, -1, -1, 5, 4, -1, -1, -1],
+        {8: 1 / 8},
+    ),
+    (
+        "mz_plus_full_sib_loop",
+        [-1, -1, -1, -1, 2, 2, 0, 0, 6, 7, 8],
+        [-1, -1, -1, -1, 3, 3, 1, 1, 4, 5, 9],
+        [-1, -1, -1, -1, -1, -1, 7, 6, -1, -1, -1],
+        {10: 3 / 16},
+    ),
+    (
+        "double_mz_grandparents",
+        [-1, -1, -1, -1, 0, 0, 2, 2, 4, 5, 8],
+        [-1, -1, -1, -1, 1, 1, 3, 3, 6, 7, 9],
+        [-1, -1, -1, -1, 5, 4, 7, 6, -1, -1, -1],
+        {10: 1 / 4},
+    ),
+    (
+        "founder_mz_twins_only_link",
+        [-1, -1, -1, -1, 0, 1, 4],
+        [-1, -1, -1, -1, 2, 3, 5],
+        [1, 0, -1, -1, -1, -1, -1],
+        {6: 1 / 8},
+    ),
+    (
+        "inbred_twins",
+        [-1, -1, 0, 0, -1, 2, 2, 5, 6, 7],
+        [-1, -1, 1, 1, -1, 3, 3, 4, 4, 8],
+        [-1, -1, -1, -1, -1, 6, 5, -1, -1, -1],
+        {5: 1 / 4, 6: 1 / 4, 9: 0.25 * (0.625 + 0.5)},
+    ),
+    (
+        "twins_mate_each_other",
+        [-1, -1, 0, 0, 2],
+        [-1, -1, 1, 1, 3],
+        [-1, -1, 3, 2, -1],
+        {4: 0.5},
+    ),
+]
+
+
+@pytest.mark.parametrize(("name", "m", "f", "tw", "expected"), ADR_0008_FIXTURES, ids=[c[0] for c in ADR_0008_FIXTURES])
+def test_mz_aware_fixtures(name, m, f, tw, expected):
+    n = len(m)
+    F_ml = _F(m, f, n, tw)
+    F_pw = _F_via_pairwise(m, f, tw)
+    F_mat = _F_via_matrix(m, f, tw, _compute_depth(np.asarray(m, dtype=np.int32), np.asarray(f, dtype=np.int32), n), n)
+    for row, value in expected.items():
+        assert F_ml[row] == pytest.approx(value), name
+    np.testing.assert_allclose(F_ml, F_pw, atol=1e-12)
+    np.testing.assert_allclose(F_ml, F_mat, atol=1e-12)
+
+
+def test_mz_aware_fixtures_through_graph():
+    _name, m, f, tw, expected = ADR_0008_FIXTURES[1]
+    pg = PedigreeGraph(_mz_frame(list(range(len(m))), m, f, tw))
+    F = pg.compute_inbreeding()
+    K = pg.kinship_matrix(min_kinship=0.0)
+    for row, value in expected.items():
+        assert F[row] == pytest.approx(value)
+    np.testing.assert_allclose(F, 2.0 * K.diagonal() - 1.0, atol=1e-12)
+
+
+def test_parity_with_matrix_path_with_mz(small_pedigree):
+    pg = PedigreeGraph(small_pedigree)
     F_ml = pg.compute_inbreeding()
     K = pg.kinship_matrix(min_kinship=0.0)
-    F_mat = 2.0 * K.diagonal() - 1.0
-    assert F_ml[4] == pytest.approx(0.25)
-    assert F_mat[4] == pytest.approx(0.5)
-    # Magnitude of the documented difference:
-    assert F_mat[4] - F_ml[4] == pytest.approx(0.25)
+    assert np.allclose(F_ml, 2.0 * K.diagonal() - 1.0, atol=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("twin", "why"),
+    [
+        ([-1, -1, 3, -1, -1], "non-reciprocal"),
+        ([-1, -1, -1, 4, 3], "different parents"),
+    ],
+)
+def test_compute_inbreeding_rejects_broken_mz_invariant(twin, why):
+    pg = PedigreeGraph(_mz_frame([0, 1, 2, 3, 4], [-1, -1, 0, 0, 1], [-1, -1, 1, 1, 0], twin))
+    with pytest.raises(ValueError, match="reciprocal"):
+        pg.compute_inbreeding()
+
+
+def test_absent_co_twin_is_not_an_mz_pair():
+    # Co-twin outside the subsample remaps to -1: the row is an ordinary individual.
+    full = _mz_frame([0, 1, 2, 3, 4], [-1, -1, 0, 0, 2], [-1, -1, 1, 1, 3], [-1, -1, 3, 2, -1])
+    sub = full.filter(pl.col("id") != 3)
+    F = PedigreeGraph(sub).compute_inbreeding()
+    assert F[3] == pytest.approx(0.0)

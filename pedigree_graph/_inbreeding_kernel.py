@@ -1,4 +1,4 @@
-"""Meuwissen-Luo F-only inbreeding kernel (PGQ-008).
+"""Meuwissen-Luo F-only inbreeding kernel over the genome-node pedigree (PGQ-008, ADR 0008).
 
 The sparse ancestor-walk that computes per-individual inbreeding
 coefficients without materializing kinship.  Reuses the topological
@@ -34,16 +34,39 @@ def _grow_touched_scratch(
 
 
 @numba.njit(cache=True)
+def _genome_node(twin: np.ndarray, n: int) -> np.ndarray:
+    """Map each row to its genome node: itself, or the lower-indexed co-twin.
+
+    Relies on the MZ invariant enforced by the caller (reciprocal, two-member,
+    parent-identical); with it, ``min(i, twin[i])`` is a complete
+    canonicalisation and ``canon[i] <= i`` preserves topological order.
+    """
+    canon = np.arange(n, dtype=np.int32)
+    for i in range(n):
+        t = twin[i]
+        if t >= 0 and t < i:
+            canon[i] = t
+    return canon
+
+
+@numba.njit(cache=True)
 def _compute_F_meuwissen_luo(
     m_idx: np.ndarray,
     f_idx: np.ndarray,
+    twin: np.ndarray,
     depth: np.ndarray,
     n: int,
 ) -> np.ndarray:
     """Inbreeding coefficient F per individual via Meuwissen & Luo (1992).
 
+    Runs over the genome-node pedigree (ADR 0008): MZ co-twins share one
+    node, the walk follows ``canon[parent]`` rather than the parent row, and a
+    non-canonical twin row copies its node's F and D.  This makes F MZ-aware
+    and equal to ``2 * phi(i, i) - 1`` from the pairwise recurrence and the
+    kinship-matrix diagonal.
+
     Uses the LDL' decomposition ``A = T D T'`` of the numerator
-    relationship matrix.  For each individual i in topological order:
+    relationship matrix.  For each genome node i in topological order:
 
         D[i] = 0.5 - 0.25*(F[s] + F[d])  (both parents known)
              = 0.75 - 0.25*F[p]          (one parent known)
@@ -56,14 +79,26 @@ def _compute_F_meuwissen_luo(
     obtained by FORWARD propagation: start with t[i]=1, halve along each
     parent edge, sum across multiple paths.
 
-    MZ-naive: twins are treated as full sibs.  K-derived F (matrix path)
-    is MZ-aware via twin off-diagonals; the two paths agree except for
-    individuals whose only inbreeding path runs through both members of an
-    MZ twin pair as ancestors.
-
     Topological-order required: m_idx[i] < i and f_idx[i] < i for all i
     (validated upstream via :func:`_check_topological`).
     """
+    canon = _genome_node(twin, n)
+    # Parent rows canonicalised once so the walk below indexes no extra array;
+    # without twins the canonical parents are the inputs themselves.
+    has_twins = False
+    for i in range(n):
+        if twin[i] >= 0:
+            has_twins = True
+            break
+    if has_twins:
+        m_c = np.empty(n, dtype=np.int32)
+        f_c = np.empty(n, dtype=np.int32)
+        for i in range(n):
+            m_c[i] = canon[m_idx[i]] if m_idx[i] >= 0 else -1
+            f_c[i] = canon[f_idx[i]] if f_idx[i] >= 0 else -1
+    else:
+        m_c = m_idx
+        f_c = f_idx
     # Persistent scratch.  Sparse-touched, reset via the touched list.
     t = np.zeros(n, dtype=np.float64)
     in_frontier = np.zeros(n, dtype=np.bool_)
@@ -88,8 +123,13 @@ def _compute_F_meuwissen_luo(
     head_depth = np.full(max_depth_global + 1, -1, dtype=np.int32)
 
     for i in range(n):
-        s = m_idx[i]
-        d = f_idx[i]
+        c = canon[i]
+        if c != i:
+            F[i] = F[c]
+            D[i] = D[c]
+            continue
+        s = m_c[i]
+        d = f_c[i]
 
         # Compute D[i] from already-known F[parents].  D is needed even
         # when F[i]=0 because future descendants reference D[i].
@@ -121,8 +161,8 @@ def _compute_F_meuwissen_luo(
             while pos >= 0:
                 a = touched[pos]
                 t_a = t[a]
-                p_m = m_idx[a]
-                p_f = f_idx[a]
+                p_m = m_c[a]
+                p_f = f_c[a]
                 if p_m >= 0:
                     if not in_frontier[p_m]:
                         in_frontier[p_m] = True

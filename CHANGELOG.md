@@ -4,6 +4,29 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Changed: `compute_inbreeding()` is MZ-aware** (#8, ADR 0008).  The
+  Meuwissen–Luo walk now runs over the genome-node pedigree, in which MZ
+  co-twins share one node, so `F` equals `2 * phi(i, i) - 1` from
+  `compute_pair_kinship()` and from the `kinship_matrix()` diagonal on every
+  pedigree.  Previously co-twins were walked as two individuals: twins with
+  parents counted as full sibs and founder co-twins as unrelated founders,
+  so an inbreeding path through both members of an MZ pair was
+  under-weighted or missed.
+
+  **Numeric change for existing callers** on pedigrees containing MZ twins:
+  `F` never decreases; on a 1M-row simACE pedigree 0.12% of individuals
+  change, by at most 1/128, and mean `F` moves under 1%.  Everything
+  derived from `compute_inbreeding()` (`ne_inbreeding`,
+  `ne_individual_delta_f`, the Caballero–Toro estimators, pedsum's
+  inbreeding section) shifts accordingly.  Wall time is unchanged; peak
+  memory rises by about 2% on pedigrees that contain twins.
+
+  `compute_inbreeding()` now raises `ValueError` when a represented MZ
+  reference is not reciprocal or the co-twins do not share both parent
+  rows.  An absent co-twin (`twin == -1`) is not an MZ pair.
+
 ## v0.7.1
 
 - **Fixed: founder MZ co-twins were dropped by the kinship DP** (#5).  The MZ
