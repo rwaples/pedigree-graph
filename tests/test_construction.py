@@ -196,6 +196,10 @@ class TestFromArraysDispatch:
             ),
             pytest.param(lambda: PedigreeGraph.from_arrays(ids=IDS, mothers=MOTHERS), id="legacy_without_fathers"),
             pytest.param(
+                lambda: PedigreeGraph.from_arrays(IDS, MOTHERS, FATHERS, twin_ids=np.full(len(IDS), -1)),
+                id="twin_ids_with_the_legacy_form",
+            ),
+            pytest.param(
                 lambda: PedigreeGraph.from_arrays(mother_ids=MOTHERS, father_ids=FATHERS),
                 id="canonical_without_ids",
             ),

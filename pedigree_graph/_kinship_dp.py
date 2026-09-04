@@ -42,7 +42,7 @@ from pedigree_graph._kinship_allocator import (
 )
 from pedigree_graph._kinship_csc import _assemble_csc
 from pedigree_graph._kinship_depth import _compute_last_direct_child_depth
-from pedigree_graph._topology import owned_readonly, readonly, remap_rows
+from pedigree_graph._topology import build_topology, owned_readonly
 
 
 class KinshipDPConfig(NamedTuple):
@@ -674,18 +674,14 @@ def _run_dp_core(
     # depth-major order (:mod:`pedigree_graph._topology`) and let the CSC caller
     # un-permute via DPResult.order; the streaming theta path is label-indexed
     # and permutation-invariant.
-    identity = np.arange(n, dtype=np.intp)
-    order: np.ndarray | None = np.argsort(depth, kind="stable").astype(np.intp)
-    if np.array_equal(order, identity):
-        order = None
-    else:
-        inv = np.empty(n, dtype=np.intp)
-        inv[order] = identity
-        m_idx = remap_rows(m_idx, order, inv)
-        f_idx = remap_rows(f_idx, order, inv)
-        tw_idx = remap_rows(tw_idx, order, inv)
-        permuted_depth = readonly(np.ascontiguousarray(depth[order]))
-        labels = permuted_depth if labels is depth else readonly(np.ascontiguousarray(labels[order]))
+    topo = build_topology(depth)
+    order = topo.order
+    if order is not None:
+        m_idx = topo.to_topological(m_idx)
+        f_idx = topo.to_topological(f_idx)
+        tw_idx = topo.to_topological(tw_idx)
+        permuted_depth = topo.gather(depth)
+        labels = permuted_depth if labels is depth else topo.gather(labels)
         depth = permuted_depth
 
     if grow_stats is None:

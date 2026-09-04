@@ -925,8 +925,11 @@ class PedigreeGraph(PedigreeProperties):
             required = ("ids", "mothers", "fathers")
             if any(supplied[name] is None for name in required):
                 raise TypeError(f"from_arrays() requires {', '.join(required)}")
-            if sex_encoding is not None:
-                raise TypeError("from_arrays() takes sex_encoding= only with the canonical mother_ids= form")
+            if sex_encoding is not None or twin_ids is not None:
+                raise TypeError(
+                    "from_arrays() takes sex_encoding= and twin_ids= only with the canonical mother_ids= form; "
+                    "the 0.7.1 form spells co-twins twins="
+                )
             ids_arr = np.asarray(supplied["ids"])
             data: dict[str, np.ndarray] = {
                 "id": ids_arr,
