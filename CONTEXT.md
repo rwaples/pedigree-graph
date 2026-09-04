@@ -13,19 +13,40 @@ to name them.
 An individual's row index within the full pedigree the graph was built over.
 _Avoid_: full index, absolute index, internal index
 
-**Caller-space**:
-An individual's row index within the subsample the caller supplied, which may
-order or omit individuals differently from the full pedigree.
-_Avoid_: subsample index, df index, external index
+**View-space**:
+An individual's row index within an explicitly ordered pedigree view. A view
+may reorder or omit individuals from its full pedigree, while relationships
+are still resolved through the full pedigree.
+_Avoid_: caller-space, subsample index, df index, external index
+
+### Pedigree structure
+
+**Structural depth**:
+An individual's position in the parent DAG: individuals with no represented
+parent have depth 0; every other individual has one plus the greatest depth of
+its represented parents. Structural depth is derived from parent relationships
+and is independent of input row order.
+_Avoid_: generation label, cohort
+
+**Generation label**:
+Optional cohort metadata supplied for an individual. When generation metadata
+is absent for the entire pedigree, structural depth supplies the generation
+grouping. When only some individuals lack labels, they remain unlabelled and
+are excluded explicitly from label-grouped summaries rather than silently
+assigned their structural depth. A generation label may be rebased, sparse, or
+different from structural depth and never changes pedigree relationships or
+kinship.
+_Avoid_: structural depth
 
 ### Relationships
 
 **Relationship pair**:
-An unordered pair of individuals sharing a relationship category. Some pair
-arrays preserve relationship orientation (for example descendant→ancestor for
-lineal relationships); pair-key encodings canonicalize as `(lo, hi)` with
-`lo < hi`.
-_Avoid_: edge, link, tuple; assuming every pair array is already canonical
+A pair of individuals sharing a relationship category. For an asymmetric
+category, the positions have fixed semantic roles (for example
+offspring→mother or descendant→ancestor). For a symmetric category, the two
+positions have no distinct biological roles. Canonical `(lo, hi)` pair-key
+encoding is an internal storage operation and must not erase semantic roles.
+_Avoid_: edge, link, tuple; treating internal key order as relationship-role order
 
 **Relationship category**:
 A class of relationship identified by a short code (e.g. `FS`, `MHS`, `1C`),
@@ -53,15 +74,15 @@ _Avoid_: nominal kinship
 
 ## Relationships
 
-- A **relationship pair** holds two individuals and belongs to one **relationship category**; canonical ordering is a storage/encoding choice, not part of the relationship itself.
-- Every individual index is expressed in either **graph-space** or **caller-space**; the same individual generally has a different index in each.
-- A pair returned to a caller is in **caller-space**; the kinship matrix is indexed in **graph-space**. Converting between the two is required whenever both meet.
+- A **relationship pair** holds two individuals and belongs to one **relationship category**; asymmetric categories define the roles of its two positions, while canonical key ordering remains only a storage/encoding choice.
+- Every public row index is expressed in either **graph-space** or **view-space**; the same individual generally has a different index in each.
+- A graph query returns graph-space rows, while a view query returns view-space rows. Coordinate space follows the query receiver.
 
 ## Example dialogue
 
-> **Reviewer:** "`extract_pairs` gave me pair `(1, 0)` for the MZ twins — why is its kinship `0.0`?"
-> **Author:** "Those indices are **caller-space** — you reversed the subsample. The kinship matrix is **graph-space**, so indexing it with caller indices reads the wrong cell. The pair has to be mapped back to graph-space first."
+> **Reviewer:** "This relationship pair came from a pedigree view. Can I use its rows against the full graph's matrix?"
+> **Author:** "No. Those are **view-space** rows, while the full matrix is indexed in **graph-space**. Query pairwise kinship through the same view, which owns the coordinate conversion."
 
 ## Flagged ambiguities
 
-- "index" alone is ambiguous between **graph-space** and **caller-space** — always qualify which space, since the same individual differs between them and conflating them caused a kinship-lookup bug (PGQ-001).
+- "index" alone is ambiguous between **graph-space** and **view-space** — always qualify which space, since the same individual differs between them and conflating them caused a kinship-lookup bug (PGQ-001).
