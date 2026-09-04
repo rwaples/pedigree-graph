@@ -57,6 +57,7 @@ markers = [
 target-version = "py313"
 required-version = ">=0.16,<0.17"
 line-length = 120
+extend-exclude = ["benchmarks/threshold_structure"]  # frozen investigation scripts, evidence not code
 
 [tool.ruff.lint]
 select = ["F", "E", "W", "I", "UP", "B", "SIM", "RUF", "A", "C4", "PT", "PIE", "PERF", "TC", "PLW", "RSE", "RET", "D"]

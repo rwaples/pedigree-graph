@@ -1,0 +1,149 @@
+{
+  "degree5_counts": {
+    "1C": 43507,
+    "1C1R": 162912,
+    "1C2R": 219560,
+    "2C": 130650,
+    "Av": 42449,
+    "FO": 17000,
+    "FS": 13196,
+    "G3Av": 86047,
+    "G3GP": 107888,
+    "GAv": 63787,
+    "GGAv": 85381,
+    "GGGP": 108444,
+    "GGP": 81507,
+    "GP": 54390,
+    "H1C": 40139,
+    "H1C1R": 121301,
+    "HAv": 40663,
+    "HGAv": 61957,
+    "HGGAv": 84387,
+    "MHS": 6515,
+    "MO": 17000,
+    "MZ": 113,
+    "PHS": 6406
+  },
+  "degree5_full": {
+    "bytes": 24618612,
+    "n": 20400,
+    "name": "degree5_full",
+    "nnz": 3067126,
+    "offdiag_pairs": 1523363,
+    "rss_mb": 1232.3984375,
+    "value_max": 0.50390625,
+    "value_min": 0.015625,
+    "value_quantiles": [
+      0.015625,
+      0.015625,
+      0.015625,
+      0.03125,
+      0.125,
+      0.25,
+      0.50390625
+    ],
+    "wall_s": 18.257166220108047
+  },
+  "degree5_subset": {
+    "bytes": 9339604,
+    "n": 10200,
+    "name": "degree5_subset",
+    "nnz": 1162350,
+    "offdiag_pairs": 576075,
+    "rss_mb": 1232.3984375,
+    "value_max": 0.50390625,
+    "value_min": 0.015625,
+    "value_quantiles": [
+      0.015625,
+      0.015625,
+      0.015625,
+      0.017578125,
+      0.125,
+      0.25,
+      0.50390625
+    ],
+    "wall_s": 18.257166220108047
+  },
+  "n_full": 20400,
+  "overlap_value_diff_full": {
+    "max_abs": 0.19140625,
+    "mean_abs": 0.002106564143843455,
+    "n": 3067126,
+    "nonzero": 149824,
+    "quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.0625,
+      0.19140625
+    ]
+  },
+  "pedigree": "results/dev/dev_cont_n10k/rep1/pedigree.parquet",
+  "phenotype": "results/dev/dev_cont_n10k/rep1/phenotype.parquet",
+  "structure_full": {
+    "degree5_only": 0,
+    "intersection": 1523363,
+    "threshold_only": 3447761
+  },
+  "structure_subset": {
+    "degree5_only": 0,
+    "intersection": 576075,
+    "threshold_only": 2942859
+  },
+  "threshold_full": {
+    "bytes": 79782788,
+    "n": 20400,
+    "name": "threshold_full",
+    "nnz": 9962648,
+    "offdiag_pairs": 4971124,
+    "rss_mb": 676.3515625,
+    "value_max": 0.50390625,
+    "value_min": 0.00146484375,
+    "value_quantiles": [
+      0.00146484375,
+      0.001953125,
+      0.001953125,
+      0.0048828125,
+      0.03125,
+      0.126953125,
+      0.50390625
+    ],
+    "wall_s": 1.9909017570316792
+  },
+  "threshold_subset": {
+    "bytes": 56425348,
+    "n": 10200,
+    "name": "threshold_subset",
+    "nnz": 7048068,
+    "offdiag_pairs": 3518934,
+    "rss_mb": 1232.3984375,
+    "value_max": 0.50390625,
+    "value_min": 0.00146484375,
+    "value_quantiles": [
+      0.00146484375,
+      0.001953125,
+      0.001953125,
+      0.00390625,
+      0.015625,
+      0.125,
+      0.50390625
+    ],
+    "wall_s": 1.9909017570316792
+  },
+  "top_eigs_subset": {
+    "degree5": [
+      6.795392873201099,
+      6.356140399906008,
+      6.229954953004637,
+      6.107361917198768,
+      6.020599249410716
+    ],
+    "threshold": [
+      8.271673606633362,
+      6.22226339360505,
+      6.120618540436417,
+      6.0270125131135215,
+      5.930609610938565
+    ]
+  }
+}

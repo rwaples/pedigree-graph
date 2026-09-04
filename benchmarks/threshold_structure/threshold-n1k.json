@@ -1,0 +1,196 @@
+{
+  "complete_full": {
+    "bytes": 6510852,
+    "n": 2040,
+    "name": "complete_full",
+    "nnz": 812836,
+    "offdiag_pairs": 405398,
+    "rss_mb": 380.33203125,
+    "value_max": 0.5,
+    "value_min": 0.00048828125,
+    "value_quantiles": [
+      0.00048828125,
+      0.0009765625,
+      0.001953125,
+      0.0078125,
+      0.046875,
+      0.25,
+      0.5
+    ],
+    "wall_s": 0.10444307909347117
+  },
+  "complete_subset": {
+    "bytes": 4507188,
+    "n": 1020,
+    "name": "complete_subset",
+    "nnz": 562888,
+    "offdiag_pairs": 280934,
+    "rss_mb": 380.33203125,
+    "value_max": 0.5,
+    "value_min": 0.00048828125,
+    "value_quantiles": [
+      0.00048828125,
+      0.0009765625,
+      0.001953125,
+      0.0048828125,
+      0.03125,
+      0.1328125,
+      0.5
+    ],
+    "wall_s": 0.10444307909347117
+  },
+  "degree5_counts": {
+    "1C": 4088,
+    "1C1R": 15682,
+    "1C2R": 19769,
+    "2C": 12545,
+    "Av": 4122,
+    "FO": 1700,
+    "FS": 1330,
+    "G3Av": 7981,
+    "G3GP": 10001,
+    "GAv": 6296,
+    "GGAv": 8164,
+    "GGGP": 10438,
+    "GGP": 8025,
+    "GP": 5413,
+    "H1C": 4010,
+    "H1C1R": 10900,
+    "HAv": 4004,
+    "HGAv": 5589,
+    "HGGAv": 7129,
+    "MHS": 635,
+    "MO": 1700,
+    "MZ": 5,
+    "PHS": 598
+  },
+  "degree5_full": {
+    "bytes": 2309540,
+    "n": 2040,
+    "name": "degree5_full",
+    "nnz": 287672,
+    "offdiag_pairs": 142816,
+    "rss_mb": 356.2734375,
+    "value_max": 0.5,
+    "value_min": 0.015625,
+    "value_quantiles": [
+      0.015625,
+      0.015625,
+      0.015625,
+      0.03125,
+      0.125,
+      0.25,
+      0.5
+    ],
+    "wall_s": 1.931245786137879
+  },
+  "degree5_subset": {
+    "bytes": 902516,
+    "n": 1020,
+    "name": "degree5_subset",
+    "nnz": 112304,
+    "offdiag_pairs": 55642,
+    "rss_mb": 361.63671875,
+    "value_max": 0.5,
+    "value_min": 0.015625,
+    "value_quantiles": [
+      0.015625,
+      0.015625,
+      0.015625,
+      0.03125,
+      0.125,
+      0.251953125,
+      0.5
+    ],
+    "wall_s": 1.931245786137879
+  },
+  "n_full": 2040,
+  "overlap_value_diff_full": {
+    "max_abs": 0.201171875,
+    "mean_abs": 0.0025044188237819463,
+    "n": 287672,
+    "nonzero": 16360,
+    "quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.0625,
+      0.201171875
+    ]
+  },
+  "pedigree": "results/dev/dev_mcem_n1k/rep1/pedigree.parquet",
+  "phenotype": "results/dev/dev_mcem_n1k/rep1/phenotype.parquet",
+  "structure_full": {
+    "degree5_only": 0,
+    "intersection": 142816,
+    "threshold_only": 240125
+  },
+  "structure_subset": {
+    "degree5_only": 0,
+    "intersection": 55642,
+    "threshold_only": 202835
+  },
+  "threshold_full": {
+    "bytes": 6151540,
+    "n": 2040,
+    "name": "threshold_full",
+    "nnz": 767922,
+    "offdiag_pairs": 382941,
+    "rss_mb": 326.32421875,
+    "value_max": 0.5,
+    "value_min": 0.00146484375,
+    "value_quantiles": [
+      0.00146484375,
+      0.001953125,
+      0.001953125,
+      0.0078125,
+      0.0625,
+      0.25,
+      0.5
+    ],
+    "wall_s": 7.807896266924217
+  },
+  "threshold_subset": {
+    "bytes": 4147876,
+    "n": 1020,
+    "name": "threshold_subset",
+    "nnz": 517974,
+    "offdiag_pairs": 258477,
+    "rss_mb": 361.63671875,
+    "value_max": 0.5,
+    "value_min": 0.00146484375,
+    "value_quantiles": [
+      0.00146484375,
+      0.001953125,
+      0.001953125,
+      0.005859375,
+      0.03125,
+      0.140625,
+      0.5
+    ],
+    "wall_s": 7.807896266924217
+  },
+  "top_eigs_subset": {
+    "complete": [
+      8.40784712528933,
+      5.3169516478271275,
+      5.157437987503908,
+      4.978870467654525,
+      4.680651862561663
+    ],
+    "degree5": [
+      7.064581424800831,
+      5.684273930832538,
+      5.590796952200771,
+      5.250421969279427,
+      4.913141596334586
+    ],
+    "threshold": [
+      8.36012852453502,
+      5.323660043457151,
+      5.169573648323263,
+      4.984634519981087,
+      4.688796597053688
+    ]
+  }
+}
