@@ -133,20 +133,24 @@ eventual source.
 ### Kinship and inbreeding
 
 * `pair_kinship(first_rows, second_rows)`, `pair_kinship(block)`, and
-  `pair_kinship(pairs)` return float64 and accept arbitrary and self pairs. A
-  collection query is one core call sharing one memo.
+  `pair_kinship(pairs)` return read-only float32 and accept arbitrary and self
+  pairs. The value is the pinned float32 recurrence of ADR 0009, bit-identical
+  to the matrix entry for the same pair. A collection query is one core call
+  sharing one memo.
 * `kinship_matrix()` is complete (every nonzero pedigree kinship).
   `relationship_kinship_matrix(...)` is structurally limited to the selected
   closest categories, but every retained coefficient is the full-pedigree
   value, never a propagation-pruned one. Both include the diagonal.
 * CSC contract: SciPy `csc_matrix`, float32 data, int32 indices/indptr, sorted
   rows per column, read-only cached arrays. "Pedigree-specific" permits only
-  this final float32 rounding.
+  the per-step float32 rounding of the pinned recurrence (ADR 0009); every
+  entry equals the `pair_kinship` value for that pair.
 * Canonical `inbreeding()` is MZ-aware and satisfies `F_i = 2·phi(i,i) − 1`.
   Issue #8 decides whether the MZ-naive Meuwissen–Luo implementation is
   deleted or retained under an explicit non-canonical name.
-* Recurrence-only versus sampling an already cached complete matrix in
-  `pair_kinship` is deferred to issue #6; both paths must agree.
+* `pair_kinship` is recurrence-only and never reads a cached matrix; its
+  result does not depend on call history (ADR 0009, resolving issue #6).
+  Callers thresholding against a non-dyadic cutoff widen to float64 first.
 
 ### Generation summaries, lineage, connectivity
 

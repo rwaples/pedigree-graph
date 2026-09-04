@@ -73,6 +73,18 @@ current implementation; if it fails, a slab/arena design with retirement is
 ported instead. A Rust port alone is not assumed to improve the
 output-dominated DP.
 
+### Pairwise kinship memo layout
+
+The pairwise kernel implements the pinned float32 recurrence of ADR 0009
+(float32 values, peel the deeper endpoint, ties by row) and must match the
+matrix bit-for-bit. Its memo, not its output, dominates memory: at 536k rows
+and degree 3 the Python kernel holds 145M entries in 2^28 slots, and the
+rehash keeps the predecessor table alive, so peak RSS is about 1.5 times the
+final table (6.2 GB float64, 4.6 GB float32). A layout that grows without a
+copy, or sizes from a bound, is a requirement here; it is worth about 30
+percent of peak independent of dtype and was deliberately left out of the
+0.8.0 Python kernel.
+
 ### Memoisation and ownership
 
 The public graph is immutable; safe interior memoisation is allowed.
@@ -168,8 +180,9 @@ replaces, and passes the cross-repository release gate. In order:
 4. Streaming relationship-count estimator.
 5. Relationship-pair engine (after issue #9), compared against the oracle and
    the 0.8.0 baseline at fixture, inbred, 30k, and 300k scales.
-6. Pairwise kinship (after issue #6); Python/Numba production kernel deleted,
-   independent oracle retained.
+6. Pairwise kinship (issue #6 resolved by ADR 0009: recurrence-only, pinned
+   float32 recurrence); Python/Numba production kernel deleted, independent
+   oracle retained.
 7. Complete and relationship-limited CSC matrices; DP storage chosen by
    benchmark.
 8. Inbreeding, generation summary, lineage, effective-size prerequisites;
@@ -182,8 +195,9 @@ replaces, and passes the cross-repository release gate. In order:
 * Correctness: the twelve gates listed in the plan (all 23 categories in
   every result, roles/exclusivity/ordering, graph/view conversion under
   reorder and empty views, arbitrary input order, multiplicity without
-  overflow, `Ak(0)` identity, pairwise kinship edge cases, `F = 2·phi − 1`,
-  matrix entries equal float32-rounded pairwise values, pinned CSC dtypes,
+  overflow, `Ak(0)` identity, pairwise kinship edge cases, `F = 2·phi − 1`
+  within `2^-22`, matrix entries bit-identical to pairwise values (ADR 0009),
+  pinned CSC dtypes,
   partial-metadata rules, structured errors at both host boundaries).
 * Differential: a readable independent Python oracle, property tests against
   it, large differential tests against the released 0.8.0 baseline,

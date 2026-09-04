@@ -1,6 +1,6 @@
 # ADR 0005: `compute_pair_kinship` is always exact, via an on-demand pairwise recurrence
 
-**Status:** accepted
+**Status:** accepted; superseded in part by ADR 0009 (output dtype is float32, the recurrence is float32 with a pinned peel rule, and the cached-matrix sampling branch is removed)
 **Date:** 2026-06-09
 **Context:** profiling follow-up to ADR 0001 (the algorithmic lever it pointed at)
 
