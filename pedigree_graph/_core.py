@@ -26,6 +26,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from pedigree_graph._compat import from_subsample as _from_subsample
+from pedigree_graph._compat import legacy_extract_pairs as _legacy_extract_pairs
 from pedigree_graph._effective_size import _per_gen_mean_kinship
 from pedigree_graph._errors import PedigreeValidationError, ResourceError
 from pedigree_graph._frames import FrameLike
@@ -44,8 +45,8 @@ from pedigree_graph._lineage_kernel import (
     _compute_n_descendants,
 )
 from pedigree_graph._ne_common import _require_complete_generation_labels
-from pedigree_graph._pair_extractor import MatrixPairExtractor
-from pedigree_graph._pair_utils import pairs_from_groups
+from pedigree_graph._pair_extractor import relationship_pairs as _relationship_pairs
+from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
 from pedigree_graph._properties import PedigreeProperties
 from pedigree_graph._registry import _validate_max_degree
 from pedigree_graph._streaming_counter import StreamingPairCounter
@@ -53,9 +54,12 @@ from pedigree_graph._topology import build_topology
 from pedigree_graph._view import CoordinateToken, _build_view
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from pedigree_graph._input import PedigreeInput
     from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
+    from pedigree_graph.relationships import RelationshipPairs
 
 logger = logging.getLogger(__name__)
 
@@ -486,6 +490,7 @@ class PedigreeGraph(PedigreeProperties):
             self.father[f_children].astype(np.intp),
         )
 
+    # 0.8.0-DELETE: public name; callers request FS / MHS / PHS from relationship_pairs.
     def sibling_pairs(
         self,
     ) -> tuple[
@@ -545,7 +550,7 @@ class PedigreeGraph(PedigreeProperties):
         m_mother = nt_mother[has_mother]
         if len(m_idx) >= 2:
             mat_all = pairs_from_groups(m_idx, m_mother)
-            mat_hs = self._subtract_pairs(mat_all, full_sib)
+            mat_hs = subtract_pairs(mat_all, [full_sib])
         else:
             mat_hs = empty
 
@@ -555,7 +560,7 @@ class PedigreeGraph(PedigreeProperties):
         f_father = nt_father[has_father]
         if len(f_idx) >= 2:
             pat_all = pairs_from_groups(f_idx, f_father)
-            pat_hs = self._subtract_pairs(pat_all, full_sib)
+            pat_hs = subtract_pairs(pat_all, [full_sib])
         else:
             pat_hs = empty
 
@@ -570,46 +575,13 @@ class PedigreeGraph(PedigreeProperties):
 
         return full_sib, mat_hs, pat_hs
 
-    @staticmethod
-    def _subtract_pairs(
-        all_pairs: tuple[np.ndarray, np.ndarray],
-        remove_pairs: tuple[np.ndarray, np.ndarray],
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Remove pairs in *remove_pairs* from *all_pairs* using set subtraction.
-
-        Both inputs must be canonically ordered (lo, hi).
-        Encodes each pair as lo * max_id + hi, then tests membership by
-        sorting the remove keys and binary-searching the candidates —
-        much faster than ``np.unique`` + ``np.isin`` at scale, and
-        duplicate remove keys are harmless (same rationale as
-        ``extract_from_sparse``).
-        """
-        a1, a2 = all_pairs
-        r1, r2 = remove_pairs
-
-        if len(a1) == 0:
-            return all_pairs
-        if len(r1) == 0:
-            return all_pairs
-
-        # int64 cast required: max_id² overflows int32
-        max_id = int(max(a1.max(), a2.max(), r1.max(), r2.max())) + 1
-        remove_keys = np.sort(r1.astype(np.int64) * max_id + r2.astype(np.int64))
-        all_keys = a1.astype(np.int64) * max_id + a2.astype(np.int64)
-
-        pos = np.searchsorted(remove_keys, all_keys)
-        hit = pos < remove_keys.size
-        hit[hit] = remove_keys[pos[hit]] == all_keys[hit]
-        keep = ~hit
-
-        return a1[keep].astype(np.intp), a2[keep].astype(np.intp)
-
+    # 0.8.0-DELETE: replaced by relationship_pairs (ADR 0006).
     def extract_pairs(
         self,
         max_degree: int = 3,
         min_kinship: float = 0.0,
     ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-        """Extract all relationship categories.
+        """Extract all relationship categories with 0.7.1 semantics.
 
         Returned indices are always in caller-input coordinates:
 
@@ -618,14 +590,16 @@ class PedigreeGraph(PedigreeProperties):
           pairs are filtered to those with both endpoints in *df*.
         - ``from_arrays(ids, ...)``: positions in the input *ids* array.
 
+        Lineal and parent-offspring pairs are ``(descendant, ancestor)``;
+        every collateral pair is ``(min row, max row)``.  Use
+        :meth:`relationship_pairs` for role-oriented graph-space pairs.
+
         Args:
             max_degree: Maximum kinship degree to extract (0-5). Includes
                 relationship categories whose registry degree is <= this
                 cutoff: 0=MZ only, 1=parent-offspring/full-sib, 2 adds
                 half-sibs/grandparent/avuncular, 3 adds 1st cousins and
                 other degree-3 categories, and 5 reaches 2nd cousins.
-                Higher degrees require more
-                expensive matrix products.
             min_kinship: Skip pair types with kinship coefficient below this
                 threshold. E.g., 0.125 skips 1st cousins (0.0625) and 2nd
                 cousins (0.016), avoiding their expensive sparse products.
@@ -633,18 +607,9 @@ class PedigreeGraph(PedigreeProperties):
         Returns:
             Dict mapping relationship code to (idx1, idx2) row-index arrays.
 
-        Delegates extraction to :class:`MatrixPairExtractor` (a read-only
-        collaborator); this wrapper persists the resulting counts and
-        releases the transient adjacency/sibling matrices.  See ADR 0002.
+        See :func:`pedigree_graph._compat.legacy_extract_pairs`.
         """
-        max_degree = _validate_max_degree(max_degree)
-        pairs, raw_counts, sub_counts = MatrixPairExtractor(self).extract(max_degree, min_kinship)
-        self._pair_count_cache[("matrix", int(max_degree), float(min_kinship))] = (
-            raw_counts,
-            sub_counts,
-        )
-        self._release_pair_matrices()
-        return pairs
+        return _legacy_extract_pairs(self, max_degree, min_kinship)
 
     def _release_pair_matrices(self) -> None:
         """Drop the transient adjacency / sibling matrices built for pair work.
@@ -970,6 +935,42 @@ class PedigreeGraph(PedigreeProperties):
             PedigreeValidationError: As :func:`pedigree_graph._view._build_view`.
         """
         return _build_view(self, ids=ids, rows=rows)
+
+    def relationship_pairs(
+        self,
+        *,
+        max_degree: int | None = None,
+        categories: Iterable[str] | None = None,
+    ) -> RelationshipPairs:
+        """Return every relationship pair of the selected categories, in graph rows.
+
+        Exactly one selector is given.  Selection is an output filter: the
+        engine always resolves the closer categories a selected one depends
+        on, so a pair is reported under its closest category (lowest degree,
+        then registry order) whichever categories were named.
+
+        Args:
+            max_degree: Select every category at or below this degree (0-5).
+                Exclusive with *categories*.
+            categories: Registry codes to select, any order.  Exclusive with
+                *max_degree*.
+
+        Returns:
+            A :class:`~pedigree_graph.relationships.RelationshipPairs` over all
+            23 codes.  Each block holds owned, read-only int32 graph rows: for
+            an asymmetric category ``first_rows`` carries ``first_role``
+            (offspring, descendant, niece_nephew, junior_cousin) and
+            ``second_rows`` the counterpart; a symmetric category stores
+            ``first < second``.  Blocks are sorted by the canonical unordered
+            row key.  Unselected categories are empty with ``requested=False``.
+
+        Raises:
+            TypeError: Both selectors, neither, or a bare ``str`` for
+                *categories*.
+            PedigreeValidationError: ``max_degree_out_of_range`` or
+                ``unknown_relationship_category``.
+        """
+        return _relationship_pairs(self, max_degree=max_degree, categories=categories)
 
     # ------------------------------------------------------------------
     # Sparse kinship, inbreeding, and exact pair kinship

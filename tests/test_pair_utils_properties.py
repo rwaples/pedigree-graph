@@ -16,7 +16,7 @@ from hypothesis import strategies as st
 
 from pedigree_graph._pair_utils import (
     dedup_pairs,
-    extract_from_sparse,
+    oriented_pairs_from_sparse,
     pairs_from_groups,
     remap_pairs_to_caller,
 )
@@ -80,20 +80,29 @@ def test_pairs_from_groups_enumerates_combinations(data):
 
 @_SETTINGS
 @given(data=st.data())
-def test_extract_from_sparse_drops_diagonal(data):
+def test_oriented_pairs_from_sparse_drops_diagonal_and_dedups_by_lower_row(data):
     n = data.draw(st.integers(min_value=1, max_value=12))
     dense = np.zeros((n, n), dtype=float)
     for i in range(n):
-        for j in range(i + 1, n):
-            if data.draw(st.booleans()):
-                w = data.draw(st.integers(1, 3))
-                dense[i, j] = dense[j, i] = w
+        for j in range(n):
+            if i != j and data.draw(st.booleans()):
+                dense[i, j] = data.draw(st.integers(1, 3))
         dense[i, i] = data.draw(st.integers(0, 3))  # diagonal must be dropped
-    lo, hi = extract_from_sparse(sp.csr_matrix(dense))
-    assert np.all(lo < hi)  # no self-pairs, canonical
-    got = set(zip(lo.tolist(), hi.tolist(), strict=True))
-    want = {(i, j) for i in range(n) for j in range(i + 1, n) if dense[i, j] > 0}
-    assert got == want
+    row_is_first = data.draw(st.booleans())
+    first, second = oriented_pairs_from_sparse(sp.csr_matrix(dense), row_is_first=row_is_first)
+    got = list(zip(first.tolist(), second.tolist(), strict=True))
+    want = set()
+    for i in range(n):
+        for j in range(n):
+            if i != j and dense[i, j] > 0:
+                a, b = (i, j) if row_is_first else (j, i)
+                if dense[j, i] > 0:
+                    a, b = min(i, j), max(i, j)
+                want.add((a, b))
+    assert set(got) == want
+    assert len(got) == len(want)
+    keys = [min(a, b) * n + max(a, b) for a, b in got]
+    assert keys == sorted(keys)
 
 
 @_SETTINGS

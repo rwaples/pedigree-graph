@@ -10,13 +10,14 @@ wrappers do.
 import numpy as np
 import scipy.sparse as sp
 
-from pedigree_graph import PedigreeGraph
+from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 from pedigree_graph._pair_extractor import MatrixPairExtractor
 from pedigree_graph._pair_utils import (
     dedup_pairs,
-    extract_from_sparse,
+    oriented_pairs_from_sparse,
     pairs_from_groups,
     remap_pairs_to_caller,
+    subtract_pairs,
 )
 from pedigree_graph._streaming_counter import StreamingPairCounter
 
@@ -45,17 +46,34 @@ class TestPairUtils:
         assert lo.size == 0
         assert hi.size == 0
 
-    def test_extract_from_sparse_zeroes_diagonal(self):
-        # Diagonal entry at (0,0) must be dropped; off-diagonal (0,2) kept.
-        dense = np.array([[1, 0, 1, 0], [0, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0]], dtype=float)
-        lo, hi = extract_from_sparse(sp.csr_matrix(dense))
-        assert set(zip(lo.tolist(), hi.tolist(), strict=True)) == {(0, 2)}
+    def test_oriented_pairs_zero_the_diagonal_and_keep_the_row_role(self):
+        dense = np.array([[1, 0, 0, 0], [0, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0]], dtype=float)
+        first, second = oriented_pairs_from_sparse(sp.csr_matrix(dense), row_is_first=True)
+        assert list(zip(first.tolist(), second.tolist(), strict=True)) == [(2, 0)]
 
-    def test_extract_from_sparse_subtracts_closer_pairs(self):
-        dense = np.array([[0, 1, 1, 0], [1, 0, 0, 0], [1, 0, 0, 0], [0, 0, 0, 0]], dtype=float)
-        # candidate pairs (0,1) and (0,2); subtract (0,1).
-        lo, hi = extract_from_sparse(sp.csr_matrix(dense), subtract=[(np.array([0]), np.array([1]))])
-        assert set(zip(lo.tolist(), hi.tolist(), strict=True)) == {(0, 2)}
+    def test_oriented_pairs_can_take_the_column_role(self):
+        dense = np.array([[0, 0, 0], [0, 0, 0], [1, 0, 0]], dtype=float)
+        first, second = oriented_pairs_from_sparse(sp.csr_matrix(dense), row_is_first=False)
+        assert list(zip(first.tolist(), second.tolist(), strict=True)) == [(0, 2)]
+
+    def test_oriented_pairs_dual_valid_keeps_the_lower_row_first(self):
+        dense = np.array([[0, 1], [1, 0]], dtype=float)
+        first, second = oriented_pairs_from_sparse(sp.csr_matrix(dense), row_is_first=True)
+        assert list(zip(first.tolist(), second.tolist(), strict=True)) == [(0, 1)]
+        first, second = oriented_pairs_from_sparse(sp.csr_matrix(dense), row_is_first=False)
+        assert list(zip(first.tolist(), second.tolist(), strict=True)) == [(0, 1)]
+
+    def test_oriented_pairs_subtract_in_either_orientation(self):
+        dense = np.array([[0, 0, 0], [1, 0, 0], [1, 0, 0]], dtype=float)
+        first, second = oriented_pairs_from_sparse(
+            sp.csr_matrix(dense), row_is_first=True, subtract=[(np.array([0]), np.array([1]))]
+        )
+        assert list(zip(first.tolist(), second.tolist(), strict=True)) == [(2, 0)]
+
+    def test_subtract_pairs_preserves_orientation_of_survivors(self):
+        keep = (np.array([5, 3, 9]), np.array([1, 4, 2]))
+        first, second = subtract_pairs(keep, [(np.array([4]), np.array([3]))])
+        assert list(zip(first.tolist(), second.tolist(), strict=True)) == [(5, 1), (9, 2)]
 
     def test_remap_pairs_to_caller_recanonicalizes(self):
         # graph rows 0,1 map to caller rows 1,0 (reversed); pair must stay lo < hi.
@@ -72,19 +90,21 @@ class TestEngineReadOnlyContract:
     def test_matrix_extractor_does_not_write_count_cache(self, small_pedigree):
         pg = PedigreeGraph(small_pedigree)
         assert pg._pair_count_cache == {}
-        pairs, raw, sub = MatrixPairExtractor(pg).extract(2, 0.0)
+        codes = frozenset(code for code, category in RELATIONSHIPS.items() if category.degree <= 2)
+        pairs = MatrixPairExtractor(pg, max_workers=None).extract(codes)
         # The engine must not touch the graph's result cache — that's the wrapper's job.
         assert pg._pair_count_cache == {}
-        assert isinstance(pairs, dict)
-        assert "FS" in pairs
-        assert set(raw) == set(sub)
+        assert list(pairs) == list(RELATIONSHIPS)
+        counts = {code: len(block[0]) for code, block in pairs.items()}
+        assert counts["FS"] > 0
+        assert all(counts[code] == 0 for code in RELATIONSHIPS if code not in codes)
 
         # The wrapper, given the same graph, caches exactly what the engine returned.
         pg2 = PedigreeGraph(small_pedigree)
         pg2.extract_pairs(max_degree=2)
         cached_raw, cached_sub = pg2._pair_count_cache[("matrix", 2, 0.0)]
-        assert cached_raw == raw
-        assert cached_sub == sub
+        assert cached_raw == counts
+        assert cached_sub == counts
 
     def test_streaming_counter_does_not_write_count_cache(self, small_pedigree):
         pg = PedigreeGraph(small_pedigree)

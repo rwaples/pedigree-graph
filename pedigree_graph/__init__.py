@@ -7,6 +7,12 @@ Public API:
         closest-category classification
     RelationshipCategory — one category: code, label, degree, nominal kinship,
         the up/down path shape, and the two positional roles
+    RelationshipPairs    — what graph.relationship_pairs(max_degree=...) or
+        graph.relationship_pairs(categories=...) returns: an immutable mapping
+        over all 23 codes
+    RelationshipPairBlock — one category's pairs: owned read-only int32
+        first_rows / second_rows in the category's role orientation, the
+        roles, requested, len, and (first, second) unpacking
     PedigreeView         — ordered view of a graph's rows, built with
         graph.view(ids=...) or graph.view(rows=...); exposes read-only ids,
         graph_rows, n_individuals, and len
@@ -82,6 +88,8 @@ from pedigree_graph._view import PedigreeView
 from pedigree_graph.relationships import (
     RELATIONSHIPS,
     RelationshipCategory,
+    RelationshipPairBlock,
+    RelationshipPairs,
 )
 
 __all__ = [
@@ -105,6 +113,8 @@ __all__ = [
     "PedigreeView",
     "RelType",  # 0.8.0-DELETE
     "RelationshipCategory",
+    "RelationshipPairBlock",
+    "RelationshipPairs",
     "ResourceError",
     "compute_all_ne",
     "configure_threads",

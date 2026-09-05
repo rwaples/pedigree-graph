@@ -19,8 +19,16 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from relationship_predicates import AncestorWalk
 
-from pedigree_graph import REL_REGISTRY, PedigreeGraph, ResourceError, compute_all_ne, eligible_cohort_range
+from pedigree_graph import (
+    REL_REGISTRY,
+    RELATIONSHIPS,
+    PedigreeGraph,
+    ResourceError,
+    compute_all_ne,
+    eligible_cohort_range,
+)
 from pedigree_graph.experimental import count_pairs_bfs
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
@@ -29,11 +37,10 @@ import pedigrees
 
 MAX_DEGREE = 5
 
-# Only the lineal codes carry semantic orientation at slice 1b:
-# ``_pair_extractor._lineal_pairs`` returns ``(descendant, ancestor)`` as the
-# matrix yields it, while every collateral code ends in ``_pair_utils.dedup_pairs``
-# and is canonicalised to ``(min row, max row)``.  Row-canonical orientation
-# cannot survive a permutation; semantic pair roles arrive in slice 4a.
+# In the 0.7.1 ``extract_pairs`` adapter only the lineal codes carry semantic
+# orientation; every collateral code is ``(min row, max row)``, which cannot
+# survive a permutation.  ``relationship_pairs`` orients every asymmetric code
+# and is compared in full below.
 ORIENTED_CODES = frozenset(code for code, rel in REL_REGISTRY.items() if rel.down == 0 and rel.up > 0)
 
 # ADR 0009: pair/matrix bit parity is a within-graph property.  deep_inbred_60g
@@ -121,6 +128,39 @@ def _assert_pair_sets_match(expected: dict, actual: dict, label: str, *, check_o
         assert actual[code][0] == unordered, f"{label}/{code}: unordered ID-pair set changed"
         if check_orientation and code in ORIENTED_CODES:
             assert actual[code][1] == oriented, f"{label}/{code}: oriented ID-pair set changed"
+
+
+def _relationship_pair_sets(graph: PedigreeGraph, ids: np.ndarray) -> dict:
+    """``{code: (requested, unordered ID-pair set, oriented ID-pair set, dual-valid unordered set)}``.
+
+    Symmetric blocks and dual-valid asymmetric pairs are oriented by graph row
+    (ADR 0006 pair contracts 2 and 5), so their orientation legitimately
+    follows the permutation; every other asymmetric pair is compared exactly.
+    """
+    walk = AncestorWalk(graph)
+    sets = {}
+    for code, block in graph.relationship_pairs(max_degree=MAX_DEGREE).items():
+        rows = list(zip(block.first_rows.tolist(), block.second_rows.tolist(), strict=True))
+        oriented = {(int(ids[a]), int(ids[b])) for a, b in rows}
+        dual = set()
+        if not block.category.symmetric:
+            dual = {frozenset((int(ids[a]), int(ids[b]))) for a, b in rows if walk.dual_valid(code, a, b)}
+        sets[code] = (block.requested, {frozenset(pair) for pair in oriented}, oriented, dual)
+    return sets
+
+
+def _assert_relationship_pairs_match(expected: dict, actual: dict, label: str) -> None:
+    assert list(actual) == list(expected), f"{label}: code order changed"
+    for code, (requested, unordered, oriented, dual) in expected.items():
+        got_requested, got_unordered, got_oriented, got_dual = actual[code]
+        assert got_requested == requested, f"{label}/{code}: requested flag changed"
+        assert got_unordered == unordered, f"{label}/{code}: unordered ID-pair set changed"
+        assert got_dual == dual, f"{label}/{code}: dual-valid set changed"
+        if RELATIONSHIPS[code].symmetric:
+            continue
+        fixed = {pair for pair in oriented if frozenset(pair) not in dual}
+        got_fixed = {pair for pair in got_oriented if frozenset(pair) not in dual}
+        assert got_fixed == fixed, f"{label}/{code}: oriented ID-pair set changed"
 
 
 def _id_key(first: int, second: int) -> tuple[int, int]:
@@ -309,6 +349,7 @@ class _Snapshot:
         }
         full_sib, maternal, paternal = graph.sibling_pairs()
         self.sibling_pairs = _pair_sets({"FS": full_sib, "MHS": maternal, "PHS": paternal}, ids)
+        self.relationship_pairs = _relationship_pair_sets(graph, ids)
 
         self.count_pairs = graph.count_pairs(max_degree=MAX_DEGREE)
         self.count_pairs_streaming = graph.count_pairs_streaming(max_degree=MAX_DEGREE)
@@ -360,6 +401,9 @@ def test_every_operation_is_invariant_under_row_order(name, constructor, capsys)
 
         _assert_pair_sets_match(reference.pairs, actual.pairs, f"{where}/extract_pairs")
         _assert_pair_sets_match(reference.sibling_pairs, actual.sibling_pairs, f"{where}/sibling_pairs")
+        _assert_relationship_pairs_match(
+            reference.relationship_pairs, actual.relationship_pairs, f"{where}/relationship_pairs"
+        )
         # from_subsample re-canonicalises every pair to (min caller row, max
         # caller row) in _pair_utils, so even the lineal codes lose orientation.
         _assert_pair_sets_match(

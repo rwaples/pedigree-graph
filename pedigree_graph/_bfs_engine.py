@@ -9,7 +9,7 @@ The engine is intentionally decoupled from :mod:`pedigree_graph._core`:
 it takes a :class:`PedigreeGraph` as a parameter (typed under
 ``TYPE_CHECKING``), reads only the shared read-only collaborators the
 matrix engine also uses (``pg._mz_twin_pairs`` / ``pg._parent_offspring_pairs``
-/ ``pg.sibling_pairs`` / the static ``pg._subtract_pairs``; ADR 0002),
+/ ``pg.sibling_pairs``; ADR 0002) plus the free ``_pair_utils`` helpers,
 and sources the relationship code set from :mod:`pedigree_graph._registry`.
 
 Counts-only API.  Differs from the matrix engine
@@ -34,7 +34,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from pedigree_graph._bfs_kernel import _enumerate_pairs_kernel
-from pedigree_graph._pair_utils import dedup_pairs
+from pedigree_graph._pair_utils import dedup_pairs, subtract_pairs
 from pedigree_graph._registry import RELATIONSHIPS
 
 if TYPE_CHECKING:
@@ -363,7 +363,7 @@ def count_pairs_bfs(
         av_lo = np.concatenate(av_lo_parts)
         av_hi = np.concatenate(av_hi_parts)
         av_lo, av_hi = dedup_pairs(av_lo, av_hi)
-        av_lo, av_hi = pg._subtract_pairs((av_lo, av_hi), (po_lo, po_hi))
+        av_lo, av_hi = subtract_pairs((av_lo, av_hi), [(po_lo, po_hi)])
     else:
         av_lo = av_hi = np.array([], dtype=np.intp)
     logger.info("[bfs]   Av in %.2fs (n=%d)", time.perf_counter() - t0, av_lo.size)

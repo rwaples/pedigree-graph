@@ -3,9 +3,11 @@
 ``MatrixPairExtractor`` is a read-only collaborator over a
 :class:`~pedigree_graph._core.PedigreeGraph`: it holds a ``pg`` reference,
 reads the graph's cached adjacency powers / sibling matrices, and returns
-relationship-pair arrays.  It never writes the graph's result cache — the
-thin ``PedigreeGraph.extract_pairs`` wrapper owns persisting counts and
-releasing the transient matrices.  See ADR 0002.
+graph-space relationship pairs in the semantic orientation of each
+:class:`~pedigree_graph._registry.RelationshipCategory`.  It never writes the
+graph's result cache and never releases the transient matrices; its callers
+(``relationship_pairs`` here, the 0.7.1 adapter in ``_compat``) own that.
+See ADR 0002 and ADR 0006.
 
 One extractor instance spans a single ``extract()`` call, so degree-gated
 run-state (the half-1C pairs found at degree 3 and consumed at degree 4)
@@ -15,6 +17,7 @@ lives as instance state and cannot leak between calls.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -24,35 +27,67 @@ from typing import TYPE_CHECKING
 import numpy as np
 import scipy.sparse as sp
 
+from pedigree_graph._input import _own
 from pedigree_graph._pair_utils import (
-    dedup_pairs,
-    extract_from_sparse,
+    canonical_keys,
+    oriented_pairs_from_sparse,
     pairs_from_groups,
-    remap_pairs_to_caller,
+    sort_by_canonical_key,
 )
-from pedigree_graph._registry import RELATIONSHIPS
+from pedigree_graph._registry import RELATIONSHIPS, categories_up_to_degree, select_categories
+from pedigree_graph._threads import thread_budget
+from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from pedigree_graph._core import PedigreeGraph
 
 logger = logging.getLogger(__name__)
 
-# A per-code extraction thunk: returns one relationship's (idx1, idx2) arrays.
+# A per-code extraction thunk: returns one relationship's (first, second) arrays.
 _Thunk = Callable[[], tuple[np.ndarray, np.ndarray]]
+
+_REGISTRY_INDEX = {code: index for index, code in enumerate(RELATIONSHIPS)}
+
+
+def dependency_closure(requested: frozenset[str]) -> frozenset[str]:
+    """Return the codes the engine must compute to produce *requested* exactly.
+
+    Every engine dependency is of strictly lower degree (the subtract lists,
+    the H1C cache filled by 1C, the sibling and parent-offspring blocks), so
+    the closure is the registry prefix ending at the last requested code:
+    every code of lower degree plus the same-degree codes up to it.
+
+    Args:
+        requested: Registry codes the caller wants.
+
+    Returns:
+        *requested* plus its dependencies; empty when *requested* is empty.
+    """
+    if not requested:
+        return frozenset()
+    top = max(requested, key=_REGISTRY_INDEX.__getitem__)
+    return frozenset(list(RELATIONSHIPS)[: _REGISTRY_INDEX[top] + 1])
 
 
 class MatrixPairExtractor:
-    """Extract exact relationship-pair arrays from a PedigreeGraph.
+    """Extract exact, oriented relationship-pair arrays from a PedigreeGraph.
 
     Holds a reference to the owning graph and reads its adjacency powers
     (``pg._A`` … ``pg._A5``), sibling matrices, and parent arrays.  The
-    extractor is side-effect-free with respect to the graph's result
-    cache; ``extract`` returns ``(pairs, raw_counts, subsample_counts)``
-    and the caller persists them.
+    extractor is side-effect-free with respect to the graph's result cache.
+
+    Args:
+        pg: The graph to read.
+        max_workers: Thread cap for the per-degree parallel stage.  ``None``
+            keeps the 0.7.1 one-thread-per-task behaviour.
     """
 
-    def __init__(self, pg: PedigreeGraph) -> None:
+    # 0.8.0-DELETE: the ``None`` value of max_workers.
+    def __init__(self, pg: PedigreeGraph, *, max_workers: int | None) -> None:
         self.pg = pg
+        self._max_workers = max_workers
         # Half-1C pairs (share exactly one grandparent) discovered while
         # extracting full 1st cousins at degree 3; consumed by H1C
         # extraction at degree 4.  Instance state → fresh per extract() run.
@@ -91,7 +126,9 @@ class MatrixPairExtractor:
         A_down_1 = self.pg._get_Ak(down - 1)
         A_up_1 = self.pg._get_Ak(up - 1)
         M = A_down_1 @ sib_matrix @ A_up_1.T  # ty: ignore[unsupported-operator, unresolved-attribute]
-        return extract_from_sparse(M, subtract=subtract)
+        # Rows sit (down-1) hops below the sibling link, so they carry the
+        # niece_nephew role whenever up == 1, which is every registry use.
+        return oriented_pairs_from_sparse(M, row_is_first=True, subtract=subtract)
 
     def _cousin_pairs(self) -> tuple[np.ndarray, np.ndarray]:
         """Full 1st cousin pairs: share exactly 2 grandparents (a mated pair) but not a parent.
@@ -170,8 +207,8 @@ class MatrixPairExtractor:
         """Avuncular (uncle/aunt-nephew/niece) pairs.
 
         An avuncular pair (child C, uncle U) exists when C's parent P is a
-        full sibling of U. In matrix form: A @ S_full, then exclude
-        parent-child pairs (which share the same edge structure).
+        full sibling of U. In matrix form: A @ S_full (row C, column U), then
+        exclude parent-child pairs (which share the same edge structure).
         """
         pg = self.pg
         pg._ensure_sibling_matrices()
@@ -186,10 +223,7 @@ class MatrixPairExtractor:
         avunc = avunc - avunc.multiply(parent_child)
         avunc.eliminate_zeros()
 
-        if avunc.nnz == 0:
-            return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
-
-        return dedup_pairs(*avunc.nonzero())
+        return oriented_pairs_from_sparse(avunc, row_is_first=True)
 
     def _second_cousin_matrix(self) -> sp.spmatrix:
         """Symmetric sparse matrix with nonzeros at full 2nd cousin pairs.
@@ -233,14 +267,15 @@ class MatrixPairExtractor:
     def _run_parallel(self, tasks: dict[str, _Thunk]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """Run each per-code extraction thunk concurrently; return ``{code: pairs}``.
 
-        One worker thread per requested code — numpy/scipy release the GIL
-        for the heavy sparse products, so the per-degree codes overlap.
-        Only the codes in *tasks* are computed; the caller pre-seeds every
-        registry code to empty, so any code omitted here stays empty.
+        numpy/scipy release the GIL for the heavy sparse products, so the
+        per-degree codes overlap up to the worker cap.  Only the codes in
+        *tasks* are computed; the caller pre-seeds every registry code to
+        empty, so any code omitted here stays empty.
         """
         if not tasks:
             return {}
-        with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+        workers = len(tasks) if self._max_workers is None else min(self._max_workers, len(tasks))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {code: pool.submit(fn) for code, fn in tasks.items()}
             return {code: fut.result() for code, fut in futures.items()}
 
@@ -250,56 +285,42 @@ class MatrixPairExtractor:
         pairs: dict[str, tuple[np.ndarray, np.ndarray]],
         codes: tuple[str, ...],
         t0: float,
-        suffix: str = "",
     ) -> None:
         """Emit an INFO line summarising per-code pair counts and elapsed time."""
         summary = ", ".join(f"{code}={len(pairs[code][0])}" for code in codes)
-        logger.info("%s: %s (%.3fs)%s", label, summary, time.perf_counter() - t0, suffix)
+        logger.info("%s: %s (%.3fs)", label, summary, time.perf_counter() - t0)
 
-    def extract(
-        self,
-        max_degree: int,
-        min_kinship: float = 0.0,
-    ) -> tuple[dict[str, tuple[np.ndarray, np.ndarray]], dict[str, int], dict[str, int]]:
-        """Extract all relationship categories up to *max_degree*.
+    def extract(self, codes: frozenset[str]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        """Compute the relationship pairs of every code in *codes*.
 
-        *max_degree* must already be validated by the caller.  Returns
-        ``(pairs, raw_counts, subsample_counts)``:
+        Args:
+            codes: Registry codes to compute.  Must equal its own
+                :func:`dependency_closure`; the callers build it that way.
 
-        - ``pairs``: code → (idx1, idx2) in caller-input coordinates.
-        - ``raw_counts``: per-code counts before sample-mask filtering
-          (full-graph scope).
-        - ``subsample_counts``: per-code counts after mask + remap
-          (caller scope).
-
-        The extractor does not persist these; the ``extract_pairs``
-        wrapper writes them to the graph's count cache and releases the
-        transient matrices.
+        Returns:
+            ``{code: (first, second)}`` over every registry code, in graph
+            rows and the category's semantic orientation (symmetric codes
+            canonical ``first < second``), each block sorted by canonical
+            unordered key.  Codes outside *codes* map to empty arrays.
         """
+        assert codes == dependency_closure(codes), "extract() needs the dependency closure of its codes"
         pg = self.pg
         t_total = time.perf_counter()
         empty = np.array([], dtype=np.intp)
         # Every registry code appears in the output; codes that are not
-        # computed (gated out by max_degree or min_kinship) stay empty.
-        # Pre-seeding here makes that contract structural and removes the
-        # per-degree "fill in the missing codes" bookkeeping along with its
-        # mirror-image ``else`` branches.
+        # computed stay empty.  Pre-seeding here makes that contract
+        # structural and removes per-degree "fill in the missing codes"
+        # bookkeeping along with its mirror-image ``else`` branches.
         pairs: dict[str, tuple[np.ndarray, np.ndarray]] = dict.fromkeys(RELATIONSHIPS, (empty, empty))
 
-        needed_codes = {
-            code
-            for code, category in RELATIONSHIPS.items()
-            if category.degree <= max_degree and category.nominal_kinship >= min_kinship
-        }
-
         def _needed(code: str) -> bool:
-            return code in needed_codes
+            return code in codes
 
-        needs_degree1_plus = any(RELATIONSHIPS[code].degree >= 1 for code in needed_codes)
-        needs_degree2_plus = any(RELATIONSHIPS[code].degree >= 2 for code in needed_codes)
-        needs_degree3_plus = any(RELATIONSHIPS[code].degree >= 3 for code in needed_codes)
-        needs_degree4_plus = any(RELATIONSHIPS[code].degree >= 4 for code in needed_codes)
-        needs_degree5 = any(RELATIONSHIPS[code].degree >= 5 for code in needed_codes)
+        needs_degree1_plus = any(RELATIONSHIPS[code].degree >= 1 for code in codes)
+        needs_degree2_plus = any(RELATIONSHIPS[code].degree >= 2 for code in codes)
+        needs_degree3_plus = any(RELATIONSHIPS[code].degree >= 3 for code in codes)
+        needs_degree4_plus = any(RELATIONSHIPS[code].degree >= 4 for code in codes)
+        needs_degree5 = any(RELATIONSHIPS[code].degree >= 5 for code in codes)
 
         # Pre-trigger cached properties needed by degree-2+ extractions.
         # _Am/_Af are only needed to build _A; delete after to free memory.
@@ -341,13 +362,7 @@ class MatrixPairExtractor:
             if _needed("Av"):
                 tasks["Av"] = partial(self._avuncular_pairs, full_sib)
             pairs.update(self._run_parallel(tasks))
-            self._log_counts(
-                "Degree 2",
-                pairs,
-                ("GP", "Av"),
-                t0,
-                suffix=f" [min_kinship={min_kinship}]" if min_kinship > 0 else "",
-            )
+            self._log_counts("Degree 2", pairs, ("GP", "Av"), t0)
 
         # ---- Degree 3+ setup (deferred to avoid work below the 1C/GGP cutoff) ----
         if needs_degree3_plus:
@@ -402,8 +417,11 @@ class MatrixPairExtractor:
                 P_full.setdiag(0)
                 P_full.data[P_full.data < 2] = 0
                 P_full.eliminate_zeros()
-                return extract_from_sparse(
+                # Rows have the shared ancestor two meioses up, columns three:
+                # the column is the junior cousin.
+                return oriented_pairs_from_sparse(
                     P_full,
+                    row_is_first=False,
                     subtract=[po_pairs, gp_pairs, pairs["GGP"], pairs["Av"], pairs["GAv"], sib_all, pairs["1C"]],
                 )
 
@@ -447,8 +465,9 @@ class MatrixPairExtractor:
                 P_half.setdiag(0)
                 P_half.data[P_half.data != 1] = 0
                 P_half.eliminate_zeros()
-                return extract_from_sparse(
+                return oriented_pairs_from_sparse(
                     P_half,
+                    row_is_first=False,
                     subtract=[
                         po_pairs,
                         gp_pairs,
@@ -468,8 +487,9 @@ class MatrixPairExtractor:
                 P_full.setdiag(0)
                 P_full.data[P_full.data < 2] = 0
                 P_full.eliminate_zeros()
-                return extract_from_sparse(
+                return oriented_pairs_from_sparse(
                     P_full,
+                    row_is_first=False,
                     subtract=[
                         po_pairs,
                         gp_pairs,
@@ -513,31 +533,124 @@ class MatrixPairExtractor:
             pairs.update(self._run_parallel(tasks))
             self._log_counts("Degree 5", pairs, ("2C", "G3GP", "HGGAv", "G3Av", "H1C1R", "1C2R"), t0)
 
-        # Save raw counts before sample_mask filtering (used by count_pairs(scope="full"))
-        raw_pair_counts = {k: len(v[0]) for k, v in pairs.items()}
+        n = pg.n_individuals
+        for code, (first, second) in pairs.items():
+            pairs[code] = sort_by_canonical_key(first, second, n)
+        logger.info("pair extraction total: %.3fs", time.perf_counter() - t_total)
+        return pairs
 
-        # Restrict to active (sampled) individuals when a mask is set
-        if pg._sample_mask is not None:
-            for k, (idx1, idx2) in pairs.items():
-                if len(idx1) > 0:
-                    mask = pg._sample_mask[idx1] & pg._sample_mask[idx2]
-                    pairs[k] = (idx1[mask].astype(np.intp), idx2[mask].astype(np.intp))
-                else:
-                    pairs[k] = (empty, empty)
-            logger.info(
-                "Filtered to sample_mask: %s",
-                ", ".join(f"{k}: {len(v[0])}" for k, v in pairs.items()),
-            )
 
-        # Remap graph-space row indices to caller-space when a remap is set.
-        # After this, pair indices are in caller-input coordinates regardless
-        # of which constructor was used.  remap_pairs_to_caller re-canonicalizes
-        # (lo, hi) since the remap can permute rows (see PGQ-001).
-        if pg._subsample_remap is not None:
-            remap_pairs_to_caller(pairs, pg._subsample_remap)
+# ----------------------------------------------------------------------
+# Public assembly: PedigreeGraph.relationship_pairs
+# ----------------------------------------------------------------------
 
-        # Subsample-filtered counts so count_pairs(scope="subsample") is O(1).
-        subsample_pair_counts = {k: len(v[0]) for k, v in pairs.items()}
+_DEBUG_EXCLUSIVITY_ENV = "PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY"
 
-        logger.info("extract_pairs total: %.3fs", time.perf_counter() - t_total)
-        return pairs, raw_pair_counts, subsample_pair_counts
+
+def relationship_pairs(
+    graph: PedigreeGraph,
+    *,
+    max_degree: int | None = None,
+    categories: Iterable[str] | None = None,
+) -> RelationshipPairs:
+    """Build the :class:`RelationshipPairs` of *graph* for one selector.
+
+    Args:
+        graph: The receiver; results are in its graph rows.
+        max_degree: Select every category at or below this degree.
+        categories: Select these registry codes.
+
+    Returns:
+        All 23 blocks; the unselected ones are empty and unrequested.
+
+    Raises:
+        TypeError: Both selectors, neither, a bare ``str`` for *categories*,
+            or a non-``str`` code.
+        PedigreeValidationError: ``max_degree_out_of_range`` or
+            ``unknown_relationship_category``.
+    """
+    if (max_degree is None) == (categories is None):
+        raise TypeError("relationship_pairs() takes exactly one of max_degree= or categories=")
+    if max_degree is not None:
+        selected = categories_up_to_degree(max_degree)
+    else:
+        if isinstance(categories, str):
+            raise TypeError("categories must be an iterable of codes, not a single str")
+        assert categories is not None
+        selected = select_categories(categories)
+    requested = frozenset(category.code for category in selected)
+    computed = dependency_closure(requested)
+
+    pairs = MatrixPairExtractor(graph, max_workers=thread_budget()).extract(computed)
+    graph._release_pair_matrices()
+    _fold_precedence(pairs, [code for code in RELATIONSHIPS if code in computed], graph.n_individuals)
+
+    empty = np.array([], dtype=np.int32)
+    blocks = {}
+    for code, category in RELATIONSHIPS.items():
+        first, second = pairs[code] if code in requested else (empty, empty)
+        blocks[code] = RelationshipPairBlock(
+            category,
+            _own(first, np.int32),
+            _own(second, np.int32),
+            code in requested,
+            graph._coordinate_token,
+        )
+    result = RelationshipPairs(blocks)
+    if os.environ.get(_DEBUG_EXCLUSIVITY_ENV) == "1":
+        check_exclusive(result)
+    return result
+
+
+def _fold_precedence(pairs: dict[str, tuple[np.ndarray, np.ndarray]], order: list[str], n: int) -> None:
+    """Drop every pair already claimed by an earlier code of *order*, in place.
+
+    Pairs are keyed by canonical unordered key; ``lexsort((rank, key))`` puts
+    each key's lowest-ranked occurrence first, and masking a block keeps its
+    canonical-key order intact.
+    """
+    parts = [(code, *pairs[code]) for code in order if len(pairs[code][0]) > 0]
+    if not parts:
+        return
+    keys = np.concatenate([canonical_keys(first, second, n) for _, first, second in parts])
+    rank = np.repeat(np.arange(len(parts)), [len(first) for _, first, _ in parts])
+    by_rank_within_key = np.lexsort((rank, keys))
+    sorted_keys = keys[by_rank_within_key]
+    leads = np.ones(sorted_keys.size, dtype=bool)
+    leads[1:] = sorted_keys[1:] != sorted_keys[:-1]
+    keep = np.zeros(keys.size, dtype=bool)
+    keep[by_rank_within_key[leads]] = True
+    start = 0
+    for code, first, second in parts:
+        stop = start + len(first)
+        mask = keep[start:stop]
+        if not mask.all():
+            pairs[code] = (first[mask], second[mask])
+        start = stop
+
+
+def check_exclusive(pairs: RelationshipPairs) -> None:
+    """Assert the ADR 0006 pair invariants on *pairs*.
+
+    Every block is sorted by canonical unordered key with no repeated pair
+    (so no asymmetric block holds both orientations), and no unordered pair
+    appears in two blocks.
+
+    Args:
+        pairs: The result to check.
+
+    Raises:
+        AssertionError: Naming the offending pair and its block(s).
+    """
+    n = 1 + max(
+        (int(max(block.first_rows.max(), block.second_rows.max())) for block in pairs.values() if len(block)), default=0
+    )
+    seen: dict[int, str] = {}
+    for code, block in pairs.items():
+        keys = canonical_keys(block.first_rows, block.second_rows, n)
+        assert np.all(keys[1:] > keys[:-1]), f"{code}: block is not strictly sorted by canonical key"
+        for key, first, second in zip(
+            keys.tolist(), block.first_rows.tolist(), block.second_rows.tolist(), strict=True
+        ):
+            other = seen.setdefault(key, code)
+            assert other == code, f"pair ({first}, {second}) appears in both {other} and {code}"

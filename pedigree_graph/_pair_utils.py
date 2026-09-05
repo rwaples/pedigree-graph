@@ -1,10 +1,10 @@
 """Stateless pair-array utilities shared by the relationship engines.
 
 Pure functions over index arrays and sparse matrices — no ``PedigreeGraph``
-state.  The matrix pair extractor and the streaming counter both build on
-these; centralising them keeps the canonical ``(lo, hi)`` ordering and the
-graph-space → caller-space coordinate conversion (see PGQ-001) in one place
-rather than re-implemented per engine.
+state.  The matrix pair extractor and the BFS engine both build on these, so
+the canonical unordered key ``min * n + max`` (ADR 0006 pair contracts 3 and
+6), the oriented read of an asymmetric product matrix, and the graph-space →
+caller-space conversion of the 0.7.1 adapter live in one place.
 """
 
 from __future__ import annotations
@@ -17,11 +17,70 @@ if TYPE_CHECKING:
     import scipy.sparse as sp
 
 __all__ = [
+    "canonical_keys",
     "dedup_pairs",
-    "extract_from_sparse",
+    "oriented_pairs_from_sparse",
     "pairs_from_groups",
     "remap_pairs_to_caller",
+    "sort_by_canonical_key",
+    "subtract_pairs",
 ]
+
+_PairArrays = tuple[np.ndarray, np.ndarray]
+
+
+def canonical_keys(a: np.ndarray, b: np.ndarray, n: int) -> np.ndarray:
+    """Return the canonical unordered int64 key ``min(a, b) * n + max(a, b)`` per pair.
+
+    Args:
+        a: First member of each pair, any orientation.
+        b: Second member of each pair, any orientation.
+        n: Key base, at least ``max(a, b) + 1``; ``n`` is bounded by the int32
+            row capacity so the product fits int64.
+
+    Returns:
+        One int64 key per pair, equal for the two orientations of a pair.
+    """
+    return np.minimum(a, b).astype(np.int64) * n + np.maximum(a, b).astype(np.int64)
+
+
+def sort_by_canonical_key(a: np.ndarray, b: np.ndarray, n: int) -> _PairArrays:
+    """Return ``(a, b)`` reordered by :func:`canonical_keys`, orientation kept."""
+    if len(a) == 0:
+        return a, b
+    order = np.argsort(canonical_keys(a, b, n), kind="stable")
+    return a[order], b[order]
+
+
+def subtract_pairs(keep: _PairArrays, remove: list[_PairArrays]) -> _PairArrays:
+    """Drop from *keep* every unordered pair that occurs in any of *remove*.
+
+    Membership is decided on the canonical unordered key ``min * m + max``, so
+    the inputs may be in any orientation and *keep* comes back in the
+    orientation it arrived in (ADR 0006 pair contract 3).
+
+    Args:
+        keep: ``(a, b)`` candidate pair arrays.
+        remove: Pair arrays whose unordered pairs are dropped from *keep*.
+
+    Returns:
+        The surviving ``(a, b)`` rows of *keep*, order preserved.
+    """
+    a, b = keep
+    parts = [pair for pair in remove if len(pair[0]) > 0]
+    if len(a) == 0 or not parts:
+        return keep
+    rm_a = np.concatenate([pair[0] for pair in parts])
+    rm_b = np.concatenate([pair[1] for pair in parts])
+    m = int(max(a.max(), b.max(), rm_a.max(), rm_b.max())) + 1
+    # Membership only: sorting the raw remove keys plus searchsorted beats
+    # np.unique + np.isin at scale, and duplicate remove keys are harmless.
+    rm_keys = np.sort(canonical_keys(rm_a, rm_b, m))
+    keys = canonical_keys(a, b, m)
+    pos = np.searchsorted(rm_keys, keys)
+    hit = pos < rm_keys.size
+    hit[hit] = rm_keys[pos[hit]] == keys[hit]
+    return a[~hit], b[~hit]
 
 
 def dedup_pairs(a_i: np.ndarray, a_j: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -36,47 +95,47 @@ def dedup_pairs(a_i: np.ndarray, a_j: np.ndarray) -> tuple[np.ndarray, np.ndarra
     return lo[unique_idx], hi[unique_idx]
 
 
-def extract_from_sparse(
+def oriented_pairs_from_sparse(
     M: sp.spmatrix,
-    subtract: list[tuple[np.ndarray, np.ndarray]] | None = None,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Extract nonzero pairs from sparse matrix, dedup, and subtract closer pairs.
+    *,
+    row_is_first: bool,
+    subtract: list[_PairArrays] | None = None,
+) -> _PairArrays:
+    """Read an asymmetric relationship product as oriented ``(first, second)`` pairs.
 
-    Mutates *M* in place (zeroes diagonal). Callers should not reuse *M*.
-    All subtract pairs are batched into a single ``np.isin`` call.
+    Each nonzero ``M[r, c]`` is one pair; *row_is_first* says which side of
+    the product holds the ``first`` role.  A pair valid in both orientations
+    (both ``M[a, b]`` and ``M[b, a]`` nonzero, through different paths of an
+    inbred pedigree) is kept once with the lower row as ``first`` (ADR 0006
+    pair contract 5).  Mutates *M* in place (zeroes the diagonal).
+
+    Args:
+        M: Square sparse product whose nonzeros are the candidate pairs.
+        row_is_first: ``True`` when the row index carries the ``first`` role.
+        subtract: Closer-category pairs to drop, in any orientation.
+
+    Returns:
+        Oriented intp ``(first, second)`` arrays, one entry per unordered
+        pair, sorted by canonical key.
     """
     M.setdiag(0)  # ty: ignore[unresolved-attribute]
     M.eliminate_zeros()  # ty: ignore[unresolved-attribute]
     if M.nnz == 0:  # ty: ignore[unresolved-attribute]
         return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
-
-    a_i, a_j = M.nonzero()  # ty: ignore[unresolved-attribute]
-    lo, hi = dedup_pairs(a_i, a_j)
-
-    if subtract and len(lo) > 0:
-        # Collect all subtract pairs into one key set, then filter once
-        rm_lo_parts: list[np.ndarray] = []
-        rm_hi_parts: list[np.ndarray] = []
-        for rm_pair in subtract:
-            if len(rm_pair[0]) > 0:
-                r1, r2 = rm_pair
-                rm_lo_parts.append(np.minimum(r1, r2))
-                rm_hi_parts.append(np.maximum(r1, r2))
-        if rm_lo_parts:
-            all_rm_lo = np.concatenate(rm_lo_parts)
-            all_rm_hi = np.concatenate(rm_hi_parts)
-            max_id = int(max(lo.max(), hi.max(), all_rm_lo.max(), all_rm_hi.max())) + 1
-            # We only need membership, not unique subtract keys.  Sorting the
-            # raw key array plus searchsorted is much faster than np.unique +
-            # np.isin at scale, and duplicate subtract keys are harmless.
-            rm_keys = np.sort(all_rm_lo.astype(np.int64) * max_id + all_rm_hi.astype(np.int64))
-            cand_keys = lo.astype(np.int64) * max_id + hi.astype(np.int64)
-            pos = np.searchsorted(rm_keys, cand_keys)
-            hit = pos < rm_keys.size
-            hit[hit] = rm_keys[pos[hit]] == cand_keys[hit]
-            keep = ~hit
-            lo, hi = lo[keep], hi[keep]
-    return lo, hi
+    rows, cols = M.nonzero()  # ty: ignore[unresolved-attribute]
+    first, second = (rows, cols) if row_is_first else (cols, rows)
+    first = first.astype(np.intp)
+    second = second.astype(np.intp)
+    keys = canonical_keys(first, second, M.shape[0])
+    order = np.lexsort((first, keys))
+    sorted_keys = keys[order]
+    unique = np.ones(order.size, dtype=bool)
+    unique[1:] = sorted_keys[1:] != sorted_keys[:-1]
+    kept = order[unique]
+    first, second = first[kept], second[kept]
+    if subtract:
+        first, second = subtract_pairs((first, second), subtract)
+    return first, second
 
 
 def pairs_from_groups(indices: np.ndarray, group_key: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -121,6 +180,7 @@ def pairs_from_groups(indices: np.ndarray, group_key: np.ndarray) -> tuple[np.nd
     return lo.astype(np.intp), hi.astype(np.intp)
 
 
+# 0.8.0-DELETE: only the from_subsample adapter remaps; views replace it (ADR 0006).
 def remap_pairs_to_caller(
     pairs: dict[str, tuple[np.ndarray, np.ndarray]],
     remap: np.ndarray,

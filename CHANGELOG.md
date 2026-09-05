@@ -6,6 +6,26 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `PedigreeGraph.relationship_pairs`, `RelationshipPairs`, and
+  `RelationshipPairBlock`** (ADR 0006, slice 4a).  `relationship_pairs(
+  max_degree=...)` or `relationship_pairs(categories=...)` (exactly one
+  selector) returns an immutable mapping over all 23 registry codes.  Each
+  block owns read-only int32 graph rows: for an asymmetric category
+  `first_rows` carries `first_role` (offspring, descendant, niece_nephew,
+  junior_cousin) and `second_rows` the counterpart; a symmetric category
+  stores `first < second`.  Every unordered pair appears in exactly one
+  category (lowest degree, then registry order), a pair valid in both
+  orientations of an asymmetric category appears once with the lower graph
+  row first, and blocks are sorted by the canonical unordered row key, so the
+  output is bit-identical across thread counts.  Selection is an output
+  filter: the closer categories a selected one depends on are always
+  resolved.  Unselected blocks are empty with `requested=False`.  The engine
+  honours `configure_threads`.  Both types are exported from
+  `pedigree_graph.relationships` and the package root.  `extract_pairs` and
+  `sibling_pairs` keep their 0.7.1 orientation and membership until 0.8.0
+  removes them, but within a code they may now emit pairs in a different
+  order.
+
 - **Added: a Rust row-streaming relationship engine with exact,
   memory-bounded pair counts** (ADR 0010; issues #11 and #9).  `crates/core`
   (`pedigree-graph-core`) classifies every relationship pair up to degree 5
