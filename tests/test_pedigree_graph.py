@@ -7,7 +7,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from pedigree_graph import PedigreeGraph, PedigreeValidationError
+from pedigree_graph import PedigreeGraph, PedigreeValidationError, PedigreeView
 from pedigree_graph._kinship_pairwise import (
     _pairwise_kinship_py,
     _pairwise_kinship_with_stats,
@@ -1183,6 +1183,17 @@ class TestFromSubsample:
         assert info.value.fields["id"] == 99
         assert info.value.fields["position"] == 0
         assert info.value.fields["missing_count"] == 1
+
+    def test_legacy_view_is_a_view_over_the_df_ids_in_df_order(self, lineage_pedigree):
+        sub = lineage_pedigree.filter(pl.col("id").is_in([1, 3, 4])).reverse()
+        pg = PedigreeGraph.from_subsample(lineage_pedigree, sub)
+        assert isinstance(pg._legacy_view, PedigreeView)
+        assert pg._legacy_view.ids.tolist() == sub["id"].to_list()
+
+    def test_empty_df_gives_a_zero_length_legacy_view(self, lineage_pedigree):
+        pg = PedigreeGraph.from_subsample(lineage_pedigree, lineage_pedigree.head(0))
+        assert isinstance(pg._legacy_view, PedigreeView)
+        assert len(pg._legacy_view) == 0
 
     def test_count_pairs_full_vs_subsample(self, lineage_pedigree):
         sub = lineage_pedigree.filter(pl.col("id").is_in([1, 3, 4]))

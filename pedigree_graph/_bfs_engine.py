@@ -164,7 +164,7 @@ def count_pairs_bfs(
         raise NotImplementedError(
             "count_pairs_bfs only supports max_degree=5; use PedigreeGraph.count_pairs for partial extractions",
         )
-    if pg._sample_mask is not None or pg._subsample_remap is not None:
+    if pg._legacy_view is not None:  # 0.8.0-DELETE
         raise NotImplementedError(
             "count_pairs_bfs does not support subsampled graphs yet; use PedigreeGraph.count_pairs() instead",
         )

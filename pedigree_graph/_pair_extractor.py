@@ -32,6 +32,7 @@ from pedigree_graph._pair_utils import (
     canonical_keys,
     oriented_pairs_from_sparse,
     pairs_from_groups,
+    project_pairs,
     sort_by_canonical_key,
 )
 from pedigree_graph._registry import RELATIONSHIPS, categories_up_to_degree, select_categories
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._view import CoordinateToken, PedigreeView
 
 logger = logging.getLogger(__name__)
 
@@ -541,10 +543,63 @@ class MatrixPairExtractor:
 
 
 # ----------------------------------------------------------------------
-# Public assembly: PedigreeGraph.relationship_pairs
+# Public assembly: PedigreeGraph.relationship_pairs and PedigreeView.relationship_pairs
 # ----------------------------------------------------------------------
 
 _DEBUG_EXCLUSIVITY_ENV = "PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY"
+
+_PairArrays = tuple[np.ndarray, np.ndarray]
+
+
+def _requested_codes(max_degree: int | None, categories: Iterable[str] | None) -> frozenset[str]:
+    """Validate the one-of-two selector and return the codes it names.
+
+    Raises:
+        TypeError: Both selectors, neither, a bare ``str`` for *categories*,
+            or a non-``str`` code.
+        PedigreeValidationError: ``max_degree_out_of_range`` or
+            ``unknown_relationship_category``.
+    """
+    if (max_degree is None) == (categories is None):
+        raise TypeError("relationship_pairs() takes exactly one of max_degree= or categories=")
+    if max_degree is not None:
+        selected = categories_up_to_degree(max_degree)
+    else:
+        if isinstance(categories, str):
+            raise TypeError("categories must be an iterable of codes, not a single str")
+        assert categories is not None
+        selected = select_categories(categories)
+    return frozenset(category.code for category in selected)
+
+
+def _classify(graph: PedigreeGraph, requested: frozenset[str]) -> dict[str, _PairArrays]:
+    """Return the closest-category graph-row pairs of every code *requested* depends on."""
+    computed = dependency_closure(requested)
+    pairs = MatrixPairExtractor(graph, max_workers=thread_budget()).extract(computed)
+    graph._release_pair_matrices()
+    _fold_precedence(pairs, [code for code in RELATIONSHIPS if code in computed], graph.n_individuals)
+    return pairs
+
+
+def _build_result(
+    pairs: dict[str, _PairArrays], requested: frozenset[str], token: CoordinateToken
+) -> RelationshipPairs:
+    """Wrap the requested codes of *pairs* as owned int32 blocks carrying *token*."""
+    empty = np.array([], dtype=np.int32)
+    blocks = {}
+    for code, category in RELATIONSHIPS.items():
+        first, second = pairs[code] if code in requested else (empty, empty)
+        blocks[code] = RelationshipPairBlock(
+            category,
+            _own(first, np.int32),
+            _own(second, np.int32),
+            code in requested,
+            token,
+        )
+    result = RelationshipPairs(blocks)
+    if os.environ.get(_DEBUG_EXCLUSIVITY_ENV) == "1":
+        check_exclusive(result)
+    return result
 
 
 def relationship_pairs(
@@ -569,37 +624,50 @@ def relationship_pairs(
         PedigreeValidationError: ``max_degree_out_of_range`` or
             ``unknown_relationship_category``.
     """
-    if (max_degree is None) == (categories is None):
-        raise TypeError("relationship_pairs() takes exactly one of max_degree= or categories=")
-    if max_degree is not None:
-        selected = categories_up_to_degree(max_degree)
-    else:
-        if isinstance(categories, str):
-            raise TypeError("categories must be an iterable of codes, not a single str")
-        assert categories is not None
-        selected = select_categories(categories)
-    requested = frozenset(category.code for category in selected)
-    computed = dependency_closure(requested)
+    requested = _requested_codes(max_degree, categories)
+    return _build_result(_classify(graph, requested), requested, graph._coordinate_token)
 
-    pairs = MatrixPairExtractor(graph, max_workers=thread_budget()).extract(computed)
-    graph._release_pair_matrices()
-    _fold_precedence(pairs, [code for code in RELATIONSHIPS if code in computed], graph.n_individuals)
 
-    empty = np.array([], dtype=np.int32)
-    blocks = {}
-    for code, category in RELATIONSHIPS.items():
-        first, second = pairs[code] if code in requested else (empty, empty)
-        blocks[code] = RelationshipPairBlock(
-            category,
-            _own(first, np.int32),
-            _own(second, np.int32),
-            code in requested,
-            graph._coordinate_token,
-        )
-    result = RelationshipPairs(blocks)
-    if os.environ.get(_DEBUG_EXCLUSIVITY_ENV) == "1":
-        check_exclusive(result)
-    return result
+def view_relationship_pairs(
+    view: PedigreeView,
+    *,
+    max_degree: int | None = None,
+    categories: Iterable[str] | None = None,
+) -> RelationshipPairs:
+    """Build the :class:`RelationshipPairs` of *view* for one selector.
+
+    Classification runs over the full graph; a pair is kept when both
+    endpoints are selected and is relabelled into view rows.  Asymmetric
+    blocks keep the graph-space role orientation, symmetric blocks are
+    re-canonicalised to ``first < second`` in view rows, and every block is
+    re-sorted by the canonical view-row key (ADR 0006 pair contract 6).
+
+    Args:
+        view: The receiver; results are in its view rows.
+        max_degree: Select every category at or below this degree.
+        categories: Select these registry codes.
+
+    Returns:
+        All 23 blocks carrying the view's token; the unselected ones are
+        empty and unrequested.
+
+    Raises:
+        TypeError: As :func:`relationship_pairs`.
+        PedigreeValidationError: As :func:`relationship_pairs`.
+    """
+    requested = _requested_codes(max_degree, categories)
+    n = len(view)
+    empty = np.array([], dtype=np.intp)
+    pairs: dict[str, _PairArrays] = dict.fromkeys(requested, (empty, empty))
+    if n >= 2:
+        graph_pairs = _classify(view._graph, requested)
+        graph_to_view = view._graph_to_view()
+        for code in requested:
+            first, second = project_pairs(*graph_pairs[code], graph_to_view)
+            if RELATIONSHIPS[code].symmetric:
+                first, second = np.minimum(first, second), np.maximum(first, second)
+            pairs[code] = sort_by_canonical_key(first, second, n)
+    return _build_result(pairs, requested, view._coordinate_token)
 
 
 def _fold_precedence(pairs: dict[str, tuple[np.ndarray, np.ndarray]], order: list[str], n: int) -> None:

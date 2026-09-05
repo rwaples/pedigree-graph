@@ -16,7 +16,6 @@ from pedigree_graph._pair_utils import (
     dedup_pairs,
     oriented_pairs_from_sparse,
     pairs_from_groups,
-    remap_pairs_to_caller,
     subtract_pairs,
 )
 from pedigree_graph._streaming_counter import StreamingPairCounter
@@ -74,14 +73,6 @@ class TestPairUtils:
         keep = (np.array([5, 3, 9]), np.array([1, 4, 2]))
         first, second = subtract_pairs(keep, [(np.array([4]), np.array([3]))])
         assert list(zip(first.tolist(), second.tolist(), strict=True)) == [(5, 1), (9, 2)]
-
-    def test_remap_pairs_to_caller_recanonicalizes(self):
-        # graph rows 0,1 map to caller rows 1,0 (reversed); pair must stay lo < hi.
-        pairs = {"FS": (np.array([0]), np.array([1]))}
-        remap = np.array([1, 0])
-        out = remap_pairs_to_caller(pairs, remap)
-        lo, hi = out["FS"]
-        assert (int(lo[0]), int(hi[0])) == (0, 1)
 
 
 class TestEngineReadOnlyContract:

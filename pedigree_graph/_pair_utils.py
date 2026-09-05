@@ -4,7 +4,7 @@ Pure functions over index arrays and sparse matrices — no ``PedigreeGraph``
 state.  The matrix pair extractor and the BFS engine both build on these, so
 the canonical unordered key ``min * n + max`` (ADR 0006 pair contracts 3 and
 6), the oriented read of an asymmetric product matrix, and the graph-space →
-caller-space conversion of the 0.7.1 adapter live in one place.
+view-space projection live in one place.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ __all__ = [
     "dedup_pairs",
     "oriented_pairs_from_sparse",
     "pairs_from_groups",
-    "remap_pairs_to_caller",
+    "project_pairs",
     "sort_by_canonical_key",
     "subtract_pairs",
 ]
@@ -180,21 +180,19 @@ def pairs_from_groups(indices: np.ndarray, group_key: np.ndarray) -> tuple[np.nd
     return lo.astype(np.intp), hi.astype(np.intp)
 
 
-# 0.8.0-DELETE: only the from_subsample adapter remaps; views replace it (ADR 0006).
-def remap_pairs_to_caller(
-    pairs: dict[str, tuple[np.ndarray, np.ndarray]],
-    remap: np.ndarray,
-) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Convert pair indices from graph-space to caller-space.
+def project_pairs(first: np.ndarray, second: np.ndarray, graph_to_view: np.ndarray) -> _PairArrays:
+    """Keep the pairs with both members selected, relabelled into view rows.
 
-    *remap* is the graph-row → caller-row table (``pg._subsample_remap``).
-    The remap can permute rows, so each pair is re-canonicalized to
-    preserve the ``lo < hi`` invariant that downstream pair-key encoders
-    rely on.  Mutates and returns *pairs*.  See PGQ-001.
+    Args:
+        first: Graph rows of the first member of each pair.
+        second: Graph rows of the second member of each pair.
+        graph_to_view: View row of each graph row, ``-1`` where unselected.
+
+    Returns:
+        Intp ``(first, second)`` view rows of the retained pairs, orientation
+        and order preserved.
     """
-    for k, (idx1, idx2) in pairs.items():
-        if len(idx1) > 0:
-            r1 = remap[idx1].astype(np.intp)
-            r2 = remap[idx2].astype(np.intp)
-            pairs[k] = (np.minimum(r1, r2), np.maximum(r1, r2))
-    return pairs
+    view_first = graph_to_view[first]
+    view_second = graph_to_view[second]
+    keep = (view_first >= 0) & (view_second >= 0)
+    return view_first[keep].astype(np.intp), view_second[keep].astype(np.intp)

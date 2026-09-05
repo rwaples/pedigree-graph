@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -34,6 +35,9 @@ from pedigree_graph.experimental import count_pairs_bfs
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
 
 import pedigrees
+
+if TYPE_CHECKING:
+    from pedigree_graph import PedigreeView
 
 MAX_DEGREE = 5
 
@@ -130,21 +134,37 @@ def _assert_pair_sets_match(expected: dict, actual: dict, label: str, *, check_o
             assert actual[code][1] == oriented, f"{label}/{code}: oriented ID-pair set changed"
 
 
-def _relationship_pair_sets(graph: PedigreeGraph, ids: np.ndarray) -> dict:
+def _relationship_pair_sets(
+    receiver: PedigreeGraph | PedigreeView,
+    ids: np.ndarray,
+    *,
+    walk: AncestorWalk | None = None,
+    rows: np.ndarray | None = None,
+) -> dict:
     """``{code: (requested, unordered ID-pair set, oriented ID-pair set, dual-valid unordered set)}``.
 
     Symmetric blocks and dual-valid asymmetric pairs are oriented by graph row
     (ADR 0006 pair contracts 2 and 5), so their orientation legitimately
     follows the permutation; every other asymmetric pair is compared exactly.
+    For a view, *walk* is the graph's and *rows* maps view rows to graph rows
+    so dual validity is still decided on the pedigree.
     """
-    walk = AncestorWalk(graph)
+    if walk is None:
+        assert isinstance(receiver, PedigreeGraph)
+        walk = AncestorWalk(receiver)
+    if rows is None:
+        rows = np.arange(len(ids))
     sets = {}
-    for code, block in graph.relationship_pairs(max_degree=MAX_DEGREE).items():
-        rows = list(zip(block.first_rows.tolist(), block.second_rows.tolist(), strict=True))
-        oriented = {(int(ids[a]), int(ids[b])) for a, b in rows}
+    for code, block in receiver.relationship_pairs(max_degree=MAX_DEGREE).items():
+        pairs = list(zip(block.first_rows.tolist(), block.second_rows.tolist(), strict=True))
+        oriented = {(int(ids[a]), int(ids[b])) for a, b in pairs}
         dual = set()
         if not block.category.symmetric:
-            dual = {frozenset((int(ids[a]), int(ids[b]))) for a, b in rows if walk.dual_valid(code, a, b)}
+            dual = {
+                frozenset((int(ids[a]), int(ids[b])))
+                for a, b in pairs
+                if walk.dual_valid(code, int(rows[a]), int(rows[b]))
+            }
         sets[code] = (block.requested, {frozenset(pair) for pair in oriented}, oriented, dual)
     return sets
 
@@ -373,6 +393,11 @@ class _Snapshot:
         sub_graph = PedigreeGraph.from_subsample(columns, sub)
         self.subsample_pairs = _pair_sets(sub_graph.extract_pairs(max_degree=MAX_DEGREE), np.asarray(sub["id"]))
 
+        view = graph.view(ids=subsample_ids)
+        self.view_relationship_pairs = _relationship_pair_sets(
+            view, view.ids, walk=AncestorWalk(graph), rows=view.graph_rows
+        )
+
 
 def _descendants_or_refusal(graph: PedigreeGraph) -> object:
     """Descendant path counts, or the structured refusal deep_inbred_60g earns."""
@@ -403,6 +428,9 @@ def test_every_operation_is_invariant_under_row_order(name, constructor, capsys)
         _assert_pair_sets_match(reference.sibling_pairs, actual.sibling_pairs, f"{where}/sibling_pairs")
         _assert_relationship_pairs_match(
             reference.relationship_pairs, actual.relationship_pairs, f"{where}/relationship_pairs"
+        )
+        _assert_relationship_pairs_match(
+            reference.view_relationship_pairs, actual.view_relationship_pairs, f"{where}/view.relationship_pairs"
         )
         # from_subsample re-canonicalises every pair to (min caller row, max
         # caller row) in _pair_utils, so even the lineal codes lose orientation.

@@ -2,7 +2,7 @@
 
 These operate on plain index arrays (no pedigree), so they are fast and exercise
 canonicalisation, deduplication, within-group enumeration, the int64 pair-key
-encoding (incl. large indices), and caller-space remapping.
+encoding (incl. large indices), and the graph-to-view projection.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pedigree_graph._pair_utils import (
     dedup_pairs,
     oriented_pairs_from_sparse,
     pairs_from_groups,
-    remap_pairs_to_caller,
+    project_pairs,
 )
 
 _SETTINGS = settings(deadline=None, max_examples=100)
@@ -107,14 +107,20 @@ def test_oriented_pairs_from_sparse_drops_diagonal_and_dedups_by_lower_row(data)
 
 @_SETTINGS
 @given(data=st.data())
-def test_remap_pairs_to_caller_recanonicalizes(data):
+def test_project_pairs_keeps_exactly_the_both_selected_pairs_in_order(data):
     n = data.draw(st.integers(min_value=1, max_value=15))
-    remap = np.array(data.draw(st.permutations(range(n))), dtype=np.intp)
+    selected = data.draw(st.lists(st.integers(0, n - 1), unique=True, max_size=n))
+    graph_to_view = np.full(n, -1, dtype=np.int32)
+    graph_to_view[selected] = np.arange(len(selected), dtype=np.int32)
     m = data.draw(st.integers(min_value=0, max_value=15))
-    gi = np.array(data.draw(st.lists(st.integers(0, n - 1), min_size=m, max_size=m)), dtype=np.intp)
-    gj = np.array(data.draw(st.lists(st.integers(0, n - 1), min_size=m, max_size=m)), dtype=np.intp)
-    out = remap_pairs_to_caller({"X": (gi, gj)}, remap)
-    lo, hi = out["X"]
-    assert np.all(lo <= hi)
-    want = [(min(int(remap[a]), int(remap[b])), max(int(remap[a]), int(remap[b]))) for a, b in zip(gi, gj, strict=True)]
-    assert list(zip(lo.tolist(), hi.tolist(), strict=True)) == want
+    first = np.array(data.draw(st.lists(st.integers(0, n - 1), min_size=m, max_size=m)), dtype=np.intp)
+    second = np.array(data.draw(st.lists(st.integers(0, n - 1), min_size=m, max_size=m)), dtype=np.intp)
+    view_first, view_second = project_pairs(first, second, graph_to_view)
+    want = [
+        (selected.index(int(a)), selected.index(int(b)))
+        for a, b in zip(first.tolist(), second.tolist(), strict=True)
+        if a in selected and b in selected
+    ]
+    assert list(zip(view_first.tolist(), view_second.tolist(), strict=True)) == want
+    assert view_first.dtype == np.intp
+    assert view_second.dtype == np.intp

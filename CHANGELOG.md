@@ -6,6 +6,27 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `PedigreeView.relationship_pairs`, `relationship_counts` on both
+  receivers, and `RelationshipCountResult`** (ADR 0006, slice 4b).
+  `view.relationship_pairs(max_degree=...)` / `(categories=...)` classifies
+  through the full graph, so a relationship whose connecting ancestors are
+  unselected is still found, then reports only the pairs with both endpoints
+  in the view, as view rows (`0 <= row < len(view)`).  Asymmetric blocks keep
+  their role orientation; symmetric blocks store `first < second` in view
+  rows; every block is sorted by the canonical unordered view-row key and
+  carries the view's own coordinate token.  A view of fewer than two rows
+  returns all-empty blocks after selector validation.
+  `graph.relationship_counts(...)` and `view.relationship_counts(...)` take
+  the same selectors and return `RelationshipCountResult`, a frozen mapping
+  over all 23 codes to the exact block length (`None` where unrequested),
+  with `requested` / `exact` / `approximate` / `clamped` code sets (in this
+  release `exact == requested` and the other two are empty).  Exported from
+  `pedigree_graph.relationships` and the package root.  The 0.7.1
+  `from_subsample` now builds the full graph first and resolves the
+  subsample ids through `view(ids=...)`, so a full pedigree that is both
+  invalid and missing subsample ids reports the pedigree fault before
+  `unknown_view_id`; its `extract_pairs` output is unchanged.
+
 - **Added: `PedigreeGraph.relationship_pairs`, `RelationshipPairs`, and
   `RelationshipPairBlock`** (ADR 0006, slice 4a).  `relationship_pairs(
   max_degree=...)` or `relationship_pairs(categories=...)` (exactly one

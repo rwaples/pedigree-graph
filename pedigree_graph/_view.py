@@ -31,9 +31,14 @@ from pedigree_graph._input import (
     _invalid_integer,
     _own,
 )
+from pedigree_graph._pair_extractor import view_relationship_pairs
+from pedigree_graph.relationships import RelationshipCountResult
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph.relationships import RelationshipPairs
 
 # Named for the keyword each one validates, so a shape or coercion failure names
 # the argument the caller wrote.
@@ -223,3 +228,63 @@ class PedigreeView:
 
     def __repr__(self) -> str:
         return f"PedigreeView(n_individuals={self.n_individuals})"
+
+    def _graph_to_view(self) -> np.ndarray:
+        """Return the int32 view row of every graph row, ``-1`` where unselected."""
+        table = np.full(self._graph.n_individuals, -1, dtype=np.int32)
+        table[self._graph_rows] = np.arange(len(self._graph_rows), dtype=np.int32)
+        return table
+
+    def relationship_pairs(
+        self,
+        *,
+        max_degree: int | None = None,
+        categories: Iterable[str] | None = None,
+    ) -> RelationshipPairs:
+        """Return every relationship pair of the selected categories, in view rows.
+
+        Pairs are classified through the full graph, so cousins whose parents
+        and grandparents are unselected are still cousins here.  Only pairs
+        with both endpoints in this view are reported, and each row is the
+        member's position in the view (``0 <= row < len(view)``).  Selectors,
+        closest-category precedence, and roles are those of
+        :meth:`pedigree_graph.PedigreeGraph.relationship_pairs`; symmetric
+        blocks store ``first < second`` in view rows, every block is sorted
+        by the canonical unordered view-row key, and every block carries this
+        view's own coordinate token.  A view of fewer than two rows returns
+        all-empty blocks with the requested flags set.
+
+        Args:
+            max_degree: Select every category at or below this degree (0-5).
+                Exclusive with *categories*.
+            categories: Registry codes to select, any order.  Exclusive with
+                *max_degree*.
+
+        Returns:
+            A :class:`~pedigree_graph.relationships.RelationshipPairs` over all
+            23 codes, in view rows.
+
+        Raises:
+            TypeError: Both selectors, neither, or a bare ``str`` for
+                *categories*.
+            PedigreeValidationError: ``max_degree_out_of_range`` or
+                ``unknown_relationship_category``.
+        """
+        return view_relationship_pairs(self, max_degree=max_degree, categories=categories)
+
+    def relationship_counts(
+        self,
+        *,
+        max_degree: int | None = None,
+        categories: Iterable[str] | None = None,
+    ) -> RelationshipCountResult:
+        """Return the exact number of view-space pairs in each selected category.
+
+        Same selectors as :meth:`relationship_pairs`; each count is the length
+        of that call's block.
+
+        Returns:
+            A :class:`~pedigree_graph.relationships.RelationshipCountResult`
+            over all 23 codes, ``None`` for unselected categories.
+        """
+        return RelationshipCountResult.from_pairs(self.relationship_pairs(max_degree=max_degree, categories=categories))

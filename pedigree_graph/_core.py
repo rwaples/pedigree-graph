@@ -52,6 +52,7 @@ from pedigree_graph._registry import _validate_max_degree
 from pedigree_graph._streaming_counter import StreamingPairCounter
 from pedigree_graph._topology import build_topology
 from pedigree_graph._view import CoordinateToken, _build_view
+from pedigree_graph.relationships import RelationshipCountResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -154,16 +155,7 @@ class PedigreeGraph(PedigreeProperties):
         self.n = n  # 0.8.0-DELETE: renamed n_individuals.
         self._coordinate_token = CoordinateToken()
 
-        # Subsample state — set only by from_subsample. When _sample_mask is
-        # set, extract_pairs filters to pairs where both endpoints are active.
-        # When _subsample_remap is set, extract_pairs additionally remaps
-        # graph row indices to caller-input row indices.  _subsample_inverse is
-        # the inverse table (caller/df row -> graph row); compute_pair_kinship
-        # uses it to map caller-coordinate pairs back onto the full-graph
-        # kinship matrix, which is always built in graph coordinates.
-        self._sample_mask: np.ndarray | None = None
-        self._subsample_remap: np.ndarray | None = None
-        self._subsample_inverse: np.ndarray | None = None
+        self._legacy_view: PedigreeView | None = None  # 0.8.0-DELETE: set only by from_subsample.
 
         # Lazy kinship cache — populated by kinship_matrix(); keyed by
         # the resolved min_kinship threshold.
@@ -718,7 +710,7 @@ class PedigreeGraph(PedigreeProperties):
         if scope not in ("subsample", "full"):
             raise ValueError(f"scope must be 'subsample' or 'full', got {scope!r}")
         max_degree = _validate_max_degree(max_degree)
-        if scope == "subsample" and self._sample_mask is not None:
+        if scope == "subsample" and self._legacy_view is not None:
             raise NotImplementedError(
                 "count_pairs_streaming(scope='subsample') is not supported on "
                 "graphs constructed via from_subsample; the scalar path is "
@@ -972,6 +964,23 @@ class PedigreeGraph(PedigreeProperties):
         """
         return _relationship_pairs(self, max_degree=max_degree, categories=categories)
 
+    def relationship_counts(
+        self,
+        *,
+        max_degree: int | None = None,
+        categories: Iterable[str] | None = None,
+    ) -> RelationshipCountResult:
+        """Return the exact number of pairs in each selected category.
+
+        Same selectors as :meth:`relationship_pairs`; each count is the length
+        of that call's block.
+
+        Returns:
+            A :class:`~pedigree_graph.relationships.RelationshipCountResult`
+            over all 23 codes, ``None`` for unselected categories.
+        """
+        return RelationshipCountResult.from_pairs(self.relationship_pairs(max_degree=max_degree, categories=categories))
+
     # ------------------------------------------------------------------
     # Sparse kinship, inbreeding, and exact pair kinship
     # ------------------------------------------------------------------
@@ -1194,10 +1203,9 @@ class PedigreeGraph(PedigreeProperties):
 
         Call *after* :meth:`extract_pairs`.
         """
-        # extract_pairs returns caller-input coordinates on from_subsample
-        # graphs, but kinship is computed in full-graph coordinates.  Map back
-        # through the inverse remap before indexing/recurring.
-        inverse = self._subsample_inverse
+        # extract_pairs returns df-row coordinates on from_subsample graphs;
+        # kinship is indexed in graph rows.  0.8.0-DELETE
+        inverse = None if self._legacy_view is None else self._legacy_view.graph_rows
         result: dict[str, np.ndarray] = {}
         graph_pairs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         for code, (idx1, idx2) in pairs.items():
