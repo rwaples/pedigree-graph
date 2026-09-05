@@ -7,6 +7,9 @@ Public API:
         closest-category classification
     RelationshipCategory — one category: code, label, degree, nominal kinship,
         the up/down path shape, and the two positional roles
+    PedigreeView         — ordered view of a graph's rows, built with
+        graph.view(ids=...) or graph.view(rows=...); exposes read-only ids,
+        graph_rows, n_individuals, and len
 
 0.7.1 compatibility (removed in 0.8.0) — detached snapshots of the registry,
 so mutating them changes nothing the engines read:
@@ -75,6 +78,7 @@ from pedigree_graph._registry import (  # 0.8.0-DELETE
     RelType,
 )
 from pedigree_graph._threads import configure_threads
+from pedigree_graph._view import PedigreeView
 from pedigree_graph.relationships import (
     RELATIONSHIPS,
     RelationshipCategory,
@@ -98,6 +102,7 @@ __all__ = [
     "NeVarianceResult",
     "PedigreeGraph",
     "PedigreeValidationError",
+    "PedigreeView",
     "RelType",  # 0.8.0-DELETE
     "RelationshipCategory",
     "ResourceError",

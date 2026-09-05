@@ -1,0 +1,225 @@
+"""Ordered pedigree views and the opaque token that names one receiver.
+
+A view is an explicit, ordered selection of a graph's rows (ADR 0006): view-space
+row ``i`` is graph row ``graph_rows[i]``. Selection arguments are validated here,
+at the one boundary a caller's ids or rows cross, so a constructed view's arrays
+are owned, read-only, unique, and already known to be in range.
+
+Every receiver carries its own :class:`CoordinateToken`: each graph gets one at
+construction and each view gets a fresh one. The token is instance identity, not
+value identity, so two views built by two ``view(...)`` calls over the same
+selection are separate receivers and a result computed against one is never
+silently accepted by the other.
+"""
+
+from __future__ import annotations
+
+__all__ = ["CoordinateToken", "PedigreeView"]
+
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+from pedigree_graph._errors import PedigreeValidationError
+from pedigree_graph._input import (
+    _INT32_MAX,
+    _INT64_MAX,
+    _check_shape,
+    _coerce_to_int64,
+    _duplicate_witness,
+    _FieldSpec,
+    _invalid_integer,
+    _own,
+)
+
+if TYPE_CHECKING:
+    from pedigree_graph._core import PedigreeGraph
+
+# Named for the keyword each one validates, so a shape or coercion failure names
+# the argument the caller wrote.
+_IDS = _FieldSpec("ids", True, 0, _INT64_MAX, np.int64)
+_ROWS = _FieldSpec("rows", True, 0, _INT32_MAX, np.int32)
+
+
+class CoordinateToken:
+    """Opaque identity of one receiver's coordinate space.
+
+    Tokens compare and hash by identity alone, so a token names exactly the one
+    graph or view that made it.
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "CoordinateToken()"
+
+
+def _coerce_selection(spec: _FieldSpec, selection: object) -> np.ndarray:
+    """Return one selection argument as int64, rejecting bad shapes and host nulls.
+
+    A value with no int64 form surfaces as ``value_out_of_range``; the callers
+    translate it into their own not-in-this-pedigree code, so a selection can
+    only ever fail with the four view codes plus the two shape/integer ones.
+    """
+    arr = np.asarray(selection)
+    _check_shape(spec, arr)
+    values, nulls = _coerce_to_int64(spec, arr)
+    if nulls.any():
+        raise _invalid_integer(spec.name, int(np.argmax(nulls)), "null")
+    return values
+
+
+def _unknown_id(value: object, position: int, missing_count: int) -> PedigreeValidationError:
+    return PedigreeValidationError(
+        "unknown_view_id",
+        f"id {value} at position {position} is not an id of this pedigree",
+        id=value,
+        position=position,
+        missing_count=missing_count,
+    )
+
+
+def _row_out_of_range(value: object, position: int, n_individuals: int) -> PedigreeValidationError:
+    return PedigreeValidationError(
+        "view_row_out_of_range",
+        f"row {value} at position {position} is outside the {n_individuals}-row pedigree",
+        row=value,
+        position=position,
+        n_individuals=n_individuals,
+    )
+
+
+def _check_duplicate_rows(rows: np.ndarray, n_individuals: int, code: str, key: str, values: np.ndarray) -> None:
+    """Raise *code* when in-range *rows* repeat, naming the smallest repeated entry of *values*.
+
+    Uniqueness is an O(n) mark over the row range; the sort-based witness runs
+    only once a repeat is known, so the failure path shares the constructor's
+    ``duplicate_id`` rule while the success path never sorts.
+    """
+    seen = np.zeros(n_individuals, dtype=bool)
+    seen[rows] = True
+    if int(np.count_nonzero(seen)) == rows.size:
+        return
+    witness = _duplicate_witness(values)
+    assert witness is not None
+    duplicated, positions, count = witness
+    raise PedigreeValidationError(
+        code,
+        f"{key} {duplicated} appears at positions {positions}; {count} selected {key}(s) repeat an earlier one",
+        **{key: duplicated, "positions": positions, "duplicate_count": count},
+    )
+
+
+def _rows_from_ids(graph: PedigreeGraph, selection: object) -> np.ndarray:
+    """Resolve an id selection to graph rows, preserving selection order.
+
+    Checks run as shape, integer form, membership, then duplicates, so the
+    first error a caller sees is about a single entry before it is about a pair.
+    """
+    try:
+        ids = _coerce_selection(_IDS, selection)
+    except PedigreeValidationError as err:
+        if err.code != "value_out_of_range":
+            raise
+        position = err.fields["position"]
+        assert isinstance(position, int)
+        raise _unknown_id(err.fields["value"], position, 1) from None
+    rows = graph._id_index.resolve(ids, np.int32)
+    unresolved = rows < 0
+    if unresolved.any():
+        position = int(np.argmax(unresolved))
+        raise _unknown_id(int(ids[position]), position, int(np.count_nonzero(unresolved)))
+    _check_duplicate_rows(rows, graph.n_individuals, "duplicate_view_id", "id", ids)
+    return rows
+
+
+def _rows_from_rows(graph: PedigreeGraph, selection: object) -> np.ndarray:
+    """Validate a row selection against the graph's row range, preserving order.
+
+    Checks run as shape, integer form, range, then duplicates, matching the id
+    path's single-entry-before-pair order.
+    """
+    n_individuals = graph.n_individuals
+    try:
+        rows = _coerce_selection(_ROWS, selection)
+    except PedigreeValidationError as err:
+        if err.code != "value_out_of_range":
+            raise
+        position = err.fields["position"]
+        assert isinstance(position, int)
+        raise _row_out_of_range(err.fields["value"], position, n_individuals) from None
+    outside = (rows < 0) | (rows >= n_individuals)
+    if outside.any():
+        position = int(np.argmax(outside))
+        raise _row_out_of_range(int(rows[position]), position, n_individuals)
+    _check_duplicate_rows(rows, n_individuals, "duplicate_view_row", "row", rows)
+    return rows
+
+
+def _build_view(graph: PedigreeGraph, *, ids: object | None, rows: object | None) -> PedigreeView:
+    """Validate exactly one selection keyword and return the view it names.
+
+    Args:
+        graph: The graph whose rows are being selected.
+        ids: Ids to select, in view order.
+        rows: Graph rows to select, in view order.
+
+    Returns:
+        The view over that selection.
+
+    Raises:
+        TypeError: When both *ids* and *rows* are given, or neither.
+        PedigreeValidationError: ``invalid_shape`` or ``invalid_integer_value``
+            for a malformed selection; ``unknown_view_id`` then
+            ``duplicate_view_id`` for *ids*; ``view_row_out_of_range`` then
+            ``duplicate_view_row`` for *rows*. A value too large for int64
+            reads as unknown / out of range, never as a fifth code.
+    """
+    if (ids is None) == (rows is None):
+        raise TypeError("view() takes exactly one of ids= or rows=")
+    graph_rows = _rows_from_ids(graph, ids) if rows is None else _rows_from_rows(graph, rows)
+    return PedigreeView(graph, _own(graph_rows, np.int32))
+
+
+class PedigreeView:
+    """An ordered selection of one graph's rows: the receiver for view-space queries.
+
+    Build one with :meth:`pedigree_graph.PedigreeGraph.view`, the only caller of
+    this constructor and the place every selection is validated. A view keeps its
+    graph alive, so relationships stay resolvable through the full pedigree
+    however few rows the view names.
+
+    Args:
+        graph: The graph the selection indexes.
+        graph_rows: Validated, owned, read-only int32 graph rows in selection
+            order.
+    """
+
+    __slots__ = ("_coordinate_token", "_graph", "_graph_rows", "_ids")
+
+    def __init__(self, graph: PedigreeGraph, graph_rows: np.ndarray) -> None:
+        self._graph = graph
+        self._graph_rows = graph_rows
+        self._ids = _own(graph.ids[graph_rows], np.int64)
+        self._coordinate_token = CoordinateToken()
+
+    @property
+    def ids(self) -> np.ndarray:
+        """Read-only int64 id per view row, in selection order."""
+        return self._ids
+
+    @property
+    def graph_rows(self) -> np.ndarray:
+        """Read-only int32 graph row per view row, in selection order."""
+        return self._graph_rows
+
+    @property
+    def n_individuals(self) -> int:
+        """Number of individuals the view selects."""
+        return len(self._graph_rows)
+
+    def __len__(self) -> int:
+        return self.n_individuals
+
+    def __repr__(self) -> str:
+        return f"PedigreeView(n_individuals={self.n_individuals})"

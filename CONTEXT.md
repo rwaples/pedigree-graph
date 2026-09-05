@@ -19,6 +19,13 @@ may reorder or omit individuals from its full pedigree, while relationships
 are still resolved through the full pedigree.
 _Avoid_: caller-space, subsample index, df index, external index
 
+**Coordinate token**:
+The opaque identity a receiver carries for its own coordinate space, which its
+results will carry too so they cannot be used against another receiver. It is
+instance identity, not value identity: equivalent selections made by separate
+`view` calls are distinct receivers with distinct tokens.
+_Avoid_: view id, space id, handle
+
 ### Pedigree structure
 
 **Structural depth**:

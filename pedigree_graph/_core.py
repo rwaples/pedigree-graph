@@ -50,10 +50,12 @@ from pedigree_graph._properties import PedigreeProperties
 from pedigree_graph._registry import _validate_max_degree
 from pedigree_graph._streaming_counter import StreamingPairCounter
 from pedigree_graph._topology import build_topology
+from pedigree_graph._view import CoordinateToken, _build_view
 
 if TYPE_CHECKING:
     from pedigree_graph._input import PedigreeInput
     from pedigree_graph._topology import Topology
+    from pedigree_graph._view import PedigreeView
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +148,7 @@ class PedigreeGraph(PedigreeProperties):
         self._legacy_defaults = legacy_defaults  # 0.8.0-DELETE
         n = parsed.n_individuals
         self.n = n  # 0.8.0-DELETE: renamed n_individuals.
+        self._coordinate_token = CoordinateToken()
 
         # Subsample state — set only by from_subsample. When _sample_mask is
         # set, extract_pairs filters to pairs where both endpoints are active.
@@ -951,6 +954,22 @@ class PedigreeGraph(PedigreeProperties):
             ),
             legacy_defaults=False,
         )
+
+    def view(self, *, ids: object | None = None, rows: object | None = None) -> PedigreeView:
+        """Return an ordered :class:`~pedigree_graph._view.PedigreeView` of these rows.
+
+        Args:
+            ids: Ids to select, in view order.  Exclusive with *rows*.
+            rows: Graph rows to select, in view order.  Exclusive with *ids*.
+
+        Returns:
+            The view over that selection, in the order given.
+
+        Raises:
+            TypeError: When both keywords are given, or neither.
+            PedigreeValidationError: As :func:`pedigree_graph._view._build_view`.
+        """
+        return _build_view(self, ids=ids, rows=rows)
 
     # ------------------------------------------------------------------
     # Sparse kinship, inbreeding, and exact pair kinship

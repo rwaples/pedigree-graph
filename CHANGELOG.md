@@ -71,6 +71,28 @@ live on the corresponding GitHub release pages.
   `RELATIONSHIPS`: mutating them no longer changes the registry or any engine
   output.  0.8.0 removes all three.
 
+- **Added: pedigree views** (ADR 0006, slice 3).  `graph.view(ids=[...])` and
+  `graph.view(rows=[...])` return a `PedigreeView` over exactly that selection,
+  in exactly the order given; naming both keywords, or neither, is a
+  `TypeError`.  An empty selection of any dtype is a valid empty view.  A view
+  exposes read-only `ids` (int64) and `graph_rows` (int32), each its own
+  contiguous storage handed back unchanged on every access, plus
+  `n_individuals` and `len(view)`; mutating the selection array afterwards
+  cannot change the view.  A bad selection raises one of four structured
+  errors: `duplicate_view_id`, `unknown_view_id` (which is also how a negative
+  id reads), `duplicate_view_row`, and `view_row_out_of_range` (there is no
+  negative indexing).  Each selector checks single entries before pairs:
+  membership or range first, duplicates last, so a value too large for
+  int64 reads as unknown or out of range rather than as a fifth code.  The
+  graph memoises a sorted-id index on the first `ids=` view, so later id
+  views cost the selection's size, not a sort of the whole pedigree.
+  Shape and lossless-integer failures report
+  `invalid_shape` and `invalid_integer_value` naming the `ids` or `rows`
+  argument.  Each graph and each separately built view owns a distinct opaque
+  coordinate token, so equivalent selections from two `view(...)` calls are not
+  interchangeable receivers.  Relationship methods on views arrive in a later
+  slice, and `from_subsample` is unchanged for now.
+
 - **Changed: MZ pairs are validated at construction.**  Every constructor now
   rejects a represented MZ reference that is self-directed
   (`mz_self_reference`), not reciprocated (`mz_nonreciprocal`, which is also how

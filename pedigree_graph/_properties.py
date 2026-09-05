@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from pedigree_graph._input import IdIndex
 from pedigree_graph._topology import readonly, structural_depth
 
 if TYPE_CHECKING:
@@ -112,6 +113,11 @@ class PedigreeProperties:
     def n_individuals(self) -> int:
         """Number of represented individuals, one per graph row."""
         return self._input.n_individuals
+
+    @cached_property
+    def _id_index(self) -> IdIndex:
+        """Sorted-id lookup built on first id selection and reused by every later one."""
+        return IdIndex.build(self._input.ids)
 
     def __len__(self) -> int:
         return self._input.n_individuals

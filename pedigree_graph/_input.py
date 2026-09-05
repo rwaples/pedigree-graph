@@ -294,17 +294,29 @@ def _check_shape(spec: _FieldSpec, arr: np.ndarray) -> None:
         )
 
 
-def _check_duplicate_ids(ids: np.ndarray) -> None:
-    """Raise ``duplicate_id`` naming the smallest repeated id and all its rows."""
-    if ids.size < 2:
-        return
-    ordered = np.sort(ids)
+def _duplicate_witness(values: np.ndarray) -> tuple[int, tuple[int, ...], int] | None:
+    """Name the smallest repeated value, every position it holds, and how many entries repeat.
+
+    ``None`` when *values* are unique. The one witness rule shared by
+    ``duplicate_id`` at construction and the ``duplicate_view_*`` codes.
+    """
+    if values.size < 2:
+        return None
+    ordered = np.sort(values)
     repeats = ordered[1:] == ordered[:-1]
     if not repeats.any():
-        return
+        return None
     duplicated = int(ordered[int(np.argmax(repeats))])
-    rows = tuple(int(row) for row in np.flatnonzero(ids == duplicated))
-    count = int(np.count_nonzero(repeats))
+    positions = tuple(int(position) for position in np.flatnonzero(values == duplicated))
+    return duplicated, positions, int(np.count_nonzero(repeats))
+
+
+def _check_duplicate_ids(ids: np.ndarray) -> None:
+    """Raise ``duplicate_id`` naming the smallest repeated id and all its rows."""
+    witness = _duplicate_witness(ids)
+    if witness is None:
+        return
+    duplicated, rows, count = witness
     raise PedigreeValidationError(
         "duplicate_id",
         f"id {duplicated} appears at rows {rows}; {count} row(s) repeat an earlier id",
@@ -329,6 +341,40 @@ def _check_same_parent(ids: np.ndarray, mother_ids: np.ndarray, father_ids: np.n
     )
 
 
+@dataclass(frozen=True, slots=True)
+class IdIndex:
+    """Sorted id column plus the permutation that built it, for repeated id lookups.
+
+    Built once per graph and memoised, so resolving a selection costs the
+    selection's size, not a fresh sort of every id in the pedigree.
+    """
+
+    sorted_ids: np.ndarray
+    order: np.ndarray
+
+    @classmethod
+    def build(cls, ids: np.ndarray) -> IdIndex:
+        """Index unique *ids* (the parser validates uniqueness)."""
+        ids = np.asarray(ids)
+        order = np.argsort(ids, kind="stable")
+        return cls(ids[order], order)
+
+    def resolve(self, query_ids: np.ndarray, dtype: np.dtype | type = np.int32) -> np.ndarray:
+        """Row per query id, ``-1`` for a negative id or one not in the index."""
+        query = np.asarray(query_ids)
+        out = np.full(len(query), -1, dtype=dtype)
+        if len(self.sorted_ids) == 0 or len(query) == 0:
+            return out
+        sel = np.where(query >= 0)[0]
+        if sel.size == 0:
+            return out
+        q = query[sel]
+        pos = np.clip(np.searchsorted(self.sorted_ids, q), 0, len(self.sorted_ids) - 1)
+        found = self.sorted_ids[pos] == q
+        out[sel[found]] = self.order[pos[found]].astype(dtype, copy=False)
+        return out
+
+
 def _map_ids_to_rows(
     target_ids: np.ndarray,
     query_ids: np.ndarray,
@@ -344,7 +390,8 @@ def _map_ids_to_rows(
 
     Uses ``searchsorted`` over the sorted target ids rather than a dense
     ``max(id)+1`` lookup table, so sparse / very large ids cost O(n log n)
-    instead of allocating an array sized to the largest id.
+    instead of allocating an array sized to the largest id. Callers that
+    resolve against the same ids repeatedly keep an :class:`IdIndex` instead.
 
     Args:
         target_ids: Unique ids defining the row coordinates.
@@ -354,21 +401,7 @@ def _map_ids_to_rows(
     Returns:
         Row indices aligned with *query_ids*, ``-1`` where unresolved.
     """
-    target_ids = np.asarray(target_ids)
-    query = np.asarray(query_ids)
-    out = np.full(len(query), -1, dtype=dtype)
-    if len(target_ids) == 0 or len(query) == 0:
-        return out
-    order = np.argsort(target_ids, kind="stable")
-    sorted_ids = target_ids[order]
-    sel = np.where(query >= 0)[0]
-    if sel.size == 0:
-        return out
-    q = query[sel]
-    pos = np.clip(np.searchsorted(sorted_ids, q), 0, len(sorted_ids) - 1)
-    found = sorted_ids[pos] == q
-    out[sel[found]] = order[pos[found]].astype(dtype, copy=False)
-    return out
+    return IdIndex.build(target_ids).resolve(query_ids, dtype)
 
 
 def _remaining_after_kahn(mother_rows: np.ndarray, father_rows: np.ndarray, n: int) -> np.ndarray:
