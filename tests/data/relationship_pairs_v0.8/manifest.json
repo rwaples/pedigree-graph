@@ -56,8 +56,7 @@
       "n": 12,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "backcross_and_selfing_like": {
       "counts": {
@@ -115,8 +114,7 @@
       "n": 7,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "deep_inbred_60g": {
       "counts": {
@@ -178,8 +176,7 @@
         "n_generations": 60,
         "per_generation": 12,
         "seed": 1002
-      },
-      "seconds": 0.03
+      }
     },
     "disconnected_components": {
       "counts": {
@@ -237,8 +234,7 @@
       "n": 8,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "double_first_cousins": {
       "counts": {
@@ -296,8 +292,7 @@
       "n": 10,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "external_parents": {
       "counts": {
@@ -355,8 +350,7 @@
       "n": 7,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "founder_mz_twins": {
       "counts": {
@@ -414,8 +408,7 @@
       "n": 7,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.0
+      }
     },
     "half_cousins": {
       "counts": {
@@ -473,8 +466,7 @@
       "n": 9,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "half_sibs_both_kinds": {
       "counts": {
@@ -532,8 +524,7 @@
       "n": 7,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "lineal_five_generations": {
       "counts": {
@@ -591,8 +582,7 @@
       "n": 11,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "mz_twins_with_children": {
       "counts": {
@@ -650,8 +640,7 @@
       "n": 9,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "nuclear_full_sibs": {
       "counts": {
@@ -709,8 +698,7 @@
       "n": 5,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.17
+      }
     },
     "one_parent_known": {
       "counts": {
@@ -768,8 +756,7 @@
       "n": 5,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     },
     "random_1k": {
       "counts": {
@@ -831,8 +818,7 @@
         "n_generations": 6,
         "per_generation": 160,
         "seed": 1001
-      },
-      "seconds": 0.06
+      }
     },
     "random_30k": {
       "counts": {
@@ -893,8 +879,7 @@
         "n_generations": 8,
         "per_generation": 3600,
         "seed": 30000
-      },
-      "seconds": 2.0
+      }
     },
     "single_individual": {
       "counts": {
@@ -952,8 +937,7 @@
       "n": 1,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.0
+      }
     },
     "small_pedigree": {
       "counts": {
@@ -1012,8 +996,7 @@
       "params": {
         "file": "tests/data/small_pedigree.parquet",
         "kind": "shipped"
-      },
-      "seconds": 0.02
+      }
     },
     "twins_mating_loop": {
       "counts": {
@@ -1071,12 +1054,11 @@
       "n": 8,
       "params": {
         "kind": "motif"
-      },
-      "seconds": 0.01
+      }
     }
   },
   "generator_version": 1,
   "max_degree": 5,
-  "package_commit": "23ec496456117014d0c047a5a412d6adb0971064-dirty",
+  "package_commit": "34cbe968d2238e3b7d9aaeb67540661cf0e0b96a",
   "package_version": null
 }
