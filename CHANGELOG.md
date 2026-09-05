@@ -6,6 +6,17 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Fixed: the scalar counter no longer allocates a table the size of the
+  largest parent id.**  `_per_sex_anchor_sums` binned per-parent sums by
+  original parent id, so a pedigree with ten-digit ids allocated a dense
+  table of that size per sex side and per degree (480 MB peak on a 20-row
+  pedigree with ids near 10^7).  Parents are now grouped by dense index.
+  Counts are unchanged; on the parity fixtures, whose ids start at 10^7,
+  `estimate_relationship_counts(max_degree=5)` drops from 0.45 s to 0.04 s
+  on 30k rows and from 0.88 s to 0.46 s on 300k rows, with peak RSS at 0.28x
+  and 0.42x of before (`benchmarks/bench_estimate_counts.py`, interleaved,
+  medians of ten).  This predates 0.8 (`count_pairs_streaming` had it too).
+
 - **Added: `PedigreeGraph.estimate_relationship_counts(max_degree=...)`**
   (ADR 0006, ADR 0011, slice 4c).  The memory-bounded scalar estimate that
   `count_pairs_streaming` computed, returned as a `RelationshipCountResult`:

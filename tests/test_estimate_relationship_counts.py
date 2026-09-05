@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tracemalloc
 import warnings
 from pathlib import Path
 
@@ -313,3 +314,37 @@ def test_random_30k_matches_the_frozen_streaming_counts():
     for code in sorted(estimate.exact):
         assert estimate[code] == exact[code], code
     assert estimate.exact == frozenset(estimate_exact_codes())
+
+
+class TestMemoryIsIndependentOfIdMagnitude:
+    """The counter groups by dense parent index, never by original id (docs/architecture.md, dense vs sparse ids)."""
+
+    @staticmethod
+    def _pedigree(base: int) -> dict[str, np.ndarray]:
+        ids = np.arange(20, dtype=np.int64) + base
+        mother = np.array([-1] * 6 + [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7])
+        father = np.array([-1] * 6 + [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 0, 0, 8, 9])
+        return {
+            "id": ids,
+            "mother": np.where(mother >= 0, ids[np.maximum(mother, 0)], -1),
+            "father": np.where(father >= 0, ids[np.maximum(father, 0)], -1),
+        }
+
+    def _peak_bytes(self, base: int) -> int:
+        graph = PedigreeGraph.from_frame(self._pedigree(base))
+        tracemalloc.start()
+        try:
+            _estimate_quietly(graph, 5)
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+    def test_ten_digit_ids_allocate_no_more_than_small_ids(self):
+        small = self._peak_bytes(0)
+        large = self._peak_bytes(10_000_000)
+        assert large < 4 * small + 1_000_000, (small, large)
+
+    def test_counts_do_not_depend_on_id_magnitude(self):
+        small = dict(_estimate_quietly(PedigreeGraph.from_frame(self._pedigree(0)), 5))
+        large = dict(_estimate_quietly(PedigreeGraph.from_frame(self._pedigree(10_000_000)), 5))
+        assert small == large

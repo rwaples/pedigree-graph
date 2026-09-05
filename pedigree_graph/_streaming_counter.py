@@ -190,8 +190,11 @@ class StreamingPairCounter:
         f_known = nt_f >= 0
         has_m = bool(m_known.any())
         has_f = bool(f_known.any())
-        m_parents = nt_m[m_known]
-        f_parents = nt_f[f_known]
+        # Parent ids are original ids, so the per-parent bincounts below index
+        # by the dense group of each parent, never by the id itself (a
+        # ten-digit id would otherwise allocate a table of that size).
+        _, m_parents, m_sizes = np.unique(nt_m[m_known], return_inverse=True, return_counts=True)
+        _, f_parents, f_sizes = np.unique(nt_f[f_known], return_inverse=True, return_counts=True)
         m_anchors = nt_idx[m_known]
         f_anchors = nt_idx[f_known]
         members = mating_pair_id >= 0
@@ -200,10 +203,8 @@ class StreamingPairCounter:
 
         # ---- Degree 2: MHS, PHS, GP, Av -------------------------------
         if has_m:
-            _, m_sizes = np.unique(m_parents, return_counts=True)
             counts["MHS"] = int(((m_sizes * (m_sizes - 1)) // 2).sum()) - fs_count
         if has_f:
-            _, f_sizes = np.unique(f_parents, return_counts=True)
             counts["PHS"] = int(((f_sizes * (f_sizes - 1)) // 2).sum()) - fs_count
         nontwin = pg.twin < 0
         overlaps["MHS"] = _half_sibs_that_are_parent_offspring(pg.father, sm, nontwin)
