@@ -113,13 +113,12 @@ def main() -> None:
         arrays, summary = _capture(pg_mod, fx, full_arrays=full_arrays)
         summary["params"] = params
         summary["input_hash"] = pedigrees.input_hash(fx)
-        summary["seconds"] = round(time.perf_counter() - t0, 2)
         if full_arrays:
             path = args.out / f"{name}.npz"
             np.savez_compressed(path, **arrays, **{f"input/{k}": v for k, v in fx.items()})
             summary["file"] = path.name
         manifest["fixtures"][name] = summary
-        print(f"{name}: n={summary['n']} pairs={sum(summary['counts'].values())} {summary['seconds']}s")
+        print(f"{name}: n={summary['n']} pairs={sum(summary['counts'].values())} {time.perf_counter() - t0:.2f}s")
 
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     print(f"wrote {args.out / 'manifest.json'}")
