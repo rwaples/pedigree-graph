@@ -100,12 +100,15 @@ class TestEngineReadOnlyContract:
     def test_streaming_counter_does_not_write_count_cache(self, small_pedigree):
         pg = PedigreeGraph(small_pedigree)
         assert pg._pair_count_cache == {}
-        counts = StreamingPairCounter(pg).count(2)
+        counts, overlaps, clamped = StreamingPairCounter(pg).count(2)
         assert pg._pair_count_cache == {}
+        assert pg._estimate_cache == {}
         assert isinstance(counts, dict)
+        assert set(overlaps) == set(counts)
+        assert clamped == frozenset()
         assert counts["MZ"] >= 0
 
-        # The wrapper returns the same counts and caches them.
+        # The adapter returns the same counts and leaves the matrix-engine cache alone.
         pg2 = PedigreeGraph(small_pedigree)
         assert pg2.count_pairs_streaming(max_degree=2) == counts
-        assert ("streaming", 2, 0.0) in pg2._pair_count_cache
+        assert pg2._pair_count_cache == {}

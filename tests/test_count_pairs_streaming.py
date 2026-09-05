@@ -6,6 +6,8 @@ simple codes; approximate on cousin/collateral codes when the
 underlying pedigree breaks one of those conditions.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -55,30 +57,38 @@ def test_streaming_cousin_codes_approximate(small_pedigree):
     assert s["H1C"] <= m["H1C"] + 1  # never over-counts on this fixture
 
 
-def test_clamp_residual_warns_on_underflow(caplog):
-    """A negative residual clamps to 0 and logs a breakdown warning naming the code."""
-    import logging
-
-    from pedigree_graph._streaming_counter import StreamingPairCounter
-
-    with caplog.at_level(logging.WARNING, logger="pedigree_graph._streaming_counter"):
-        clamped = StreamingPairCounter._clamp_residual("H1C", -1234)
-    assert clamped == 0  # underflow floored to zero
-    assert "H1C" in caplog.text
-    assert "-1234" in caplog.text
-    assert "approximation has broken down" in caplog.text
+def test_clamped_residual_is_reported_and_warns(small_pedigree):
+    """A negative residual floors to 0, lands in ``clamped``, and warns once naming the code."""
+    pg = PedigreeGraph(small_pedigree)
+    with pytest.warns(RuntimeWarning, match="H1C") as record:
+        estimate = pg.estimate_relationship_counts(max_degree=5)
+    assert len(record) == 1
+    assert "H1C" in estimate.clamped
+    assert estimate["H1C"] == 0
+    assert pg.count_pairs_streaming(max_degree=5)["H1C"] == 0
 
 
-def test_clamp_residual_silent_when_nonnegative(caplog):
-    """A non-negative residual passes through unchanged and logs nothing."""
-    import logging
+def test_no_clamp_is_silent_and_empty(small_pedigree):
+    """A cutoff below every residual code neither clamps nor warns."""
+    pg = PedigreeGraph(small_pedigree)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        estimate = pg.estimate_relationship_counts(max_degree=3)
+        counts = pg.count_pairs_streaming(max_degree=3)
+    assert estimate.clamped == frozenset()
+    assert counts["1C1R"] == 0
+    assert estimate["1C1R"] is None
 
-    from pedigree_graph._streaming_counter import StreamingPairCounter
 
-    with caplog.at_level(logging.WARNING, logger="pedigree_graph._streaming_counter"):
-        assert StreamingPairCounter._clamp_residual("1C1R", 42) == 42
-        assert StreamingPairCounter._clamp_residual("H1C", 0) == 0
-    assert caplog.text == ""
+def test_adapter_translates_none_to_zero(small_pedigree):
+    """``count_pairs_streaming`` is the estimate with ``None`` above the cutoff written as ``0``."""
+    pg = PedigreeGraph(small_pedigree)
+    estimate = pg.estimate_relationship_counts(max_degree=2)
+    counts = pg.count_pairs_streaming(max_degree=2)
+    assert set(counts) == set(estimate)
+    for code, value in estimate.items():
+        assert counts[code] == (0 if value is None else value), code
+    assert any(value is None for value in estimate.values())
 
 
 def test_streaming_max_degree_two_skips_degree_three_plus(small_pedigree):

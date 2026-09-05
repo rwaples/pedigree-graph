@@ -135,7 +135,8 @@ class RelationshipCountResult(Mapping[str, int | None]):
         requested: Codes the selector named.
         exact: Requested codes whose count is exact.
         approximate: Requested codes whose count is an estimate.
-        clamped: Requested codes whose count hit a resource ceiling.
+        clamped: Requested codes whose inclusion-exclusion residual underflowed
+            and was floored at 0; that 0 is not a true absence.
     """
 
     _counts: dict[str, int | None]

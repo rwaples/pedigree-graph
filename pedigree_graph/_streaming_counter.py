@@ -1,27 +1,33 @@
-"""Memory-bounded relationship-pair counts via scalar arithmetic.
+"""Memory-bounded relationship-pair estimates via scalar arithmetic.
 
 ``StreamingPairCounter`` is a read-only collaborator over a
 :class:`~pedigree_graph._core.PedigreeGraph`: it reads the graph's parent
 matrices and adjacency powers and returns per-code counts computed with
 per-anchor ``C(k, 2)`` sums and lineal-edge ``.nnz`` reads — no pair-key
 arrays are materialized, so peak memory is O(N) regardless of pedigree
-density.  It never writes the graph's result cache; the thin
-``PedigreeGraph.count_pairs_streaming`` wrapper owns cache lookup/persist
-and the scope/subsample validation.  See ADR 0002.
+density.  It never writes the graph's caches (ADR 0002); it reports the codes
+whose inclusion-exclusion residual it floored at zero as data, so the result
+can carry them.
 
-The scalar path is full-graph only.  See the wrapper docstring for the
-exact / approximate precision contract per relationship code.
+:func:`estimate_relationship_counts` is the 0.8 operation over the counter:
+validation, the thread budget, the per-cutoff result cache on the graph, the
+typed :class:`~pedigree_graph.relationships.RelationshipCountResult`, matrix
+release, and the one ``RuntimeWarning`` per clamped computation (ADR 0006).
+Full-graph only.  Which codes are exact is ``REL_PLAN`` in ``_registry``.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING
+import warnings
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from pedigree_graph._registry import RELATIONSHIPS
+from pedigree_graph._registry import RELATIONSHIPS, _validate_max_degree, estimate_exact_codes
+from pedigree_graph._threads import thread_budget
+from pedigree_graph.relationships import RelationshipCountResult
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
@@ -29,33 +35,120 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class ScalarCounts(NamedTuple):
+    """What :meth:`StreamingPairCounter.count` returns.
+
+    Attributes:
+        raw: The 0.7.1 scalar counts, all 23 codes, ``0`` above the cutoff.
+        overlaps: Per code, how many of ``raw`` a parent-offspring category
+            claims under the precedence fold; non-zero only for MHS and PHS.
+        clamped: Codes whose residual was floored at zero.
+    """
+
+    raw: dict[str, int]
+    overlaps: dict[str, int]
+    clamped: frozenset[str]
+
+
+class CachedEstimate(NamedTuple):
+    """One cutoff's entry in ``PedigreeGraph._estimate_cache``.
+
+    Attributes:
+        result: The public fold-aware result.
+        raw: The unfolded counts the 0.7.1 ``count_pairs_streaming`` adapter returns.
+    """
+
+    result: RelationshipCountResult
+    raw: dict[str, int]
+
+
+def estimate_relationship_counts(graph: PedigreeGraph, *, max_degree: int) -> RelationshipCountResult:
+    """Estimate the number of pairs in every category up to *max_degree*.
+
+    The body of :meth:`PedigreeGraph.estimate_relationship_counts`; the one
+    path that commits the thread budget (the 0.7.1 adapter does not).
+
+    Args:
+        graph: The full graph to count on.
+        max_degree: Degree cutoff, validated against ``[0, 5]``.
+
+    Returns:
+        The cached :class:`RelationshipCountResult` for this cutoff.
+
+    Raises:
+        PedigreeValidationError: ``max_degree_out_of_range``.
+    """
+    md = _validate_max_degree(max_degree)
+    thread_budget()
+    return _estimate(graph, md).result
+
+
+def _estimate(graph: PedigreeGraph, max_degree: int) -> CachedEstimate:
+    """Validate and return the cached estimate for *max_degree*, computing it once.
+
+    The warning is raised before the cache write, so under an "error"
+    warning filter the first call raises without caching and a retry
+    recomputes; a cached retrieval is silent and each cutoff warns on its
+    own.  ``stacklevel=4`` reaches the caller of the public method through
+    both the new method and the ``count_pairs_streaming`` adapter.
+    """
+    md = _validate_max_degree(max_degree)
+    cached = graph._estimate_cache.get(md)
+    if cached is not None:
+        return cached
+
+    raw, overlaps, clamped = StreamingPairCounter(graph).count(md)
+    requested = frozenset(code for code, category in RELATIONSHIPS.items() if category.degree <= md)
+    exact = requested & estimate_exact_codes()
+    values = {code: raw[code] - overlaps[code] if code in requested else None for code in RELATIONSHIPS}
+    result = RelationshipCountResult(values, requested, exact, requested - exact, clamped)
+    if clamped:
+        names = ", ".join(code for code in RELATIONSHIPS if code in clamped)
+        warnings.warn(
+            f"estimate_relationship_counts(max_degree={md}): the scalar residual for {names} "
+            "underflowed and was clamped to 0, so those counts are unreliable rather than a true "
+            "absence (typically inbreeding or complex mating); use relationship_counts for exact values",
+            RuntimeWarning,
+            stacklevel=4,
+        )
+    entry = CachedEstimate(result, raw)
+    graph._estimate_cache[md] = entry
+    # _A…_A5 would otherwise stay resident for the graph's lifetime and inflate
+    # later inbreeding / Ne work (issue #4).
+    graph._release_pair_matrices()
+    return entry
+
+
 class StreamingPairCounter:
     """Count relationship pairs from a PedigreeGraph without materializing pairs.
 
-    ``count`` returns a fresh dict; the caller persists it to the graph's
-    count cache.
+    ``count`` returns fresh objects; the caller persists them to the graph's
+    caches.
     """
 
     def __init__(self, pg: PedigreeGraph) -> None:
         self.pg = pg
+        self._clamped: set[str] = set()
 
-    def count(self, max_degree: int) -> dict[str, int]:
-        """Return per-code counts up to *max_degree* (already validated).
+    def count(self, max_degree: int) -> ScalarCounts:
+        """Return the raw counts, the fold overlaps, and the clamped codes up to *max_degree*.
 
-        Codes above *max_degree* are ``0``.  Full-graph scope only — the
-        wrapper rejects ``scope='subsample'`` on ``from_subsample`` graphs.
+        *max_degree* is already validated.  Every dict covers all 23 codes,
+        ``0`` above the cutoff.  Full-graph only.
         """
         pg = self.pg
         t_total = time.perf_counter()
         n = pg.n
+        self._clamped = set()
 
         counts: dict[str, int] = dict.fromkeys(RELATIONSHIPS, 0)
+        overlaps: dict[str, int] = dict.fromkeys(RELATIONSHIPS, 0)
 
         # ---- Degree 0: MZ ---------------------------------------------
         mz_i, _ = pg._mz_twin_pairs()
         counts["MZ"] = len(mz_i)
         if max_degree < 1:
-            return self._finalise(counts, t_total)
+            return self._finalise(counts, overlaps, t_total)
 
         # ---- Degree 1: MO, FO, FS -------------------------------------
         counts["MO"] = int(np.count_nonzero(pg.mother >= 0))
@@ -89,7 +182,7 @@ class StreamingPairCounter:
         counts["FS"] = fs_count
 
         if max_degree < 2:
-            return self._finalise(counts, t_total)
+            return self._finalise(counts, overlaps, t_total)
 
         # Sex-side and mating-pair member arrays are reused across every
         # higher-degree branch. Empty arrays make those blocks skip cleanly.
@@ -112,6 +205,9 @@ class StreamingPairCounter:
         if has_f:
             _, f_sizes = np.unique(f_parents, return_counts=True)
             counts["PHS"] = int(((f_sizes * (f_sizes - 1)) // 2).sum()) - fs_count
+        nontwin = pg.twin < 0
+        overlaps["MHS"] = _half_sibs_that_are_parent_offspring(pg.father, sm, nontwin)
+        overlaps["PHS"] = _half_sibs_that_are_parent_offspring(pg.mother, sf, nontwin)
 
         # Lazily rebuild _Am / _Af if extract_pairs deleted them; needed for
         # adjacency powers from degree 2 onward.
@@ -135,7 +231,7 @@ class StreamingPairCounter:
             counts["Av"] = int(((pair_k - 1) * pair_sum_d1).sum())
 
         if max_degree < 3:
-            return self._finalise(counts, t_total)
+            return self._finalise(counts, overlaps, t_total)
 
         # ---- Degree 3: GGP, HAv, GAv, 1C ------------------------------
         counts["GGP"] = int(pg._A3.nnz)
@@ -171,7 +267,7 @@ class StreamingPairCounter:
             )
 
         if max_degree < 4:
-            return self._finalise(counts, t_total)
+            return self._finalise(counts, overlaps, t_total)
 
         # ---- Degree 4: GGGP, HGAv, GGAv, H1C, 1C1R --------------------
         # H1C: pairs sharing exactly one distinct grandparent.
@@ -202,7 +298,7 @@ class StreamingPairCounter:
         counts["HGAv"] = m_hgav + f_hgav - 2 * counts["GAv"]
 
         if max_degree < 5:
-            return self._finalise(counts, t_total)
+            return self._finalise(counts, overlaps, t_total)
 
         # ---- Degree 5: G3GP, HGGAv, G3Av, H1C1R, 1C2R, 2C -------------
         counts["G3GP"] = int(pg._A5.nnz)
@@ -231,7 +327,7 @@ class StreamingPairCounter:
             h1c1r_naive - 2 * counts["1C1R"] - counts["HAv"] - counts["HGAv"],
         )
 
-        return self._finalise(counts, t_total)
+        return self._finalise(counts, overlaps, t_total)
 
     @staticmethod
     def _per_sex_anchor_sums(
@@ -261,39 +357,44 @@ class StreamingPairCounter:
         total = int(((kp - 1).clip(min=0) * weighted_per_parent).sum())
         return total, kp, weighted_per_parent
 
-    @staticmethod
-    def _clamp_residual(code: str, raw: int) -> int:
-        """Clamp an inclusion-exclusion residual count at zero, warning on underflow.
+    def _clamp_residual(self, code: str, raw: int) -> int:
+        """Floor an inclusion-exclusion residual at zero, recording the code on underflow.
 
         The cousin/collateral residual codes (``H1C``, ``1C1R``, ``1C2R``,
         ``H1C1R``) subtract closer-relationship contributions with fixed
         coefficients that are exact only on non-inbred, single-mating
         pedigrees.  A negative raw residual means those corrections
-        over-counted: the scalar approximation has broken down for this code,
-        so the clamped ``0`` is unreliable rather than a true absence.  Warn
-        loudly so a reported ``0`` is never mistaken for a real zero.
+        over-counted: the clamped ``0`` is unreliable rather than a true
+        absence, which is why the code is reported in the result's ``clamped``.
         """
         if raw < 0:
-            logger.warning(
-                "count_pairs_streaming: %s residual underflowed to %d before clamping "
-                "to 0 — the scalar approximation has broken down for this code on this "
-                "pedigree (typically inbreeding or complex mating). Re-run with the "
-                "matrix engine (extract_pairs) for an exact %s count.",
-                code,
-                raw,
-                code,
-            )
+            self._clamped.add(code)
         return max(0, raw)
 
-    @staticmethod
-    def _finalise(counts: dict[str, int], t_total: float) -> dict[str, int]:
-        """Log timing and return a copy of the counts.
-
-        Cache persistence is the wrapper's responsibility (read-only
-        engine contract, ADR 0002).
-        """
+    def _finalise(self, counts: dict[str, int], overlaps: dict[str, int], t_total: float) -> ScalarCounts:
+        """Log timing and return copies of the counts, the overlaps, and the clamped set."""
         logger.info(
-            "count_pairs_streaming total: %.3fs",
+            "estimate_relationship_counts total: %.3fs",
             time.perf_counter() - t_total,
         )
-        return dict(counts)
+        return ScalarCounts(dict(counts), dict(overlaps), frozenset(self._clamped))
+
+
+def _half_sibs_that_are_parent_offspring(
+    other_parent: np.ndarray,
+    shared_parent_id: np.ndarray,
+    nontwin: np.ndarray,
+) -> int:
+    """Count half-sib pairs the precedence fold files as parent-offspring.
+
+    A child and its father who have the same mother are MHS by the sibling
+    formula and FO by the lineal one; the fold keeps FO.  *other_parent* is the
+    parent row array on the lineal side (``father`` for MHS), *shared_parent_id*
+    the original-ID array of the shared side (``_orig_mother``), matching the
+    sibling formula's own grouping.  Such a pair can never be a full sib (the
+    child's other parent would have to be the parent itself, a cycle).
+    """
+    child = np.flatnonzero((other_parent >= 0) & nontwin)
+    parent = other_parent[child]
+    shared = shared_parent_id[child]
+    return int(np.count_nonzero(nontwin[parent] & (shared >= 0) & (shared_parent_id[parent] == shared)))

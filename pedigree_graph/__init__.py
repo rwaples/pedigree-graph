@@ -13,10 +13,13 @@ Public API:
     RelationshipPairBlock — one category's pairs: owned read-only int32
         first_rows / second_rows in the category's role orientation, the
         roles, requested, len, and (first, second) unpacking
-    RelationshipCountResult — what graph.relationship_counts(...) or
-        view.relationship_counts(...) returns: an immutable mapping over all
-        23 codes to int | None, plus the requested / exact / approximate /
-        clamped code sets
+    RelationshipCountResult — what graph.relationship_counts(...),
+        view.relationship_counts(...), or the memory-bounded
+        graph.estimate_relationship_counts(max_degree=...) returns: an
+        immutable mapping over all 23 codes to int | None, plus the
+        requested / exact / approximate / clamped code sets (clamped:
+        requested codes whose inclusion-exclusion residual underflowed and
+        was floored at 0; that 0 is not a true absence)
     PedigreeView         — ordered view of a graph's rows, built with
         graph.view(ids=...) or graph.view(rows=...); exposes read-only ids,
         graph_rows, n_individuals, len, and relationship_pairs /

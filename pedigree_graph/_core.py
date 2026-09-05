@@ -26,6 +26,8 @@ import numpy as np
 import scipy.sparse as sp
 
 from pedigree_graph._compat import from_subsample as _from_subsample
+from pedigree_graph._compat import legacy_count_pairs as _legacy_count_pairs
+from pedigree_graph._compat import legacy_count_pairs_streaming as _legacy_count_pairs_streaming
 from pedigree_graph._compat import legacy_extract_pairs as _legacy_extract_pairs
 from pedigree_graph._effective_size import _per_gen_mean_kinship
 from pedigree_graph._errors import PedigreeValidationError, ResourceError
@@ -48,8 +50,7 @@ from pedigree_graph._ne_common import _require_complete_generation_labels
 from pedigree_graph._pair_extractor import relationship_pairs as _relationship_pairs
 from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
 from pedigree_graph._properties import PedigreeProperties
-from pedigree_graph._registry import _validate_max_degree
-from pedigree_graph._streaming_counter import StreamingPairCounter
+from pedigree_graph._streaming_counter import estimate_relationship_counts as _estimate_relationship_counts
 from pedigree_graph._topology import build_topology
 from pedigree_graph._view import CoordinateToken, _build_view
 from pedigree_graph.relationships import RelationshipCountResult
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from pedigree_graph._input import PedigreeInput
+    from pedigree_graph._streaming_counter import CachedEstimate
     from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
     from pedigree_graph.relationships import RelationshipPairs
@@ -164,14 +166,13 @@ class PedigreeGraph(PedigreeProperties):
         # per_gen_mean_kinship(); keyed by min_kinship so callers using a
         # non-default threshold do not get a stale θ̄.
         self._theta_per_gen_cache: dict[float, np.ndarray] = {}
-        # Lazy pair-count cache — populated by extract_pairs() and
-        # count_pairs_streaming(); keyed on (engine, max_degree,
-        # min_kinship).  Value is a (raw_counts, subsample_counts) pair
-        # so the scope='full' and scope='subsample' fast paths read the
-        # same entry.  The streaming engine fixes min_kinship=0.0 (its
-        # scalar formulas don't prune on kinship); the matrix engine
-        # uses the requested min_kinship.
+        # Matrix-engine counts written by extract_pairs(), keyed on
+        # ("matrix", max_degree, min_kinship).  Value is a (raw_counts,
+        # subsample_counts) pair so the scope='full' and scope='subsample'
+        # fast paths of count_pairs read the same entry.
         self._pair_count_cache: dict[tuple[str, int, float], tuple[dict[str, int], dict[str, int]]] = {}
+        # Keyed by max_degree; a hit is silent even if the entry clamped.
+        self._estimate_cache: dict[int, CachedEstimate] = {}
         self._inbreeding: np.ndarray | None = None
         # Lazy lineage caches populated by compute_n_ancestors() and
         # compute_n_descendants().
@@ -613,128 +614,25 @@ class PedigreeGraph(PedigreeProperties):
         for attr in ("_A", "_A2", "_A3", "_A4", "_A5", "_A2_shared", "_full_sib_matrix", "_half_sib_matrix"):
             self.__dict__.pop(attr, None)
 
+    # 0.8.0-DELETE: replaced by relationship_counts (ADR 0006).
     def count_pairs(self, max_degree: int = 3, scope: Literal["subsample", "full"] = "subsample") -> dict[str, int]:
-        """Count all relationship categories.
+        """Return the 0.7.1 matrix-engine counts, all 23 codes, ``0`` above the cutoff.
 
-        If ``extract_pairs()`` was already called on this instance, returns
-        the matching cached counts (nearly free).  Otherwise runs
-        ``extract_pairs()`` to compute all types up to *max_degree*.
-
-        Args:
-            max_degree: Maximum kinship degree to compute when extract_pairs
-                has not yet been called on this instance.
-            scope: ``"subsample"`` (default) returns counts that match
-                ``extract_pairs`` output (mask-filtered, in caller-input
-                coordinates).  ``"full"`` returns the pre-mask counts over
-                the underlying graph — the cache-reuse fast path used when a
-                full-pedigree summary is needed alongside subsample-restricted
-                pairs.  For graphs not constructed via ``from_subsample`` the
-                two scopes are equivalent.
+        See :func:`pedigree_graph._compat.legacy_count_pairs`.
         """
-        if scope not in ("subsample", "full"):
-            raise ValueError(f"scope must be 'subsample' or 'full', got {scope!r}")
-        max_degree = _validate_max_degree(max_degree)
+        return _legacy_count_pairs(self, max_degree, scope)
 
-        key = ("matrix", int(max_degree), 0.0)
-        entry = self._pair_count_cache.get(key)
-        if entry is None:
-            self.extract_pairs(max_degree=max_degree)
-            entry = self._pair_count_cache[key]
-        raw, sub = entry
-        return dict(raw) if scope == "full" else dict(sub)
-
+    # 0.8.0-DELETE: replaced by estimate_relationship_counts (ADR 0006).
     def count_pairs_streaming(
         self,
         max_degree: int = 3,
         scope: Literal["subsample", "full"] = "full",
     ) -> dict[str, int]:
-        """Memory-bounded relationship pair counts via pure scalar arithmetic.
+        """Return the 0.7.1 scalar-estimate dict, all 23 codes, ``0`` above the cutoff.
 
-        Computes counts via per-anchor ``C(k, 2)`` sums and lineal-edge
-        ``.nnz`` reads.  No pair-key arrays are materialized; peak
-        memory is O(N) regardless of pedigree density.  Verified to
-        run in seconds on stallion-heavy 783K-row livestock pedigrees
-        that OOM the matrix and BFS engines.
-
-        The scalar path is **full-graph only** — the cache slot it
-        populates holds identical raw/subsample dicts.  On graphs built
-        via :meth:`from_subsample`, ``scope='subsample'`` raises
-        ``NotImplementedError``; use :meth:`count_pairs` for
-        subsample-restricted counts.
-
-        **Precision contract** (single source of truth:
-        ``REL_PLAN`` / :func:`streaming_exact_codes` in ``_registry``):
-
-        - Exact (bit-identical to :meth:`count_pairs` on every input)
-          for the lineal and sibling codes — exactly the set returned by
-          :func:`~pedigree_graph._registry.streaming_exact_codes`, the
-          single source of truth (ADR 0003).  The codes are not
-          re-enumerated here so the docstring cannot drift from the registry.
-        - Approximate for the remaining cousin / collateral codes
-          (:func:`~pedigree_graph._registry.streaming_approximate_codes`).
-          The scalar formulas assume each individual has the full
-          complement of known grandparents at the relevant depth and
-          diverge from the matrix engine on:
-          (a) shallow pedigrees where many founders have unknown
-              grandparents (constants like ``4*FS`` over-subtract);
-              ``H1C`` in particular may clamp to ``0`` on pedigrees
-              with depth ≤ 3.
-          (b) inbred input (sib-mating creates pairs with multi-anchor
-              contributions that constants don't capture).
-          (c) twin-having pedigrees (twin individuals' children
-              contribute to cousin sums in ways the formulas miss).
-        - On deep livestock pedigrees (depth 5+, low inbreeding) the
-          scalar formulas are accurate to better than 1%.  The
-          horse-pedigree benchmark (N=783K, mean F=0.007) completes
-          in ~5 seconds with peak RSS ~730 MB.
-
-        Returns a dict containing all 23 codes; codes above
-        ``max_degree`` are ``0``.  Populates
-        ``self._pair_count_cache[("streaming", max_degree, 0.0)]`` and, like
-        :meth:`extract_pairs`, releases the transient adjacency powers it
-        builds before returning (:meth:`_release_pair_matrices`); a later
-        pair-work call rebuilds them lazily via :meth:`_ensure_parent_csr`.
-
-        Args:
-            max_degree: 0-5; default 3 (matches :meth:`count_pairs`).
-                Includes relationship categories whose registry degree is
-                <= this cutoff: 0=MZ only, 1=parent-offspring/full-sib,
-                2 adds half-sibs/grandparent/avuncular, 3 adds 1st
-                cousins and other degree-3 categories, and 5 reaches 2nd
-                cousins.
-            scope: ``"full"`` (default) or ``"subsample"``.  On
-                non-subsample graphs the two are equivalent.  On
-                ``from_subsample`` graphs, ``"subsample"`` raises
-                ``NotImplementedError``.
+        See :func:`pedigree_graph._compat.legacy_count_pairs_streaming`.
         """
-        if scope not in ("subsample", "full"):
-            raise ValueError(f"scope must be 'subsample' or 'full', got {scope!r}")
-        max_degree = _validate_max_degree(max_degree)
-        if scope == "subsample" and self._legacy_view is not None:
-            raise NotImplementedError(
-                "count_pairs_streaming(scope='subsample') is not supported on "
-                "graphs constructed via from_subsample; the scalar path is "
-                "full-graph only.  Use count_pairs() for subsample-restricted "
-                "counts, or call count_pairs_streaming(scope='full') for the "
-                "underlying full-pedigree counts.",
-            )
-
-        key = ("streaming", int(max_degree), 0.0)
-        entry = self._pair_count_cache.get(key)
-        if entry is not None:
-            raw, _sub = entry
-            return dict(raw)
-
-        counts = StreamingPairCounter(self).count(max_degree)
-        # Streaming is full-graph only, so raw and subsample slots coincide.
-        self._pair_count_cache[key] = (dict(counts), dict(counts))
-        # Release the transient adjacency powers the streaming counter built
-        # (_A…_A5), exactly as extract_pairs does — the counts are cached and
-        # nothing reads the matrices after this point.  Without it they stay
-        # resident for the graph's lifetime and inflate any later
-        # inbreeding/Ne work on the same graph.  See issue #4.
-        self._release_pair_matrices()
-        return dict(counts)
+        return _legacy_count_pairs_streaming(self, max_degree, scope)
 
     # ------------------------------------------------------------------
     # Alternative constructors
@@ -980,6 +878,61 @@ class PedigreeGraph(PedigreeProperties):
             over all 23 codes, ``None`` for unselected categories.
         """
         return RelationshipCountResult.from_pairs(self.relationship_pairs(max_degree=max_degree, categories=categories))
+
+    def estimate_relationship_counts(self, *, max_degree: int) -> RelationshipCountResult:
+        """Estimate the number of pairs in every category up to *max_degree*.
+
+        Memory-bounded scalar arithmetic (per-anchor ``C(k, 2)`` sums and
+        lineal-edge ``.nnz`` reads): no pair arrays are built, so peak memory
+        is O(N) on pedigrees where :meth:`relationship_counts` would not fit.
+        Full-graph only; a view has no estimate.
+
+        Precision (source of truth: ``REL_PLAN.estimate_exact`` in
+        ``_registry``, ADR 0011).  MZ, MO, FO, FS, MHS, and PHS equal
+        :meth:`relationship_counts` on every input and are in
+        ``result.exact``; the half-sib pairs a parent-offspring category
+        claims under the precedence fold are subtracted.  Every other
+        requested code is in ``result.approximate``.  GP, GGP, GGGP, and
+        G3GP are raw ancestor-path counts; they over-count a pair also
+        related at a shorter depth, as a half-sib, or as a closer
+        collateral.  The cousin / collateral formulas assume a full
+        complement of known ancestors and diverge on shallow, inbred, or
+        twin-having pedigrees; on deep, lightly inbred pedigrees they are
+        within about 1% of exact.  Four of them (``H1C``, ``1C1R``,
+        ``1C2R``, ``H1C1R``) are inclusion-exclusion residuals; when one
+        underflows it is floored at ``0`` and listed in ``result.clamped``,
+        and that ``0`` is not a true absence.
+
+        Warning and cache rule: the result for each cutoff is computed once
+        per graph and the same frozen object is returned afterwards.  The
+        computation, and only the computation, emits one ``RuntimeWarning``
+        naming the clamped codes when ``clamped`` is non-empty, before the
+        result is cached; a cached retrieval is silent, and a different
+        cutoff computes and warns on its own.  Python's default warning
+        filter shows one identical warning per call site; the ``clamped``
+        set is the reliable signal.  The 0.7.1 ``count_pairs_streaming``
+        adapter shares this cache and returns the raw counts.
+
+        Threads: the call commits the package thread budget
+        (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation,
+        so reconfiguring to a different value afterwards raises.  The scalar
+        counter itself runs single-threaded numpy / scipy, and the integer
+        results are the same under any budget.  The transient adjacency
+        powers are released on return.
+
+        Args:
+            max_degree: Degree cutoff in ``[0, 5]``; categories whose registry
+                degree is at or below it are requested.
+
+        Returns:
+            A :class:`~pedigree_graph.relationships.RelationshipCountResult`
+            over all 23 codes, ``None`` above the cutoff, with ``requested``,
+            ``exact``, ``approximate``, and ``clamped`` filled in.
+
+        Raises:
+            PedigreeValidationError: ``max_degree_out_of_range``.
+        """
+        return _estimate_relationship_counts(self, max_degree=max_degree)
 
     # ------------------------------------------------------------------
     # Sparse kinship, inbreeding, and exact pair kinship

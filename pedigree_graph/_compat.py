@@ -1,18 +1,20 @@
-"""The 0.7.1 subsample constructor and pair adapter, kept working until slice 7 deletes them.
+"""The 0.7.1 subsample constructor and the pair / count adapters, kept working until slice 7 deletes them.
 
 # 0.8.0-DELETE: this whole module.  ``PedigreeGraph.from_subsample`` is the
 pre-view way to restrict pair extraction to a subset of rows, which
-``full.view(ids=...)`` replaces, and ``PedigreeGraph.extract_pairs`` is the
-0.7.1 pair surface that ``relationship_pairs`` replaces (ADR 0006).  The bodies
+``full.view(ids=...)`` replaces; ``PedigreeGraph.extract_pairs`` and
+``count_pairs`` are the 0.7.1 pair surface that ``relationship_pairs`` /
+``relationship_counts`` replace; ``count_pairs_streaming`` is the 0.7.1 scalar
+estimate that ``estimate_relationship_counts`` replaces (ADR 0006).  The bodies
 live here rather than in :mod:`pedigree_graph._core` so their removal is a file
-deletion plus two thin methods.
+deletion plus four thin methods.
 """
 
 from __future__ import annotations
 
-__all__ = ["from_subsample", "legacy_extract_pairs"]
+__all__ = ["from_subsample", "legacy_count_pairs", "legacy_count_pairs_streaming", "legacy_extract_pairs"]
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -22,6 +24,7 @@ from pedigree_graph._input import validate_id_field
 from pedigree_graph._pair_extractor import MatrixPairExtractor
 from pedigree_graph._pair_utils import project_pairs
 from pedigree_graph._registry import RELATIONSHIPS, _validate_max_degree
+from pedigree_graph._streaming_counter import _estimate
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
@@ -82,6 +85,88 @@ def legacy_extract_pairs(
     pg._pair_count_cache[("matrix", int(max_degree), float(min_kinship))] = (raw_counts, subsample_counts)
     pg._release_pair_matrices()
     return pairs
+
+
+def legacy_count_pairs(
+    pg: PedigreeGraph,
+    max_degree: int,
+    scope: Literal["subsample", "full"],
+) -> dict[str, int]:
+    """Count every relationship category with the 0.7.1 matrix engine.
+
+    The body of :meth:`PedigreeGraph.count_pairs`: returns the counts cached
+    by an earlier :meth:`PedigreeGraph.extract_pairs` for this cutoff, else
+    runs it.  Overlapping categories are counted in each (no precedence fold).
+
+    Args:
+        pg: The graph to count on.
+        max_degree: Degree cutoff, validated against ``[0, 5]``.
+        scope: ``"subsample"`` counts the pairs ``extract_pairs`` returns
+            (mask-filtered on a ``from_subsample`` graph); ``"full"`` counts
+            the underlying graph.  Equivalent on a plain graph.
+
+    Returns:
+        ``{code: count}`` over all 23 codes, ``0`` above the cutoff.
+
+    Raises:
+        ValueError: *scope* is neither literal.
+        PedigreeValidationError: ``max_degree_out_of_range``.
+    """
+    if scope not in ("subsample", "full"):
+        raise ValueError(f"scope must be 'subsample' or 'full', got {scope!r}")
+    max_degree = _validate_max_degree(max_degree)
+
+    key = ("matrix", int(max_degree), 0.0)
+    entry = pg._pair_count_cache.get(key)
+    if entry is None:
+        pg.extract_pairs(max_degree=max_degree)
+        entry = pg._pair_count_cache[key]
+    raw, sub = entry
+    return dict(raw) if scope == "full" else dict(sub)
+
+
+def legacy_count_pairs_streaming(
+    pg: PedigreeGraph,
+    max_degree: int,
+    scope: Literal["subsample", "full"],
+) -> dict[str, int]:
+    """Return the 0.7.1 scalar-estimate dict.
+
+    The body of :meth:`PedigreeGraph.count_pairs_streaming`: the scope
+    validation, the refusal of ``scope="subsample"`` on a ``from_subsample``
+    graph (the scalar path is full-graph only), and the 0.8 estimate's *raw*
+    counts (unfolded, ``0`` above the cutoff, as 0.7.1 returned them).  The
+    estimate's ``RuntimeWarning`` for clamped codes is not suppressed, and its
+    per-cutoff cache is shared, so an ``estimate_relationship_counts`` call
+    after this one for the same cutoff is a silent cache hit.  Like every
+    0.7.1 adapter it does not commit the package thread budget.
+
+    Args:
+        pg: The graph to count on.
+        max_degree: Degree cutoff, validated against ``[0, 5]``.
+        scope: ``"full"`` or ``"subsample"``; equivalent on a plain graph.
+
+    Returns:
+        ``{code: count}`` over all 23 codes, ``0`` above the cutoff.
+
+    Raises:
+        ValueError: *scope* is neither literal.
+        PedigreeValidationError: ``max_degree_out_of_range``.
+        NotImplementedError: ``scope="subsample"`` on a ``from_subsample`` graph.
+    """
+    if scope not in ("subsample", "full"):
+        raise ValueError(f"scope must be 'subsample' or 'full', got {scope!r}")
+    max_degree = _validate_max_degree(max_degree)
+    if scope == "subsample" and pg._legacy_view is not None:
+        raise NotImplementedError(
+            "count_pairs_streaming(scope='subsample') is not supported on "
+            "graphs constructed via from_subsample; the scalar path is "
+            "full-graph only.  Use count_pairs() for subsample-restricted "
+            "counts, or call count_pairs_streaming(scope='full') for the "
+            "underlying full-pedigree counts.",
+        )
+
+    return dict(_estimate(pg, max_degree).raw)
 
 
 def from_subsample(

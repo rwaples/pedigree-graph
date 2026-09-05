@@ -6,6 +6,35 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `PedigreeGraph.estimate_relationship_counts(max_degree=...)`**
+  (ADR 0006, ADR 0011, slice 4c).  The memory-bounded scalar estimate that
+  `count_pairs_streaming` computed, returned as a `RelationshipCountResult`:
+  `None` above the cutoff, and per code whether the value is `exact`,
+  `approximate`, or `clamped` (an inclusion-exclusion residual that
+  underflowed and was floored at `0`; that `0` is not a true absence).
+  MZ, MO, FO, FS, MHS, and PHS are exact and equal `relationship_counts`
+  (the half-sib pairs a parent-offspring category claims under the
+  precedence fold are subtracted).  Every other code is approximate: GP,
+  GGP, GGGP, and G3GP are raw ancestor-path counts that over-count a pair
+  also related at a shorter depth, as a half-sib, or as a closer collateral,
+  and the cousin / collateral formulas assume a full complement of known
+  ancestors.  The exact set is `REL_PLAN.estimate_exact` /
+  `estimate_exact_codes()`; why it excludes the lineal codes is ADR 0011
+  (`docs/adr/0011-scalar-estimate-exact-set-excludes-lineal-codes.md`).
+  The result for each `max_degree` is computed once per graph and the same
+  frozen object is returned afterwards.  The computation, and only the
+  computation, emits one `RuntimeWarning` naming the clamped codes in
+  registry order when there are any, before the result is cached; a cached
+  retrieval is silent, and a different cutoff computes and warns on its
+  own.  The call commits the package thread budget like every 0.8
+  operation; the counter itself is single-threaded and its integer results
+  do not depend on the budget.  Full-graph only.  `count_pairs_streaming`
+  is now an adapter over the same computation (the unfolded raw counts, `0`
+  above the cutoff, the 0.7.1 dict and scope rules kept, no thread-budget
+  commit, no longer written to the matrix count cache), so it can emit that
+  `RuntimeWarning` where 0.7.1 wrote a `logging` warning, and it shares the
+  per-cutoff cache with the new method.
+
 - **Added: `PedigreeView.relationship_pairs`, `relationship_counts` on both
   receivers, and `RelationshipCountResult`** (ADR 0006, slice 4b).
   `view.relationship_pairs(max_degree=...)` / `(categories=...)` classifies

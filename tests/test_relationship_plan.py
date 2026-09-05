@@ -17,6 +17,7 @@ from pedigree_graph._registry import (
     REL_PLAN,
     RELATIONSHIPS,
     bfs_divergent_codes,
+    estimate_exact_codes,
     streaming_approximate_codes,
     streaming_exact_codes,
 )
@@ -44,6 +45,14 @@ def test_streaming_exact_codes_are_the_documented_ten():
         "GGGP",
         "G3GP",
     }
+
+
+def test_estimate_exact_codes_are_the_documented_six():
+    # ADR 0011: the scalar estimate equals relationship_counts only for
+    # MZ, parent-offspring, and the sibling codes.
+    assert estimate_exact_codes() == {"MZ", "MO", "FO", "FS", "MHS", "PHS"}
+    assert estimate_exact_codes() < streaming_exact_codes()
+    assert all(REL_PLAN[code].estimate_exact == (code in estimate_exact_codes()) for code in RELATIONSHIPS)
 
 
 def test_bfs_divergent_codes_are_the_four_cousin_codes():

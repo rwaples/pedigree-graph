@@ -206,6 +206,13 @@ def motif_fixtures() -> dict[str, dict[str, np.ndarray]]:
     return fx
 
 
+def _split_by_sex(rows: list[int], sex: list[int]) -> tuple[np.ndarray, np.ndarray]:
+    """Rows of *rows* by sex, as arrays so ``rng.choice`` does not convert a list per draw."""
+    return np.array([r for r in rows if sex[r] == 0], dtype=np.int64), np.array(
+        [r for r in rows if sex[r] == 1], dtype=np.int64
+    )
+
+
 def random_pedigree(
     seed: int,
     *,
@@ -239,18 +246,19 @@ def random_pedigree(
         return len(mother) - 1
 
     gen_rows.append([add(-1, -1, int(rng.integers(0, 2))) for _ in range(n_founders)])
+    # A pool is a closed earlier generation, so its sex split is fixed; splitting
+    # it per child made the generator quadratic in per_generation.
+    by_sex: list[tuple[np.ndarray, np.ndarray]] = [_split_by_sex(gen_rows[-1], sex)]
     n_external = 0
     for _g in range(1, n_generations + 1):
         rows: list[int] = []
         made = 0
         while made < per_generation:
-            pool = gen_rows[-1]
+            females, males = by_sex[-1]
             if len(gen_rows) >= 2 and rng.random() < p_skip_generation:
-                pool = gen_rows[-2]
-            females = [r for r in pool if sex[r] == 0]
-            males = [r for r in pool if sex[r] == 1]
-            m = int(rng.choice(females)) if females else -1
-            f = int(rng.choice(males)) if males else -1
+                females, males = by_sex[-2]
+            m = int(rng.choice(females)) if len(females) else -1
+            f = int(rng.choice(males)) if len(males) else -1
             if rng.random() < p_missing_parent:
                 if rng.random() < 0.5:
                     m = -1
@@ -274,6 +282,7 @@ def random_pedigree(
                 twin_of[t] = r
                 made += 1
         gen_rows.append(rows)
+        by_sex.append(_split_by_sex(rows, sex))
 
     n = len(mother)
     id_values = rng.permutation(n).astype(np.int64) * 7 + 3
