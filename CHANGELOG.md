@@ -6,6 +6,18 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking: cached kinship-matrix arrays are read-only.** Every matrix
+  family marks `data`, `indices`, and `indptr` non-writeable so a caller
+  cannot corrupt a cached result in place. `scipy.sparse` constructors do not
+  copy by default, so a derived matrix shares those buffers and in-place
+  SciPy operations on it now raise: `setdiag` gives
+  `ValueError: assignment destination is read-only`, and `eliminate_zeros`
+  gives `ValueError: WRITEBACKIFCOPY base is read-only`. Callers that mutate
+  a matrix derived from `kinship_matrix()` must copy first, for example
+  `sp.csc_matrix(K, copy=True)` or `K.copy()`. This matters across repos:
+  `fitACE` mutates a derived GRM in `fitace/kinship/grm_io.py`, on a branch
+  reachable only for one-triangle input, which pedigree-graph never returns.
+
 - **Added: three explicit kinship-matrix families** (ADR 0006, ADR 0009,
   slice 5b). `kinship_matrix()` is complete;
   `relationship_kinship_matrix(max_degree=...)` or `(categories=...)` contains

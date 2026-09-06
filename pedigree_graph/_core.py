@@ -622,6 +622,18 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         for attr in ("_A", "_A2", "_A3", "_A4", "_A5", "_A2_shared", "_full_sib_matrix", "_half_sib_matrix"):
             self.__dict__.pop(attr, None)
 
+    def _release_kinship_matrices(self) -> None:
+        """Drop every cached kinship matrix held by this graph.
+
+        The three matrix families cache independently and a full-graph CSC can
+        run to hundreds of megabytes, so a long-lived graph that called more
+        than one of them pins all of them.  Idempotent.
+        """
+        self._complete_kinship_cache = None
+        self._relationship_kinship_cache.clear()
+        self._approximate_kinship_cache.clear()
+        self._kinship_cache.clear()  # 0.8.0-DELETE: the 0.7.1 threshold cache.
+
     # 0.8.0-DELETE: replaced by relationship_counts (ADR 0006).
     def count_pairs(self, max_degree: int = 3, scope: Literal["subsample", "full"] = "subsample") -> dict[str, int]:
         """Return the 0.7.1 matrix-engine counts, all 23 codes, ``0`` above the cutoff.

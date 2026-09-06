@@ -146,12 +146,16 @@ class PedigreeMatrixMethods:
         threshold = 0.0 if min_kinship is None else float(min_kinship)
         if max_degree is not None:
             threshold = max(threshold, 0.5 ** (max_degree + 1) - 1e-9)
+        if not np.isfinite(threshold) or threshold > 1.0:
+            # Only an explicit min_kinship reaches here; every max_degree
+            # threshold is finite and at most 0.5.  Name the argument the
+            # caller actually passed.
+            raise ValueError(f"min_kinship must be finite and at most 1, got {min_kinship!r}")
         if threshold > 0.0:
             return self.approximate_kinship_matrix(min_propagated_kinship=threshold)
-        if threshold < 0.0 or not np.isfinite(threshold):
-            # Route invalid compatibility values through the canonical
-            # validator for one ordinary ValueError contract.
-            return self.approximate_kinship_matrix(min_propagated_kinship=threshold)
+        # 0.7.1 pruned with ``val <= threshold``, so a negative cutoff retained
+        # every value.  max_degree >= 29 resolves here too, because
+        # 0.5 ** 30 - 1e-9 is already negative.
         return complete_kinship_matrix(self)
 
     def relationship_kinship_matrix(
@@ -202,6 +206,14 @@ class PedigreeMatrixMethods:
         ``min_propagated_kinship=0`` delegates to :meth:`kinship_matrix`.
         This operation is intentionally full-graph-only; views expose no
         matrix method.
+
+        The threshold selects support only.  It does not bound run time or
+        peak memory: retained values are captured during one complete
+        retiring DP pass, so a raised threshold costs about what the complete
+        matrix costs and can exhaust memory at the same pedigree size.  See
+        ``benchmarks/matrix_exactification.md``.  Callers who raised the
+        0.7.1 threshold to fit a large pedigree in RAM no longer gain
+        anything by doing so.
 
         Args:
             min_propagated_kinship: Finite propagation threshold in ``[0, 1]``.
@@ -323,6 +335,8 @@ def _topological_candidate_index(graph: PedigreeGraph, matrix: sp.csc_matrix) ->
     offset = 0
     for first, second, positions in _upper_support_chunks(matrix, _EXACT_VALUE_CHUNK_SIZE):
         end = offset + len(first)
+        if end > count:
+            raise AssertionError("upper candidate count must match symmetric CSC nnz")
         topo_first = np.asarray(topology.translate(first), dtype=np.int32)
         topo_second = np.asarray(topology.translate(second), dtype=np.int32)
         lower[offset:end] = np.minimum(topo_first, topo_second)

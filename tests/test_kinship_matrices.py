@@ -250,3 +250,66 @@ def test_random_30k_approximate_matrix_runs_full_exact_value_path():
     assert matrix.nnz == 53_817_918
     assert np.isfinite(matrix.data).all()
     assert np.all(matrix.diagonal() >= np.float32(0.5))
+
+
+def test_negative_legacy_threshold_returns_the_complete_matrix():
+    graph = _graph("random_1k")
+    complete = graph.kinship_matrix()
+    for value in (-1e-9, -1.0):
+        matrix = graph.kinship_matrix(min_kinship=value)
+        assert matrix is complete
+
+
+def test_large_legacy_max_degree_returns_the_complete_matrix():
+    # 0.5 ** (max_degree + 1) - 1e-9 goes negative at max_degree 29, which
+    # 0.7.1 resolved to an unpruned matrix rather than an error.
+    graph = _graph("random_1k")
+    assert graph.kinship_matrix(max_degree=40) is graph.kinship_matrix()
+
+
+@pytest.mark.parametrize("value", [float("inf"), float("nan"), 1.5])
+def test_unusable_legacy_threshold_names_the_argument_the_caller_passed(value):
+    graph = _graph("random_1k")
+    with pytest.raises(ValueError, match="min_kinship"):
+        graph.kinship_matrix(min_kinship=value)
+
+
+def test_release_kinship_matrices_drops_every_family_and_is_idempotent():
+    graph = _graph("random_1k")
+    complete = graph.kinship_matrix()
+    graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
+    graph.relationship_kinship_matrix(max_degree=2)
+    assert graph._complete_kinship_cache is not None
+    assert graph._approximate_kinship_cache
+    assert graph._relationship_kinship_cache
+
+    graph._release_kinship_matrices()
+    graph._release_kinship_matrices()
+
+    assert graph._complete_kinship_cache is None
+    assert not graph._approximate_kinship_cache
+    assert not graph._relationship_kinship_cache
+    assert not graph._kinship_cache
+    rebuilt = graph.kinship_matrix()
+    assert rebuilt is not complete
+    assert np.array_equal(rebuilt.data, complete.data)
+
+
+def test_oversized_candidate_support_raises_the_structural_assertion():
+    from pedigree_graph._kinship_matrix import _topological_candidate_index
+
+    graph = _graph("random_1k")
+    support = graph.relationship_kinship_matrix(max_degree=2)
+    # Drop one lower-triangle entry so the upper count exceeds the symmetric
+    # presize, the direction that previously died inside a numpy broadcast.
+    coo = support.tocoo()
+    victim = np.flatnonzero(coo.row > coo.col)[0]
+    keep = np.ones(coo.nnz, dtype=bool)
+    keep[victim] = False
+    asymmetric = sp.coo_matrix(
+        (coo.data[keep], (coo.row[keep], coo.col[keep])),
+        shape=support.shape,
+    ).tocsc()
+
+    with pytest.raises(AssertionError, match="upper candidate count"):
+        _topological_candidate_index(graph, asymmetric)
