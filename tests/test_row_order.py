@@ -14,12 +14,11 @@ the ADR's cross-order envelope and report ULP distance alongside.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from conftest import parity_columns, parity_fixtures
 from relationship_predicates import AncestorWalk
 
 from pedigree_graph import (
@@ -31,10 +30,6 @@ from pedigree_graph import (
     eligible_cohort_range,
 )
 from pedigree_graph.experimental import count_pairs_bfs
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
-
-import pedigrees
 
 if TYPE_CHECKING:
     from pedigree_graph import PedigreeView
@@ -48,40 +43,20 @@ MAX_DEGREE = 5
 ORIENTED_CODES = frozenset(code for code, rel in REL_REGISTRY.items() if rel.down == 0 and rel.up > 0)
 
 
-def _fixtures() -> dict[str, dict[str, np.ndarray]]:
-    # lineal_five_generations, random_1k and every motif with a skip-generation
-    # edge are already topological-but-not-depth-major, so the permuted routing
-    # runs even for the reference graph.
-    fixtures = dict(pedigrees.motif_fixtures())
-    for name in ("random_1k", "deep_inbred_60g"):
-        fixtures[name] = pedigrees.build_random(name, pedigrees.RANDOM_FIXTURES[name])
-    return fixtures
-
-
-FIXTURES = _fixtures()
+# lineal_five_generations, random_1k and every motif with a skip-generation
+# edge are already topological-but-not-depth-major, so the permuted routing
+# runs even for the reference graph.
+FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 FIXTURE_NAMES = sorted(FIXTURES)
 
 
-def _columns(fixture: dict[str, np.ndarray], birth_year: np.ndarray | None = None) -> dict[str, np.ndarray]:
-    columns = {
-        "id": fixture["ids"],
-        "mother": fixture["mother"],
-        "father": fixture["father"],
-        "twin": fixture["twin"],
-        "sex": fixture["sex"],
-    }
-    if birth_year is not None:
-        columns["birth_year"] = birth_year
-    return columns
-
-
 def _reference_depth(fixture: dict[str, np.ndarray]) -> np.ndarray:
-    return np.asarray(PedigreeGraph(_columns(fixture)).generation, dtype=np.int64)
+    return np.asarray(PedigreeGraph(parity_columns(fixture)).generation, dtype=np.int64)
 
 
 def _dated_columns(fixture: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
     depth = _reference_depth(fixture)
-    return _columns(fixture, 25 * depth + (np.arange(len(depth)) % 3))
+    return parity_columns(fixture, 25 * depth + (np.arange(len(depth)) % 3))
 
 
 def _permutations(depth: np.ndarray) -> dict[str, np.ndarray]:
@@ -472,12 +447,13 @@ def test_pair_kinship_is_bit_identical_to_the_matrix_under_permutation(name):
     columns = _dated_columns(fixture)
     for label, perm in _permutations(_reference_depth(fixture)).items():
         graph = _build(_permute(columns, perm), "dict")
-        kinship = graph.pair_kinship(graph.relationship_pairs(max_degree=MAX_DEGREE))
+        pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
+        kinship = graph.pair_kinship(pairs)
         K = graph.kinship_matrix(0.0)
         for code, values in kinship.items():
             if len(values) == 0:
                 continue
-            first, second = graph.relationship_pairs(max_degree=MAX_DEGREE)[code]
+            first, second = pairs[code]
             matrix = np.asarray(K[first, second], dtype=np.float32).ravel()
             assert values.tobytes() == matrix.tobytes(), f"{name}/{label}/{code}: pair vs matrix bits differ"
 
@@ -493,7 +469,7 @@ def test_per_gen_mean_kinship_groups_by_the_supplied_label(name):
     """
     fixture = FIXTURES[name]
     labels = _reference_depth(fixture) // 2
-    columns = {**_columns(fixture), "generation": labels}
+    columns = {**parity_columns(fixture), "generation": labels}
 
     streamed = PedigreeGraph(columns)
     from_matrix = PedigreeGraph(columns)
@@ -509,7 +485,7 @@ def test_per_gen_mean_kinship_groups_by_the_supplied_label(name):
 def test_generation_labels_do_not_drive_structure(name, labelling):
     fixture = FIXTURES[name]
     depth = _reference_depth(fixture)
-    columns = _columns(fixture)
+    columns = parity_columns(fixture)
     labels = {
         "zeros": np.zeros(len(depth), dtype=np.int64),
         "shuffled": np.random.default_rng(99).permutation(depth),

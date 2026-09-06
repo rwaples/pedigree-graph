@@ -33,8 +33,10 @@ live on the corresponding GitHub release pages.
   kept, but the values are those of `pair_kinship`, so on pedigrees deep
   enough for a kinship to need more than 24 significant bits (about 24
   generations of sustained inbreeding loops) they differ from the 0.7.1
-  float64 recurrence within the envelope above.  The cached-matrix sampling
-  branch is gone; results no longer depend on call history.
+  float64 recurrence within the envelope above.  The arrays are also read-only
+  now, as every 0.8 result is, so a consumer that mutated them in place must
+  copy first.  The cached-matrix sampling branch is gone; results no longer
+  depend on call history.
 - **Changed: the pairwise kernel is float32 and runs in the stable
   depth-major order**, where peeling the greater row is the ADR 0009 rule.
   On the `random_30k` fixture (interleaved fresh processes, medians of three)

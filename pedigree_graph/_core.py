@@ -1186,11 +1186,14 @@ class PedigreeGraph(PedigreeProperties):
 
         Returns ``{code: float32 array}`` positionally aligned to the input
         ``pairs[code]``.  The values are those of :meth:`pair_kinship`, an
-        explicit 0.8 change from the 0.7.1 float64 recurrence; the dict form
-        and the caller-space rows of a ``from_subsample`` graph are preserved.
+        explicit 0.8 change from the 0.7.1 float64 recurrence, and like every
+        0.8 result the arrays are read-only; the dict form and the caller-space
+        rows of a ``from_subsample`` graph are preserved.
         """
         codes = [code for code, (idx1, _) in pairs.items() if len(idx1)]
-        result: dict[str, np.ndarray] = {code: np.zeros(0, dtype=np.float32) for code in pairs}
+        empty = np.zeros(0, dtype=np.float32)
+        empty.setflags(write=False)
+        result: dict[str, np.ndarray] = dict.fromkeys(pairs, empty)
         if not codes:
             return result
         first = np.concatenate([np.asarray(pairs[code][0]) for code in codes])

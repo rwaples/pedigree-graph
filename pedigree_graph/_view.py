@@ -24,11 +24,10 @@ from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._input import (
     _INT32_MAX,
     _INT64_MAX,
-    _check_shape,
-    _coerce_to_int64,
+    _coerce_row_selection,
+    _coerce_selection,
     _duplicate_witness,
     _FieldSpec,
-    _invalid_integer,
     _own,
 )
 from pedigree_graph._kinship_pairwise import view_pair_kinship
@@ -58,21 +57,6 @@ class CoordinateToken:
 
     def __repr__(self) -> str:
         return "CoordinateToken()"
-
-
-def _coerce_selection(spec: _FieldSpec, selection: object) -> np.ndarray:
-    """Return one selection argument as int64, rejecting bad shapes and host nulls.
-
-    A value with no int64 form surfaces as ``value_out_of_range``; the callers
-    translate it into their own not-in-this-pedigree code, so a selection can
-    only ever fail with the four view codes plus the two shape/integer ones.
-    """
-    arr = np.asarray(selection)
-    _check_shape(spec, arr)
-    values, nulls = _coerce_to_int64(spec, arr)
-    if nulls.any():
-        raise _invalid_integer(spec.name, int(np.argmax(nulls)), "null")
-    return values
 
 
 def _unknown_id(value: object, position: int, missing_count: int) -> PedigreeValidationError:
@@ -146,18 +130,12 @@ def _rows_from_rows(graph: PedigreeGraph, selection: object) -> np.ndarray:
     path's single-entry-before-pair order.
     """
     n_individuals = graph.n_individuals
-    try:
-        rows = _coerce_selection(_ROWS, selection)
-    except PedigreeValidationError as err:
-        if err.code != "value_out_of_range":
-            raise
-        position = err.fields["position"]
-        assert isinstance(position, int)
-        raise _row_out_of_range(err.fields["value"], position, n_individuals) from None
-    outside = (rows < 0) | (rows >= n_individuals)
-    if outside.any():
-        position = int(np.argmax(outside))
-        raise _row_out_of_range(int(rows[position]), position, n_individuals)
+    rows = _coerce_row_selection(
+        _ROWS,
+        selection,
+        n_individuals,
+        lambda value, position: _row_out_of_range(value, position, n_individuals),
+    )
     _check_duplicate_rows(rows, n_individuals, "duplicate_view_row", "row", rows)
     return rows
 

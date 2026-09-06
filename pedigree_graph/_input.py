@@ -34,7 +34,7 @@ from pedigree_graph._frames import _coerce_to_array_dict
 from pedigree_graph._kinship_depth import _check_topological
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from pedigree_graph._frames import FrameLike
 
@@ -292,6 +292,76 @@ def _check_shape(spec: _FieldSpec, arr: np.ndarray) -> None:
             expected_ndim=1,
             actual_shape=arr.shape,
         )
+
+
+def _coerce_selection(spec: _FieldSpec, selection: object) -> np.ndarray:
+    """Return one row or id selection argument as int64, rejecting bad shapes and host nulls.
+
+    The shared front half of every selection a caller hands to a receiver: the
+    view's ``ids=`` / ``rows=`` and the pair endpoints. A value with no lossless
+    int64 form surfaces as ``value_out_of_range``; each caller translates that
+    into its own not-in-this-receiver code, so a selection can only ever fail
+    with that caller's codes plus the two shape/integer ones.
+
+    Args:
+        spec: The field being validated; names the argument in every error.
+        selection: The caller's array-like.
+
+    Returns:
+        The selection as an int64 array, in the order given.
+
+    Raises:
+        PedigreeValidationError: ``invalid_shape``, ``invalid_integer_value``,
+            or ``value_out_of_range``.
+    """
+    arr = np.asarray(selection)
+    _check_shape(spec, arr)
+    values, nulls = _coerce_to_int64(spec, arr)
+    if nulls.any():
+        raise _invalid_integer(spec.name, int(np.argmax(nulls)), "null")
+    return values
+
+
+def _coerce_row_selection(
+    spec: _FieldSpec,
+    selection: object,
+    n_individuals: int,
+    out_of_range: Callable[[object, int], PedigreeValidationError],
+) -> np.ndarray:
+    """Return one selection as int64 rows, every one inside ``[0, n_individuals)``.
+
+    :func:`_coerce_selection` followed by the range check, with both the
+    unrepresentable-value and the out-of-range case reported through
+    *out_of_range* so one caller-chosen code covers "not a row of this
+    receiver". Checks run as shape, integer form, then range, so a caller sees
+    a single-entry failure before any whole-argument one.
+
+    Args:
+        spec: The field being validated; names the argument in every error.
+        selection: The caller's array-like.
+        n_individuals: Exclusive upper bound on a valid row.
+        out_of_range: Builds the caller's error from ``(value, position)``.
+
+    Returns:
+        The rows as an int64 array, in the order given.
+
+    Raises:
+        PedigreeValidationError: ``invalid_shape``, ``invalid_integer_value``,
+            or whatever *out_of_range* builds.
+    """
+    try:
+        rows = _coerce_selection(spec, selection)
+    except PedigreeValidationError as err:
+        if err.code != "value_out_of_range":
+            raise
+        position = err.fields["position"]
+        assert isinstance(position, int)
+        raise out_of_range(err.fields["value"], position) from None
+    outside = (rows < 0) | (rows >= n_individuals)
+    if outside.any():
+        position = int(np.argmax(outside))
+        raise out_of_range(int(rows[position]), position)
+    return rows
 
 
 def _duplicate_witness(values: np.ndarray) -> tuple[int, tuple[int, ...], int] | None:

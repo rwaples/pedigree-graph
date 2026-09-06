@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
+from conftest import kernel_inputs
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, PedigreeView
 from pedigree_graph._kinship_pairwise import (
@@ -1440,12 +1441,6 @@ class TestComputePairKinship:
 # ---------------------------------------------------------------------------
 
 
-def _kernel_inputs(pg: PedigreeGraph, a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, ...]:
-    """Parent arrays and endpoints in the private depth-major order the numba kernel runs in."""
-    mother, father, twin = pg._topological_parents
-    return mother, father, twin, pg._topology.translate(a), pg._topology.translate(b)
-
-
 def _oracle_all_pairs(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """All upper-triangle (incl. diagonal) pairs, reference vs kinship_matrix(0.0).
 
@@ -1696,7 +1691,7 @@ class TestPairwiseKinshipNumba:
         pg = PedigreeGraph(build())
         ii, jj = np.triu_indices(pg.n)
         py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, ii, jj)
-        nb = pairwise_kinship(*_kernel_inputs(pg, ii, jj))
+        nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
         assert nb.dtype == np.float32
         np.testing.assert_array_equal(nb, py)
 
@@ -1705,7 +1700,7 @@ class TestPairwiseKinshipNumba:
         pg = PedigreeGraph(build())
         K = pg.kinship_matrix(0.0).toarray()
         ii, jj = np.triu_indices(pg.n)
-        nb = pairwise_kinship(*_kernel_inputs(pg, ii, jj))
+        nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
         np.testing.assert_array_equal(nb, K[ii, jj])
 
     def test_fuzz_numba_equals_python_and_oracle(self):
@@ -1718,7 +1713,7 @@ class TestPairwiseKinshipNumba:
             K = pg.kinship_matrix(0.0).toarray()
             ii, jj = np.triu_indices(pg.n)
             py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, ii, jj)
-            nb = pairwise_kinship(*_kernel_inputs(pg, ii, jj))
+            nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
             np.testing.assert_array_equal(nb, py)
             np.testing.assert_array_equal(nb, K[ii, jj])
             checked += 1
@@ -1726,14 +1721,14 @@ class TestPairwiseKinshipNumba:
 
     def test_input_orientation_preserved(self):
         pg = PedigreeGraph(_ped_sib_mating())
-        fwd = pairwise_kinship(*_kernel_inputs(pg, np.array([2, 4]), np.array([4, 2])))
-        rev = pairwise_kinship(*_kernel_inputs(pg, np.array([4, 2]), np.array([2, 4])))
+        fwd = pairwise_kinship(*kernel_inputs(pg, np.array([2, 4]), np.array([4, 2])))
+        rev = pairwise_kinship(*kernel_inputs(pg, np.array([4, 2]), np.array([2, 4])))
         np.testing.assert_array_equal(fwd, rev[::-1])
 
     def test_empty_input_returns_empty_float32(self):
         pg = PedigreeGraph(_ped_sib_mating())
         empty = np.array([], dtype=np.int64)
-        out = pairwise_kinship(*_kernel_inputs(pg, empty, empty))
+        out = pairwise_kinship(*kernel_inputs(pg, empty, empty))
         assert out.dtype == np.float32
         assert out.shape == (0,)
 
@@ -1743,7 +1738,7 @@ class TestPairwiseKinshipNumba:
         rng = np.random.default_rng(7)
         pg = PedigreeGraph(_random_pedigree(rng))
         ii, jj = np.triu_indices(pg.n)
-        out, stats = _pairwise_kinship_with_stats(*_kernel_inputs(pg, ii, jj))
+        out, stats = _pairwise_kinship_with_stats(*kernel_inputs(pg, ii, jj))
         assert out.shape == ii.shape
         assert stats["memo_entries"] <= pg.n * pg.n
         assert stats["max_stack_depth"] >= 1

@@ -1,5 +1,11 @@
-"""Shared fixtures and Hypothesis strategies for pedigree_graph tests."""
+"""Shared fixtures, parity-pedigree helpers, and Hypothesis strategies for pedigree_graph tests.
 
+The parity helpers below are the one place the ``tests/parity`` fixture tables
+are turned into constructor columns, so the modules that build the same motif
+and random pedigrees agree on what they built.
+"""
+
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +16,10 @@ from hypothesis import strategies as st
 from pedigree_graph import PedigreeGraph
 
 _DATA_DIR = Path(__file__).parent / "data"
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
+
+import pedigrees  # noqa: E402
 
 # Pedigree builders are capped small: degree-5 pair extraction is ~quadratic
 # and the DP / BFS kernels JIT on first use, so large random pedigrees make the
@@ -132,3 +142,44 @@ def relabel_pedigree(arrays, data):
     new_mother = np.where(mother == -1, -1, new_ids[mother])
     new_father = np.where(father == -1, -1, new_ids[father])
     return PedigreeGraph.from_arrays(ids=new_ids, mothers=new_mother, fathers=new_father, sex=sex)
+
+
+def parity_fixtures(*random_names: str) -> dict[str, dict[str, np.ndarray]]:
+    """Every motif fixture, plus the named entries of ``pedigrees.RANDOM_FIXTURES``.
+
+    Args:
+        random_names: Random-fixture names to build alongside the motifs, e.g.
+            ``"random_1k"`` or ``"deep_inbred_60g"``.
+
+    Returns:
+        Fixture tables by name.
+    """
+    fixtures = dict(pedigrees.motif_fixtures())
+    for name in random_names:
+        fixtures[name] = pedigrees.build_random(name, pedigrees.RANDOM_FIXTURES[name])
+    return fixtures
+
+
+def parity_columns(fixture: dict[str, np.ndarray], birth_year: np.ndarray | None = None) -> dict[str, np.ndarray]:
+    """Return the constructor columns of one parity *fixture*, dated when *birth_year* is given."""
+    columns = {
+        "id": fixture["ids"],
+        "mother": fixture["mother"],
+        "father": fixture["father"],
+        "twin": fixture["twin"],
+        "sex": fixture["sex"],
+    }
+    if birth_year is not None:
+        columns["birth_year"] = birth_year
+    return columns
+
+
+def kernel_inputs(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> tuple[np.ndarray, ...]:
+    """Parent arrays and pair endpoints in the private depth-major order the kinship kernel runs in.
+
+    The kernel peels the greater row, which is the ADR 0009 depth-then-row rule
+    only in that order, so a caller reaching past ``pair_kinship`` has to
+    translate first.
+    """
+    mother, father, twin = graph._topological_parents
+    return mother, father, twin, graph._topology.translate(first), graph._topology.translate(second)

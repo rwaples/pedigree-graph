@@ -15,6 +15,12 @@ from types import MappingProxyType
 
 import numpy as np
 import pytest
+from conftest import kernel_inputs, parity_columns, parity_fixtures
+from test_pedigree_graph import (
+    _ped_double_first_cousins,
+    _ped_mz_twins_with_descendants,
+    _ped_sib_mating,
+)
 
 from pedigree_graph import (
     RELATIONSHIPS,
@@ -22,7 +28,12 @@ from pedigree_graph import (
     PedigreeValidationError,
     ResourceError,
 )
-from pedigree_graph._kinship_pairwise import _pairwise_kinship_py, _run_kernel, pairwise_kinship
+from pedigree_graph._kinship_pairwise import (
+    _memo_ceiling,
+    _pairwise_kinship_py,
+    _run_kernel,
+    pairwise_kinship,
+)
 from pedigree_graph._threads import _reset_thread_state, configure_threads
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
@@ -33,40 +44,17 @@ MAX_DEGREE = 5
 ENVELOPE_UNIT = 2.0**-25
 
 
-def _fixtures() -> dict[str, dict[str, np.ndarray]]:
-    fixtures = dict(pedigrees.motif_fixtures())
-    for name in ("random_1k", "deep_inbred_60g"):
-        fixtures[name] = pedigrees.build_random(name, pedigrees.RANDOM_FIXTURES[name])
-    return fixtures
-
-
-FIXTURES = _fixtures()
+FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 FIXTURE_NAMES = sorted(FIXTURES)
 MOTIF_NAMES = sorted(pedigrees.motif_fixtures())
 
 
-def _columns(fixture: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-    return {
-        "id": fixture["ids"],
-        "mother": fixture["mother"],
-        "father": fixture["father"],
-        "twin": fixture["twin"],
-        "sex": fixture["sex"],
-    }
-
-
 def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph(_columns(FIXTURES[name]))
+    return PedigreeGraph(parity_columns(FIXTURES[name]))
 
 
 def _all_pairs(n: int) -> tuple[np.ndarray, np.ndarray]:
     return np.triu_indices(n)
-
-
-def _kernel_inputs(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> tuple[np.ndarray, ...]:
-    """Parent arrays and endpoints in the private depth-major order the kernel runs in."""
-    mother, father, twin = graph._topological_parents
-    return mother, father, twin, graph._topology.translate(first), graph._topology.translate(second)
 
 
 def _matrix_values(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> np.ndarray:
@@ -80,42 +68,18 @@ def _ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 
 def _sib_mating() -> PedigreeGraph:
-    # 0,1 founders; 2,3 full sibs; 4 = child(2,3) with F = 0.25.
-    return PedigreeGraph(
-        {
-            "id": np.arange(5),
-            "mother": np.array([-1, -1, 0, 0, 2]),
-            "father": np.array([-1, -1, 1, 1, 3]),
-            "twin": np.full(5, -1),
-            "sex": np.array([0, 1, 0, 1, 0]),
-        }
-    )
+    """0,1 founders; 2,3 full sibs; 4 = child(2,3) with F = 0.25."""
+    return PedigreeGraph(_ped_sib_mating())
 
 
 def _mz_twins_with_descendants() -> PedigreeGraph:
-    # 4,5 MZ twins of full-sib parents (2,3); 8 = child(4,6), 9 = child(5,7).
-    return PedigreeGraph(
-        {
-            "id": np.arange(10),
-            "mother": np.array([-1, -1, 0, 0, 2, 2, -1, -1, 4, 5]),
-            "father": np.array([-1, -1, 1, 1, 3, 3, -1, -1, 6, 7]),
-            "twin": np.array([-1, -1, -1, -1, 5, 4, -1, -1, -1, -1]),
-            "sex": np.array([0, 1, 0, 1, 0, 0, 1, 1, 0, 0]),
-        }
-    )
+    """4,5 MZ twins of full-sib parents (2,3); 8 = child(4,6), 9 = child(5,7)."""
+    return PedigreeGraph(_ped_mz_twins_with_descendants())
 
 
 def _double_first_cousins() -> PedigreeGraph:
-    # (8,9) and (9,10) are double first cousins: phi = 0.125, not the nominal 1/16.
-    return PedigreeGraph(
-        {
-            "id": np.arange(11),
-            "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2, 4, 5, 4]),
-            "father": np.array([-1, -1, -1, -1, 1, 1, 3, 3, 6, 7, 6]),
-            "twin": np.full(11, -1),
-            "sex": np.array([0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0]),
-        }
-    )
+    """(8,9) and (9,10) are double first cousins: phi = 0.125, not the nominal 1/16."""
+    return PedigreeGraph(_ped_double_first_cousins())
 
 
 class TestCallForms:
@@ -230,7 +194,7 @@ class TestWithinGraphParity:
     def test_kernel_matches_the_python_oracle(self, name):
         graph = _graph(name)
         first, second = _all_pairs(graph.n_individuals)
-        kernel = pairwise_kinship(*_kernel_inputs(graph, first, second))
+        kernel = pairwise_kinship(*kernel_inputs(graph, first, second))
         oracle = _pairwise_kinship_py(graph.mother, graph.father, graph.twin, graph.depth, first, second)
         assert kernel.tobytes() == oracle.tobytes()
 
@@ -254,7 +218,7 @@ class TestWithinGraphParity:
     def test_relationship_pairs_of_a_reordered_graph_match_its_own_matrix(self):
         fixture = FIXTURES["deep_inbred_60g"]
         perm = np.random.default_rng(5).permutation(len(fixture["ids"]))
-        graph = PedigreeGraph({key: value[perm] for key, value in _columns(fixture).items()})
+        graph = PedigreeGraph({key: value[perm] for key, value in parity_columns(fixture).items()})
         pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
         values = graph.pair_kinship(pairs)
         for code, block in pairs.items():
@@ -275,7 +239,7 @@ class TestCrossOrderEnvelope:
         differing = 0
         for seed in (11, 12):
             perm = np.random.default_rng(seed).permutation(n)
-            permuted = PedigreeGraph({key: value[perm] for key, value in _columns(fixture).items()})
+            permuted = PedigreeGraph({key: value[perm] for key, value in parity_columns(fixture).items()})
             inverse = np.empty(n, dtype=np.intp)
             inverse[perm] = np.arange(n)
             got = permuted.pair_kinship(inverse[first], inverse[second])
@@ -422,9 +386,27 @@ class TestErrors:
         graph = _graph("deep_inbred_60g")
         first, second = _all_pairs(graph.n_individuals)
         with pytest.raises(ResourceError) as info:
-            _run_kernel(*_kernel_inputs(graph, first, second), cap_limit=1 << 16)
+            _run_kernel(*kernel_inputs(graph, first, second), cap_limit=1 << 16)
         assert info.value.code == "memo_capacity_exceeded"
         assert dict(info.value.fields) == {"operation": "pair_kinship", "capacity": 1 << 16, "maximum": 1 << 16}
+
+    def test_a_non_power_of_two_memo_limit_is_floored_not_hung(self):
+        # The memo probes with ``key & (capacity - 1)``, so a capacity that is
+        # not a power of two reaches only its low slots and the probe loop
+        # spins forever once they fill.  The ceiling is floored instead.
+        graph = _graph("deep_inbred_60g")
+        first, second = _all_pairs(graph.n_individuals)
+        with pytest.raises(ResourceError) as info:
+            _run_kernel(*kernel_inputs(graph, first, second), cap_limit=100_000)
+        assert info.value.fields["maximum"] == 1 << 16
+
+    @pytest.mark.parametrize(("limit", "expected"), [(1, 1), (2, 2), (100, 64), (100_000, 1 << 16), (1 << 31, 1 << 31)])
+    def test_memo_ceiling_is_a_power_of_two(self, limit, expected):
+        assert _memo_ceiling(limit) == expected
+
+    def test_memo_ceiling_rejects_a_limit_below_one_slot(self):
+        with pytest.raises(ValueError, match="at least one slot"):
+            _memo_ceiling(0)
 
 
 class TestLegacyAdapter:
@@ -439,16 +421,7 @@ class TestLegacyAdapter:
     def test_from_subsample_rows_are_caller_space(self):
         import polars as pl
 
-        graph = _mz_twins_with_descendants()
-        frame = pl.DataFrame(
-            {
-                "id": np.arange(10),
-                "mother": np.asarray(graph.mother),
-                "father": np.asarray(graph.father),
-                "twin": np.asarray(graph.twin),
-                "sex": np.asarray(graph.sex),
-            }
-        )
+        frame = _ped_mz_twins_with_descendants()
         sub = PedigreeGraph.from_subsample(frame, frame.filter(pl.col("id").is_in([8, 9])).reverse())
         assert sub.compute_pair_kinship({"x": (np.array([0]), np.array([1]))})["x"].tolist() == [0.15625]
 
@@ -479,7 +452,7 @@ class TestThreads:
 @pytest.mark.slow
 def test_random_30k_integration():
     fixture = pedigrees.build_random("random_30k", pedigrees.LARGE_FIXTURES["random_30k"])
-    graph = PedigreeGraph(_columns(fixture))
+    graph = PedigreeGraph(parity_columns(fixture))
     pairs = graph.relationship_pairs(max_degree=3)
     values = graph.pair_kinship(pairs)
     assert sum(len(block) for block in pairs.values()) > 0

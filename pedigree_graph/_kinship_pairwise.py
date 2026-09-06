@@ -59,7 +59,7 @@ import numba
 import numpy as np
 
 from pedigree_graph._errors import PedigreeValidationError, ResourceError
-from pedigree_graph._input import _INT32_MAX, _check_shape, _coerce_to_int64, _FieldSpec, _invalid_integer
+from pedigree_graph._input import _INT32_MAX, _coerce_row_selection, _FieldSpec
 from pedigree_graph._kinship_depth import _check_topological
 from pedigree_graph._threads import thread_budget
 from pedigree_graph._topology import owned_readonly, readonly
@@ -367,8 +367,14 @@ def _prepare_inputs(
     int64 throughout: the kernel mixes row values into int64 memo keys on every
     step, and int32 inputs measured 6 percent slower on the 30k fixture.  The
     public boundary has already validated pair rows; the checks here only keep
-    a direct kernel caller from reading outside the arrays or feeding an order
-    the peel cannot terminate on.
+    a direct kernel caller from reading outside the arrays, overflowing the pair
+    key, or feeding an order the peel cannot terminate on.
+
+    Parents-before-children is all that is *checked*, because that is all
+    termination needs.  Depth-major is the caller's responsibility and is what
+    the ADR 0009 bit-parity contract rests on: a merely topological order still
+    returns a valid recurrence, but one whose rounding no longer matches the
+    matrix.  ``PedigreeGraph._topological_parents`` supplies the right order.
     """
     mother = owned_readonly(mother, np.int64)
     father = owned_readonly(father, np.int64)
@@ -379,7 +385,12 @@ def _prepare_inputs(
     if not (father.shape[0] == twin.shape[0] == n):
         raise ValueError("pairwise_kinship: mother, father, and twin must have one entry per row")
     if not _check_topological(mother, father, n):
-        raise ValueError("pairwise_kinship: rows must be in depth-major order (PedigreeGraph._topological_parents)")
+        raise ValueError(
+            "pairwise_kinship: every parent row must precede its child; pass the depth-major arrays from "
+            "PedigreeGraph._topological_parents"
+        )
+    if n > 0 and n > (np.iinfo(np.int64).max // n):
+        raise ValueError(f"pairwise_kinship: pedigree size n={n} overflows the int64 pair-key encoding (lo * n + hi)")
     if first.shape[0] != second.shape[0]:
         raise ValueError("pairwise_kinship: first and second must have one entry per pair")
     if first.size and (
@@ -387,6 +398,20 @@ def _prepare_inputs(
     ):
         raise ValueError(f"pairwise_kinship: pair rows must lie in [0, {n})")
     return mother, father, twin, first, second, n
+
+
+def _memo_ceiling(cap_limit: int) -> int:
+    """Largest power of two at or below *cap_limit*.
+
+    The memo indexes with ``key & (capacity - 1)``, so any capacity that is not
+    a power of two masks most of the table away and the probe loop spins
+    forever once the reachable slots fill.  Flooring here keeps that invariant
+    a property of the one Python entry point rather than a rule every caller
+    has to know.
+    """
+    if cap_limit < 1:
+        raise ValueError(f"pair_kinship: the memo capacity limit must be at least one slot, got {cap_limit}")
+    return 1 << (int(cap_limit).bit_length() - 1)
 
 
 def _run_kernel(
@@ -397,6 +422,7 @@ def _run_kernel(
     second: np.ndarray,
     cap_limit: int = _MEMO_CAP_LIMIT,
 ) -> tuple[np.ndarray, np.ndarray]:
+    cap_limit = _memo_ceiling(cap_limit)
     mother, father, twin, first, second, n = _prepare_inputs(mother, father, twin, first, second)
     out, stats = _pairwise_kinship_core(mother, father, twin, first, second, n, cap_limit)
     if stats[_STAT_OVERFLOW]:
@@ -507,26 +533,17 @@ def _row_out_of_range(argument: str, row: object, position: int, n_individuals: 
 def _coerce_rows(spec: _FieldSpec, values: object, n_individuals: int) -> np.ndarray:
     """Return one endpoint argument as int32 receiver rows.
 
-    Checks run as shape, integer form, then range.  A value with no int64 form
-    reads as out of range, so an endpoint argument fails with ``invalid_shape``,
-    ``invalid_integer_value``, or ``pair_row_out_of_range`` and nothing else.
+    The view's row selection and a pair endpoint share one rule
+    (:func:`pedigree_graph._input._coerce_row_selection`), so an endpoint fails
+    with ``invalid_shape``, ``invalid_integer_value``, or
+    ``pair_row_out_of_range`` and nothing else, in that order.
     """
-    arr = np.asarray(values)
-    _check_shape(spec, arr)
-    try:
-        rows, nulls = _coerce_to_int64(spec, arr)
-    except PedigreeValidationError as err:
-        if err.code != "value_out_of_range":
-            raise
-        position = err.fields["position"]
-        assert isinstance(position, int)
-        raise _row_out_of_range(spec.name, err.fields["value"], position, n_individuals) from None
-    if nulls.any():
-        raise _invalid_integer(spec.name, int(np.argmax(nulls)), "null")
-    outside = (rows < 0) | (rows >= n_individuals)
-    if outside.any():
-        position = int(np.argmax(outside))
-        raise _row_out_of_range(spec.name, int(rows[position]), position, n_individuals)
+    rows = _coerce_row_selection(
+        spec,
+        values,
+        n_individuals,
+        lambda value, position: _row_out_of_range(spec.name, value, position, n_individuals),
+    )
     return readonly(rows.astype(np.int32))
 
 
