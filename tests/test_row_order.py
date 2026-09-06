@@ -47,10 +47,6 @@ MAX_DEGREE = 5
 # and is compared in full below.
 ORIENTED_CODES = frozenset(code for code, rel in REL_REGISTRY.items() if rel.down == 0 and rel.up > 0)
 
-# ADR 0009: pair/matrix bit parity is a within-graph property.  deep_inbred_60g
-# already breaks it at slice 1a; slice 5a owns the fix.
-NO_BIT_PARITY = frozenset({"deep_inbred_60g"})
-
 
 def _fixtures() -> dict[str, dict[str, np.ndarray]]:
     # lineal_five_generations, random_1k and every motif with a skip-generation
@@ -470,21 +466,20 @@ def test_every_operation_is_invariant_under_row_order(name, constructor, capsys)
 
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
 def test_pair_kinship_is_bit_identical_to_the_matrix_under_permutation(name):
-    if name in NO_BIT_PARITY:
-        pytest.skip("slice 5a owns pair/matrix bit parity on deep inbred pedigrees")
+    # ADR 0009: pair/matrix bit parity is a within-graph property and holds in
+    # every row order, deep inbred pedigrees included.
     fixture = FIXTURES[name]
     columns = _dated_columns(fixture)
     for label, perm in _permutations(_reference_depth(fixture)).items():
         graph = _build(_permute(columns, perm), "dict")
-        pairs = graph.extract_pairs(max_degree=MAX_DEGREE)
-        kinship = graph.compute_pair_kinship(pairs)
+        kinship = graph.pair_kinship(graph.relationship_pairs(max_degree=MAX_DEGREE))
         K = graph.kinship_matrix(0.0)
-        for code, (first, second) in pairs.items():
-            if len(first) == 0:
+        for code, values in kinship.items():
+            if len(values) == 0:
                 continue
-            recurrence = np.asarray(kinship[code], dtype=np.float32)
-            matrix = np.asarray(K[np.asarray(first), np.asarray(second)], dtype=np.float32).ravel()
-            assert recurrence.tobytes() == matrix.tobytes(), f"{name}/{label}/{code}: pair vs matrix bits differ"
+            first, second = graph.relationship_pairs(max_degree=MAX_DEGREE)[code]
+            matrix = np.asarray(K[first, second], dtype=np.float32).ravel()
+            assert values.tobytes() == matrix.tobytes(), f"{name}/{label}/{code}: pair vs matrix bits differ"
 
 
 @pytest.mark.parametrize("name", ["random_1k", "deep_inbred_60g"])

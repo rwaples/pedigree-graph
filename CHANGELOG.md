@@ -6,6 +6,42 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `PedigreeGraph.pair_kinship` and `PedigreeView.pair_kinship`**
+  (ADR 0006, ADR 0009, slice 5a).  Three call forms:
+  `pair_kinship(first_rows, second_rows)` for any pairs, self pairs included;
+  `pair_kinship(block)` for one `RelationshipPairBlock`; and
+  `pair_kinship(pairs)` for a whole `RelationshipPairs`, which runs one
+  recurrence with one shared memo and returns an immutable mapping over all
+  23 codes.  Values are read-only float32, positionally aligned to the input.
+  Each value is the pinned float32 recurrence: peel the endpoint with the
+  greater structural depth, ties by the greater row, every half-sum rounded
+  once to float32.  Within one receiver the value is bit-identical to the
+  `kinship_matrix` entry for the same pair, to the reversed endpoint order,
+  and to itself before and after a matrix is cached, because the call never
+  reads a cached matrix (issue #6).  A returned `0` is an exact `0`.  Two
+  graphs built from one pedigree in different row orders agree within
+  `2 * (depth_a + depth_b + 1) * 2**-25` on deep inbred pairs (measured: at
+  most 2 ulp on the 60-generation closed herd, none on any shallow fixture).
+  Widen to float64 before comparing against a non-dyadic cutoff.  A block or
+  collection from another receiver fails with `coordinate_space_mismatch`;
+  row arguments fail with `invalid_shape`, `invalid_integer_value`,
+  `pair_row_out_of_range`, or `pair_length_mismatch`; a memo past its cap
+  is `ResourceError("memo_capacity_exceeded")`.  The call commits the package
+  thread budget like every 0.8 operation and runs on one thread.
+- **Changed: `compute_pair_kinship` returns float32** (0.8.0-DELETE adapter).
+  The dict form and the caller-space rows of a `from_subsample` graph are
+  kept, but the values are those of `pair_kinship`, so on pedigrees deep
+  enough for a kinship to need more than 24 significant bits (about 24
+  generations of sustained inbreeding loops) they differ from the 0.7.1
+  float64 recurrence within the envelope above.  The cached-matrix sampling
+  branch is gone; results no longer depend on call history.
+- **Changed: the pairwise kernel is float32 and runs in the stable
+  depth-major order**, where peeling the greater row is the ADR 0009 rule.
+  On the `random_30k` fixture (interleaved fresh processes, medians of three)
+  the degree-3 batch of 566,720 pairs and the 30,300 self pairs run at the
+  0.7.1 kernel's wall time with 25 percent less kernel-attributable RSS
+  (560 MB against 747 MB, 289 MB against 384 MB).
+
 - **Fixed: the scalar counter no longer allocates a table the size of the
   largest parent id.**  `_per_sex_anchor_sums` binned per-parent sums by
   original parent id, so a pedigree with ten-digit ids allocated a dense

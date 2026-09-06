@@ -16,7 +16,7 @@ from __future__ import annotations
 
 __all__ = ["CoordinateToken", "PedigreeView"]
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, overload
 
 import numpy as np
 
@@ -31,14 +31,15 @@ from pedigree_graph._input import (
     _invalid_integer,
     _own,
 )
+from pedigree_graph._kinship_pairwise import view_pair_kinship
 from pedigree_graph._pair_extractor import view_relationship_pairs
 from pedigree_graph.relationships import RelationshipCountResult
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
     from pedigree_graph._core import PedigreeGraph
-    from pedigree_graph.relationships import RelationshipPairs
+    from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
 
 # Named for the keyword each one validates, so a shape or coercion failure names
 # the argument the caller wrote.
@@ -288,3 +289,30 @@ class PedigreeView:
             over all 23 codes, ``None`` for unselected categories.
         """
         return RelationshipCountResult.from_pairs(self.relationship_pairs(max_degree=max_degree, categories=categories))
+
+    @overload
+    def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...
+    @overload
+    def pair_kinship(self, first: RelationshipPairBlock, /) -> np.ndarray: ...
+    @overload
+    def pair_kinship(self, first: object, second: object, /) -> np.ndarray: ...
+    def pair_kinship(self, first: object, second: object | None = None, /) -> np.ndarray | Mapping[str, np.ndarray]:
+        """Return the pedigree-expected kinship of each requested pair, in view rows.
+
+        The same three call forms, values, and guarantees as
+        :meth:`pedigree_graph.PedigreeGraph.pair_kinship`.  Rows are view rows
+        (``0 <= row < len(view)``) and a block or collection must carry this
+        view's own token; the recurrence itself runs through the full graph,
+        so unselected ancestors still count.
+
+        Returns:
+            A read-only float32 array aligned to the input pairs, or for a
+            collection an immutable mapping over all 23 codes.
+
+        Raises:
+            TypeError: As the graph method.
+            PedigreeValidationError: As the graph method; ``n_individuals`` in
+                ``pair_row_out_of_range`` is the view's size.
+            ResourceError: As the graph method.
+        """
+        return view_pair_kinship(self, first, second)

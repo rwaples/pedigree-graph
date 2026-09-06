@@ -6,11 +6,17 @@ package and compares every count and SHA-256 in
 never regenerated to make a test pass; a mismatch is reported down to the first
 differing element of the stored array.
 
-One documented 0.8 divergence: ADR 0008 made ``compute_inbreeding`` MZ-aware
-(genome-node Meuwissen-Luo walk), landed on ``main`` as ``638b4b4``, after the
-baseline was frozen.  On fixtures with MZ twins the ``inbreeding`` hash is
-therefore expected to differ.  The exemption is held tight: every row that is
-not an MZ twin or a descendant of one must still match 0.7.1 exactly.
+Two documented 0.8 divergences:
+
+* ADR 0008 made ``compute_inbreeding`` MZ-aware (genome-node Meuwissen-Luo
+  walk), landed on ``main`` as ``638b4b4``, after the baseline was frozen.  On
+  fixtures with MZ twins the ``inbreeding`` hash is therefore expected to
+  differ.  The exemption is held tight: every row that is not an MZ twin or a
+  descendant of one must still match 0.7.1 exactly.
+* ADR 0009 made pair kinship a pinned float32 recurrence (slice 5a).  Every
+  0.7.1 value that float32 can hold is unchanged, which is every fixture but
+  ``deep_inbred_60g``; there the values must lie within the ADR 0009
+  cross-order envelope of the frozen float64 ones.
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ FIXTURES = MANIFEST["fixtures"]
 SMALL = sorted(name for name, entry in FIXTURES.items() if "file" in entry)
 
 MZ_AWARE_F = "inbreeding"
+FLOAT32_PAIR_KINSHIP = frozenset({"deep_inbred_60g"})
 
 _PAIRED_ARRAYS = {
     "approx_support": ("approx/row", "approx/col"),
@@ -138,12 +145,15 @@ def test_small_fixture_matches_the_frozen_baseline(name):
     assert summary["subsample"]["counts"] == entry["subsample"]["counts"]
 
     has_twins = bool((fx["twin"] >= 0).any())
+    exempt = {MZ_AWARE_F} if has_twins else set()
+    if name in FLOAT32_PAIR_KINSHIP:
+        exempt |= {key for key in entry["hashes"] if key.startswith("pair_kinship/")}
     problems = _compare_hashes(
         entry["hashes"],
         summary["hashes"],
         stored,
         captured,
-        exempt=frozenset({MZ_AWARE_F}) if has_twins else frozenset(),
+        exempt=frozenset(exempt),
     )
     problems += _compare_hashes(
         entry["subsample"]["hashes"],
@@ -157,6 +167,27 @@ def test_small_fixture_matches_the_frozen_baseline(name):
     if has_twins:
         unaffected = ~_mz_affected_rows(_build(pedigree_graph, fx))
         np.testing.assert_array_equal(captured["inbreeding"][unaffected], stored["inbreeding"][unaffected])
+    if name in FLOAT32_PAIR_KINSHIP:
+        _assert_pair_kinship_within_envelope(stored, captured)
+
+
+def _assert_pair_kinship_within_envelope(stored: dict[str, np.ndarray], captured: dict[str, np.ndarray]) -> None:
+    """The float32 recurrence stays within ``2 * (depth_a + depth_b + 1) * 2**-25`` of the 0.7.1 float64 value."""
+    depth = stored["depth"]
+    checked = 0
+    for key, frozen in stored.items():
+        if not key.startswith("pair_kinship/") or frozen.size == 0:
+            continue
+        code = key.removeprefix("pair_kinship/")
+        first, second = stored[f"pairs/{code}/first"], stored[f"pairs/{code}/second"]
+        tolerance = 2.0 * (depth[first] + depth[second] + 1) * 2.0**-25
+        deviation = np.abs(frozen - captured[key])
+        assert np.all(deviation <= tolerance), (
+            f"{key}: max deviation {deviation.max():.3e} beyond the ADR 0009 envelope"
+        )
+        assert (captured[key] == 0).tolist() == (frozen == 0).tolist(), f"{key}: a zero flipped"
+        checked += frozen.size
+    assert checked > 0
 
 
 def test_subsample_hash_key_mapping_covers_every_stored_array():

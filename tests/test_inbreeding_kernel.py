@@ -40,7 +40,7 @@ def _F_via_pairwise(m, f, tw):
     f = np.asarray(f, dtype=np.int32)
     tw = np.asarray(tw, dtype=np.int32)
     rows = np.arange(len(m), dtype=np.int64)
-    return 2.0 * pairwise_kinship(m, f, tw, rows, rows) - 1.0
+    return 2.0 * pairwise_kinship(m, f, tw, rows, rows).astype(np.float64) - 1.0
 
 
 def _F_via_matrix(m, f, tw, gen, n=None):

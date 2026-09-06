@@ -90,11 +90,11 @@ def test_compute_pair_kinship_matches_matrix(arrays):
         return
     pg = PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
     a, b = np.triu_indices(n, k=1)
-    # compute_pair_kinship runs the pairwise recurrence here (no matrix cached yet);
-    # then the DP matrix is built and the two independent paths are compared.
-    pairwise = pg.compute_pair_kinship({"all": (a, b)})["all"]
+    # The recurrence and the DP matrix implement one pinned float32 recurrence
+    # (ADR 0009), so the two independent paths agree to the bit.
+    pairwise = pg.pair_kinship(a, b)
     K = pg.kinship_matrix(0.0).toarray()
-    assert np.allclose(pairwise, K[a, b], atol=1e-9)
+    assert pairwise.tobytes() == K[a, b].tobytes()
 
 
 @_SETTINGS

@@ -20,7 +20,7 @@ __all__ = [
 import logging
 import time
 from functools import cached_property
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
 import scipy.sparse as sp
@@ -41,7 +41,7 @@ from pedigree_graph._kinship_kernel import (
     _compute_F_meuwissen_luo,
     _compute_theta_per_gen,
 )
-from pedigree_graph._kinship_pairwise import pairwise_kinship
+from pedigree_graph._kinship_pairwise import graph_pair_kinship, view_pair_kinship
 from pedigree_graph._lineage_kernel import (
     _compute_n_ancestors,
     _compute_n_descendants,
@@ -56,13 +56,13 @@ from pedigree_graph._view import CoordinateToken, _build_view
 from pedigree_graph.relationships import RelationshipCountResult
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
     from pedigree_graph._input import PedigreeInput
     from pedigree_graph._streaming_counter import CachedEstimate
     from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
-    from pedigree_graph.relationships import RelationshipPairs
+    from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
 
 logger = logging.getLogger(__name__)
 
@@ -1126,75 +1126,83 @@ class PedigreeGraph(PedigreeProperties):
             )
         return self._n_ancestors
 
+    @overload
+    def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...
+    @overload
+    def pair_kinship(self, first: RelationshipPairBlock, /) -> np.ndarray: ...
+    @overload
+    def pair_kinship(self, first: object, second: object, /) -> np.ndarray: ...
+    def pair_kinship(self, first: object, second: object | None = None, /) -> np.ndarray | Mapping[str, np.ndarray]:
+        """Return the pedigree-expected kinship of each requested pair, in graph rows.
+
+        Three call forms: ``pair_kinship(first_rows, second_rows)`` for any
+        pairs, self pairs included; ``pair_kinship(block)`` for one
+        :class:`~pedigree_graph.relationships.RelationshipPairBlock`; and
+        ``pair_kinship(pairs)`` for a whole
+        :class:`~pedigree_graph.relationships.RelationshipPairs`, which runs
+        one recurrence with one shared memo for every block.
+
+        Each value is the pinned float32 recurrence of ADR 0009: inbreeding,
+        MZ genome identity, and every relationship path are included, and the
+        value is bit-identical to the ``kinship_matrix`` entry for the same
+        pair.  Reversed endpoints give identical bits, a returned ``0`` means
+        the exact kinship is ``0``, and no cached matrix is read, so the result
+        does not depend on call history.  Two graphs built from the same
+        pedigree in different row orders agree within
+        ``2 * (depth_a + depth_b + 1) * 2**-25`` on deep inbred pairs.  Widen
+        to float64 before comparing against a non-dyadic cutoff.  The call
+        runs on one thread and commits the package thread budget like every
+        0.8 operation.
+
+        Args:
+            first: ``first_rows`` (graph rows, any integer array-like), a
+                block, or a pairs collection.
+            second: ``second_rows``, same length as ``first_rows``; omitted for
+                a block or collection.
+
+        Returns:
+            A read-only float32 array positionally aligned to the input pairs,
+            or for a collection an immutable mapping over all 23 codes to such
+            arrays (empty for unrequested codes).
+
+        Raises:
+            TypeError: A block or collection with a second argument, or row
+                arrays without one.
+            PedigreeValidationError: ``coordinate_space_mismatch`` for a block
+                from another receiver; ``invalid_shape``,
+                ``invalid_integer_value``, or ``pair_row_out_of_range`` per row
+                argument; ``pair_length_mismatch``.
+            ResourceError: ``memo_capacity_exceeded`` on a pedigree too inbred
+                and deep for the direct recurrence.
+        """
+        return graph_pair_kinship(self, first, second)
+
+    # 0.8.0-DELETE: replaced by pair_kinship (ADR 0006, ADR 0009).
     def compute_pair_kinship(
         self,
         pairs: dict[str, tuple[np.ndarray, np.ndarray]],
     ) -> dict[str, np.ndarray]:
-        """Exact kinship for each requested pair.
+        """Kinship for each requested pair, keyed like *pairs* (0.7.1 form).
 
-        Returns ``{code: float64 array}`` positionally aligned to the input
-        ``pairs[code]`` (orientation preserved).  Always exact — there is **no**
-        nominal-lookup fast path, because the nominal ``PAIR_KINSHIP[code]``
-        value is wrong for any pair related through *multiple* lineages even
-        without inbreeding (e.g. double first cousins have ``phi = 0.125``, not
-        the single-path ``1C`` value ``0.0625``).  Exact pairwise kinship can
-        therefore exceed the nominal code value because of inbreeding, MZ
-        co-coalescence, or multiple relationship paths.
-
-        Computation:
-
-        * if the exact full matrix ``kinship_matrix(0.0)`` is already cached,
-          sample it directly (it is symmetric, so input orientation is
-          irrelevant) — no ``.tocsr()`` duplication;
-        * otherwise compute exact kinship for *only* the requested pairs via the
-          direct memoized recurrence in :mod:`pedigree_graph._kinship_pairwise`,
-          never materializing the ``n x n`` matrix.
-
-        ``compute_inbreeding`` is **not** consulted: the recurrence derives each
-        ``F`` as ``phi(mother, father)`` exactly as the matrix DP does, and all
-        three agree (ADR 0008).  Accepts arbitrary code keys, not only ``REL_REGISTRY`` ones.
-
-        Call *after* :meth:`extract_pairs`.
+        Returns ``{code: float32 array}`` positionally aligned to the input
+        ``pairs[code]``.  The values are those of :meth:`pair_kinship`, an
+        explicit 0.8 change from the 0.7.1 float64 recurrence; the dict form
+        and the caller-space rows of a ``from_subsample`` graph are preserved.
         """
-        # extract_pairs returns df-row coordinates on from_subsample graphs;
-        # kinship is indexed in graph rows.  0.8.0-DELETE
-        inverse = None if self._legacy_view is None else self._legacy_view.graph_rows
-        result: dict[str, np.ndarray] = {}
-        graph_pairs: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-        for code, (idx1, idx2) in pairs.items():
-            if len(idx1) == 0:
-                result[code] = np.array([], dtype=np.float64)
-                continue
-            a = np.asarray(idx1)
-            b = np.asarray(idx2)
-            if inverse is not None:
-                a = inverse[a]
-                b = inverse[b]
-            graph_pairs[code] = (a, b)
-
-        if not graph_pairs:
+        codes = [code for code, (idx1, _) in pairs.items() if len(idx1)]
+        result: dict[str, np.ndarray] = {code: np.zeros(0, dtype=np.float32) for code in pairs}
+        if not codes:
             return result
-
-        # Reuse the exact full matrix if it already exists (avoid recompute and
-        # avoid duplicating it via .tocsr()).  K is symmetric.
-        cached_k = self._kinship_cache.get(0.0)
-        if cached_k is not None:
-            for code, (a, b) in graph_pairs.items():
-                result[code] = np.asarray(cached_k[a, b], dtype=np.float64).ravel()
-            return result
-
-        # Otherwise compute exact kinship for only the requested pairs.  Flatten
-        # all codes into a single kernel call so overlapping ancestor-pairs are
-        # memoized once across codes.
-        codes = list(graph_pairs.keys())
-        topo = self._topology
-        flat_a = topo.translate(np.concatenate([graph_pairs[c][0] for c in codes]))
-        flat_b = topo.translate(np.concatenate([graph_pairs[c][1] for c in codes]))
-        m_idx, f_idx, tw_idx = self._topological_parents
-        flat = pairwise_kinship(m_idx, f_idx, tw_idx, flat_a, flat_b)
+        first = np.concatenate([np.asarray(pairs[code][0]) for code in codes])
+        second = np.concatenate([np.asarray(pairs[code][1]) for code in codes])
+        if self._legacy_view is None:
+            flat = graph_pair_kinship(self, first, second, commit_threads=False)
+        else:
+            flat = view_pair_kinship(self._legacy_view, first, second, commit_threads=False)
+        assert isinstance(flat, np.ndarray)
         offset = 0
-        for c in codes:
-            count = len(graph_pairs[c][0])
-            result[c] = flat[offset : offset + count]
+        for code in codes:
+            count = len(pairs[code][0])
+            result[code] = flat[offset : offset + count]
             offset += count
         return result

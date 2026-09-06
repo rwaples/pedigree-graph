@@ -52,7 +52,7 @@ import polars as pl
 import psutil
 from simace.simulation.simulate import run_simulation
 
-from pedigree_graph import PedigreeGraph, compute_all_ne
+from pedigree_graph import PedigreeGraph, ResourceError, compute_all_ne
 from pedigree_graph._kinship_pairwise import (
     _pairwise_kinship_py,
     _pairwise_kinship_with_stats,
@@ -285,11 +285,7 @@ def fmt_nnz_logs(records: list[dict]) -> str:
 
 
 def _kernel_inputs(pg, a, b):
-    """Parent arrays and pair endpoints in the graph's private topological order.
-
-    The pairwise kernels require parents to precede children; ``pg.mother`` and
-    friends are graph-space and only satisfy that by accident.
-    """
+    """Parent arrays and pair endpoints in the graph's private depth-major order (ADR 0009)."""
     mother, father, twin = pg._topological_parents
     return mother, father, twin, pg._topology.translate(a), pg._topology.translate(b)
 
@@ -371,7 +367,7 @@ def pairwise_diagnostics(df, max_degree: int, seed: int, py_cap: int = 10_000) -
     nb_sub = pairwise_kinship(mother, father, twin, sa, sb)
     nb_sub_t = time.perf_counter() - t0
     t0 = time.perf_counter()
-    py_sub = _pairwise_kinship_py(mother, father, twin, sa, sb)
+    py_sub = _pairwise_kinship_py(mother, father, twin, pg._topology.gather(pg.depth), sa, sb)
     py_sub_t = time.perf_counter() - t0
     bit_exact = bool(np.array_equal(nb_sub, py_sub))
     speedup = py_sub_t / nb_sub_t if nb_sub_t > 0 else float("nan")
@@ -412,7 +408,7 @@ def stress_diagnostics(seed: int) -> str:
         t0 = time.perf_counter()
         out_nb, stats = _pairwise_kinship_with_stats(*_kernel_inputs(pg, a, b))
         nb_t = time.perf_counter() - t0
-    except ValueError:
+    except ResourceError:
         overflowed = True
         stats, nb_t, out_nb = (
             {"memo_entries": -1, "memo_capacity": -1, "memo_grows": -1, "max_stack_depth": -1},

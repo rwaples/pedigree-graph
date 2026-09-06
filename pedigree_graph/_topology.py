@@ -11,9 +11,10 @@ graph space and that order.
 Stable depth-major is a topological order because a child's structural
 depth strictly exceeds both parents'.  Ties within a depth keep input row
 order, so no original ID ever influences the result.  It is also exactly
-the order :func:`pedigree_graph._kinship_dp._run_dp_core` sorts into, which
-is what makes the pairwise kernel and the matrix DP peel in the same
-coordinates.
+the order :func:`pedigree_graph._kinship_dp._run_dp_core` sorts into, and
+in it "greater depth, then greater row" is simply "greater row", which is
+what lets the pairwise kernel peel by row alone and still match the matrix
+to the bit (ADR 0009).
 
 When the input rows are already depth-major the permutation is the
 identity; ``order`` and ``inverse`` are then ``None`` and every routing

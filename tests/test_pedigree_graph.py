@@ -1336,7 +1336,7 @@ class TestComputePairKinship:
         pairs = pg.extract_pairs(max_degree=1)
         if len(pairs["MHS"][0]) == 0:
             out = pg.compute_pair_kinship(pairs)
-            assert out["MHS"].dtype == np.float64
+            assert out["MHS"].dtype == np.float32
             assert len(out["MHS"]) == 0
 
     def test_constructor_accepts_a_parent_row_after_its_child(self):
@@ -1409,21 +1409,21 @@ class TestComputePairKinship:
         np.testing.assert_array_equal(out["reversed"], out["reversed"][::-1])
         np.testing.assert_allclose(out["made_up_code"], np.array([0.25]))
 
-    def test_cached_matrix_path_matches_direct(self):
-        # Whether or not kinship_matrix(0.0) is pre-cached, the result is the
-        # same (the cached-CSC sampling branch vs the direct recurrence branch).
+    def test_result_does_not_depend_on_a_cached_matrix(self):
+        # ADR 0009: pair kinship is recurrence-only, so building the matrix
+        # first changes nothing, down to the bit.
         df = _ped_double_first_cousins()
         pairs = PedigreeGraph(df).extract_pairs(max_degree=5)
 
-        pg_direct = PedigreeGraph(df)  # no matrix cached -> recurrence
+        pg_direct = PedigreeGraph(df)
         out_direct = pg_direct.compute_pair_kinship(pairs)
 
         pg_cached = PedigreeGraph(df)
-        pg_cached.kinship_matrix(0.0)  # populate the cache -> sampling branch
+        pg_cached.kinship_matrix(0.0)
         out_cached = pg_cached.compute_pair_kinship(pairs)
 
         for code in pairs:
-            np.testing.assert_allclose(out_direct[code], out_cached[code], atol=1e-6)
+            assert out_direct[code].tobytes() == out_cached[code].tobytes()
 
     def test_all_empty_returns_empty_per_code(self):
         pg = PedigreeGraph(_ped_inbred_mz())
@@ -1431,13 +1431,19 @@ class TestComputePairKinship:
         out = pg.compute_pair_kinship({"FS": empty, "MZ": empty})
         assert set(out) == {"FS", "MZ"}
         for v in out.values():
-            assert v.dtype == np.float64
+            assert v.dtype == np.float32
             assert v.shape == (0,)
 
 
 # ---------------------------------------------------------------------------
 # Direct pairwise-kinship recurrence (_pairwise_kinship_py) vs matrix oracle
 # ---------------------------------------------------------------------------
+
+
+def _kernel_inputs(pg: PedigreeGraph, a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, ...]:
+    """Parent arrays and endpoints in the private depth-major order the numba kernel runs in."""
+    mother, father, twin = pg._topological_parents
+    return mother, father, twin, pg._topology.translate(a), pg._topology.translate(b)
 
 
 def _oracle_all_pairs(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -1448,7 +1454,7 @@ def _oracle_all_pairs(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.nda
     """
     K = pg.kinship_matrix(0.0).toarray()
     ii, jj = np.triu_indices(pg.n)
-    got = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, ii, jj)
+    got = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, ii, jj)
     exp = K[ii, jj]
     return got, exp, ii, jj
 
@@ -1593,9 +1599,10 @@ def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pl.DataFr
 class TestPairwiseKinshipReference:
     """`_pairwise_kinship_py` must equal `kinship_matrix(0.0)` on every pair.
 
-    The matrix DP is the independent exact oracle.  These cover the cases the
-    nominal-lookup fast path gets wrong (multiple relationship paths) and the
-    inbreeding / MZ-co-coalescence cases that motivated the routine.
+    The matrix DP implements the same pinned recurrence (ADR 0009), so parity
+    is bit-exact.  These cover the cases a nominal lookup gets wrong (multiple
+    relationship paths) and the inbreeding / MZ-co-coalescence cases that
+    motivated the routine.
     """
 
     _inbred_mz = staticmethod(_ped_inbred_mz)
@@ -1605,7 +1612,7 @@ class TestPairwiseKinshipReference:
     _sib_mating = staticmethod(_ped_sib_mating)
 
     def _phi(self, pg, a, b):
-        return _pairwise_kinship_py(pg.mother, pg.father, pg.twin, np.array([a]), np.array([b]))[0]
+        return _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, np.array([a]), np.array([b]))[0]
 
     @pytest.mark.parametrize(
         "fixture",
@@ -1620,9 +1627,8 @@ class TestPairwiseKinshipReference:
     def test_all_pairs_match_matrix_oracle(self, fixture):
         pg = PedigreeGraph(getattr(self, fixture)())
         got, exp, _, _ = _oracle_all_pairs(pg)
-        # Dyadic rationals at these shallow depths are exact in both float32 and
-        # float64, so parity is effectively bit-exact; use a loose atol anyway.
-        np.testing.assert_allclose(got, exp, atol=1e-6)
+        assert got.dtype == np.float32
+        np.testing.assert_array_equal(got, exp)
 
     def test_double_first_cousins_exceed_nominal(self):
         pg = PedigreeGraph(self._double_first_cousins())
@@ -1658,8 +1664,8 @@ class TestPairwiseKinshipReference:
         # phi is symmetric; reversed input order must give the same value and
         # not reorder the output.
         pg = PedigreeGraph(self._sib_mating())
-        fwd = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, np.array([2, 4]), np.array([4, 2]))
-        rev = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, np.array([4, 2]), np.array([2, 4]))
+        fwd = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, np.array([2, 4]), np.array([4, 2]))
+        rev = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, np.array([4, 2]), np.array([2, 4]))
         np.testing.assert_array_equal(fwd, rev[::-1])
 
     def test_self_pairs_return_diagonal(self):
@@ -1668,30 +1674,30 @@ class TestPairwiseKinshipReference:
         assert self._phi(pg, 4, 4) == pytest.approx(0.625)
         assert self._phi(pg, 0, 0) == pytest.approx(0.5)
 
-    def test_empty_input_returns_empty_float64(self):
+    def test_empty_input_returns_empty_float32(self):
         pg = PedigreeGraph(self._sib_mating())
-        out = _pairwise_kinship_py(
-            pg.mother, pg.father, pg.twin, np.array([], dtype=np.int64), np.array([], dtype=np.int64)
-        )
-        assert out.dtype == np.float64
+        empty = np.array([], dtype=np.int64)
+        out = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, empty, empty)
+        assert out.dtype == np.float32
         assert out.shape == (0,)
 
 
 class TestPairwiseKinshipNumba:
     """The numba kernel must be bit-identical to the pure-Python reference.
 
-    Both compute float64 with the same IEEE ops, so they agree to the last bit
-    regardless of traversal order — making `_pairwise_kinship_py` a true bit
-    oracle.  Parity against the (float32) matrix is checked at `atol=1e-6`.
+    Both compute float32 with the same IEEE ops in the same peel order, so
+    they agree to the last bit regardless of traversal order, making
+    `_pairwise_kinship_py` a true bit oracle.  The matrix implements the same
+    recurrence, so parity with it is bit-exact too (ADR 0009).
     """
 
     @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
     def test_numba_bit_exact_vs_python(self, build):
         pg = PedigreeGraph(build())
         ii, jj = np.triu_indices(pg.n)
-        py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, ii, jj)
-        nb = pairwise_kinship(pg.mother, pg.father, pg.twin, ii, jj)
-        # Bit-exact: no tolerance.
+        py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, ii, jj)
+        nb = pairwise_kinship(*_kernel_inputs(pg, ii, jj))
+        assert nb.dtype == np.float32
         np.testing.assert_array_equal(nb, py)
 
     @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
@@ -1699,8 +1705,8 @@ class TestPairwiseKinshipNumba:
         pg = PedigreeGraph(build())
         K = pg.kinship_matrix(0.0).toarray()
         ii, jj = np.triu_indices(pg.n)
-        nb = pairwise_kinship(pg.mother, pg.father, pg.twin, ii, jj)
-        np.testing.assert_allclose(nb, K[ii, jj], atol=1e-6)
+        nb = pairwise_kinship(*_kernel_inputs(pg, ii, jj))
+        np.testing.assert_array_equal(nb, K[ii, jj])
 
     def test_fuzz_numba_equals_python_and_oracle(self):
         rng = np.random.default_rng(20240609)
@@ -1711,24 +1717,24 @@ class TestPairwiseKinshipNumba:
                 continue
             K = pg.kinship_matrix(0.0).toarray()
             ii, jj = np.triu_indices(pg.n)
-            py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, ii, jj)
-            nb = pairwise_kinship(pg.mother, pg.father, pg.twin, ii, jj)
-            np.testing.assert_array_equal(nb, py)  # bit-exact
-            np.testing.assert_allclose(nb, K[ii, jj], atol=1e-6)  # vs matrix
+            py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, ii, jj)
+            nb = pairwise_kinship(*_kernel_inputs(pg, ii, jj))
+            np.testing.assert_array_equal(nb, py)
+            np.testing.assert_array_equal(nb, K[ii, jj])
             checked += 1
         assert checked > 100  # the generator should mostly yield n >= 2
 
     def test_input_orientation_preserved(self):
         pg = PedigreeGraph(_ped_sib_mating())
-        fwd = pairwise_kinship(pg.mother, pg.father, pg.twin, np.array([2, 4]), np.array([4, 2]))
-        rev = pairwise_kinship(pg.mother, pg.father, pg.twin, np.array([4, 2]), np.array([2, 4]))
+        fwd = pairwise_kinship(*_kernel_inputs(pg, np.array([2, 4]), np.array([4, 2])))
+        rev = pairwise_kinship(*_kernel_inputs(pg, np.array([4, 2]), np.array([2, 4])))
         np.testing.assert_array_equal(fwd, rev[::-1])
 
-    def test_empty_input_returns_empty_float64(self):
+    def test_empty_input_returns_empty_float32(self):
         pg = PedigreeGraph(_ped_sib_mating())
         empty = np.array([], dtype=np.int64)
-        out = pairwise_kinship(pg.mother, pg.father, pg.twin, empty, empty)
-        assert out.dtype == np.float64
+        out = pairwise_kinship(*_kernel_inputs(pg, empty, empty))
+        assert out.dtype == np.float32
         assert out.shape == (0,)
 
     def test_stats_wrapper_reports_bounded_memo(self):
@@ -1737,7 +1743,7 @@ class TestPairwiseKinshipNumba:
         rng = np.random.default_rng(7)
         pg = PedigreeGraph(_random_pedigree(rng))
         ii, jj = np.triu_indices(pg.n)
-        out, stats = _pairwise_kinship_with_stats(pg.mother, pg.father, pg.twin, ii, jj)
+        out, stats = _pairwise_kinship_with_stats(*_kernel_inputs(pg, ii, jj))
         assert out.shape == ii.shape
         assert stats["memo_entries"] <= pg.n * pg.n
         assert stats["max_stack_depth"] >= 1
