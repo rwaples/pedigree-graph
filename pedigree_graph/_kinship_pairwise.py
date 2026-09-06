@@ -509,14 +509,14 @@ class _PairQuery:
     Attributes:
         first: int32 first endpoints.
         second: int32 second endpoints, same length.
-        block_lengths: ``(code, length)`` per registry code when the request was
-            a :class:`RelationshipPairs`, so the flat result can be split back;
-            ``None`` for a flat request.
+        block_lengths: How many pairs each registry code contributed, in
+            registry order, when the request was a :class:`RelationshipPairs`,
+            so the flat result can be split back; ``None`` for a flat request.
     """
 
     first: np.ndarray
     second: np.ndarray
-    block_lengths: tuple[tuple[str, int], ...] | None
+    block_lengths: dict[str, int] | None
 
 
 def _row_out_of_range(argument: str, row: object, position: int, n_individuals: int) -> PedigreeValidationError:
@@ -545,6 +545,13 @@ def _coerce_rows(spec: _FieldSpec, values: object, n_individuals: int) -> np.nda
         lambda value, position: _row_out_of_range(spec.name, value, position, n_individuals),
     )
     return readonly(rows.astype(np.int32))
+
+
+def _join_rows(blocks: list[np.ndarray]) -> np.ndarray:
+    """Join the rows of every non-empty block, or return the empty array for none."""
+    if not blocks:
+        return np.zeros(0, dtype=np.int32)
+    return readonly(np.concatenate(blocks))
 
 
 def _check_token(block: RelationshipPairBlock, token: CoordinateToken, receiver_type: str) -> None:
@@ -579,17 +586,16 @@ def _resolve_query(
     if isinstance(first, RelationshipPairs):
         if second is not None:
             raise TypeError("pair_kinship(pairs) takes no second argument")
-        for block in first.values():
+        block_lengths: dict[str, int] = {}
+        firsts: list[np.ndarray] = []
+        seconds: list[np.ndarray] = []
+        for code, block in first.items():
             _check_token(block, token, receiver_type)
-        lengths = tuple((code, len(block)) for code, block in first.items())
-        rows = [block.first_rows for block in first.values() if len(block)]
-        cols = [block.second_rows for block in first.values() if len(block)]
-        empty = np.zeros(0, dtype=np.int32)
-        return _PairQuery(
-            readonly(np.concatenate(rows)) if rows else empty,
-            readonly(np.concatenate(cols)) if cols else empty,
-            lengths,
-        )
+            block_lengths[code] = len(block)
+            if len(block):
+                firsts.append(block.first_rows)
+                seconds.append(block.second_rows)
+        return _PairQuery(_join_rows(firsts), _join_rows(seconds), block_lengths)
     if isinstance(first, RelationshipPairBlock):
         if second is not None:
             raise TypeError("pair_kinship(block) takes no second argument")
@@ -597,25 +603,25 @@ def _resolve_query(
         return _PairQuery(first.first_rows, first.second_rows, None)
     if second is None:
         raise TypeError("pair_kinship(first_rows, second_rows) needs both row arrays")
-    rows = _coerce_rows(_FIRST, first, n_individuals)
-    cols = _coerce_rows(_SECOND, second, n_individuals)
-    if rows.shape[0] != cols.shape[0]:
+    first_rows = _coerce_rows(_FIRST, first, n_individuals)
+    second_rows = _coerce_rows(_SECOND, second, n_individuals)
+    if first_rows.shape[0] != second_rows.shape[0]:
         raise PedigreeValidationError(
             "pair_length_mismatch",
-            f"first_rows has {rows.shape[0]} entries but second_rows has {cols.shape[0]}",
-            first_length=rows.shape[0],
-            second_length=cols.shape[0],
+            f"first_rows has {first_rows.shape[0]} entries but second_rows has {second_rows.shape[0]}",
+            first_length=first_rows.shape[0],
+            second_length=second_rows.shape[0],
         )
-    return _PairQuery(rows, cols, None)
+    return _PairQuery(first_rows, second_rows, None)
 
 
 def _shape_result(query: _PairQuery, values: np.ndarray) -> np.ndarray | Mapping[str, np.ndarray]:
-    """Return *values* flat, or split per registry code for a collection query."""
+    """Return *values* flat, or split back per registry code for a collection query."""
     if query.block_lengths is None:
         return values
-    offsets = np.cumsum([length for _, length in query.block_lengths])[:-1]
+    offsets = np.cumsum(list(query.block_lengths.values()))[:-1]
     pieces = np.split(values, offsets)
-    return MappingProxyType(dict(zip((code for code, _ in query.block_lengths), pieces, strict=True)))
+    return MappingProxyType(dict(zip(query.block_lengths, pieces, strict=True)))
 
 
 def _evaluate(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray, *, commit_threads: bool) -> np.ndarray:
