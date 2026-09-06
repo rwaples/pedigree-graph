@@ -17,6 +17,11 @@ Two documented 0.8 divergences:
   0.7.1 value that float32 can hold is unchanged, which is every fixture but
   ``deep_inbred_60g``; there the values must lie within the ADR 0009
   cross-order envelope of the frozen float64 ones.
+* Slice 5b preserves the 0.7.1 propagation-pruned matrix support but replaces
+  its approximate propagated values with the pinned recurrence values.  The
+  frozen ``approx_values`` hash is therefore exempt; ``approx_support`` stays
+  exact, and ``test_kinship_matrices`` checks every retained new value against
+  ``pair_kinship`` bits.
 """
 
 from __future__ import annotations
@@ -27,13 +32,15 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import scipy.sparse as sp
 
 import pedigree_graph
+from pedigree_graph._kinship_dp import _build_kinship_csc
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
 
 import pedigrees
-from generate_baseline import _build, _capture
+from generate_baseline import APPROX_THRESHOLD, _build, _capture
 
 DATA = Path(__file__).resolve().parent / "data" / "parity_v0.7.1"
 MANIFEST = json.loads((DATA / "manifest.json").read_text())
@@ -42,6 +49,7 @@ SMALL = sorted(name for name, entry in FIXTURES.items() if "file" in entry)
 
 MZ_AWARE_F = "inbreeding"
 FLOAT32_PAIR_KINSHIP = frozenset({"deep_inbred_60g"})
+CORRECTED_APPROXIMATE_MATRIX_VALUE = "approx_values"
 
 _PAIRED_ARRAYS = {
     "approx_support": ("approx/row", "approx/col"),
@@ -145,7 +153,9 @@ def test_small_fixture_matches_the_frozen_baseline(name):
     assert summary["subsample"]["counts"] == entry["subsample"]["counts"]
 
     has_twins = bool((fx["twin"] >= 0).any())
-    exempt = {MZ_AWARE_F} if has_twins else set()
+    exempt = {CORRECTED_APPROXIMATE_MATRIX_VALUE}
+    if has_twins:
+        exempt.add(MZ_AWARE_F)
     if name in FLOAT32_PAIR_KINSHIP:
         exempt |= {key for key in entry["hashes"] if key.startswith("pair_kinship/")}
     problems = _compare_hashes(
@@ -190,6 +200,19 @@ def _assert_pair_kinship_within_envelope(stored: dict[str, np.ndarray], captured
     assert checked > 0
 
 
+def _propagated_candidate_for_large_parity(graph):
+    """Build old candidate values so this differential gate isolates support."""
+    indptr, indices, data = _build_kinship_csc(
+        graph.n_individuals,
+        graph.mother_rows,
+        graph.father_rows,
+        graph.twin_rows,
+        graph.depth,
+        APPROX_THRESHOLD,
+    )
+    return sp.csc_matrix((data, indices, indptr), shape=(graph.n_individuals, graph.n_individuals))
+
+
 def test_subsample_hash_key_mapping_covers_every_stored_array():
     entry = FIXTURES["random_1k"]
     stored = set(_stored_arrays(entry))
@@ -205,14 +228,19 @@ def test_random_30k_matches_the_frozen_baseline():
     fx = pedigrees.build_random(name, pedigrees.LARGE_FIXTURES[name])
     assert pedigrees.input_hash(fx) == entry["input_hash"]
 
-    _, summary = _capture(pedigree_graph, fx, full_arrays=False)
+    _, summary = _capture(
+        pedigree_graph,
+        fx,
+        full_arrays=False,
+        approximate_matrix=_propagated_candidate_for_large_parity,
+    )
 
     assert summary["n"] == entry["n"]
     assert summary["counts"] == entry["counts"]
     assert summary["streaming_counts"] == entry["streaming_counts"]
     assert summary["subsample"]["counts"] == entry["subsample"]["counts"]
     assert summary["subsample"]["hashes"] == entry["subsample"]["hashes"]
-    exempt = {MZ_AWARE_F}
+    exempt = {MZ_AWARE_F, CORRECTED_APPROXIMATE_MATRIX_VALUE}
     assert {k: v for k, v in summary["hashes"].items() if k not in exempt} == {
         k: v for k, v in entry["hashes"].items() if k not in exempt
     }

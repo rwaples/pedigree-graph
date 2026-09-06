@@ -33,15 +33,16 @@ if TYPE_CHECKING:
 else:
     from numba import njit
 
+from pedigree_graph._errors import ResourceError
 from pedigree_graph._kinship_allocator import (
     _append_entry,
     _FreelistBuffers,
     _retire_rows_at_depth,
-    _sort_row_inplace,
     _suggest_init_cap_per_row,
 )
 from pedigree_graph._kinship_csc import _assemble_csc
 from pedigree_graph._kinship_depth import _compute_last_direct_child_depth
+from pedigree_graph._kinship_dp_depth import _capture_candidates_at_depth, _mz_twin_pass, _process_depth
 from pedigree_graph._topology import build_topology, owned_readonly
 
 
@@ -131,125 +132,6 @@ def _validate_dp_args(
 
 
 @njit(cache=True)
-def _mz_twin_pass(
-    d: np.int32,
-    n: int,
-    depth: np.ndarray,
-    tw_idx: np.ndarray,
-    cols: np.ndarray,
-    vals: np.ndarray,
-    row_start: np.ndarray,
-    row_count: np.ndarray,
-    row_cap: np.ndarray,
-    next_alloc: np.int64,
-    buffers,
-) -> tuple[np.ndarray, np.ndarray, np.int64]:
-    """Write the MZ off-diagonal for every twin pair at depth *d*.
-
-    ``kinship(j, tw) = self-kinship(j)`` (= 0.5 without inbreeding).  Both
-    rows are written, so row storage stays symmetric.
-
-    Runs once per depth, **depth 0 included**: founders can be MZ co-twins,
-    and their edge has to be in place before any child of either twin merge-
-    walks the parent row.  Skipping depth 0 does not merely lose the MZ
-    entry -- it propagates a zero through the whole subtree below the pair
-    (rwaples/pedigree-graph#5).
-    """
-    for j in range(n):
-        if depth[j] != d:
-            continue
-        tw = tw_idx[j]
-        if tw < 0 or tw == j:
-            continue
-        if row_start[j] < 0:
-            # No storage: a never-allocated or retired row under lazy alloc.
-            # Reachable at depth 0 only, where founder init skips a founder
-            # whose row no merge walk ever reads.  Nothing would read the
-            # edge either, and there is no diagonal to copy — skip.
-            continue
-        # kinship(j, tw) = self-kinship(j) — look up the diagonal via
-        # binary search (position 0 is NOT the diagonal; merge-walk
-        # appends ancestor entries first, diagonal ends up sorted
-        # according to its column index = j).
-        rs_j0 = row_start[j]
-        rc_j0 = row_count[j]
-        self_k = np.float32(0.5)  # fallback if not found (shouldn't happen)
-        lo_j = 0
-        hi_j = rc_j0
-        while lo_j < hi_j:
-            mid = (lo_j + hi_j) // 2
-            if cols[rs_j0 + mid] < j:
-                lo_j = mid + 1
-            else:
-                hi_j = mid
-        if lo_j < rc_j0 and cols[rs_j0 + lo_j] == j:
-            self_k = vals[rs_j0 + lo_j]
-        # Find insert position for tw in row j.
-        rs_j = row_start[j]
-        rc_j = row_count[j]
-        lo = 0
-        hi = rc_j
-        while lo < hi:
-            mid = (lo + hi) // 2
-            if cols[rs_j + mid] < tw:
-                lo = mid + 1
-            else:
-                hi = mid
-        if lo < rc_j and cols[rs_j + lo] == tw:
-            # Already present (shouldn't happen for fresh twins, but
-            # be defensive).  Overwrite value.
-            vals[rs_j + lo] = self_k
-        else:
-            # Need to insert in-place; falls back to append then
-            # sort.  Only happens for twins so rare; cheap.
-            cols, vals, next_alloc = _append_entry(
-                cols,
-                vals,
-                row_start,
-                row_count,
-                row_cap,
-                next_alloc,
-                np.int32(j),
-                np.int32(tw),
-                self_k,
-                buffers,
-            )
-            # Re-sort row j (bubble the new entry into place).  Small
-            # per-row cost, rare.
-            _sort_row_inplace(cols, vals, row_start[j], row_count[j])
-        # Similarly for row tw, when it has storage of its own.
-        if row_start[tw] < 0:
-            continue
-        rs_t = row_start[tw]
-        rc_t = row_count[tw]
-        lo = 0
-        hi = rc_t
-        while lo < hi:
-            mid = (lo + hi) // 2
-            if cols[rs_t + mid] < j:
-                lo = mid + 1
-            else:
-                hi = mid
-        if lo < rc_t and cols[rs_t + lo] == j:
-            vals[rs_t + lo] = self_k
-        else:
-            cols, vals, next_alloc = _append_entry(
-                cols,
-                vals,
-                row_start,
-                row_count,
-                row_cap,
-                next_alloc,
-                np.int32(tw),
-                np.int32(j),
-                self_k,
-                buffers,
-            )
-            _sort_row_inplace(cols, vals, row_start[tw], row_count[tw])
-    return cols, vals, next_alloc
-
-
-@njit(cache=True)
 def _dp_kinship(
     n: int,
     m_idx: np.ndarray,
@@ -264,6 +146,11 @@ def _dp_kinship(
     debug_asserts: bool,
     grow_stats: np.ndarray,
     initial_buffer_override: np.int64,
+    capture_candidates: bool,
+    candidate_indptr: np.ndarray,
+    candidate_indices: np.ndarray,
+    candidate_positions: np.ndarray,
+    candidate_data: np.ndarray,
 ):
     """Build per-row sorted kinship arrays via gen-by-gen DP.
 
@@ -295,6 +182,10 @@ def _dp_kinship(
     When ``debug_asserts`` is True, each child-row step verifies its
     direct parents have not been retired — the regression gate for
     premature-retirement bugs.
+
+    When ``capture_candidates`` is true, each completed depth's live exact
+    rows are merge-scanned against topology-space candidate rows after the MZ
+    pass and before retirement. Only candidate values reach ``candidate_data``.
 
     Returns:
         cols: int32[total_cap], flat col storage (per-row contiguous).
@@ -443,6 +334,21 @@ def _dp_kinship(
         next_alloc,
         buffers,
     )
+    if capture_candidates:
+        _capture_candidates_at_depth(
+            np.int32(0),
+            n,
+            depth,
+            tw_idx,
+            cols,
+            vals,
+            row_start,
+            row_count,
+            candidate_indptr,
+            candidate_indices,
+            candidate_positions,
+            candidate_data,
+        )
 
     # Founders with no children at any later depth retire immediately;
     # their stored diagonal is never read by a merge walk.  Under lazy
@@ -463,145 +369,41 @@ def _dp_kinship(
 
     # DP: process in depth order.
     for d in range(1, max_depth + 1):
-        for j in range(n):
-            if depth[j] != d:
-                continue
-            m = m_idx[j]
-            f = f_idx[j]
-            if m < 0 and f < 0:
-                continue  # disconnected founder; self-kinship already 0.5
-            g_j = label[j]
-
-            # Trips if ``last_direct_child_depth`` underestimates row
-            # liveness — i.e. a row was retired while still needed.
-            if debug_asserts:
-                if m >= 0 and row_start[m] < 0:
-                    raise AssertionError("mother row retired before child processed")
-                if f >= 0 and row_start[f] < 0:
-                    raise AssertionError("father row retired before child processed")
-
-            # --- Self-kinship (inbreeding correction) ---
-            km_f = np.float32(0.0)
-            if m >= 0 and f >= 0:
-                # Look up kinship(m, f) by scanning m's row for column f.
-                ms = row_start[m]
-                mc = row_count[m]
-                # Binary search for f in cols[ms:ms+mc].
-                lo = 0
-                hi = mc
-                while lo < hi:
-                    mid = (lo + hi) // 2
-                    if cols[ms + mid] < f:
-                        lo = mid + 1
-                    else:
-                        hi = mid
-                if lo < mc and cols[ms + lo] == f:
-                    km_f = vals[ms + lo]
-            # Note: diagonal (j, self_kin) is appended AFTER the merge
-            # walk (see below).  Do not pre-populate row j here.
-
-            # --- Merge walk through rel(m) ∪ rel(f) ---
-            ms = row_start[m] if m >= 0 else np.int64(0)
-            mc = row_count[m] if m >= 0 else np.int32(0)
-            fs = row_start[f] if f >= 0 else np.int64(0)
-            fc = row_count[f] if f >= 0 else np.int32(0)
-
-            pm = 0
-            pf = 0
-            while pm < mc or pf < fc:
-                k = np.int32(-1)
-                mv = np.float32(0.0)
-                fv = np.float32(0.0)
-                if pm < mc and (pf == fc or cols[ms + pm] <= cols[fs + pf]):
-                    if pf < fc and cols[fs + pf] == cols[ms + pm]:
-                        k = cols[ms + pm]
-                        mv = vals[ms + pm]
-                        fv = vals[fs + pf]
-                        pm += 1
-                        pf += 1
-                    else:
-                        k = cols[ms + pm]
-                        mv = vals[ms + pm]
-                        pm += 1
-                else:
-                    k = cols[fs + pf]
-                    fv = vals[fs + pf]
-                    pf += 1
-                if k == j:
-                    continue
-                val = np.float32((mv + fv) / 2.0)
-                if val <= threshold:
-                    continue
-                # ``k < j`` counts each unordered within-cohort non-twin
-                # pair exactly once; folding the sum into the merge walk
-                # lets retirement free row[k] before any rescan.  Every
-                # relative of j is discovered here, so a cohort-mate at a
-                # different depth is still counted exactly once.
-                if retire and label[k] == g_j and k != tw_idx[j] and k < j:
-                    sum_theta[g_j] += np.float64(val)
-                # Append (k, val) to row j.  Merge walk yields columns in
-                # ascending order, so row j stays sorted.
-                cols, vals, next_alloc = _append_entry(
-                    cols,
-                    vals,
-                    row_start,
-                    row_count,
-                    row_cap,
-                    next_alloc,
-                    np.int32(j),
-                    k,
-                    val,
-                    buffers,
-                )
-                # Symmetric fill: append (j, val) to row k.  Since j is
-                # processed in depth order and higher j means later
-                # processing (same gen IDs are contiguous), the appends
-                # to row k come in ascending j order → row k stays
-                # sorted.
-                cols, vals, next_alloc = _append_entry(
-                    cols,
-                    vals,
-                    row_start,
-                    row_count,
-                    row_cap,
-                    next_alloc,
-                    k,
-                    np.int32(j),
-                    val,
-                    buffers,
-                )
-
-            # --- Append diagonal (j, self_kin) to row j AFTER merge walk.
-            # All merge-walk entries have cols < j (ancestors), so j is
-            # the largest column — row j stays sorted.
-            self_kin = np.float32((1.0 + km_f) / 2.0)
-            cols, vals, next_alloc = _append_entry(
-                cols,
-                vals,
-                row_start,
-                row_count,
-                row_cap,
-                next_alloc,
-                np.int32(j),
-                np.int32(j),
-                self_kin,
-                buffers,
-            )
-
-        # MZ twin pass for this generation.
-        cols, vals, next_alloc = _mz_twin_pass(
+        cols, vals, next_alloc = _process_depth(
             np.int32(d),
             n,
-            depth,
+            m_idx,
+            f_idx,
             tw_idx,
+            depth,
+            label,
+            threshold,
+            retire,
+            debug_asserts,
             cols,
             vals,
             row_start,
             row_count,
             row_cap,
+            sum_theta,
             next_alloc,
             buffers,
         )
+        if capture_candidates:
+            _capture_candidates_at_depth(
+                np.int32(d),
+                n,
+                depth,
+                tw_idx,
+                cols,
+                vals,
+                row_start,
+                row_count,
+                candidate_indptr,
+                candidate_indices,
+                candidate_positions,
+                candidate_data,
+            )
 
         # Runs AFTER the MZ twin pass so twin writes land before
         # retirement.  ``_grow_global`` preserves freed offsets safely
@@ -635,6 +437,10 @@ def _run_dp_core(
     config: KinshipDPConfig,
     grow_stats: np.ndarray | None = None,
     initial_buffer_override: int | None = None,
+    candidate_indptr: np.ndarray | None = None,
+    candidate_indices: np.ndarray | None = None,
+    candidate_positions: np.ndarray | None = None,
+    candidate_data: np.ndarray | None = None,
 ) -> DPResult:
     """Validate args + run :func:`_dp_kinship`; bundle the full output.
 
@@ -648,8 +454,8 @@ def _run_dp_core(
 
     The :class:`KinshipDPConfig` lives entirely at the Python layer —
     ``_run_dp_core`` unpacks it into plain ``bool`` args at the
-    ``_dp_kinship`` call boundary, so the ``@njit`` kernel still sees
-    three plain bools and can't fragment its dispatch.
+    ``_dp_kinship`` call boundary. Candidate capture is a separate internal
+    mode whose four arrays must be supplied together.
 
     ``grow_stats`` and ``initial_buffer_override`` are bench-only
     knobs — production callers leave them at ``None``.
@@ -684,6 +490,33 @@ def _run_dp_core(
         labels = permuted_depth if labels is depth else topo.gather(labels)
         depth = permuted_depth
 
+    candidate_args = (candidate_indptr, candidate_indices, candidate_positions, candidate_data)
+    provided_candidate_args = sum(value is not None for value in candidate_args)
+    if provided_candidate_args not in (0, len(candidate_args)):
+        raise ValueError("candidate capture requires indptr, indices, positions, and data together")
+    capture_candidates = provided_candidate_args == len(candidate_args)
+    if capture_candidates:
+        assert candidate_indptr is not None
+        assert candidate_indices is not None
+        assert candidate_positions is not None
+        assert candidate_data is not None
+        candidate_indptr = np.ascontiguousarray(candidate_indptr, dtype=np.int32)
+        candidate_indices = np.ascontiguousarray(candidate_indices, dtype=np.int32)
+        candidate_positions = np.ascontiguousarray(candidate_positions, dtype=np.int32)
+        if (
+            candidate_data.dtype != np.float32
+            or not candidate_data.flags.c_contiguous
+            or not candidate_data.flags.writeable
+        ):
+            raise ValueError("candidate_data must be a writeable contiguous float32 array")
+    else:
+        # Capture branches do not read placeholders. Keep one stable array type
+        # without allocating an otherwise-unused O(n) indptr.
+        candidate_indptr = np.zeros(1, dtype=np.int32)
+        candidate_indices = np.empty(0, dtype=np.int32)
+        candidate_positions = np.empty(0, dtype=np.int32)
+        candidate_data = np.empty(0, dtype=np.float32)
+
     if grow_stats is None:
         grow_stats = np.zeros(3, dtype=np.int64)
     override = np.int64(initial_buffer_override or 0)
@@ -701,6 +534,11 @@ def _run_dp_core(
         bool(config.debug_asserts),
         grow_stats,
         override,
+        capture_candidates,
+        candidate_indptr,
+        candidate_indices,
+        candidate_positions,
+        candidate_data,
     )
     return DPResult(
         cols=cols,
@@ -756,7 +594,16 @@ def _build_kinship_csc(
         init_cap_per_row,
         config=_DP_CONFIG_CSC,
     )
-    indptr, indices, values = _assemble_csc(r.cols, r.vals, r.row_start, r.row_count)
+    try:
+        indptr, indices, values = _assemble_csc(r.cols, r.vals, r.row_start, r.row_count)
+    except OverflowError as exc:
+        nnz = int(np.sum(r.row_count, dtype=np.int64))
+        raise ResourceError(
+            "csc_index_overflow",
+            "kinship matrix nnz exceeds the int32 CSC index range",
+            nnz=nnz,
+            maximum=int(np.iinfo(np.int32).max),
+        ) from exc
     if r.order is None:
         return indptr, indices, values
 
@@ -769,6 +616,40 @@ def _build_kinship_csc(
     k_caller = k_sorted[inv][:, inv].tocsc()
     k_caller.sort_indices()
     return k_caller.indptr, k_caller.indices, k_caller.data
+
+
+def _fill_candidate_kinship_values(
+    n: int,
+    m_idx: np.ndarray,
+    f_idx: np.ndarray,
+    tw_idx: np.ndarray,
+    depth: np.ndarray,
+    candidate_indptr: np.ndarray,
+    candidate_indices: np.ndarray,
+    candidate_positions: np.ndarray,
+    candidate_data: np.ndarray,
+) -> None:
+    """Fill topology-space candidate positions using the complete retiring DP.
+
+    The candidate CSC stores only its upper triangle: column ``j`` contains
+    candidate rows ``k <= j`` in stable depth-major space, while its data holds
+    positions in the caller's full-symmetric output CSC. The DP keeps complete
+    exact live rows, writes matching candidates, and retires rows normally.
+    """
+    _run_dp_core(
+        n,
+        m_idx,
+        f_idx,
+        tw_idx,
+        depth,
+        0.0,
+        None,
+        config=KinshipDPConfig(retire=True, lazy=True, debug_asserts=False),
+        candidate_indptr=candidate_indptr,
+        candidate_indices=candidate_indices,
+        candidate_positions=candidate_positions,
+        candidate_data=candidate_data,
+    )
 
 
 @njit(cache=True)

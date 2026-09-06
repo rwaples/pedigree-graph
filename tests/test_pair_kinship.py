@@ -15,6 +15,7 @@ from types import MappingProxyType
 
 import numpy as np
 import pytest
+import scipy.sparse as sp
 from conftest import kernel_inputs, parity_columns, parity_fixtures
 from test_pedigree_graph import (
     _ped_double_first_cousins,
@@ -466,3 +467,17 @@ def test_random_30k_integration():
     rows = np.arange(graph.n_individuals)
     self_kinship = graph.pair_kinship(rows, rows).astype(np.float64)
     assert np.abs(2.0 * self_kinship - 1.0 - graph.compute_inbreeding()).max() <= 2.0**-22
+
+    # Slice 5b gate: the public relationship-limited matrix uses these same
+    # closest-category blocks plus the diagonal and preserves pair bits.
+    matrix = graph.relationship_kinship_matrix(max_degree=3)
+    assert isinstance(matrix, sp.csc_matrix)
+    assert matrix.nnz == graph.n_individuals + 2 * sum(len(block) for block in pairs.values())
+    assert matrix.data.dtype == np.float32
+    assert matrix.indices.dtype == matrix.indptr.dtype == np.int32
+    assert matrix.has_sorted_indices
+    assert not matrix.data.flags.writeable
+    for code, block in pairs.items():
+        if len(block):
+            matrix_values = np.asarray(matrix[block.first_rows, block.second_rows], dtype=np.float32).ravel()
+            assert matrix_values.tobytes() == values[code].tobytes(), code

@@ -158,8 +158,8 @@ def _id_key(first: int, second: int) -> tuple[int, int]:
     return (first, second) if first <= second else (second, first)
 
 
-def _matrix_by_id(graph: PedigreeGraph, ids: np.ndarray, min_kinship: float) -> dict[tuple[int, int], float]:
-    K = graph.kinship_matrix(min_kinship).tocoo()
+def _matrix_by_id(matrix, ids: np.ndarray) -> dict[tuple[int, int], float]:
+    K = matrix.tocoo()
     keep = K.row <= K.col
     rows, cols, values = ids[K.row[keep]].tolist(), ids[K.col[keep]].tolist(), K.data[keep].tolist()
     return {_id_key(a, b): value for a, b, value in zip(rows, cols, values, strict=True)}
@@ -209,8 +209,9 @@ def _assert_theta_matches(expected: np.ndarray, actual: np.ndarray, label: str) 
 
 
 APPROX_THRESHOLD = 0.001
-# Fraction of the propagated support allowed to move under a permutation; see
-# _assert_approximate_matrix.  0.055% is the worst observed on this corpus.
+# Fraction of the propagation-pruned support allowed to move under a
+# permutation; see _assert_approximate_matrix.  0.055% is the worst observed
+# on this corpus. Retained values are independently corrected after selection.
 APPROX_SUPPORT_DRIFT = 0.005
 
 NE_ATOL = 1e-12
@@ -233,31 +234,25 @@ NE_RTOL_BY_ESTIMATOR = {
 
 
 def _assert_approximate_matrix(reference: _Snapshot, actual: _Snapshot, label: str) -> float:
-    """Compare the propagated ``min_kinship`` matrix; return the worst deviation.
+    """Compare corrected values on propagation-pruned support across row orders.
 
-    This matrix is approximate by construction.  ADR 0005: the DP drops an
-    intermediate at ``val <= min_kinship`` and the loss propagates, so it is not
-    a final-value filter.  ADR 0009 breaks depth ties by row index, so two row
-    orders peel a same-depth pair through differently-pruned parents.  The
-    envelope that governs the complete matrix therefore does not apply here.
-
-    What does hold, and is asserted:
-
-    * pruning never invents a pair, and never returns a value above the same
-      graph's complete matrix (measured: exactly 0 overstatements);
-    * the two orders agree on all but a small fraction of the support
-      (measured worst: 163 of 298,217 on random_1k);
-    * a dropped intermediate is worth at most ``min_kinship`` and is halved at
-      every further meiosis, so retained values agree to within twice the
-      threshold (measured worst: 9.77e-4 at a 1e-3 threshold).
+    The support remains approximate: pruning an intermediate at
+    ``val <= min_propagated_kinship`` can admit or omit a pair relative to a
+    final pedigree-expected-value cutoff, and the row tie-break can move that
+    support under permutation.  Values are no longer propagated
+    approximations.  Every retained value must equal the same graph's complete
+    matrix bit, and values on support shared by two row orders obey ADR 0009's
+    ordinary cross-order recurrence envelope.
     """
     for snapshot, which in ((reference, "reference"), (actual, "permuted")):
         complete = snapshot.complete_kinship
         assert set(snapshot.approx_kinship) <= set(complete), f"{label}: {which} support is not a subset"
-        overstated = [
-            key for key, value in snapshot.approx_kinship.items() if np.float32(value) > np.float32(complete[key])
+        differing = [
+            key
+            for key, value in snapshot.approx_kinship.items()
+            if np.float32(value).tobytes() != np.float32(complete[key]).tobytes()
         ]
-        assert not overstated, f"{label}: {which} propagated value above the complete matrix at {overstated[:3]}"
+        assert not differing, f"{label}: {which} retained values are not pedigree-expected at {differing[:3]}"
 
     moved = set(reference.approx_kinship) ^ set(actual.approx_kinship)
     assert len(moved) <= APPROX_SUPPORT_DRIFT * len(reference.approx_kinship), (
@@ -266,9 +261,17 @@ def _assert_approximate_matrix(reference: _Snapshot, actual: _Snapshot, label: s
     shared = set(reference.approx_kinship) & set(actual.approx_kinship)
     if not shared:
         return 0.0
-    deviation = max(abs(float(reference.approx_kinship[key]) - float(actual.approx_kinship[key])) for key in shared)
-    assert deviation <= 2 * APPROX_THRESHOLD, f"{label}: retained values differ by {deviation:.3e}"
-    return deviation
+    keys = list(shared)
+    want = np.array([reference.approx_kinship[key] for key in keys], dtype=np.float32)
+    got = np.array([actual.approx_kinship[key] for key in keys], dtype=np.float32)
+    depth = reference.depth_by_id
+    tolerance = np.array(
+        [2.0 * (depth[first] + depth[second] + 1) * 2.0**-25 for first, second in keys],
+        dtype=np.float64,
+    )
+    deviation = np.abs(want.astype(np.float64) - got.astype(np.float64))
+    assert np.all(deviation <= tolerance), f"{label}: retained values exceed the ADR 0009 envelope"
+    return float(deviation.max())
 
 
 def _numeric_equal(expected, actual, path: str, rtol: float = NE_RTOL) -> None:
@@ -346,8 +349,10 @@ class _Snapshot:
         self.count_pairs_streaming = graph.count_pairs_streaming(max_degree=MAX_DEGREE)
         self.count_pairs_bfs = count_pairs_bfs(graph, max_degree=MAX_DEGREE)
 
-        self.complete_kinship = _matrix_by_id(graph, ids, 0.0)
-        self.approx_kinship = _matrix_by_id(graph, ids, APPROX_THRESHOLD)
+        self.complete_kinship = _matrix_by_id(graph.kinship_matrix(), ids)
+        self.approx_kinship = _matrix_by_id(
+            graph.approximate_kinship_matrix(min_propagated_kinship=APPROX_THRESHOLD), ids
+        )
         self.theta = np.asarray(graph.per_gen_mean_kinship())
 
         self.generation_interval = graph.generation_interval

@@ -1,7 +1,9 @@
 """pedigree-graph: sparse-matrix-based pedigree relationship extraction.
 
 Public API:
-    PedigreeGraph        — parent→child DAG with relationship extraction
+    PedigreeGraph        — parent→child DAG with relationship extraction,
+        pair kinship, and complete / relationship-limited /
+        approximate-support kinship matrices
     RELATIONSHIPS        — immutable ordered registry of the 23 relationship
         categories; iteration order is the same-degree precedence for
         closest-category classification
@@ -22,8 +24,8 @@ Public API:
         was floored at 0; that 0 is not a true absence)
     PedigreeView         — ordered view of a graph's rows, built with
         graph.view(ids=...) or graph.view(rows=...); exposes read-only ids,
-        graph_rows, n_individuals, len, and relationship_pairs /
-        relationship_counts in view rows
+        graph_rows, n_individuals, len, relationship_pairs /
+        relationship_counts, and pair_kinship in view rows
 
 0.7.1 compatibility (removed in 0.8.0) — detached snapshots of the registry,
 so mutating them changes nothing the engines read:

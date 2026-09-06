@@ -253,6 +253,11 @@ def test_dp_kinship_row_start_is_int64():
         False,
         np.zeros(3, dtype=np.int64),
         np.int64(0),
+        False,
+        np.zeros(n + 1, dtype=np.int32),
+        np.empty(0, dtype=np.int32),
+        np.empty(0, dtype=np.int32),
+        np.empty(0, dtype=np.float32),
     )
     assert row_start.dtype == np.int64
     # Founder rows start at i * init_cap; the merge walk may relocate

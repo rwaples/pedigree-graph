@@ -6,6 +6,29 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: three explicit kinship-matrix families** (ADR 0006, ADR 0009,
+  slice 5b). `kinship_matrix()` is complete;
+  `relationship_kinship_matrix(max_degree=...)` or `(categories=...)` contains
+  exactly the selected closest-category pairs plus the diagonal; and
+  `approximate_kinship_matrix(min_propagated_kinship=0.001)` preserves the
+  0.7.1 propagation-pruned candidate support plus the diagonal. The approximate
+  threshold applies to intermediate propagation values, is not a final-value
+  cutoff, and can admit or omit pairs relative to thresholding
+  pedigree-expected coefficients. Every retained value in every family is now
+  the pinned float32 recurrence and is bit-identical to `pair_kinship`; the
+  approximate family discards the old propagated values after selecting their
+  support and captures exact candidate coefficients during one complete
+  retiring-DP pass; sparse relationship support uses deterministic bounded pair
+  chunks. All matrices
+  are cached by operation and selector and return CSC with float32 data, int32
+  indices/indptr, sorted rows, and read-only arrays. A zero approximate
+  threshold delegates to the complete matrix; non-finite or out-of-range
+  thresholds are `ValueError`. The 0.7.1 overloaded
+  `kinship_matrix(min_kinship=..., max_degree=...)` remains temporarily, routing
+  positive resolved thresholds to the approximate-support family rather than
+  describing propagation pruning as exact relationship support. Profiling and
+  the runtime/memory decision are recorded in `benchmarks/matrix_exactification.md`.
+
 - **Added: `PedigreeGraph.pair_kinship` and `PedigreeView.pair_kinship`**
   (ADR 0006, ADR 0009, slice 5a).  Three call forms:
   `pair_kinship(first_rows, second_rows)` for any pairs, self pairs included;

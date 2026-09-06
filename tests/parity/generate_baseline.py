@@ -24,6 +24,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 import numpy as np
 
@@ -94,8 +98,19 @@ def _subsample_frames(fx, keep, depth):
     return full, sub
 
 
-def _capture(pg_mod, fx: dict[str, np.ndarray], *, full_arrays: bool) -> tuple[dict, dict]:
-    """Return ``(arrays, summary)``; ``arrays`` is empty when ``full_arrays`` is False."""
+def _capture(
+    pg_mod,
+    fx: dict[str, np.ndarray],
+    *,
+    full_arrays: bool,
+    approximate_matrix: Callable | None = None,
+) -> tuple[dict, dict]:
+    """Return ``(arrays, summary)``; ``arrays`` is empty when ``full_arrays`` is False.
+
+    ``approximate_matrix`` lets the large differential test isolate frozen
+    support parity; the separate 30k matrix integration test runs the complete
+    public exact-value path.
+    """
     arrays: dict[str, np.ndarray] = {}
     summary: dict = {"n": len(fx["ids"]), "counts": {}, "hashes": {}}
     g = _build(pg_mod, fx)
@@ -136,7 +151,10 @@ def _capture(pg_mod, fx: dict[str, np.ndarray], *, full_arrays: bool) -> tuple[d
         if full_arrays:
             arrays[name] = arr
 
-    r, c, v = _upper_coo(g.kinship_matrix(min_kinship=APPROX_THRESHOLD))
+    approximate = (
+        g.kinship_matrix(min_kinship=APPROX_THRESHOLD) if approximate_matrix is None else approximate_matrix(g)
+    )
+    r, c, v = _upper_coo(approximate)
     summary["counts"]["approx_support_upper_nnz"] = len(r)
     summary["hashes"]["approx_support"] = _sha(r, c)
     summary["hashes"]["approx_values"] = _sha(v)

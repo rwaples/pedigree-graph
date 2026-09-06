@@ -37,10 +37,10 @@ from pedigree_graph._input import (
     parse_pedigree_input,
 )
 from pedigree_graph._kinship_kernel import (
-    _build_kinship_csc,
     _compute_F_meuwissen_luo,
     _compute_theta_per_gen,
 )
+from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
 from pedigree_graph._kinship_pairwise import graph_pair_kinship, view_pair_kinship
 from pedigree_graph._lineage_kernel import (
     _compute_n_ancestors,
@@ -104,7 +104,7 @@ def _known_parent_edges(
     return edge_rows[both_known], (by_child[both_known] - by_parent[both_known]).astype(np.int32)
 
 
-class PedigreeGraph(PedigreeProperties):
+class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     """Parent→child DAG for efficient relationship queries.
 
     Each individual is a vertex whose index equals its row index in the
@@ -159,8 +159,16 @@ class PedigreeGraph(PedigreeProperties):
 
         self._legacy_view: PedigreeView | None = None  # 0.8.0-DELETE: set only by from_subsample.
 
-        # Lazy kinship cache — populated by kinship_matrix(); keyed by
-        # the resolved min_kinship threshold.
+        # Matrix caches are separated by operation and selector: complete,
+        # closest-category, and propagation-pruned support are distinct
+        # contracts even when two calls happen to produce the same structure.
+        self._complete_kinship_cache: sp.csc_matrix | None = None
+        self._relationship_kinship_cache: dict[tuple[str, object], sp.csc_matrix] = {}
+        self._approximate_kinship_cache: dict[float, sp.csc_matrix] = {}
+        # 0.8.0-DELETE: the generation-summary adapter consults the old
+        # threshold-keyed cache.  Only the complete matrix is entered here;
+        # corrected approximate-support values must not silently change the
+        # old per_gen_mean_kinship(min_kinship>0) calculation.
         self._kinship_cache: dict[float, sp.csc_matrix] = {}
         # Lazy per-generation mean kinship cache — populated by
         # per_gen_mean_kinship(); keyed by min_kinship so callers using a
@@ -937,59 +945,6 @@ class PedigreeGraph(PedigreeProperties):
     # ------------------------------------------------------------------
     # Sparse kinship, inbreeding, and exact pair kinship
     # ------------------------------------------------------------------
-
-    def kinship_matrix(
-        self,
-        min_kinship: float = 0.0,
-        max_degree: int | None = None,
-    ) -> sp.csc_matrix:
-        """Build and cache the full-symmetric sparse kinship matrix (φ-scale).
-
-        Diagonal is ``(1 + F_i) / 2``; MZ off-diagonals are set to the
-        corresponding twin's self-kinship (= 0.5 without inbreeding).
-
-        Args:
-            min_kinship: kernel-side pruning threshold.  Off-diagonal
-                entries with ``value <= min_kinship`` are dropped during
-                DP propagation.  Diagonal always kept.
-            max_degree: convenience shortcut for ``min_kinship``.  Sets
-                the threshold to ``0.5 ** (max_degree + 1) - 1e-9`` so
-                that the boundary kinship (e.g. 1/16 at degree 3) is
-                retained.  The stricter of the two applies.
-
-        Returns:
-            ``scipy.sparse.csc_matrix`` cached under the resolved
-            ``min_kinship`` in ``self._kinship_cache``.
-        """
-        if max_degree is not None:
-            deg_threshold = 0.5 ** (max_degree + 1) - 1e-9
-            min_kinship = max(min_kinship, deg_threshold)
-
-        key = float(min_kinship)
-        cached = self._kinship_cache.get(key)
-        if cached is not None:
-            return cached
-
-        t0 = time.perf_counter()
-        indptr, indices, data = _build_kinship_csc(
-            self.n,
-            self.mother,
-            self.father,
-            self.twin,
-            self.depth,
-            min_kinship,
-        )
-        K = sp.csc_matrix((data, indices, indptr), shape=(self.n, self.n))
-        self._kinship_cache[key] = K
-
-        logger.info(
-            "kinship_matrix: n=%d, nnz=%d, min_kinship=%.4g, %.2fs",
-            self.n,
-            K.nnz,
-            min_kinship,
-            time.perf_counter() - t0,
-        )
-        return K
 
     def per_gen_mean_kinship(self, min_kinship: float = 0.0) -> np.ndarray:
         """Per-generation mean kinship θ̄_g, computed without building K.
