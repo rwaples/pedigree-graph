@@ -6,6 +6,22 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `distinct_ancestor_counts()`, `descendant_path_counts()`, and
+  `connected_component_ids()`** (ADR 0006, slice 6b).  The names carry the
+  semantics: distinct ancestors count a looped ancestor once (read-only
+  int32); descendant paths count a looped descendant once per path
+  (read-only int64, so no int32 overflow error on this surface); component
+  ids are input-row aligned int64 values, each the smallest original ID in
+  the row's *represented* parent-edge component.  External or missing
+  parents add no edge, so two rows naming the same external parent stay
+  apart, and MZ co-twins join only through their parents.  All three are
+  computed once per graph.  `compute_n_ancestors()` and
+  `compute_n_descendants()` are now `# 0.8.0-DELETE` adapters returning the
+  same values as the 0.7.1 writeable int32 arrays, the descendant adapter
+  keeping its `arithmetic_overflow` error.  The component values equal
+  fitACE's current `founder_family_ids` construction on every fixture, the
+  target for that consumer's migration.
+
 - **Added: `PedigreeGraph.mean_kinship_by_generation()`** (ADR 0006, slice 6a).
   Returns a frozen `pedigree_graph.summaries.GenerationKinshipSummary` with
   read-only `generations` (int32, ascending, observed labels only),

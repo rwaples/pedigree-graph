@@ -18,10 +18,11 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from pedigree_graph._errors import PedigreeValidationError
+from pedigree_graph._errors import PedigreeValidationError, ResourceError
 from pedigree_graph._frames import _coerce_to_array_dict
 from pedigree_graph._input import validate_id_field
 from pedigree_graph._kinship_kernel import _compute_theta_per_gen, _scatter_summary
+from pedigree_graph._lineage import descendant_path_counts, distinct_ancestor_counts
 from pedigree_graph._ne_common import _require_complete_generation_labels
 from pedigree_graph._ne_rates import _generation_kinship_summary, _per_gen_mean_kinship
 from pedigree_graph._pair_extractor import MatrixPairExtractor
@@ -246,3 +247,43 @@ def legacy_per_gen_mean_kinship(pg: PedigreeGraph, min_kinship: float) -> np.nda
         )
     pg._theta_per_gen_cache[key] = theta
     return theta
+
+
+def legacy_n_ancestors(pg: PedigreeGraph) -> np.ndarray:
+    """Return the 0.7.1 ``compute_n_ancestors`` array.
+
+    The same distinct counts as :meth:`PedigreeGraph.distinct_ancestor_counts`,
+    as a writeable int32 array cached on the graph, so repeated calls return
+    the same object as 0.7.1 did.
+    """
+    if pg._n_ancestors is None:
+        pg._n_ancestors = distinct_ancestor_counts(pg).copy()
+    return pg._n_ancestors
+
+
+def legacy_n_descendants(pg: PedigreeGraph) -> np.ndarray:
+    """Return the 0.7.1 ``compute_n_descendants`` array.
+
+    The same path counts as :meth:`PedigreeGraph.descendant_path_counts`,
+    cast to int32 after the 0.7.1 bounds check, so a loop-heavy pedigree
+    raises ``arithmetic_overflow`` rather than wrapping.  Cached on the graph
+    as a writeable array.
+
+    Raises:
+        ResourceError: ``arithmetic_overflow`` when any count exceeds
+            ``np.iinfo(np.int32).max``.
+    """
+    if pg._n_descendants is None:
+        counts = descendant_path_counts(pg)
+        if counts.size and int(counts.max()) > np.iinfo(np.int32).max:
+            raise ResourceError(
+                "arithmetic_overflow",
+                "compute_n_descendants: at least one path count exceeds "
+                f"int32 max ({np.iinfo(np.int32).max:,}); the pedigree is "
+                "too inbred / loop-heavy for the int32-cached output.  "
+                "Use PedigreeGraph.descendant_path_counts() for the int64 counts.",
+                operation="compute_n_descendants",
+                dtype="int32",
+            )
+        pg._n_descendants = counts.astype(np.int32)
+    return pg._n_descendants

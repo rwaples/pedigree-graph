@@ -104,9 +104,9 @@ def test_overflow_raises(monkeypatch):
         out[0] = over
         return out
 
-    import pedigree_graph._core as core
+    import pedigree_graph._lineage as lineage
 
-    monkeypatch.setattr(core, "_compute_n_descendants", fake_kernel)
+    monkeypatch.setattr(lineage, "_compute_n_descendants", fake_kernel)
     with pytest.raises(ResourceError) as info:
         pg.compute_n_descendants()
     assert info.value.code == "arithmetic_overflow"
@@ -124,9 +124,9 @@ def test_no_overflow_at_int32_max(monkeypatch):
         out[0] = boundary
         return out
 
-    import pedigree_graph._core as core
+    import pedigree_graph._lineage as lineage
 
-    monkeypatch.setattr(core, "_compute_n_descendants", fake_kernel)
+    monkeypatch.setattr(lineage, "_compute_n_descendants", fake_kernel)
     result = pg.compute_n_descendants()
     assert result.dtype == np.int32
     assert int(result[0]) == boundary

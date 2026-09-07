@@ -318,6 +318,9 @@ class _Snapshot:
         self.by_id = {
             "generation": dict(self.depth_by_id),
             "n_ancestors": dict(zip(id_list, np.asarray(graph.compute_n_ancestors()).tolist(), strict=True)),
+            "distinct_ancestor_counts": dict(zip(id_list, graph.distinct_ancestor_counts().tolist(), strict=True)),
+            "descendant_path_counts": dict(zip(id_list, graph.descendant_path_counts().tolist(), strict=True)),
+            "connected_component_ids": dict(zip(id_list, graph.connected_component_ids().tolist(), strict=True)),
             "inbreeding": dict(zip(id_list, np.asarray(graph.inbreeding()).tolist(), strict=True)),
         }
         self.n_descendants_overflow = False

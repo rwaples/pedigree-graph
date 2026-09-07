@@ -29,8 +29,10 @@ from pedigree_graph._compat import from_subsample as _from_subsample
 from pedigree_graph._compat import legacy_count_pairs as _legacy_count_pairs
 from pedigree_graph._compat import legacy_count_pairs_streaming as _legacy_count_pairs_streaming
 from pedigree_graph._compat import legacy_extract_pairs as _legacy_extract_pairs
+from pedigree_graph._compat import legacy_n_ancestors as _legacy_n_ancestors
+from pedigree_graph._compat import legacy_n_descendants as _legacy_n_descendants
 from pedigree_graph._compat import legacy_per_gen_mean_kinship as _legacy_per_gen_mean_kinship
-from pedigree_graph._errors import PedigreeValidationError, ResourceError
+from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._frames import FrameLike
 from pedigree_graph._input import (
     parse_pedigree_arrays,
@@ -41,10 +43,9 @@ from pedigree_graph._kinship_kernel import (
 )
 from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
 from pedigree_graph._kinship_pairwise import _MEMO_RETAIN_LIMIT, graph_pair_kinship, view_pair_kinship
-from pedigree_graph._lineage_kernel import (
-    _compute_n_ancestors,
-    _compute_n_descendants,
-)
+from pedigree_graph._lineage import connected_component_ids as _connected_component_ids
+from pedigree_graph._lineage import descendant_path_counts as _descendant_path_counts
+from pedigree_graph._lineage import distinct_ancestor_counts as _distinct_ancestor_counts
 from pedigree_graph._ne_rates import _generation_kinship_summary
 from pedigree_graph._pair_extractor import relationship_pairs as _relationship_pairs
 from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
@@ -192,8 +193,11 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         # Keyed by max_degree; a hit is silent even if the entry clamped.
         self._estimate_cache: dict[int, CachedEstimate] = {}
         self._inbreeding: np.ndarray | None = None
-        # Lazy lineage caches populated by compute_n_ancestors() and
-        # compute_n_descendants().
+        # Lineage memos (_lineage.py); the two 0.8.0-DELETE adapters keep
+        # their own int32 copies.
+        self._distinct_ancestor_counts: np.ndarray | None = None
+        self._descendant_path_counts: np.ndarray | None = None
+        self._connected_component_ids: np.ndarray | None = None
         self._n_ancestors: np.ndarray | None = None
         self._n_descendants: np.ndarray | None = None
         # Lazy cache of known-parent edge filters, keyed "mother"/"father"
@@ -1070,67 +1074,71 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         """
         return self._inbreeding_values()
 
-    def compute_n_descendants(self) -> np.ndarray:
-        """Per-individual descendant count, **path-count semantics**.
+    def distinct_ancestor_counts(self) -> np.ndarray:
+        """Return the number of distinct strict ancestors of every row.
 
-        ``n_desc[v]`` counts (v, w) walks down the DAG, not unique
-        descendants.  Equivalent to unique counts in non-inbred
-        pedigrees; over-counts by the inbreeding rate where marriage
-        loops give a descendant multiple ancestor paths to v.  Matches
-        the convention used for GP / Av / 1C pair counts.
+        An ancestor reachable through several paths, as marriage loops
+        create, is counted once.  A missing or external parent contributes
+        nothing.  Computed once and memoised; the call commits the package
+        thread budget (:func:`~pedigree_graph.configure_threads`) like every
+        0.8 operation.
 
-        Returns an ``int32`` array of length ``self.n``, cached on the
-        graph (``self._n_descendants``).
-
-        Raises:
-            ResourceError: ``arithmetic_overflow`` if any per-individual path
-                count exceeds ``np.iinfo(np.int32).max``.  The kernel accumulates in
-                ``int64``; the cast to ``int32`` happens here after a
-                bounds check so deeply inbred / loop-heavy pedigrees
-                cannot silently wrap.
+        Returns:
+            A read-only int32 array of length ``n_individuals``, in graph rows.
         """
-        if self._n_descendants is None:
-            if self._rows_are_topological:
-                n_desc64 = _compute_n_descendants(self.mother, self.father, self.n)
-            else:
-                m_idx, f_idx, _ = self._topological_parents
-                n_desc64 = self._topology.per_row_to_graph(_compute_n_descendants(m_idx, f_idx, self.n))
-            if n_desc64.size and int(n_desc64.max()) > np.iinfo(np.int32).max:
-                raise ResourceError(
-                    "arithmetic_overflow",
-                    "compute_n_descendants: at least one path count exceeds "
-                    f"int32 max ({np.iinfo(np.int32).max:,}); the pedigree is "
-                    "too inbred / loop-heavy for the int32-cached output.  "
-                    "Inspect the int64 kernel output via "
-                    "pedigree_graph._lineage_kernel._compute_n_descendants "
-                    "if larger values are required.",
-                    operation="compute_n_descendants",
-                    dtype="int32",
-                )
-            self._n_descendants = n_desc64.astype(np.int32)
-        return self._n_descendants
+        thread_budget()
+        return _distinct_ancestor_counts(self)
+
+    def descendant_path_counts(self) -> np.ndarray:
+        """Return the number of descendant *paths* from every row.
+
+        ``counts[v]`` is the number of walks down the pedigree from ``v``:
+        its children plus the path counts of those children.  This equals
+        the number of distinct descendants in a pedigree without marriage
+        loops and exceeds it where a descendant reaches ``v`` through more
+        than one child, which is why the name says *paths*; contrast
+        :meth:`distinct_ancestor_counts`.  Computed once and memoised; the
+        call commits the package thread budget like every 0.8 operation.
+
+        Returns:
+            A read-only int64 array of length ``n_individuals``, in graph rows.
+        """
+        thread_budget()
+        return _descendant_path_counts(self)
+
+    def connected_component_ids(self) -> np.ndarray:
+        """Return, for every row, the smallest ID in its parent-edge component.
+
+        Two rows share a value exactly when a chain of represented
+        parent-child edges joins them.  External or missing parents add no
+        edge, so two rows naming the same external parent are in different
+        components, and MZ co-twins are joined only through their parents.
+        The value is the minimum :attr:`ids` over the component, so it does
+        not depend on row order.  Computed once and memoised; the call
+        commits the package thread budget like every 0.8 operation.
+
+        Returns:
+            A read-only int64 array of length ``n_individuals``, in graph rows.
+        """
+        thread_budget()
+        return _connected_component_ids(self)
+
+    def compute_n_descendants(self) -> np.ndarray:
+        """0.8.0-DELETE: :meth:`descendant_path_counts` as the 0.7.1 int32 array.
+
+        See :func:`pedigree_graph._compat.legacy_n_descendants`: the same path
+        counts, cast to int32 behind the ``arithmetic_overflow``
+        :class:`ResourceError`, cached on the graph as a writeable array.
+        """
+        return _legacy_n_descendants(self)
 
     def compute_n_ancestors(self) -> np.ndarray:
-        """Per-individual distinct strict-ancestor count.
+        """0.8.0-DELETE: :meth:`distinct_ancestor_counts` as the 0.7.1 array.
 
-        ``n_anc[v]`` is the number of unique ancestors of v — an
-        ancestor reachable through multiple paths (loops introduced by
-        inbreeding) is counted once, contrasting with the path-count
-        semantics of :meth:`compute_n_descendants`.
-
-        Returns an ``int32`` array of length ``self.n``, cached on the
-        graph (``self._n_ancestors``).  Backed by a sparse boolean
-        transitive closure of the parent graph; memory scales with
-        ``sum_i n_anc[i]``, so very deep / very large pedigrees may
-        need a future retirement-style DP variant.
+        See :func:`pedigree_graph._compat.legacy_n_ancestors`: the same int32
+        counts, cached on the graph as a writeable array.
         """
-        if self._n_ancestors is None:
-            self._n_ancestors = _compute_n_ancestors(
-                self.mother,
-                self.father,
-                self.n,
-            )
-        return self._n_ancestors
+        return _legacy_n_ancestors(self)
 
     @overload
     def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...
