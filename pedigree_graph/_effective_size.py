@@ -165,7 +165,7 @@ def compute_all_ne(
     if n_threads < 1:
         raise ValueError("n_threads must be >= 1")
 
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
     founder_idx = _founder_idx(pg)
     ltc_means = _per_gen_founder_means(pg, founder_idx=founder_idx)
     ct_acc = _caballero_toro_accumulators(pg, founder_idx, F)

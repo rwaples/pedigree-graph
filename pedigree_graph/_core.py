@@ -51,7 +51,8 @@ from pedigree_graph._pair_extractor import relationship_pairs as _relationship_p
 from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
 from pedigree_graph._properties import PedigreeProperties
 from pedigree_graph._streaming_counter import estimate_relationship_counts as _estimate_relationship_counts
-from pedigree_graph._topology import build_topology
+from pedigree_graph._threads import thread_budget
+from pedigree_graph._topology import build_topology, readonly
 from pedigree_graph._view import CoordinateToken, _build_view
 from pedigree_graph.relationships import RelationshipCountResult
 
@@ -1012,24 +1013,47 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         )
         return theta
 
-    def compute_inbreeding(self) -> np.ndarray:
-        """Return the inbreeding coefficient *F* per individual.
+    def inbreeding(self) -> np.ndarray:
+        """Return the inbreeding coefficient *F* of every individual, in graph rows.
 
-        Computed via Meuwissen & Luo (1992) ancestor-walking on the LDL'
-        decomposition of the numerator relationship matrix, over the
-        genome-node pedigree in which MZ co-twins share one node (ADR 0008).
-        MZ-aware: equals ``2 * phi(i, i) - 1`` from :meth:`compute_pair_kinship`
-        and from the :meth:`kinship_matrix` diagonal.  Result is cached on the
-        graph (``self._inbreeding``).  Construction has already established the
-        MZ pair contract, so no co-twin reference reaching here is self-directed,
-        non-reciprocal, or parent-mismatched.
+        The values are the Meuwissen-Luo ancestor walk of ADR 0008, run over the
+        genome-node pedigree: MZ co-twins share the genome node of the lower row, a
+        parent step follows the parent's canonical genome node rather than the parent
+        row, and a non-canonical twin row copies its node's ``F`` and Mendelian
+        sampling variance ``D``.  The walk is therefore MZ-aware, and
+        ``F_i = 2 * phi(i, i) - 1`` is a tested invariant against the
+        :meth:`pair_kinship` self pair and the :meth:`kinship_matrix` diagonal of the
+        same row; the walk itself materialises no kinship.  The array is computed
+        once and memoised, so every later call hands back the same frozen object.
+        This operation is intentionally full-graph-only: ADR 0006 keeps inbreeding
+        off views until a view contract for it is scientifically pinned.  The
+        computing call commits the package thread budget
+        (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation; a memo
+        hit does not.
+
+        Returns:
+            A read-only float64 array of length ``n_individuals``, one entry per
+            graph row.
         """
         if self._inbreeding is None:
+            thread_budget()
             topo = self._topology
             m_idx, f_idx, tw_idx = self._topological_parents
             F = _compute_F_meuwissen_luo(m_idx, f_idx, tw_idx, topo.gather(topo.depth), self.n)
-            self._inbreeding = topo.per_row_to_graph(F)
+            self._inbreeding = readonly(topo.per_row_to_graph(F))
         return self._inbreeding
+
+    # 0.8.0-DELETE: replaced by inbreeding (ADR 0006, ADR 0008).
+    def compute_inbreeding(self) -> np.ndarray:
+        """Return the inbreeding coefficient *F* per individual (0.7.1 form).
+
+        The 0.7.1 name and its per-graph-row float64 array are preserved; the
+        values are those of :meth:`inbreeding`, MZ-aware from 0.8 onward rather
+        than the 0.7.1 MZ-naive walk, and like every 0.8 result the array is
+        read-only.  Unlike :meth:`compute_pair_kinship`, this adapter delegates
+        straight through, so a computing call commits the package thread budget.
+        """
+        return self.inbreeding()
 
     def compute_n_descendants(self) -> np.ndarray:
         """Per-individual descendant count, **path-count semantics**.

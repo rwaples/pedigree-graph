@@ -146,7 +146,7 @@ class TestCallForms:
         graph = _sib_mating()
         rows = np.arange(graph.n_individuals)
         values = graph.pair_kinship(rows, rows).astype(np.float64)
-        np.testing.assert_array_equal(2.0 * values - 1.0, graph.compute_inbreeding())
+        np.testing.assert_array_equal(2.0 * values - 1.0, graph.inbreeding())
 
 
 class TestValues:
@@ -450,6 +450,12 @@ class TestThreads:
         configure_threads(3)
 
 
+# Closest categories spanning degrees 0-3, full and half.  A kernel call on
+# random_30k costs its ancestral closure rather than its pair count, so the
+# matrix gate selects these blocks instead of repeating the max_degree=3 walk.
+MATRIX_GATE_CATEGORIES = ("MZ", "FS", "MHS", "Av", "HAv", "1C", "H1C")
+
+
 @pytest.mark.slow
 def test_random_30k_integration():
     fixture = pedigrees.build_random("random_30k", pedigrees.LARGE_FIXTURES["random_30k"])
@@ -464,20 +470,25 @@ def test_random_30k_integration():
     block = pairs["1C"]
     assert values["1C"].tobytes() == graph.pair_kinship(block).tobytes()
     assert values["1C"].tobytes() == graph.pair_kinship(block.first_rows, block.second_rows).tobytes()
-    rows = np.arange(graph.n_individuals)
-    self_kinship = graph.pair_kinship(rows, rows).astype(np.float64)
-    assert np.abs(2.0 * self_kinship - 1.0 - graph.compute_inbreeding()).max() <= 2.0**-22
 
     # Slice 5b gate: the public relationship-limited matrix uses these same
     # closest-category blocks plus the diagonal and preserves pair bits.
-    matrix = graph.relationship_kinship_matrix(max_degree=3)
+    gate = {code: pairs[code] for code in MATRIX_GATE_CATEGORIES}
+    assert all(len(block) for block in gate.values())
+    matrix = graph.relationship_kinship_matrix(categories=MATRIX_GATE_CATEGORIES)
     assert isinstance(matrix, sp.csc_matrix)
-    assert matrix.nnz == graph.n_individuals + 2 * sum(len(block) for block in pairs.values())
+    assert matrix.nnz == graph.n_individuals + 2 * sum(len(block) for block in gate.values())
     assert matrix.data.dtype == np.float32
     assert matrix.indices.dtype == matrix.indptr.dtype == np.int32
     assert matrix.has_sorted_indices
     assert not matrix.data.flags.writeable
-    for code, block in pairs.items():
-        if len(block):
-            matrix_values = np.asarray(matrix[block.first_rows, block.second_rows], dtype=np.float32).ravel()
-            assert matrix_values.tobytes() == values[code].tobytes(), code
+    for code, block in gate.items():
+        matrix_values = np.asarray(matrix[block.first_rows, block.second_rows], dtype=np.float32).ravel()
+        assert matrix_values.tobytes() == values[code].tobytes(), code
+
+    # The diagonal is the kernel's self pair: F = 2 phi(i, i) - 1 on every row,
+    # and bit-identical to pair_kinship on the deepest rows, where the walk is longest.
+    diagonal = matrix.diagonal().astype(np.float32)
+    assert np.abs(2.0 * diagonal.astype(np.float64) - 1.0 - graph.inbreeding()).max() <= 2.0**-22
+    deepest = np.arange(graph.n_individuals)[-1000:]
+    assert graph.pair_kinship(deepest, deepest).tobytes() == diagonal[deepest].tobytes()

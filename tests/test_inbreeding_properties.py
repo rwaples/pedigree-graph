@@ -1,4 +1,4 @@
-"""Property-based tests for compute_inbreeding (Meuwissen-Luo F).
+"""Property-based tests for inbreeding (Meuwissen-Luo F).
 
 F is non-negative, agrees with the matrix-DP diagonal (no twins), and equals
 phi(mother, father) for individuals with both parents known (0 otherwise).
@@ -26,7 +26,7 @@ _FULL_SIB_MATING = (
 @_SETTINGS
 @given(pg=random_pedigree())
 def test_inbreeding_nonneg_and_matches_matrix_diagonal(pg):
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
     assert np.all(F >= -1e-12)
     K = pg.kinship_matrix(0.0)
     assert np.allclose(F, 2.0 * np.asarray(K.diagonal()) - 1.0, atol=1e-9)
@@ -38,7 +38,7 @@ def test_inbreeding_nonneg_and_matches_matrix_diagonal(pg):
 def test_inbreeding_equals_parent_kinship(arrays):
     ids, mother, father, sex = arrays
     pg = PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
 
     both = (mother != -1) & (father != -1)
     # Founders and one-parent rows have no inbreeding path.

@@ -1267,7 +1267,7 @@ class TestComputePairKinship:
         df = self._inbred_pedigree()
         pg = PedigreeGraph(df)
         pairs = pg.extract_pairs(max_degree=1)
-        F = pg.compute_inbreeding()
+        F = pg.inbreeding()
         # Twins (rows 4, 5) inbred with F = 0.25
         assert F[4] == pytest.approx(0.25)
         assert F[5] == pytest.approx(0.25)
@@ -1303,13 +1303,6 @@ class TestComputePairKinship:
         pairs = pg.extract_pairs(max_degree=2)
         for code, (idx1, idx2) in pairs.items():
             assert np.all(idx1 <= idx2), f"{code} not canonically ordered after remap"
-
-    def test_compute_inbreeding_idempotent(self):
-        df = self._inbred_pedigree()
-        pg = PedigreeGraph(df)
-        F1 = pg.compute_inbreeding()
-        F2 = pg.compute_inbreeding()
-        np.testing.assert_array_equal(F1, F2)
 
     def test_kinship_matrix_max_degree_shortcut(self):
         df = pl.DataFrame(

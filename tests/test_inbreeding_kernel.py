@@ -134,7 +134,7 @@ def test_parity_with_matrix_path_no_mz(small_pedigree):
     # MZ-coalescence cases).
     df = small_pedigree.with_columns(pl.lit(-1).cast(small_pedigree.schema["twin"]).alias("twin"))
     pg = PedigreeGraph(df)
-    F_ml = pg.compute_inbreeding()
+    F_ml = pg.inbreeding()
     K = pg.kinship_matrix(min_kinship=0.0)
     F_mat = 2.0 * K.diagonal() - 1.0
     assert np.allclose(F_ml, F_mat, atol=1e-10)
@@ -224,7 +224,7 @@ def test_mz_aware_fixtures(name, m, f, tw, expected):
 def test_mz_aware_fixtures_through_graph():
     _name, m, f, tw, expected = ADR_0008_FIXTURES[1]
     pg = PedigreeGraph(_mz_frame(list(range(len(m))), m, f, tw))
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
     K = pg.kinship_matrix(min_kinship=0.0)
     for row, value in expected.items():
         assert F[row] == pytest.approx(value)
@@ -233,7 +233,7 @@ def test_mz_aware_fixtures_through_graph():
 
 def test_parity_with_matrix_path_with_mz(small_pedigree):
     pg = PedigreeGraph(small_pedigree)
-    F_ml = pg.compute_inbreeding()
+    F_ml = pg.inbreeding()
     K = pg.kinship_matrix(min_kinship=0.0)
     assert np.allclose(F_ml, 2.0 * K.diagonal() - 1.0, atol=1e-10)
 
@@ -242,5 +242,5 @@ def test_absent_co_twin_is_not_an_mz_pair():
     # Co-twin outside the subsample remaps to -1: the row is an ordinary individual.
     full = _mz_frame([0, 1, 2, 3, 4], [-1, -1, 0, 0, 2], [-1, -1, 1, 1, 3], [-1, -1, 3, 2, -1])
     sub = full.filter(pl.col("id") != 3)
-    F = PedigreeGraph(sub).compute_inbreeding()
+    F = PedigreeGraph(sub).inbreeding()
     assert F[3] == pytest.approx(0.0)

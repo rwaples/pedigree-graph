@@ -47,7 +47,7 @@ def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False, complete=Fa
     strictly earlier rows, so parents precede children (the ``from_arrays``
     contract).  When ``non_inbred`` is set, a mate is chosen constructively
     from earlier individuals whose *closed* ancestor set (ancestors plus
-    self) is disjoint from the partner's, so ``compute_inbreeding()`` is
+    self) is disjoint from the partner's, so ``inbreeding()`` is
     all-zero by construction (no rejection loops).  When ``complete`` is set,
     every non-founder has *both* parents known (two distinct earlier rows) —
     no half-missing parentage — so founder contributions sum to 1 per cohort;
@@ -117,7 +117,7 @@ def random_pedigree(max_n=PEDIGREE_MAX_N):
 
 
 def non_inbred_pedigree(max_n=PEDIGREE_MAX_N):
-    """Strategy of ``PedigreeGraph`` whose ``compute_inbreeding()`` is all-zero."""
+    """Strategy of ``PedigreeGraph`` whose ``inbreeding()`` is all-zero."""
     return pedigree_arrays(max_n=max_n, non_inbred=True).map(_arrays_to_graph)
 
 

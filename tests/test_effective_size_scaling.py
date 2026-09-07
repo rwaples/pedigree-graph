@@ -258,7 +258,7 @@ def test_per_gen_founder_means_matches_reference(parity_pedigree: PedigreeGraph)
 def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None:
     """Streaming CT sums/counts match the dense reduction."""
     pg = parity_pedigree
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
     founder_idx = _founder_idx(pg)
 
     new = _caballero_toro_accumulators(pg, founder_idx, F)
@@ -439,7 +439,7 @@ def test_compute_theta_per_gen_debug_asserts_pass_on_well_formed_pedigree(
 def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> None:
     """End-to-end LTC and CT dataclasses match the reference path field-by-field."""
     pg = parity_pedigree
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
 
     # New path
     res_ltc_new = ne_long_term_contributions(pg)

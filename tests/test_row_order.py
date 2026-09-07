@@ -318,7 +318,7 @@ class _Snapshot:
         self.by_id = {
             "generation": dict(self.depth_by_id),
             "n_ancestors": dict(zip(id_list, np.asarray(graph.compute_n_ancestors()).tolist(), strict=True)),
-            "inbreeding": dict(zip(id_list, np.asarray(graph.compute_inbreeding()).tolist(), strict=True)),
+            "inbreeding": dict(zip(id_list, np.asarray(graph.inbreeding()).tolist(), strict=True)),
         }
         self.n_descendants_overflow = False
         try:
@@ -502,7 +502,7 @@ def test_generation_labels_do_not_drive_structure(name, labelling):
 
     assert labelled.generation.tolist() == labels.tolist()
     np.testing.assert_array_equal(labelled.depth, unlabelled.depth)
-    np.testing.assert_array_equal(labelled.compute_inbreeding(), unlabelled.compute_inbreeding())
+    np.testing.assert_array_equal(labelled.inbreeding(), unlabelled.inbreeding())
     assert _descendants_or_refusal(labelled) == _descendants_or_refusal(unlabelled)
 
     expected_pairs = unlabelled.extract_pairs(max_degree=MAX_DEGREE)

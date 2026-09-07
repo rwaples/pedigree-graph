@@ -18,6 +18,27 @@ live on the corresponding GitHub release pages.
   `fitACE` mutates a derived GRM in `fitace/kinship/grm_io.py`, on a branch
   reachable only for one-triangle input, which pedigree-graph never returns.
 
+- **Added: `PedigreeGraph.inbreeding()`** (ADR 0006, ADR 0008, slice 5c).  The
+  canonical name for the per-individual inbreeding coefficient *F*.  It returns
+  a read-only float64 array of length `n_individuals`, computed once and
+  memoised, so every later call hands back the same frozen object rather than an
+  equal one.  The values are those `compute_inbreeding()` already returned, from
+  the genome-node Meuwissen-Luo walk recorded below.  `F_i = 2 * phi(i, i) - 1`
+  against `pair_kinship` self pairs and the `kinship_matrix()` diagonal is a
+  tested invariant of this surface: exact on the shallow dyadic ADR 0008
+  fixtures, and within `2**-22` on the 60-generation closed herd (measured
+  1.21e-07 against a bound of 2.38e-07).  Full-graph only, because ADR 0006
+  keeps inbreeding off views.  The computing call commits the package thread
+  budget like every 0.8 operation; a memo hit does not.  Wall time and peak RSS
+  at production scale are in `benchmarks/bench_inbreeding.md`, the baseline the
+  ADR 0007 Rust port ports against.
+- **Changed: `compute_inbreeding()` is a compatibility adapter**
+  (0.8.0-DELETE).  It returns exactly the object `inbreeding()` returns, so the
+  array is read-only now, as every 0.8 result is, and a consumer that mutated it
+  in place must copy first.  Unlike `compute_pair_kinship`, it delegates
+  straight through rather than preserving 0.7.1 thread behaviour, so it commits
+  the package thread budget too.
+
 - **Added: three explicit kinship-matrix families** (ADR 0006, ADR 0009,
   slice 5b). `kinship_matrix()` is complete;
   `relationship_kinship_matrix(max_degree=...)` or `(categories=...)` contains

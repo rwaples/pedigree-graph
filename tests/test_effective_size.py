@@ -139,7 +139,7 @@ def test_toy1_full_sib_mating_F_theta_eqg():
         ]
     )
     pg = PedigreeGraph(df)
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
 
     # F[founders] = 0; F[full sibs of unrelated parents] = 0; F[inbred] = 0.25
     assert F[0] == 0.0
@@ -986,7 +986,7 @@ class TestTypedPayloadModels:
 
     def test_ct_accumulators_are_typed(self):
         pg = PedigreeGraph(_build_closed_line(n_gens=4))
-        F = pg.compute_inbreeding()
+        F = pg.inbreeding()
         acc = _caballero_toro_accumulators(pg, _founder_idx(pg), F)
         assert isinstance(acc, CTAccumulators)
         g_max = int(np.asarray(pg.generation).max())

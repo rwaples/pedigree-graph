@@ -2,7 +2,7 @@
 
 ne_sex_ratio has an exact per-generation closed form (4*Nm*Nf/(Nm+Nf)) and is
 invariant to swapping the sexes; ne_inbreeding's mean-F-per-generation must match
-compute_inbreeding; and every compute_all_ne estimator returns None or a positive
+inbreeding; and every compute_all_ne estimator returns None or a positive
 finite Ne.  Three further cross-cutting properties generalise the example suite
 over random pedigrees: ne_coancestry agrees across its three code paths
 (default-stream / K / pre-computed θ̄); compute_all_ne is thread-count
@@ -73,7 +73,7 @@ def test_ne_sex_ratio_sex_swap_invariant(arrays):
 @given(pg=random_pedigree())
 def test_ne_inbreeding_mean_f_consistency(pg):
     res = ne_inbreeding(pg)
-    F, gen = pg.compute_inbreeding(), pg.generation
+    F, gen = pg.inbreeding(), pg.generation
     for g in range(int(gen.max()) + 1):
         mask = gen == g
         if mask.any():

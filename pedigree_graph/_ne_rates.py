@@ -80,7 +80,7 @@ def ne_inbreeding(pg: PedigreeGraph) -> NeInbreedingResult:
     t ≥ 1 (founders excluded).
     """
     _require_complete_generation_labels(pg, "ne_inbreeding")
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
     gen = np.asarray(pg.generation)
     g_max = int(gen.max())
     mean_f = np.zeros(g_max + 1, dtype=np.float64)
@@ -176,7 +176,7 @@ def ne_individual_delta_f(pg: PedigreeGraph) -> NeIndividualDeltaFResult:
     the harmonic mean across cohorts.
     """
     _require_complete_generation_labels(pg, "ne_individual_delta_f")
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
     eqg = _compute_eqg(np.asarray(pg.mother), np.asarray(pg.father), pg.n)
     gen = np.asarray(pg.generation)
     g_max = int(gen.max())

@@ -35,7 +35,7 @@ def test_kinship_matrix_symmetric_and_bounded(pg):
 def test_kinship_diagonal_encodes_inbreeding(pg):
     # The builders never set twins, so the matrix diagonal (1+F)/2 matches ML F.
     K = pg.kinship_matrix(0.0)
-    F = pg.compute_inbreeding()
+    F = pg.inbreeding()
     assert np.allclose(np.asarray(K.diagonal()), 0.5 * (1.0 + F), atol=1e-9)
 
 

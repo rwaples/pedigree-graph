@@ -81,8 +81,8 @@ def _compute_F_meuwissen_luo(
 
     Topological-order required: m_idx[i] < i and f_idx[i] < i for all i.
     Public rows may arrive in any acyclic order, so
-    ``PedigreeGraph.compute_inbreeding`` supplies the parent arrays
-    remapped by :mod:`pedigree_graph._topology` and maps ``F`` back.
+    ``PedigreeGraph.inbreeding`` supplies the parent arrays remapped by
+    :mod:`pedigree_graph._topology` and maps ``F`` back.
     """
     canon = _genome_node(twin, n)
     # Parent rows canonicalised once so the walk below indexes no extra array;
