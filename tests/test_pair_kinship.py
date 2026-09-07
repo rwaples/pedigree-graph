@@ -31,6 +31,7 @@ from pedigree_graph import (
 )
 from pedigree_graph._kinship_pairwise import (
     _memo_ceiling,
+    _PairMemo,
     _pairwise_kinship_py,
     _run_kernel,
     pairwise_kinship,
@@ -410,6 +411,143 @@ class TestErrors:
             _memo_ceiling(0)
 
 
+class TestPersistentMemo:
+    """Slice 5d: the memo outlives the call, and reuse never changes a bit."""
+
+    @staticmethod
+    def _cold(name: str, first, second) -> np.ndarray:
+        return _graph(name).pair_kinship(first, second)
+
+    @pytest.mark.parametrize("name", FIXTURE_NAMES)
+    def test_every_call_form_is_bit_identical_warm_and_cold(self, name):
+        graph = _graph(name)
+        pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
+        rows = np.arange(graph.n_individuals)
+        graph.pair_kinship(rows, rows)  # warms the diagonal closure
+        assert graph._pair_memo is not None
+        warm = graph.pair_kinship(pairs)
+        fresh = _graph(name)
+        cold = fresh.pair_kinship(fresh.relationship_pairs(max_degree=MAX_DEGREE))
+        for code in RELATIONSHIPS:
+            assert warm[code].tobytes() == cold[code].tobytes(), code
+        block = max(pairs.values(), key=len)
+        assert graph.pair_kinship(block).tobytes() == self._cold(name, block.first_rows, block.second_rows).tobytes()
+        first, second = _all_pairs(graph.n_individuals)
+        assert graph.pair_kinship(first, second).tobytes() == self._cold(name, first, second).tobytes()
+
+    @pytest.mark.parametrize("name", FIXTURE_NAMES)
+    def test_relationship_matrix_after_a_warm_walk_matches_a_cold_one(self, name):
+        graph = _graph(name)
+        graph.pair_kinship(graph.relationship_pairs(max_degree=MAX_DEGREE))
+        warm = graph.relationship_kinship_matrix(max_degree=MAX_DEGREE)
+        cold = _graph(name).relationship_kinship_matrix(max_degree=MAX_DEGREE)
+        assert warm.indptr.tobytes() == cold.indptr.tobytes()
+        assert warm.indices.tobytes() == cold.indices.tobytes()
+        assert warm.data.tobytes() == cold.data.tobytes()
+
+    def test_a_view_shares_and_extends_the_graph_memo(self):
+        graph = _graph("random_1k")
+        view = graph.view(ids=FIXTURES["random_1k"]["ids"][::3])
+        pairs = view.relationship_pairs(max_degree=MAX_DEGREE)
+        values = view.pair_kinship(pairs)
+        memo = graph._pair_memo
+        assert memo is not None
+        assert memo.entries > 0
+        fresh = _graph("random_1k").view(ids=FIXTURES["random_1k"]["ids"][::3])
+        cold = fresh.pair_kinship(fresh.relationship_pairs(max_degree=MAX_DEGREE))
+        for code in RELATIONSHIPS:
+            assert values[code].tobytes() == cold[code].tobytes(), code
+        rows = np.arange(graph.n_individuals)
+        graph.pair_kinship(rows, rows)
+        assert graph._pair_memo is not None
+        assert graph._pair_memo.entries >= memo.entries
+
+    def test_memo_survives_pair_then_matrix_then_pair(self):
+        graph = _graph("deep_inbred_60g")
+        pairs = graph.relationship_pairs(max_degree=2)
+        before = graph.pair_kinship(pairs)
+        entries_after_pairs = graph._pair_memo.entries
+        graph.relationship_kinship_matrix(max_degree=3)
+        entries_after_matrix = graph._pair_memo.entries
+        assert entries_after_matrix >= entries_after_pairs
+        after = graph.pair_kinship(pairs)
+        assert graph._pair_memo.entries == entries_after_matrix
+        for code in RELATIONSHIPS:
+            assert before[code].tobytes() == after[code].tobytes(), code
+
+    def test_a_repeated_query_walks_nothing(self):
+        graph = _graph("deep_inbred_60g")
+        first, second = _all_pairs(graph.n_individuals)
+        inputs = kernel_inputs(graph, first, second)
+        out, stats, memo = _run_kernel(*inputs)
+        again, stats_again, memo_again = _run_kernel(*inputs, memo=memo)
+        assert again.tobytes() == out.tobytes()
+        assert memo_again.entries == memo.entries
+        assert int(stats_again[1]) == int(stats[1])  # capacity unchanged
+        assert int(stats_again[2]) == 0  # no growth
+        assert int(stats_again[3]) == 0  # nothing pushed: every root was a hit
+
+    def test_a_superset_query_adds_only_new_entries(self):
+        graph = _graph("deep_inbred_60g")
+        rows = np.arange(graph.n_individuals)
+        _, _, memo = _run_kernel(*kernel_inputs(graph, rows, rows))
+        first, second = _all_pairs(graph.n_individuals)
+        warm, _, memo_after = _run_kernel(*kernel_inputs(graph, first, second), memo=memo)
+        cold, _, memo_cold = _run_kernel(*kernel_inputs(graph, first, second))
+        assert warm.tobytes() == cold.tobytes()
+        assert memo_after.entries == memo_cold.entries
+        assert memo_after.entries > memo.entries
+
+    def test_release_makes_the_next_call_cold_and_identical(self):
+        graph = _graph("deep_inbred_60g")
+        first, second = _all_pairs(graph.n_individuals)
+        warm = graph.pair_kinship(first, second)
+        assert graph._pair_memo is not None
+        graph._release_pair_memo()
+        graph._release_pair_memo()
+        assert graph._pair_memo is None
+        assert graph.pair_kinship(first, second).tobytes() == warm.tobytes()
+        assert graph._pair_memo is not None
+        graph._release_kinship_matrices()
+        assert graph._pair_memo is None
+
+    def test_a_memo_over_the_retention_limit_is_dropped_not_raised(self):
+        graph = _graph("deep_inbred_60g")
+        first, second = _all_pairs(graph.n_individuals)
+        cold = _graph("deep_inbred_60g").pair_kinship(first, second)
+        graph._pair_memo_limit = 0
+        assert graph.pair_kinship(first, second).tobytes() == cold.tobytes()
+        assert graph._pair_memo is None
+        graph._pair_memo_limit = 1 << 30
+        assert graph.pair_kinship(first, second).tobytes() == cold.tobytes()
+        assert graph._pair_memo is not None
+        assert graph._pair_memo.nbytes == 12 * graph._pair_memo.capacity
+
+    def test_a_starting_memo_past_the_cap_is_replaced_not_walked(self):
+        graph = _graph("random_1k")
+        rows = np.arange(graph.n_individuals)
+        _, _, memo = _run_kernel(*kernel_inputs(graph, rows, rows))
+        assert memo.capacity > 1 << 4
+        with pytest.raises(ResourceError):
+            _run_kernel(*kernel_inputs(graph, rows, rows), cap_limit=1 << 4, memo=memo)
+
+    def test_an_empty_query_leaves_the_memo_as_it_was(self):
+        graph = _graph("deep_inbred_60g")
+        rows = np.arange(graph.n_individuals)
+        graph.pair_kinship(rows, rows)
+        memo = graph._pair_memo
+        assert graph.pair_kinship([], []).shape == (0,)
+        assert graph._pair_memo is not None
+        assert graph._pair_memo.entries == memo.entries
+        assert graph._pair_memo.keys is memo.keys
+
+    def test_the_empty_memo_starts_cold(self):
+        memo = _PairMemo()
+        assert memo.capacity == 0
+        assert memo.entries == 0
+        assert memo.nbytes == 0
+
+
 class TestLegacyAdapter:
     def test_compute_pair_kinship_returns_the_new_values(self):
         graph = _graph("deep_inbred_60g")
@@ -464,6 +602,11 @@ def test_random_30k_integration():
     pairs = graph.relationship_pairs(max_degree=3)
     values = graph.pair_kinship(pairs)
     assert sum(len(block) for block in pairs.values()) > 0
+    # Slice 5d: the first call leaves its closure on the graph, and every call
+    # below starts from it, so this gate reads the warm timing after one walk.
+    memo = graph._pair_memo
+    assert memo is not None
+    assert memo.entries > sum(len(block) for block in pairs.values())
     for code, block in pairs.items():
         assert len(values[code]) == len(block), code
         if len(block):
@@ -493,3 +636,7 @@ def test_random_30k_integration():
     assert np.abs(2.0 * diagonal.astype(np.float64) - 1.0 - graph.inbreeding()).max() <= 2.0**-22
     deepest = np.arange(graph.n_individuals)[-1000:]
     assert graph.pair_kinship(deepest, deepest).tobytes() == diagonal[deepest].tobytes()
+    # The matrix's support was within the pair closure plus the diagonal, so
+    # the memo grew by the diagonal closure at most and nothing was re-walked.
+    assert graph._pair_memo is not None
+    assert graph._pair_memo.entries >= memo.entries

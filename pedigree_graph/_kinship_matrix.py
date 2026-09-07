@@ -34,7 +34,7 @@ import scipy.sparse as sp
 
 from pedigree_graph._errors import ResourceError
 from pedigree_graph._kinship_dp import _build_kinship_csc, _fill_candidate_kinship_values
-from pedigree_graph._kinship_pairwise import pairwise_kinship
+from pedigree_graph._kinship_pairwise import memoised_kinship
 from pedigree_graph._pair_extractor import _requested_codes
 from pedigree_graph._registry import RELATIONSHIPS
 from pedigree_graph._threads import thread_budget
@@ -309,17 +309,16 @@ def _exactify_support(
     *,
     chunk_size: int = _EXACT_VALUE_CHUNK_SIZE,
 ) -> sp.csc_matrix:
-    """Replace every value on a symmetric CSC support with pair-recurrence bits."""
-    mother, father, twin = graph._topological_parents
+    """Replace every value on a symmetric CSC support with pair-recurrence bits.
+
+    Each chunk runs from the graph's retained pair memo and leaves it for the
+    next, so the diagonal closure a preceding ``pair_kinship`` already walked
+    is not walked again, and a following ``pair_kinship`` starts from the
+    support's closure.
+    """
     topology = graph._topology
     for first, second, positions in _upper_support_chunks(matrix, chunk_size):
-        values = pairwise_kinship(
-            mother,
-            father,
-            twin,
-            topology.translate(first),
-            topology.translate(second),
-        )
+        values = memoised_kinship(graph, topology.translate(first), topology.translate(second))
         if not _write_symmetric_values(matrix.indptr, matrix.indices, matrix.data, positions, second, values):
             raise AssertionError("kinship support must be symmetric")
     return matrix

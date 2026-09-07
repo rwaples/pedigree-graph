@@ -22,7 +22,8 @@ the memo stores float32.  Consequences the public docstrings promise:
 * reversed endpoint order gives identical bits (the peel rule does not read
   the argument order);
 * a returned ``0`` means the exact kinship is ``0``;
-* the result never depends on call history, because no cached matrix is read;
+* the result never depends on call history: no cached matrix is read, and the
+  memo a graph retains between calls only ever returns the cold walk's bits;
 * two graphs built from the same pedigree in different row orders may differ
   on deep inbred pairs within ``2 * (depth_a + depth_b + 1) * 2**-25``, since
   the depth tie-break is by row (ADR 0009);
@@ -39,7 +40,22 @@ also checks the translation.
 Cost is ``O(P + distinct ancestor-pairs reached)`` for ``P`` requested pairs,
 shared across the request through one open-addressing memo keyed on the
 canonical ``lo * n + hi`` row pair.  The memo, not the output, dominates memory
-(12 bytes per entry).
+(12 bytes per slot).
+
+The memo outlives the call.  A graph keeps the table its last kernel call left
+behind (:class:`_PairMemo` on ``PedigreeGraph._pair_memo``) and hands it to the
+next call as the starting table, so a second query on the same graph pays for
+the ancestor pairs it newly reaches, not for the closure it already walked.  On
+the 30k parity fixture a degree-3 query reaches 23 million ancestor pairs, and
+every query touching the deepest generation re-derives most of them.  Reuse
+cannot change a bit: each key is computed exactly once, from its dependencies'
+memoised values with the same float32 operations, whatever order the requests
+arrive in, so a memo hit returns the value the cold walk would have stored.
+The retained table is the memory trade.  It is kept only while it fits under
+:data:`_MEMO_RETAIN_LIMIT` bytes (a per-graph override lives on
+``PedigreeGraph._pair_memo_limit``) and is dropped otherwise, so a call that
+completes never fails on retention; ``PedigreeGraph._release_pair_memo`` frees
+it explicitly.
 
 Two implementations of the same recurrence live here: :func:`_pairwise_kinship_py`
 is the readable recursive oracle used by the property tests, and
@@ -48,9 +64,9 @@ is the readable recursive oracle used by the property tests, and
 
 from __future__ import annotations
 
-__all__ = ["graph_pair_kinship", "pairwise_kinship", "view_pair_kinship"]
+__all__ = ["graph_pair_kinship", "memoised_kinship", "pairwise_kinship", "view_pair_kinship"]
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -82,12 +98,47 @@ _MEMO_LOAD_DEN = 10
 # only trips on pathological inbreeding where the memo heads toward n^2.
 _MEMO_CAP_LIMIT = 1 << 31
 
+# Largest memo a graph retains between calls, in bytes of table (12 per slot).
+# The degree-3 closure of ``random_30k`` ends at 2**25 slots, 384 MiB, and is
+# kept (benchmarks/bench_pair_kinship.md); the 145M-entry degree-3 memo of a
+# 536k-row pedigree needs 2**28 slots, 3 GiB, and is dropped, so a graph that
+# size keeps its pre-slice memory profile unless the caller raises
+# ``PedigreeGraph._pair_memo_limit``.
+_MEMO_RETAIN_LIMIT = 1 << 30
+
 # Stats array layout returned by the core kernel.
 _STAT_ENTRIES = 0
 _STAT_CAPACITY = 1
 _STAT_GROWS = 2
 _STAT_MAX_STACK = 3
 _STAT_OVERFLOW = 4
+
+
+@dataclass(frozen=True, slots=True)
+class _PairMemo:
+    """The open-addressing table one kernel call left behind, ready for the next.
+
+    ``keys`` and ``vals`` are the live table (capacity a power of two, ``-1``
+    marks an empty slot) and ``entries`` how many slots are filled.  The empty
+    memo has zero-length tables, which :func:`_run_kernel` reads as "start cold".
+
+    Attributes:
+        keys: int64 canonical ``lo * n + hi`` keys, ``-1`` where empty.
+        vals: float32 values aligned to ``keys``.
+        entries: Number of filled slots.
+    """
+
+    keys: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.int64))
+    vals: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
+    entries: int = 0
+
+    @property
+    def capacity(self) -> int:
+        return int(self.keys.shape[0])
+
+    @property
+    def nbytes(self) -> int:
+        return int(self.keys.nbytes + self.vals.nbytes)
 
 
 def _pairwise_kinship_py(
@@ -218,20 +269,35 @@ def _pairwise_kinship_core(
     first: np.ndarray,
     second: np.ndarray,
     n: int,
-    cap_limit: int,
+    memo_keys: np.ndarray,
+    memo_vals: np.ndarray,
+    entries: int,
 ):
     """Pedigree-expected kinship per requested pair; the production recurrence kernel.
 
     Rows are in stable depth-major order, so peeling the greater row is the
     pinned depth-then-row rule.  Iterative (explicit work-stack) post-order
-    evaluation of the module recurrence with a hand-rolled open-addressing
-    ``int64 -> float32`` memo keyed on the canonical ``lo * n + hi`` row pair.  Returns ``(out, stats)``
-    where ``stats`` is ``int64[5]`` = ``[entries, capacity, grows,
-    max_stack_depth, overflow]``; ``overflow`` is ``1`` when the memo would
-    exceed ``cap_limit`` slots, in which case ``out`` is unfinished.
+    evaluation of the module recurrence over a caller-owned open-addressing
+    ``int64 -> float32`` memo keyed on the canonical ``lo * n + hi`` row pair.
+
+    ``memo_keys``, ``memo_vals`` and ``entries`` are the table and its fill:
+    the kernel reads and writes them in place and never allocates, grows, or
+    returns them.  When the load factor would be exceeded it stops and reports
+    ``overflow = 1``; the caller (:func:`_run_kernel`) doubles the table and
+    re-enters, which is cheap because every node resolved so far is a memo
+    hit.  Keeping the tables out of the kernel's return value is what keeps
+    the walk at the pre-memo speed: a kernel that grew and returned them
+    measured 6 percent slower on the cold 30k walk, and this shape 5 percent
+    faster than the pre-memo kernel (``benchmarks/bench_pair_kinship.md``).
+
+    Returns ``(out, stats)`` where ``stats`` is ``int64[5]`` = ``[entries,
+    capacity, grows, max_stack_depth, overflow]`` with ``entries`` the table's
+    fill after this call and ``grows`` always ``0`` here; ``out`` is
+    unfinished when ``overflow`` is ``1``.
 
     The combine expressions mirror :func:`_pairwise_kinship_py` term-for-term
-    in float32, so the two agree to the bit whatever the traversal order.
+    in float32, so the two agree to the bit whatever the traversal order, and
+    a reused entry is the bit a cold walk would store.
     """
     half = np.float32(0.5)
     one = np.float32(1.0)
@@ -239,14 +305,12 @@ def _pairwise_kinship_core(
     p = first.shape[0]
     out = np.empty(p, dtype=np.float32)
     stats = np.zeros(5, dtype=np.int64)
+    stats[_STAT_ENTRIES] = entries
+    stats[_STAT_CAPACITY] = memo_keys.shape[0]
     if p == 0:
         return out, stats
 
-    # Memo sized from the request count, within the cap; grows geometrically on demand.
-    cap = min(_next_pow2(4 * p if p > 4 else 16), cap_limit)
-    memo_keys = np.full(cap, -1, dtype=np.int64)
-    memo_vals = np.empty(cap, dtype=np.float32)
-    entries = 0
+    cap = memo_keys.shape[0]
     grows = 0
 
     # Explicit work stack of canonical keys.
@@ -335,13 +399,10 @@ def _pairwise_kinship_core(
             # (leaf in the expand phase, value in the compute phase); the rehash
             # reassigns the tables before the next iteration's probes.
             if entries * _MEMO_LOAD_DEN >= cap * _MEMO_LOAD_NUM:
-                if cap * 2 > cap_limit:
-                    stats[_STAT_CAPACITY] = cap
-                    stats[_STAT_OVERFLOW] = 1
-                    return out, stats
-                memo_keys, memo_vals = _memo_grow(memo_keys, memo_vals)
-                cap = cap * 2
-                grows += 1
+                stats[_STAT_ENTRIES] = entries
+                stats[_STAT_CAPACITY] = cap
+                stats[_STAT_OVERFLOW] = 1
+                return out, stats
 
     # Final scatter: every requested key is now memoized.
     for k in range(p):
@@ -414,6 +475,12 @@ def _memo_ceiling(cap_limit: int) -> int:
     return 1 << (int(cap_limit).bit_length() - 1)
 
 
+def _cold_capacity(pair_count: int, cap_limit: int) -> int:
+    """Initial table size for a cold walk: four slots per requested pair, within the cap."""
+    wanted = 4 * pair_count if pair_count > 4 else 16
+    return min(1 << (wanted - 1).bit_length(), cap_limit)
+
+
 def _run_kernel(
     mother: np.ndarray,
     father: np.ndarray,
@@ -421,21 +488,49 @@ def _run_kernel(
     first: np.ndarray,
     second: np.ndarray,
     cap_limit: int = _MEMO_CAP_LIMIT,
-) -> tuple[np.ndarray, np.ndarray]:
+    memo: _PairMemo | None = None,
+) -> tuple[np.ndarray, np.ndarray, _PairMemo]:
+    """Validate, walk to completion, and return ``(out, stats, memo)``.
+
+    *memo* is the starting table, ``None`` or empty for cold; the returned
+    memo is the table the walk left behind, for the caller to retain or drop.
+    Growth lives here: each time the kernel reports its table full, the table
+    is doubled and the kernel re-entered, until it completes or the next
+    doubling would pass *cap_limit*.  A starting table already past the cap is
+    discarded rather than handed to a kernel that could never fill it.
+    """
     cap_limit = _memo_ceiling(cap_limit)
     mother, father, twin, first, second, n = _prepare_inputs(mother, father, twin, first, second)
-    out, stats = _pairwise_kinship_core(mother, father, twin, first, second, n, cap_limit)
-    if stats[_STAT_OVERFLOW]:
-        raise ResourceError(
-            "memo_capacity_exceeded",
-            "pair_kinship: the recurrence memo would exceed its capacity limit; the pedigree is too "
-            "inbred or too deep for the direct path",
-            operation="pair_kinship",
-            capacity=int(stats[_STAT_CAPACITY]),
-            maximum=cap_limit,
-        )
+    if memo is None or memo.capacity == 0 or memo.capacity > cap_limit:
+        capacity = _cold_capacity(first.shape[0], cap_limit)
+        keys = np.full(capacity, -1, dtype=np.int64)
+        vals = np.empty(capacity, dtype=np.float32)
+        entries = 0
+    else:
+        keys, vals, entries = memo.keys, memo.vals, memo.entries
+    grows = 0
+    max_stack = 0
+    while True:
+        out, stats = _pairwise_kinship_core(mother, father, twin, first, second, n, keys, vals, entries)
+        entries = int(stats[_STAT_ENTRIES])
+        max_stack = max(max_stack, int(stats[_STAT_MAX_STACK]))
+        if not stats[_STAT_OVERFLOW]:
+            break
+        if keys.shape[0] * 2 > cap_limit:
+            raise ResourceError(
+                "memo_capacity_exceeded",
+                "pair_kinship: the recurrence memo would exceed its capacity limit; the pedigree is too "
+                "inbred or too deep for the direct path",
+                operation="pair_kinship",
+                capacity=int(keys.shape[0]),
+                maximum=cap_limit,
+            )
+        keys, vals = _memo_grow(keys, vals)
+        grows += 1
+    stats[_STAT_GROWS] = grows
+    stats[_STAT_MAX_STACK] = max_stack
     out.setflags(write=False)
-    return out, stats
+    return out, stats, _PairMemo(keys, vals, entries)
 
 
 def pairwise_kinship(
@@ -468,7 +563,7 @@ def pairwise_kinship(
         ResourceError: ``memo_capacity_exceeded`` when the memo would pass
             ``_MEMO_CAP_LIMIT`` slots.
     """
-    out, _ = _run_kernel(mother, father, twin, first, second)
+    out, _, _ = _run_kernel(mother, father, twin, first, second)
     return out
 
 
@@ -485,7 +580,7 @@ def _pairwise_kinship_with_stats(
     and ``max_stack_depth``, used by the profiling harness to confirm the memo
     stays bounded.  Not part of the production path.
     """
-    out, stats = _run_kernel(mother, father, twin, first, second)
+    out, stats, _ = _run_kernel(mother, father, twin, first, second)
     return out, {
         "memo_entries": int(stats[_STAT_ENTRIES]),
         "memo_capacity": int(stats[_STAT_CAPACITY]),
@@ -624,12 +719,26 @@ def _shape_result(query: _PairQuery, values: np.ndarray) -> np.ndarray | Mapping
     return MappingProxyType(dict(zip(query.block_lengths, pieces, strict=True)))
 
 
+def memoised_kinship(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> np.ndarray:
+    """Run the kernel on *graph* from its retained memo and retain what it leaves.
+
+    *first* and *second* are already in the graph's depth-major order.  This is
+    the one place a graph's memo is read and written, so ``pair_kinship`` and
+    the relationship matrix share it.  The table is kept when it fits under the
+    graph's retention limit and dropped otherwise; either way the values are
+    those of a cold call.
+    """
+    mother, father, twin = graph._topological_parents
+    out, _, memo = _run_kernel(mother, father, twin, first, second, memo=graph._pair_memo)
+    graph._pair_memo = memo if memo.nbytes <= graph._pair_memo_limit else None
+    return out
+
+
 def _evaluate(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray, *, commit_threads: bool) -> np.ndarray:
     if commit_threads:
         thread_budget()
     topology = graph._topology
-    mother, father, twin = graph._topological_parents
-    return pairwise_kinship(mother, father, twin, topology.translate(first), topology.translate(second))
+    return memoised_kinship(graph, topology.translate(first), topology.translate(second))
 
 
 def graph_pair_kinship(

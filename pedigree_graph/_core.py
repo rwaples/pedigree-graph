@@ -41,7 +41,7 @@ from pedigree_graph._kinship_kernel import (
     _compute_theta_per_gen,
 )
 from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
-from pedigree_graph._kinship_pairwise import graph_pair_kinship, view_pair_kinship
+from pedigree_graph._kinship_pairwise import _MEMO_RETAIN_LIMIT, graph_pair_kinship, view_pair_kinship
 from pedigree_graph._lineage_kernel import (
     _compute_n_ancestors,
     _compute_n_descendants,
@@ -60,6 +60,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from pedigree_graph._input import PedigreeInput
+    from pedigree_graph._kinship_pairwise import _PairMemo
     from pedigree_graph._streaming_counter import CachedEstimate
     from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
@@ -171,6 +172,12 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         # corrected approximate-support values must not silently change the
         # old per_gen_mean_kinship(min_kinship>0) calculation.
         self._kinship_cache: dict[float, sp.csc_matrix] = {}
+        # The pair-recurrence memo the last kernel call left behind, reused as
+        # the next call's starting table by pair_kinship and the relationship
+        # matrix (both through _kinship_pairwise.memoised_kinship).  Retained
+        # only while its tables fit under the limit, in bytes.
+        self._pair_memo: _PairMemo | None = None
+        self._pair_memo_limit: int = _MEMO_RETAIN_LIMIT
         # Lazy per-generation mean kinship cache — populated by
         # per_gen_mean_kinship(); keyed by min_kinship so callers using a
         # non-default threshold do not get a stale θ̄.
@@ -624,7 +631,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             self.__dict__.pop(attr, None)
 
     def _release_kinship_matrices(self) -> None:
-        """Drop every cached kinship matrix held by this graph.
+        """Drop every cached kinship matrix held by this graph, and the pair memo.
 
         The three matrix families cache independently and a full-graph CSC can
         run to hundreds of megabytes, so a long-lived graph that called more
@@ -634,6 +641,17 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         self._relationship_kinship_cache.clear()
         self._approximate_kinship_cache.clear()
         self._kinship_cache.clear()  # 0.8.0-DELETE: the 0.7.1 threshold cache.
+        self._release_pair_memo()
+
+    def _release_pair_memo(self) -> None:
+        """Drop the pair-recurrence memo, so the next ``pair_kinship`` starts cold.
+
+        The memo is the ancestor-pair closure of every query so far, 12 bytes a
+        slot, kept so a later query pays only for the pairs it newly reaches.
+        Releasing it changes no value: a cold call stores the same bits.
+        Idempotent.
+        """
+        self._pair_memo = None
 
     # 0.8.0-DELETE: replaced by relationship_counts (ADR 0006).
     def count_pairs(self, max_degree: int = 3, scope: Literal["subsample", "full"] = "subsample") -> dict[str, int]:
@@ -1153,6 +1171,14 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         to float64 before comparing against a non-dyadic cutoff.  The call
         runs on one thread and commits the package thread budget like every
         0.8 operation.
+
+        The recurrence memo outlives the call: the graph keeps the ancestor
+        pairs each query resolved and starts the next query from them, so
+        repeated queries on one graph pay for newly reached ancestors only.
+        A reused entry is the bit a cold call computes.  The memo costs 12
+        bytes per slot for the life of the graph, is retained only while it
+        fits the graph's retention limit, and is dropped by
+        :meth:`_release_kinship_matrices`.
 
         Args:
             first: ``first_rows`` (graph rows, any integer array-like), a
