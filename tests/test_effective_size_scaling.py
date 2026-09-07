@@ -35,6 +35,7 @@ from pedigree_graph import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
+from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._effective_size import (
     CTAccumulators,
     _caballero_toro_accumulators,
@@ -94,24 +95,28 @@ def _ref_per_gen_means(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _ref_ct_accumulators(pg: PedigreeGraph, F: np.ndarray) -> CTAccumulators:
-    """Reference (sums, counts) built from the dense matrix."""
+    """Reference (sums, counts) built from the dense matrix.
+
+    A founder row is not its own descendant, so founder rows are excluded
+    from every cohort before the ``c > 0`` reachability test.
+    """
     c, founder_idx = _ref_founder_contribution_matrix(pg)
-    gen = np.asarray(pg.generation)
-    g_max = int(gen.max()) if pg.n > 0 else 0
+    cohorts = ObservedCohorts.for_graph(pg, "reference")
     n_founders = len(founder_idx)
-    sums = np.zeros((g_max + 1, n_founders), dtype=np.float64)
-    counts = np.zeros((g_max + 1, n_founders), dtype=np.int64)
+    sums = np.zeros((cohorts.k, n_founders), dtype=np.float64)
+    counts = np.zeros((cohorts.k, n_founders), dtype=np.int64)
     self_coancestry = (1.0 + F) / 2.0
-    for g in range(g_max + 1):
-        in_g = np.where(gen == g)[0]
-        if len(in_g) == 0:
+    is_founder = (np.asarray(pg.mother) < 0) & (np.asarray(pg.father) < 0)
+    for b, rows in enumerate(cohorts.members()):
+        in_b = rows[~is_founder[rows]]
+        if len(in_b) == 0:
             continue
         for f_local in range(n_founders):
-            mask = c[in_g, f_local] > 0.0
+            mask = c[in_b, f_local] > 0.0
             if mask.any():
-                idx = in_g[mask]
-                sums[g, f_local] = float(self_coancestry[idx].sum())
-                counts[g, f_local] = int(idx.size)
+                idx = in_b[mask]
+                sums[b, f_local] = float(self_coancestry[idx].sum())
+                counts[b, f_local] = int(idx.size)
     # CT estimator only reads sums/counts; telemetry fields are zeroed.
     return CTAccumulators(
         sums=sums,
@@ -505,7 +510,7 @@ def test_sex_specific_family_table_attributes_skip_gen_offspring() -> None:
         np.asarray(pg.mother),
         np.asarray(pg.father),
         np.asarray(pg.sex),
-        np.asarray(pg.generation),
+        ObservedCohorts.for_graph(pg, "test"),
     )
 
     # Parent gen 0: females are individuals 1 and 3 (in that order).

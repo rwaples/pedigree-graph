@@ -71,7 +71,7 @@ def test_scalar_ne_recovers_planted_value(ne_true, g_max):
     # Ne = -1/(2 slope) must recover Ne exactly (collinear -> perfect OLS).
     t = np.arange(g_max + 1, dtype=np.float64)
     series = 1.0 - np.exp(-t / (2.0 * ne_true))  # series[0] == 0 (founder, dropped)
-    ne_rec, slope, n_used = _scalar_ne_from_log_regression(series)
+    ne_rec, slope, n_used = _scalar_ne_from_log_regression(series, np.arange(len(series)))
     assert ne_rec is not None
     assert ne_rec == pytest.approx(ne_true, rel=1e-6)
     assert slope == pytest.approx(-1.0 / (2.0 * ne_true), rel=1e-6)
@@ -96,9 +96,9 @@ def test_regress_log_one_minus_recovers_line(slope, intercept, g_max):
 def test_scalar_ne_none_when_degenerate():
     # Fewer than two post-founder points, or all post-founder values saturated
     # at >= 1 (log diverges), leave the slope undefined -> ne is None.
-    assert _scalar_ne_from_log_regression(np.array([0.0]))[0] is None
-    assert _scalar_ne_from_log_regression(np.array([0.0, 0.1]))[0] is None
-    assert _scalar_ne_from_log_regression(np.array([0.0, 1.0, 1.5]))[0] is None
+    assert _scalar_ne_from_log_regression(np.array([0.0]), np.arange(1))[0] is None
+    assert _scalar_ne_from_log_regression(np.array([0.0, 0.1]), np.arange(2))[0] is None
+    assert _scalar_ne_from_log_regression(np.array([0.0, 1.0, 1.5]), np.arange(3))[0] is None
 
 
 def test_regress_log_one_minus_nan_when_underdetermined():

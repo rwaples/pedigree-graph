@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING
 import numba
 import numpy as np
 
-from pedigree_graph._ne_common import _require_complete_generation_labels, _scalar_ne_from_log_regression
-from pedigree_graph._ne_founders import _founder_idx
+from pedigree_graph._cohorts import ObservedCohorts
+from pedigree_graph._ne_common import _checked_founder_matrix, _scalar_ne_from_log_regression, _transition_ne
+from pedigree_graph._ne_founders import _founder_columns, _founder_idx
 from pedigree_graph._ne_results import NeCaballeroToroResult
 
 if TYPE_CHECKING:
@@ -27,19 +28,21 @@ class CTAccumulators:
 
     Produced by :func:`_caballero_toro_accumulators` and consumed by
     :func:`ne_caballero_toro`.  ``sums`` and ``counts`` share the same
-    ``(g_max + 1, n_founders)`` layout; founder columns align with
-    ``founder_idx``.  The ``peak_*`` / ``total_*`` fields are descriptive
+    ``(k, n_founders)`` layout, one row per observed cohort; columns align
+    with ``founder_idx``, one per represented founder genome.  A founder row
+    seeds its genome's lineage but is not its own descendant, so it never
+    enters the sums.  The ``peak_*`` / ``total_*`` fields are descriptive
     arena telemetry (scaling diagnostics), not used in the Ne formula.
 
     Attributes:
-        sums: ``(g_max + 1, n_founders)`` float64 — Σ self-coancestry of
-            founder f's descendants in generation g.
-        counts: ``(g_max + 1, n_founders)`` int64 — descendant count of
-            founder f in generation g.
+        sums: ``(k, n_founders)`` float64 — Σ self-coancestry of founder
+            genome f's descendants in observed cohort b.
+        counts: ``(k, n_founders)`` int64 — descendant count of founder
+            genome f in observed cohort b.
         peak_ancestor_set_size: largest single founder-ancestor set seen.
         peak_live_ancestor_sets: max simultaneously live sets in the arena.
-        total_ancestor_pair_visits: Σ over individuals of ancestor-set size.
-        founder_idx: ``(n_founders,)`` intp — founder row indices.
+        total_ancestor_pair_visits: Σ over descendants of ancestor-set size.
+        founder_idx: ``(n_founders,)`` intp — canonical founder-genome rows.
     """
 
     sums: np.ndarray
@@ -113,11 +116,13 @@ def _ct_merge_to_pool(pool, cursor, a_start, a_len, b_start, b_len):
 
 
 @numba.njit(cache=True)
-def _ct_accumulators_kernel(gen, mother, father, founder_local_of, self_coancestry, g_max, n_founders):
-    """Numba core for Caballero-Toro descendant self-coancestry accumulators."""
-    n = len(gen)
-    sums = np.zeros((g_max + 1, n_founders), dtype=np.float64)
-    counts = np.zeros((g_max + 1, n_founders), dtype=np.int64)
+def _ct_accumulators_kernel(bucket, mother, father, founder_local_of, self_coancestry, sums, counts):
+    """Numba core for Caballero-Toro descendant self-coancestry accumulators.
+
+    Fills the caller-allocated ``sums`` / ``counts`` (one row per cohort
+    bucket) and returns the arena telemetry.
+    """
+    n = len(bucket)
 
     n_children = np.zeros(n, dtype=np.int64)
     for i in range(n):
@@ -181,8 +186,8 @@ def _ct_accumulators_kernel(gen, mother, father, founder_local_of, self_coancest
                 start = f_start
                 length = f_len
 
-        if length > 0:
-            g = gen[i]
+        if length > 0 and f_local < 0:
+            g = bucket[i]
             sc = self_coancestry[i]
             for k in range(length):
                 a = pool[start + k]
@@ -212,18 +217,19 @@ def _ct_accumulators_kernel(gen, mother, father, founder_local_of, self_coancest
             if active_count > peak_live:
                 peak_live = active_count
 
-    return sums, counts, peak_set_size, peak_live, total_pair_visits
+    return peak_set_size, peak_live, total_pair_visits
 
 
 def _caballero_toro_accumulators(
     pg: PedigreeGraph,
     founder_idx: np.ndarray,
     F: np.ndarray,
+    cohorts: ObservedCohorts | None = None,
 ) -> CTAccumulators:
-    """Streaming forward sweep producing per-(g, f) self-coancestry sums.
+    """Streaming forward sweep producing per-(cohort, genome) self-coancestry sums.
 
-    For each generation g and founder f, accumulates the count of
-    descendants of f in gen g and the sum of their self-coancestry
+    For each observed cohort b and founder genome f, accumulates the count
+    of descendants of f in cohort b and the sum of their self-coancestry
     ``(1 + F_i) / 2``.  Avoids materializing the dense
     ``(n × n_founders)`` contribution matrix by maintaining sorted
     per-individual Founder-Ancestor sets in a Numba arena and retiring
@@ -231,59 +237,60 @@ def _caballero_toro_accumulators(
 
     "Descendant of f" is graph reachability — equivalent to ``c[i, f] >
     0`` because the forward recursion only adds non-negatives, so a
-    non-zero ⇔ at least one ancestor path exists.
+    non-zero ⇔ at least one ancestor path exists.  A founder row seeds
+    its genome's set but is not its own descendant; parentless MZ co-twins
+    seed the same genome column.
 
     The sweep runs in the graph's private topological order; ``sums`` and
-    ``counts`` are indexed by generation label and local founder index, so
+    ``counts`` are indexed by cohort bucket and local founder index, so
     they carry their graph-space meaning unchanged.
 
     Args:
         pg: Pedigree graph.
-        founder_idx: Founder indices (output of :func:`_founder_idx`), in
-            graph rows.
+        founder_idx: Canonical founder-genome rows (:func:`_founder_idx`).
         F: Per-individual inbreeding coefficients (length ``pg.n``), in
             graph rows.
+        cohorts: Optional precomputed grouping; defaults to the graph's.
 
     Returns:
         A :class:`CTAccumulators` record.
     """
-    _require_complete_generation_labels(pg, "ne_caballero_toro")
+    if cohorts is None:
+        cohorts = ObservedCohorts.for_graph(pg, "ne_caballero_toro")
     n = pg.n
-    n_founders = len(founder_idx)
-    topo = pg._topology
-    gen = np.asarray(topo.gather(np.asarray(pg.generation)), dtype=np.int64)
-    m_idx, f_idx, _ = pg._topological_parents
-    mother = np.asarray(m_idx, dtype=np.int64)
-    father = np.asarray(f_idx, dtype=np.int64)
-    g_max = int(gen.max()) if n > 0 else 0
-
-    if n_founders == 0:
+    n_founders = int(founder_idx.shape[0])
+    sums = _checked_founder_matrix(cohorts.k, n_founders, "ct_accumulators", np.float64, 0.0)
+    counts = _checked_founder_matrix(cohorts.k, n_founders, "ct_accumulators", np.int64, 0)
+    if n_founders == 0 or n == 0:
         return CTAccumulators(
-            sums=np.zeros((g_max + 1, 0), dtype=np.float64),
-            counts=np.zeros((g_max + 1, 0), dtype=np.int64),
+            sums=sums,
+            counts=counts,
             peak_ancestor_set_size=0,
             peak_live_ancestor_sets=0,
             total_ancestor_pair_visits=0,
             founder_idx=founder_idx,
         )
 
-    founder_local_of = np.full(n, -1, dtype=np.int64)
-    founder_local_of[np.asarray(founder_idx, dtype=np.int64)] = np.arange(n_founders, dtype=np.int64)
-    # Local founder numbering is graph-space, so gathering keeps founder k as
-    # founder k while the sweep itself runs in topological rows.  Both arrays
+    topo = pg._topology
+    bucket = np.asarray(topo.gather(cohorts.dense), dtype=np.int64)
+    m_idx, f_idx, _ = pg._topological_parents
+    mother = np.asarray(m_idx, dtype=np.int64)
+    father = np.asarray(f_idx, dtype=np.int64)
+    # Local founder numbering is graph-space, so gathering keeps genome k as
+    # genome k while the sweep itself runs in topological rows.  Both arrays
     # are copied so the kernel sees one writeability whether or not the gather
     # was a no-op (see _topology.readonly).
-    founder_local_of = np.array(topo.gather(founder_local_of), dtype=np.int64)
+    founder_local_of = np.array(topo.gather(_founder_columns(pg, founder_idx)), dtype=np.int64)
     self_coancestry = np.array(topo.gather((1.0 + np.asarray(F, dtype=np.float64)) / 2.0), dtype=np.float64)
 
-    sums, counts, peak_set_size, peak_live, total_pair_visits = _ct_accumulators_kernel(
-        gen,
+    peak_set_size, peak_live, total_pair_visits = _ct_accumulators_kernel(
+        bucket,
         mother,
         father,
         founder_local_of,
         self_coancestry,
-        g_max,
-        n_founders,
+        sums,
+        counts,
     )
     return CTAccumulators(
         sums=sums,
@@ -295,63 +302,60 @@ def _caballero_toro_accumulators(
     )
 
 
-def ne_caballero_toro(
-    pg: PedigreeGraph,
-    ct_accumulators: CTAccumulators | None = None,
-) -> NeCaballeroToroResult:
-    """Caballero & Toro 2002 self-coancestry rate Ne (Ne_CT).
-
-    For each founder f and generation g > 0, descendants are detected
-    via graph reachability — equivalently, ``c[i, f] > 0`` under the
-    Mendelian recursion.  Self-coancestry per descendant is
-    ``(1 + F_i) / 2``; averaged within each founder's descendant set,
-    then averaged across founders that have descendants at gen g.  Ne
-    from the regression slope of ``ln(1 − f̄_s,g)`` on g.
-    """
-    if ct_accumulators is None:
-        founder_idx = _founder_idx(pg)
-        F = pg._inbreeding_values()
-        ct_accumulators = _caballero_toro_accumulators(pg, founder_idx, F)
-
-    sums = ct_accumulators.sums
-    counts = ct_accumulators.counts
-    g_max = sums.shape[0] - 1
+def _caballero_toro_from(cohorts: ObservedCohorts, acc: CTAccumulators) -> NeCaballeroToroResult:
+    sums = acc.sums
+    counts = acc.counts
+    k = cohorts.k
+    if sums.shape[0] != k:
+        raise ValueError("Caballero-Toro accumulators do not describe the estimator's observed cohorts")
 
     valid = counts > 0
-    # per_founder_mean[g, f] = mean self-coancestry of f's descendants in gen g
+    # per_founder_mean[b, f] = mean self-coancestry of f's descendants in cohort b
     per_founder_mean = np.where(valid, sums / np.maximum(counts, 1), 0.0)
-    n_with_desc_per_gen = valid.sum(axis=1).astype(np.int64)
-    mean_fs_per_gen = np.full(g_max + 1, np.nan, dtype=np.float64)
-    nz = n_with_desc_per_gen > 0
+    n_with_desc = valid.sum(axis=1).astype(np.int64)
+    mean_fs = np.full(k, np.nan, dtype=np.float64)
+    nz = n_with_desc > 0
     if nz.any():
-        mean_fs_per_gen[nz] = per_founder_mean.sum(axis=1)[nz] / n_with_desc_per_gen[nz]
-    # Gen 0 has no "descendants" in the CT regression sense; force NaN/0
-    # to match the historical contract (regression starts at g=1).
-    mean_fs_per_gen[0] = np.nan
-    n_with_desc_per_gen[0] = 0
+        mean_fs[nz] = per_founder_mean.sum(axis=1)[nz] / n_with_desc[nz]
+    if k:
+        # The first observed cohort is the baseline: no descendants in the CT
+        # regression sense, whatever its rows' labels or parentage.
+        mean_fs[0] = np.nan
+        n_with_desc[0] = 0
 
-    ne_per_gen = np.full(g_max + 1, np.nan, dtype=np.float64)
-    for g in range(1, g_max + 1):
-        # For g=1 we anchor `prev = 0.5` (the natural self-coancestry floor for
-        # non-inbred individuals, since fs = (1+F)/2 and founder F = 0).  An
-        # earlier version anchored at 0.0, which produced a meaningless
-        # ``Ne = 1/(2·0.5) = 1`` artifact at g=1; the actual drift signal is the
-        # deviation of fs above 0.5, which only starts accumulating from g=2
-        # onward.  At g=1 ``d == 0`` and the ``d > 0`` guard now correctly
-        # leaves the entry as NaN.
-        prev = mean_fs_per_gen[g - 1] if g >= 2 else 0.5
-        if not np.isfinite(prev) or prev >= 1.0 or not np.isfinite(mean_fs_per_gen[g]):
-            continue
-        d = (mean_fs_per_gen[g] - prev) / (1.0 - prev)
-        if d > 0:
-            ne_per_gen[g] = 1.0 / (2.0 * d)
-
-    ne_scalar, slope, _ = _scalar_ne_from_log_regression(mean_fs_per_gen)
+    # The first transition starts from the self-coancestry of a non-inbred
+    # individual, 0.5, not from 0: fs = (1 + F) / 2 and founder F = 0, so the
+    # drift signal is the rise above 0.5 (anchoring at 0 yields a spurious
+    # Ne = 1 at the first transition).
+    rate_series = mean_fs.copy()
+    if k:
+        rate_series[0] = 0.5
+    ne_scalar, slope, _ = _scalar_ne_from_log_regression(mean_fs, cohorts.generations)
 
     return NeCaballeroToroResult(
         ne=ne_scalar,
-        ne_per_gen=ne_per_gen,
-        mean_self_coancestry_per_gen=mean_fs_per_gen,
-        n_founders_with_descendants_per_gen=n_with_desc_per_gen,
+        generations=cohorts.generations,
+        mean_self_coancestry_per_gen=mean_fs,
+        n_founders_with_descendants_per_gen=n_with_desc,
+        transition_from=cohorts.transition_from(),
+        transition_to=cohorts.transition_to(),
+        ne_per_gen=_transition_ne(rate_series, cohorts.generations),
         slope=slope,
     )
+
+
+def ne_caballero_toro(pg: PedigreeGraph) -> NeCaballeroToroResult:
+    """Caballero & Toro 2002 self-coancestry rate Ne (Ne_CT).
+
+    For each represented founder genome f and observed cohort after the
+    first, descendants are detected via graph reachability — equivalently,
+    ``c[i, f] > 0`` under the Mendelian recursion.  Self-coancestry per
+    descendant is ``(1 + F_i) / 2``; averaged within each genome's
+    descendant set, then averaged across genomes that have descendants in
+    the cohort.  Ne from the regression slope of ``ln(1 − f̄_s)`` on the
+    label offset; each adjacent transition is gap-corrected.
+    """
+    cohorts = ObservedCohorts.for_graph(pg, "ne_caballero_toro")
+    founder_idx = _founder_idx(pg)
+    acc = _caballero_toro_accumulators(pg, founder_idx, pg._inbreeding_values(), cohorts=cohorts)
+    return _caballero_toro_from(cohorts, acc)

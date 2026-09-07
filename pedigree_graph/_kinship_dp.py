@@ -33,6 +33,7 @@ if TYPE_CHECKING:
 else:
     from numba import njit
 
+from pedigree_graph._cohorts import _densify_labels
 from pedigree_graph._errors import ResourceError
 from pedigree_graph._kinship_allocator import (
     _append_entry,
@@ -683,29 +684,6 @@ def _stream_sum_theta_per_gen(
                 continue
             sum_theta[g_i] += np.float64(vals[rs + p])
     return sum_theta
-
-
-def _densify_labels(labels: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
-    """Map cohort labels to dense bucket indices for the θ̄ accumulator.
-
-    Observed labels (``>= 0``) become ``0 .. k-1`` in ascending label order;
-    every ``-1`` row becomes the sentinel bucket ``k``.  The kernel then
-    allocates ``k + 1`` buckets from ``dense.max()`` — bounded by the number of
-    distinct labels, never by the label values — and the sentinel bucket,
-    which only ever collects unlabelled-with-unlabelled pairs, is discarded by
-    :func:`_finalize_summary`.
-
-    Returns:
-        ``(dense, observed, n_unlabelled)``: int32 bucket index per row, the
-        ascending int32 observed labels, and the count of ``-1`` rows.
-    """
-    raw = np.ascontiguousarray(labels, dtype=np.int32)
-    labelled = raw >= 0
-    observed, inverse = np.unique(raw[labelled], return_inverse=True)
-    dense = np.full(raw.shape[0], observed.shape[0], dtype=np.int32)
-    dense[labelled] = inverse.astype(np.int32)
-    n_unlabelled = int(raw.shape[0] - np.count_nonzero(labelled))
-    return dense, observed.astype(np.int32), n_unlabelled
 
 
 def _finalize_summary(

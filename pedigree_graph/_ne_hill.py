@@ -14,17 +14,21 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 
 from pedigree_graph._cohort_utils import eligible_cohort_range
+from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
+    _generation_family_table,
     _sex_specific_family_table,
     _sigma2_from_quadrants,
+    _variance_from,
     _waples_vk2_expectation,
-    ne_variance_family_size,
+    _warn_if_uniform_sex,
 )
 from pedigree_graph._ne_results import NeHillResult
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._ne_family_size import FamilySizeTable
 
 
 def _hill_age_table(pg: PedigreeGraph) -> dict[str, np.ndarray]:
@@ -54,7 +58,22 @@ def _hill_age_table(pg: PedigreeGraph) -> dict[str, np.ndarray]:
     }
 
 
-def ne_hill_overlapping(pg: PedigreeGraph, vk_scale: bool = False) -> NeHillResult:
+def _birth_year_family_table(pg: PedigreeGraph) -> FamilySizeTable:
+    """The family-size table grouped by birth year (Hill's birth-year branch)."""
+    assert pg.birth_year is not None
+    cohorts = ObservedCohorts.from_labels(np.asarray(pg.birth_year))
+    return _sex_specific_family_table(np.asarray(pg.mother), np.asarray(pg.father), np.asarray(pg.sex), cohorts)
+
+
+def _hill_collapsed(pg: PedigreeGraph) -> NeHillResult:
+    """The sentinel branch: Hill at ``L = 1`` is the Ne_V passthrough."""
+    cohorts = ObservedCohorts.for_graph(pg, "ne_hill_overlapping")
+    _warn_if_uniform_sex(pg, "ne_hill_overlapping")
+    v = _variance_from(cohorts, _generation_family_table(pg, cohorts))
+    return NeHillResult(ne=v.ne, generation_interval=1.0, collapses_to_ne_v=True)
+
+
+def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillResult:
     """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
 
     Dispatches on ``pg.birth_year``:
@@ -100,26 +119,16 @@ def ne_hill_overlapping(pg: PedigreeGraph, vk_scale: bool = False) -> NeHillResu
             growth or decline.  Default ``False`` (raw sample
             variances).
     """
+    if pg.n == 0:
+        return NeHillResult(ne=None, generation_interval=1.0, collapses_to_ne_v=True)
     # pg.generation_interval is None iff pg.birth_year is None or one sex
     # has no qualifying edges — both cases collapse to Ne_V passthrough.
     gi = pg.generation_interval
     if gi is None:
-        v = ne_variance_family_size(pg)
-        return NeHillResult(
-            ne=v.ne,
-            generation_interval=1.0,
-            collapses_to_ne_v=True,
-        )
+        return _hill_collapsed(pg)
 
     window = eligible_cohort_range(pg)
-    table = _sex_specific_family_table(
-        np.asarray(pg.mother),
-        np.asarray(pg.father),
-        np.asarray(pg.sex),
-        np.asarray(pg.generation),
-        cohort=pg.birth_year,
-        cohort_mode="arbitrary",
-    )
+    table = _birth_year_family_table(pg)
 
     ne_per_c: list[float] = []
     Ne_m_per_c: list[float] = []

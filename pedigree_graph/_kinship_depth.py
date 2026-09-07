@@ -86,6 +86,8 @@ def _compute_eqg(m_idx: np.ndarray, f_idx: np.ndarray, n: int) -> np.ndarray:
     :func:`_compute_depth`.
     """
     eqg = np.zeros(n, dtype=np.float64)
+    if n == 0:
+        return eqg
     depth = _compute_depth(m_idx, f_idx, n)
     max_depth = depth.max()
     for d in range(1, max_depth + 1):

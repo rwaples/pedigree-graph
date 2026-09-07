@@ -1,0 +1,176 @@
+{
+ "ne_caballero_toro": {
+  "mean_self_coancestry_per_gen": [
+   null,
+   0.5,
+   0.625,
+   0.5
+  ],
+  "n_founders_with_descendants_per_gen": [
+   0,
+   4,
+   2,
+   4
+  ],
+  "ne": null,
+  "ne_per_gen": [
+   null,
+   null,
+   2.0,
+   null
+  ],
+  "slope": 1.477766939657583e-16
+ },
+ "ne_coancestry": {
+  "mean_theta_per_gen": [
+   0.0,
+   0.08333333333333333,
+   null,
+   0.21875
+  ],
+  "n_generations_used": 2,
+  "ne": 6.25591571346891,
+  "ne_per_gen": [
+   null,
+   6.0,
+   null,
+   null
+  ],
+  "slope": -0.07992435047094802
+ },
+ "ne_hill_overlapping": {
+  "N1_f": null,
+  "N1_f_per_cohort": null,
+  "N1_m": null,
+  "N1_m_per_cohort": null,
+  "Ne_f": null,
+  "Ne_f_per_cohort": null,
+  "Ne_m": null,
+  "Ne_m_per_cohort": null,
+  "T_f": null,
+  "T_m": null,
+  "Vk_f": null,
+  "Vk_f_per_cohort": null,
+  "Vk_m": null,
+  "Vk_m_per_cohort": null,
+  "age_table": null,
+  "cohort_window": null,
+  "cohort_years": null,
+  "collapses_to_ne_v": true,
+  "generation_interval": 1.0,
+  "kbar_f": null,
+  "kbar_m": null,
+  "n_eligible_cohorts": 0,
+  "n_excluded_left_censored": 0,
+  "n_excluded_right_censored": 0,
+  "n_offspring_pairs": 0,
+  "n_unknown_birth_year": 0,
+  "ne": 18.0,
+  "ne_per_cohort": null,
+  "vk_scaled": false
+ },
+ "ne_inbreeding": {
+  "mean_f_per_gen": [
+   0.0,
+   0.0,
+   0.25,
+   0.0
+  ],
+  "n_generations_used": 3,
+  "ne": 8.584955506242638e+16,
+  "ne_per_gen": [
+   null,
+   null,
+   2.0,
+   null
+  ],
+  "slope": -5.824142007916289e-18
+ },
+ "ne_individual_delta_f": {
+  "mean_eqg_per_gen": [
+   null,
+   null,
+   2.0,
+   2.25
+  ],
+  "n_used_per_gen": [
+   0,
+   0,
+   1,
+   2
+  ],
+  "ne": 2.0,
+  "ne_per_gen": [
+   null,
+   null,
+   2.0,
+   null
+  ]
+ },
+ "ne_long_term_contributions": {
+  "asymptote_reached": false,
+  "max_delta_final": 0.375,
+  "n_iterations": 3,
+  "ne": null,
+  "sum_c_squared": 0.28125
+ },
+ "ne_sex_ratio": {
+  "n_female_per_gen": [
+   2,
+   2,
+   0,
+   1
+  ],
+  "n_male_per_gen": [
+   2,
+   1,
+   1,
+   1
+  ],
+  "ne": 2.6666666666666665,
+  "ne_per_gen": [
+   4.0,
+   2.6666666666666665,
+   null,
+   2.0
+  ]
+ },
+ "ne_variance_family_size": {
+  "cov_f": [
+   0.0,
+   null,
+   null
+  ],
+  "cov_m": [
+   0.0,
+   null,
+   null
+  ],
+  "ne": 18.0,
+  "ne_per_transition": [
+   18.0,
+   null,
+   null
+  ],
+  "v_ff": [
+   0.0,
+   null,
+   null
+  ],
+  "v_fm": [
+   0.0,
+   null,
+   null
+  ],
+  "v_mf": [
+   0.0,
+   null,
+   null
+  ],
+  "v_mm": [
+   0.5,
+   null,
+   null
+  ]
+ }
+}

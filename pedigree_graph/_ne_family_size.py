@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from pedigree_graph._ne_common import _harmonic_mean, _require_complete_generation_labels
+from pedigree_graph._cohorts import ObservedCohorts
+from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_results import NeSexRatioResult, NeVarianceResult
 
 if TYPE_CHECKING:
@@ -64,8 +65,8 @@ class FamilySizeEntry:
     k_ff: np.ndarray
 
 
-# Per-parent-cohort table keyed on cohort label (generation index in
-# ``compact_generation`` mode, birth year in ``arbitrary`` mode).
+# Per-parent-cohort table keyed on the observed cohort label (a generation
+# label for Ne_V, a birth year for Hill), one entry per observed label.
 FamilySizeTable = dict[int, FamilySizeEntry]
 
 
@@ -106,78 +107,50 @@ def _sex_specific_family_table(
     mother: np.ndarray,
     father: np.ndarray,
     sex: np.ndarray,
-    generation: np.ndarray,
-    *,
-    cohort: np.ndarray | None = None,
-    cohort_mode: Literal["compact_generation", "arbitrary"] = "compact_generation",
+    cohorts: ObservedCohorts,
 ) -> FamilySizeTable:
     """Per-parent-cohort counts of male/female offspring per parent.
 
-    For each parent cohort ``c``, tally the lifetime offspring of every
-    parent in cohort ``c``, partitioned by offspring sex.  Offspring
-    may live in any later cohort, so the table correctly attributes
-    skip-gen children to the parent's own cohort.  Under strictly
-    layered pedigrees this collapses to the standard
-    one-transition-per-cohort decomposition.
+    For each observed cohort ``c``, tally the lifetime offspring of every
+    parent in cohort ``c``, partitioned by offspring sex.  Offspring may
+    live in any later cohort, so the table correctly attributes skip-gen
+    children to the parent's own cohort.  Every observed label gets an
+    entry, the last one included: a cohort with no offspring simply has
+    all-zero counts, and downstream eligibility filtering decides what to
+    keep.  Rows outside every cohort (label ``-1``) belong to no entry but
+    still count as offspring of their parents.
 
     Args:
         mother: per-individual mother row index (``-1`` for unknown).
         father: per-individual father row index (``-1`` for unknown).
         sex: per-individual sex labels (``1`` male, ``0`` female).
-        generation: per-individual generation index (used by
-            ``compact_generation`` mode).
-        cohort: per-individual cohort label.  Required when
-            ``cohort_mode == 'arbitrary'``; ignored in
-            ``compact_generation`` mode.
-        cohort_mode:
-            * ``'compact_generation'`` (default, backward compatible):
-              cohort labels are ``0 .. g_max - 1`` (max excluded — last
-              cohort has no offspring under a discrete-generation
-              pedigree).
-            * ``'arbitrary'``: cohort labels are taken from
-              ``np.unique(cohort[cohort >= 0])``.  ``-1`` sentinels
-              are filtered; the max cohort is included (downstream
-              eligibility filtering handles right-censoring).
+        cohorts: the grouping, by generation label or by birth year.
 
     Returns:
-        A :data:`FamilySizeTable` (``dict`` keyed on parent cohort
-        label) whose values are :class:`FamilySizeEntry` records.
+        A :data:`FamilySizeTable` keyed on observed label whose values are
+        :class:`FamilySizeEntry` records.
     """
-    n = len(generation)
+    n = int(cohorts.dense.shape[0])
     sex = np.asarray(sex, dtype=np.int8)
     mother = np.asarray(mother)
     father = np.asarray(father)
-
-    if cohort_mode == "compact_generation":
-        cohort_arr = np.asarray(generation)
-        g_max = int(cohort_arr.max()) if n else 0
-        cohort_labels: list[int] = list(range(g_max))
-    elif cohort_mode == "arbitrary":
-        if cohort is None:
-            raise ValueError("cohort_mode='arbitrary' requires the cohort argument")
-        cohort_arr = np.asarray(cohort)
-        cohort_labels = [int(c) for c in np.unique(cohort_arr[cohort_arr >= 0])]
-    else:
-        raise ValueError(f"cohort_mode must be 'compact_generation' or 'arbitrary'; got {cohort_mode!r}")
 
     father_present = father >= 0
     mother_present = mother >= 0
     male_offspring = sex == 1
 
-    # Lifetime offspring counts by parent row.  Counting globally and slicing
-    # per cohort afterwards keeps this correct for both compact-generation and
-    # arbitrary-birth-year cohort modes.
+    # Lifetime offspring counts by parent row, counted once globally and
+    # sliced per cohort afterwards.
     k_mm_all = np.bincount(father[father_present & male_offspring], minlength=n).astype(np.int64)
     k_mf_all = np.bincount(father[father_present & ~male_offspring], minlength=n).astype(np.int64)
     k_fm_all = np.bincount(mother[mother_present & male_offspring], minlength=n).astype(np.int64)
     k_ff_all = np.bincount(mother[mother_present & ~male_offspring], minlength=n).astype(np.int64)
 
     out: FamilySizeTable = {}
-    for c in cohort_labels:
-        in_c = cohort_arr == c
-        m_arr = np.where(in_c & (sex == 1))[0]
-        f_arr = np.where(in_c & (sex == 0))[0]
-        out[c] = FamilySizeEntry(
+    for label, rows in zip(cohorts.generations, cohorts.members(), strict=True):
+        m_arr = rows[sex[rows] == 1]
+        f_arr = rows[sex[rows] == 0]
+        out[int(label)] = FamilySizeEntry(
             males_in_parent_gen=m_arr,
             females_in_parent_gen=f_arr,
             k_mm=k_mm_all[m_arr],
@@ -281,74 +254,38 @@ def _waples_vk2_expectation(vk1: float, kbar1: float, kbar2: float = 2.0) -> flo
 # ---------------------------------------------------------------------------
 
 
-def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
-    """Variance-of-family-size Ne (Ne_V) — Caballero 1994 eq. 6.
+def _variance_from(cohorts: ObservedCohorts, table: FamilySizeTable) -> NeVarianceResult:
+    k = cohorts.k
+    ne_per_t = np.full(k, np.nan, dtype=np.float64)
+    v_mm = np.full(k, np.nan, dtype=np.float64)
+    v_mf = np.full(k, np.nan, dtype=np.float64)
+    v_fm = np.full(k, np.nan, dtype=np.float64)
+    v_ff = np.full(k, np.nan, dtype=np.float64)
+    cov_m = np.full(k, np.nan, dtype=np.float64)
+    cov_f = np.full(k, np.nan, dtype=np.float64)
 
-    For each parent generation p, decompose lifetime offspring counts per
-    parent by offspring sex (``k_mm, k_mf, k_fm, k_ff``).  Skip-gen
-    children (offspring at gen > p+1) are attributed to the parent's own
-    cohort, so a parent's k-totals reflect their full reproductive
-    output even when offspring span multiple generations.
-
-    ``V(k_m) = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the per-male
-    total-offspring variance built from this decomposition.  Discrete-
-    generation Ne for the transition is
-
-        ``ΔF = (V(k_m)/k̄_m) / (4 · N_m · k̄_m) +
-                  (V(k_f)/k̄_f) / (4 · N_f · k̄_f)``,
-
-    with ``Ne_p = 1/(2·ΔF)``.  When ``V(k)/k̄ → 1`` (Poisson) and
-    ``N_m = N_f``, this reduces to Wright's ``4 N_m N_f / (N_m + N_f)``.
-    Aggregate Ne is the harmonic mean across parent generations.
-
-    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1 —
-    almost always a sign that the caller forgot to pass ``sex=`` to
-    :meth:`PedigreeGraph.from_arrays` and is unwittingly running on the
-    all-female default.  The estimator still returns ``ne=None``
-    (consistent with a legitimate single-sex pedigree), so the warning
-    is the only diagnostic.
-    """
-    _require_complete_generation_labels(pg, "ne_variance_family_size")
-    _warn_if_uniform_sex(pg, "ne_variance_family_size")
-
-    table = _sex_specific_family_table(
-        np.asarray(pg.mother),
-        np.asarray(pg.father),
-        np.asarray(pg.sex),
-        np.asarray(pg.generation),
-    )
-    g_max = int(np.asarray(pg.generation).max())
-    # Indexed by parent generation p ∈ [0, g_max).  Slot p = g_max is
-    # absent because g_max individuals have no offspring in the pedigree.
-    ne_per_t = np.full(g_max, np.nan, dtype=np.float64)
-    v_mm = np.full(g_max, np.nan, dtype=np.float64)
-    v_mf = np.full(g_max, np.nan, dtype=np.float64)
-    v_fm = np.full(g_max, np.nan, dtype=np.float64)
-    v_ff = np.full(g_max, np.nan, dtype=np.float64)
-    cov_m = np.full(g_max, np.nan, dtype=np.float64)
-    cov_f = np.full(g_max, np.nan, dtype=np.float64)
-
-    for p, entry in table.items():
-        decomp = _sigma2_from_quadrants(entry)
+    for b, label in enumerate(cohorts.generations):
+        decomp = _sigma2_from_quadrants(table[int(label)])
         if decomp is None:
             continue
         v_mm_p, v_mf_p, v_fm_p, v_ff_p, cov_m_p, cov_f_p, kbar_m, kbar_f, n_m, n_f = decomp
         if kbar_m <= 0 or kbar_f <= 0:
             continue
-        v_mm[p] = v_mm_p
-        v_mf[p] = v_mf_p
-        v_fm[p] = v_fm_p
-        v_ff[p] = v_ff_p
-        cov_m[p] = cov_m_p
-        cov_f[p] = cov_f_p
+        v_mm[b] = v_mm_p
+        v_mf[b] = v_mf_p
+        v_fm[b] = v_fm_p
+        v_ff[b] = v_ff_p
+        cov_m[b] = cov_m_p
+        cov_f[b] = cov_f_p
         var_km_total = v_mm_p + v_mf_p + 2.0 * cov_m_p
         var_kf_total = v_fm_p + v_ff_p + 2.0 * cov_f_p
         df = (var_km_total / kbar_m) / (4.0 * n_m * kbar_m) + (var_kf_total / kbar_f) / (4.0 * n_f * kbar_f)
         if df > 0:
-            ne_per_t[p] = 1.0 / (2.0 * df)
+            ne_per_t[b] = 1.0 / (2.0 * df)
 
     return NeVarianceResult(
         ne=_harmonic_mean(ne_per_t) if np.isfinite(ne_per_t).any() else None,
+        parent_generations=cohorts.generations,
         ne_per_transition=ne_per_t,
         v_mm=v_mm,
         v_mf=v_mf,
@@ -359,10 +296,67 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     )
 
 
+def _generation_family_table(pg: PedigreeGraph, cohorts: ObservedCohorts) -> FamilySizeTable:
+    """The family-size table grouped by generation label (Ne_V and Hill's collapse)."""
+    return _sex_specific_family_table(np.asarray(pg.mother), np.asarray(pg.father), np.asarray(pg.sex), cohorts)
+
+
+def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
+    """Variance-of-family-size Ne (Ne_V) — Caballero 1994 eq. 6.
+
+    For each observed parent cohort, decompose lifetime offspring counts per
+    parent by offspring sex (``k_mm, k_mf, k_fm, k_ff``).  Skip-gen
+    children (offspring in a later cohort than the next) are attributed to
+    the parent's own cohort, so a parent's k-totals reflect their full
+    reproductive output even when offspring span several cohorts.
+
+    ``V(k_m) = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the per-male
+    total-offspring variance built from this decomposition.  Discrete-
+    generation Ne for the cohort is
+
+        ``ΔF = (V(k_m)/k̄_m) / (4 · N_m · k̄_m) +
+                  (V(k_f)/k̄_f) / (4 · N_f · k̄_f)``,
+
+    with ``Ne_p = 1/(2·ΔF)``.  When ``V(k)/k̄ → 1`` (Poisson) and
+    ``N_m = N_f``, this reduces to Wright's ``4 N_m N_f / (N_m + N_f)``.
+    Aggregate Ne is the harmonic mean across parent cohorts.
+
+    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1 —
+    almost always a sign that the caller forgot to pass ``sex=`` to
+    :meth:`PedigreeGraph.from_arrays` and is unwittingly running on the
+    all-female default.  The estimator still returns ``ne=None``
+    (consistent with a legitimate single-sex pedigree), so the warning
+    is the only diagnostic.
+    """
+    cohorts = ObservedCohorts.for_graph(pg, "ne_variance_family_size")
+    _warn_if_uniform_sex(pg, "ne_variance_family_size")
+    return _variance_from(cohorts, _generation_family_table(pg, cohorts))
+
+
+def _sex_ratio_from(cohorts: ObservedCohorts, sex: np.ndarray) -> NeSexRatioResult:
+    k = cohorts.k
+    labelled = cohorts.dense < k
+    n_male = np.bincount(cohorts.dense[labelled & (sex == 1)], minlength=k).astype(np.int64)
+    n_female = np.bincount(cohorts.dense[labelled & (sex == 0)], minlength=k).astype(np.int64)
+
+    ne_per_gen = np.full(k, np.nan, dtype=np.float64)
+    for b in range(k):
+        if n_male[b] > 0 and n_female[b] > 0:
+            ne_per_gen[b] = 4.0 * n_male[b] * n_female[b] / (n_male[b] + n_female[b])
+
+    return NeSexRatioResult(
+        ne=_harmonic_mean(ne_per_gen) if np.isfinite(ne_per_gen).any() else None,
+        generations=cohorts.generations,
+        ne_per_gen=ne_per_gen,
+        n_male_per_gen=n_male,
+        n_female_per_gen=n_female,
+    )
+
+
 def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
     """Wright sex-ratio Ne (Ne_sr).
 
-    ``Ne_t = 4·Nm_t·Nf_t / (Nm_t + Nf_t)`` per generation; aggregate is
+    ``Ne_g = 4·Nm_g·Nf_g / (Nm_g + Nf_g)`` per observed cohort; aggregate is
     the harmonic mean across cohorts with both sexes present.
 
     Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1 —
@@ -372,27 +366,6 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
     that case (consistent with a legitimate single-sex pedigree), so
     the warning is the only diagnostic.
     """
-    _require_complete_generation_labels(pg, "ne_sex_ratio")
+    cohorts = ObservedCohorts.for_graph(pg, "ne_sex_ratio")
     _warn_if_uniform_sex(pg, "ne_sex_ratio")
-
-    gen = np.asarray(pg.generation)
-    sex = np.asarray(pg.sex)
-    g_max = int(gen.max())
-    n_male = np.zeros(g_max + 1, dtype=np.int64)
-    n_female = np.zeros(g_max + 1, dtype=np.int64)
-    for g in range(g_max + 1):
-        in_g = gen == g
-        n_male[g] = int(((sex == 1) & in_g).sum())
-        n_female[g] = int(((sex == 0) & in_g).sum())
-
-    ne_per_gen = np.full(g_max + 1, np.nan, dtype=np.float64)
-    for g in range(g_max + 1):
-        if n_male[g] > 0 and n_female[g] > 0:
-            ne_per_gen[g] = 4.0 * n_male[g] * n_female[g] / (n_male[g] + n_female[g])
-
-    return NeSexRatioResult(
-        ne=_harmonic_mean(ne_per_gen) if np.isfinite(ne_per_gen).any() else None,
-        ne_per_gen=ne_per_gen,
-        n_male_per_gen=n_male,
-        n_female_per_gen=n_female,
-    )
+    return _sex_ratio_from(cohorts, np.asarray(pg.sex))

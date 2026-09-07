@@ -6,6 +6,52 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `pedigree_graph.effective_size`** (ADR 0006, slice 6c-1).  The
+  final effective-size surface: the eight `ne_*` estimators with frozen
+  signatures (`ne_long_term_contributions(pg, *, tol=1e-6)` and
+  `ne_hill_overlapping(pg, *, vk_scale=False)` take no other arguments; none
+  accepts an injected prerequisite) and their result records.  Estimators
+  group by the **observed** generation labels: every cohort array carries its
+  labels (`generations`, `parent_generations` for the family-size variance,
+  `cohort_years` for Hill), is sized by the number of distinct labels rather
+  than by the largest value, and the inbreeding, coancestry, and
+  Caballero-Toro records name each adjacent transition (`transition_from`,
+  `transition_to`).  A transition across a label gap `h` reports the
+  per-generation rate `1 - ((1 - x_b) / (1 - x_a)) ** (1 / h)` of Gutiérrez
+  et al. 2008; at `h = 1` it is bit-identical to the one-step arithmetic
+  (`tests/test_ne_h1_parity.py` pins this against the slice-6b outputs on six
+  fixtures).  Scalar regressions use the label offset, so rebasing every
+  label changes nothing.  Every result array is an owned read-only copy and
+  the record checks its lengths against its labels; Hill's `age_table` is an
+  immutable mapping.  An empty graph returns every record with `ne=None` and
+  zero-length arrays.  `NeLTCResult.n_iterations` is now the number of
+  adjacent-cohort comparisons and `final_generation` names the cohort whose
+  vector produced `sum_c_squared`.
+
+- **Changed: founders are represented founders** (slice 6c-1).  A founder is
+  a row with no represented mother or father, whatever its label and whether
+  its parents are missing or external, where 6b took `generation == 0`.
+  Long-term-contribution and Caballero-Toro columns represent **founder
+  genomes** (ADR 0008): parentless MZ co-twins share one column, so their
+  descendants inherit one lineage, and a founder row is never its own
+  descendant.  On a pedigree with parentless MZ pairs this lowers
+  `n_founders_with_descendants_per_gen` by the number of pairs and moves the
+  long-term-contribution sum of squares in the last bit; on every other
+  fixture the outputs are unchanged.  The family-size variance now keeps a
+  usable entry for a maximum-labelled parent cohort with represented
+  offspring.  Contribution propagation follows structural depth, never the
+  labels, so labels that merge depths or place a parent and child in one
+  group change only the grouping.
+
+- **0.8.0-DELETE adapters.** The package-root `ne_*`, the root `Ne*Result`
+  names, and `compute_all_ne()` keep their 0.7.1 signatures, dense
+  `0 .. max(label)` layouts (gaps filled `0.0` for mean F, `NaN` for every
+  other statistic, `0` for counts; rates placed at their `transition_to`
+  label; variance arrays of length `max(label)`, which drops the new
+  maximum-label entry), and the 0.7.1 `n_iterations` meaning.  They call the
+  same evaluators as the final surface, so a corrected sparse-gap rate is
+  the value they return too.
+
 - **Added: `distinct_ancestor_counts()`, `descendant_path_counts()`, and
   `connected_component_ids()`** (ADR 0006, slice 6b).  The names carry the
   semantics: distinct ancestors count a looped ancestor once (read-only

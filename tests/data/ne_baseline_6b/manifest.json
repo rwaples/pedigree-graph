@@ -1,0 +1,11 @@
+{
+ "package_commit": "00a3667",
+ "fixtures": [
+  "closed_line_5",
+  "skip_gen",
+  "small_pedigree",
+  "wf_n20_g4",
+  "wf_n40_g5_birth_years",
+  "wf_n60_g6"
+ ]
+}

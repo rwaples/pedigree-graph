@@ -21,6 +21,7 @@ from pedigree_graph import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
+from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._effective_size import (
     CTAccumulators,
     FamilySizeEntry,
@@ -603,108 +604,51 @@ def test_ne_hill_serializes_to_dict():
 # ---------------------------------------------------------------------------
 
 
-def test_sex_specific_family_table_compact_mode_unchanged():
-    """Default invocation reproduces pre-refactor behavior exactly."""
-    from pedigree_graph._effective_size import _sex_specific_family_table
-
-    df = _build_closed_line(n_gens=5)
-    pg = PedigreeGraph(df)
-    table = _sex_specific_family_table(
+def _family_table(pg: PedigreeGraph, cohorts: ObservedCohorts | None = None):
+    return _sex_specific_family_table(
         np.asarray(pg.mother),
         np.asarray(pg.father),
         np.asarray(pg.sex),
-        np.asarray(pg.generation),
+        ObservedCohorts.for_graph(pg, "test") if cohorts is None else cohorts,
     )
-    # Keys are 0..g_max-1 (g_max excluded).
+
+
+def test_sex_specific_family_table_has_every_observed_label():
+    """Keys are the observed labels, the maximum included, with all-zero counts there."""
+    pg = PedigreeGraph(_build_closed_line(n_gens=5))
+    table = _family_table(pg)
     g_max = int(np.asarray(pg.generation).max())
-    assert set(table.keys()) == set(range(g_max))
-    # Each cohort has the expected sex counts (1 male + 1 female per gen).
-    for p in range(g_max):
+    assert list(table) == list(range(g_max + 1))
+    for p in range(g_max + 1):
         assert len(table[p].males_in_parent_gen) == 1
         assert len(table[p].females_in_parent_gen) == 1
+    np.testing.assert_array_equal(table[g_max].k_mm, [0])
+    np.testing.assert_array_equal(table[g_max].k_ff, [0])
 
 
-def test_sex_specific_family_table_arbitrary_mode_includes_max_label():
-    """Arbitrary mode keys on actual labels and includes the maximum."""
-    from pedigree_graph._effective_size import _sex_specific_family_table
-
-    df = _build_closed_line(n_gens=5)
-    pg = PedigreeGraph(df)
-    # Use a fake "birth_year" derived from generation + a constant offset
-    # so cohort labels are non-contiguous from zero.
+def test_sex_specific_family_table_keys_on_rebased_labels():
+    """Birth years (or any rebased labels) key the table by their own values."""
+    pg = PedigreeGraph(_build_closed_line(n_gens=5))
     fake_birth_year = (np.asarray(pg.generation) + 1970).astype(np.int32)
-    table = _sex_specific_family_table(
-        np.asarray(pg.mother),
-        np.asarray(pg.father),
-        np.asarray(pg.sex),
-        np.asarray(pg.generation),
-        cohort=fake_birth_year,
-        cohort_mode="arbitrary",
-    )
-    # Keys are 1970..1975 (g_max INCLUDED).
-    assert set(table.keys()) == {1970, 1971, 1972, 1973, 1974, 1975}
-    # The youngest cohort (1975 = gen 5) has no offspring → all-zero k's.
+    table = _family_table(pg, ObservedCohorts.from_labels(fake_birth_year))
+    assert set(table) == {1970, 1971, 1972, 1973, 1974, 1975}
     np.testing.assert_array_equal(table[1975].k_mm, [0])
     np.testing.assert_array_equal(table[1975].k_mf, [0])
     np.testing.assert_array_equal(table[1975].k_fm, [0])
     np.testing.assert_array_equal(table[1975].k_ff, [0])
 
 
-def test_sex_specific_family_table_arbitrary_mode_filters_sentinels():
-    """Cohort labels of ``-1`` are excluded from the output dict."""
-    from pedigree_graph._effective_size import _sex_specific_family_table
-
-    df = _build_closed_line(n_gens=3)
-    pg = PedigreeGraph(df)
+def test_sex_specific_family_table_unlabelled_rows_belong_to_no_cohort():
+    """A ``-1`` row has no entry but its offspring still count for its parents."""
+    pg = PedigreeGraph(_build_closed_line(n_gens=3))
     cohort = np.asarray(pg.generation).copy()
-    cohort[0] = -1  # mark one founder as unknown cohort
-    table = _sex_specific_family_table(
-        np.asarray(pg.mother),
-        np.asarray(pg.father),
-        np.asarray(pg.sex),
-        np.asarray(pg.generation),
-        cohort=cohort,
-        cohort_mode="arbitrary",
-    )
+    cohort[0] = -1
+    table = _family_table(pg, ObservedCohorts.from_labels(cohort))
     assert -1 not in table
-    # The id=0 founder (male) is no longer in cohort 0, so cohort 0 has
-    # only the female founder.
     assert len(table[0].males_in_parent_gen) == 0
     assert len(table[0].females_in_parent_gen) == 1
-
-
-def test_sex_specific_family_table_arbitrary_mode_requires_cohort():
-    """Missing cohort argument in arbitrary mode raises ValueError."""
-    from pedigree_graph._effective_size import _sex_specific_family_table
-
-    pg = PedigreeGraph(_build_closed_line(n_gens=3))
-    with pytest.raises(ValueError, match="cohort argument"):
-        _sex_specific_family_table(
-            np.asarray(pg.mother),
-            np.asarray(pg.father),
-            np.asarray(pg.sex),
-            np.asarray(pg.generation),
-            cohort_mode="arbitrary",
-        )
-
-
-def test_sex_specific_family_table_invalid_mode_raises():
-    from pedigree_graph._effective_size import _sex_specific_family_table
-
-    pg = PedigreeGraph(_build_closed_line(n_gens=3))
-    with pytest.raises(ValueError, match="cohort_mode must be"):
-        _sex_specific_family_table(
-            np.asarray(pg.mother),
-            np.asarray(pg.father),
-            np.asarray(pg.sex),
-            np.asarray(pg.generation),
-            cohort_mode="bogus",
-        )
-
-
-# ---------------------------------------------------------------------------
-# Step 2 — Ne_CT (Caballero & Toro 2002): closed-line round-trip
-# ---------------------------------------------------------------------------
+    np.testing.assert_array_equal(table[0].k_fm, [1])
+    np.testing.assert_array_equal(table[0].k_ff, [1])
 
 
 def test_ne_caballero_toro_closed_line_self_coancestry():
@@ -905,12 +849,7 @@ class TestTypedPayloadModels:
 
     def test_family_table_entries_are_typed(self):
         pg = PedigreeGraph(_build_closed_line(n_gens=4))
-        table = _sex_specific_family_table(
-            np.asarray(pg.mother),
-            np.asarray(pg.father),
-            np.asarray(pg.sex),
-            np.asarray(pg.generation),
-        )
+        table = _family_table(pg)
         entry = next(iter(table.values()))
         assert isinstance(entry, FamilySizeEntry)
         # Within-sex array alignment (documented invariant).
@@ -935,12 +874,7 @@ class TestTypedPayloadModels:
 
     def test_sigma2_from_quadrants_returns_none_below_two_per_sex(self):
         pg = PedigreeGraph(_build_closed_line(n_gens=4))
-        table = _sex_specific_family_table(
-            np.asarray(pg.mother),
-            np.asarray(pg.father),
-            np.asarray(pg.sex),
-            np.asarray(pg.generation),
-        )
+        table = _family_table(pg)
         # _build_closed_line has one male + one female per cohort, so
         # every cohort lacks two of a sex → decomposition is None.
         for entry in table.values():
@@ -959,12 +893,7 @@ class TestTypedPayloadModels:
             }
         )
         pg = PedigreeGraph(df)
-        table = _sex_specific_family_table(
-            np.asarray(pg.mother),
-            np.asarray(pg.father),
-            np.asarray(pg.sex),
-            np.asarray(pg.generation),
-        )
+        table = _family_table(pg)
         decomp = _sigma2_from_quadrants(table[0])
         assert isinstance(decomp, Sigma2Decomposition)
         assert decomp.n_m == 2
@@ -989,10 +918,10 @@ class TestTypedPayloadModels:
         F = pg.inbreeding()
         acc = _caballero_toro_accumulators(pg, _founder_idx(pg), F)
         assert isinstance(acc, CTAccumulators)
-        g_max = int(np.asarray(pg.generation).max())
+        k = int(np.asarray(pg.generation).max()) + 1
         n_founders = len(_founder_idx(pg))
-        assert acc.sums.shape == (g_max + 1, n_founders)
-        assert acc.counts.shape == (g_max + 1, n_founders)
+        assert acc.sums.shape == (k, n_founders)
+        assert acc.counts.shape == (k, n_founders)
         assert acc.sums.dtype == np.float64
         assert acc.counts.dtype == np.int64
 

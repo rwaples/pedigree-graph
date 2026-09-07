@@ -35,6 +35,18 @@ its represented parents. Structural depth is derived from parent relationships
 and is independent of input row order.
 _Avoid_: generation label, cohort
 
+**Represented founder**:
+An individual with no represented mother or father, even when known biological parents have IDs external to the represented rows.
+_Avoid_: founder (when biological founder status could be inferred), generation-0 individual
+
+**Represented founder genome**:
+A genome node with no represented parental genome node, so parentless MZ co-twins are two represented founders sharing one ancestry source.
+_Avoid_: founder row, treating MZ co-twins as independent genetic sources
+
+**Closed represented parentage**:
+A pedigree property in which every represented individual has either zero or two represented parents, regardless of whether an unrepresented parent is missing or known by an external ID.
+_Avoid_: complete pedigree (biological ancestors may still be outside the graph), complete metadata
+
 **Generation label**:
 Optional cohort metadata supplied for an individual. When generation metadata
 is absent for the entire pedigree, structural depth supplies the generation
@@ -98,6 +110,8 @@ _Avoid_: using it for what `pair_kinship` returns
 
 ## Relationships
 
+- Every **represented founder** belongs to one **represented founder genome**; two MZ represented founders share the same one.
+- **Closed represented parentage** permits represented founders but no individual with exactly one represented parent.
 - A **relationship pair** holds two individuals and belongs to one **relationship category**; asymmetric categories define the roles of its two positions, while canonical key ordering remains only a storage/encoding choice.
 - Every public row index is expressed in either **graph-space** or **view-space**; the same individual generally has a different index in each.
 - A graph query returns graph-space rows, while a view query returns view-space rows. Coordinate space follows the query receiver.

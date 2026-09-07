@@ -1,0 +1,196 @@
+{
+ "ne_caballero_toro": {
+  "mean_self_coancestry_per_gen": [
+   null,
+   0.5,
+   0.5093212632275133,
+   0.5287325332003067,
+   0.5459882544156127
+  ],
+  "n_founders_with_descendants_per_gen": [
+   0,
+   18,
+   18,
+   16,
+   16
+  ],
+  "ne": 15.159834916276445,
+  "ne_per_gen": [
+   null,
+   null,
+   26.82039911308196,
+   12.639016856192715,
+   13.655397561177358
+  ],
+  "slope": -0.03298188949690818
+ },
+ "ne_coancestry": {
+  "mean_theta_per_gen": [
+   0.0,
+   0.02368421052631579,
+   0.05082236842105263,
+   0.08009868421052632,
+   0.10660978618421052
+  ],
+  "n_generations_used": 4,
+  "ne": 16.800089532493264,
+  "ne_per_gen": [
+   null,
+   21.11111111111111,
+   17.987878787878792,
+   16.21067415730337,
+   17.349360217138432
+  ],
+  "slope": -0.02976174615218233
+ },
+ "ne_hill_overlapping": {
+  "N1_f": null,
+  "N1_f_per_cohort": null,
+  "N1_m": null,
+  "N1_m_per_cohort": null,
+  "Ne_f": null,
+  "Ne_f_per_cohort": null,
+  "Ne_m": null,
+  "Ne_m_per_cohort": null,
+  "T_f": null,
+  "T_m": null,
+  "Vk_f": null,
+  "Vk_f_per_cohort": null,
+  "Vk_m": null,
+  "Vk_m_per_cohort": null,
+  "age_table": null,
+  "cohort_window": null,
+  "cohort_years": null,
+  "collapses_to_ne_v": true,
+  "generation_interval": 1.0,
+  "kbar_f": null,
+  "kbar_m": null,
+  "n_eligible_cohorts": 0,
+  "n_excluded_left_censored": 0,
+  "n_excluded_right_censored": 0,
+  "n_offspring_pairs": 0,
+  "n_unknown_birth_year": 0,
+  "ne": 19.45945945945946,
+  "ne_per_cohort": null,
+  "vk_scaled": false
+ },
+ "ne_inbreeding": {
+  "mean_f_per_gen": [
+   0.0,
+   0.0,
+   0.025,
+   0.0734375,
+   0.104296875
+  ],
+  "n_generations_used": 4,
+  "ne": 13.109777258333056,
+  "ne_per_gen": [
+   null,
+   null,
+   20.0,
+   10.064516129032258,
+   15.012658227848101
+  ],
+  "slope": -0.03813947332188132
+ },
+ "ne_individual_delta_f": {
+  "mean_eqg_per_gen": [
+   null,
+   null,
+   2.0,
+   3.0,
+   4.0
+  ],
+  "n_used_per_gen": [
+   0,
+   0,
+   20,
+   20,
+   20
+  ],
+  "ne": 15.008743817579001,
+  "ne_per_gen": [
+   null,
+   null,
+   20.0,
+   13.087283983620427,
+   13.610361260469734
+  ]
+ },
+ "ne_long_term_contributions": {
+  "asymptote_reached": false,
+  "max_delta_final": 0.015625,
+  "n_iterations": 4,
+  "ne": null,
+  "sum_c_squared": 0.10375000000000001
+ },
+ "ne_sex_ratio": {
+  "n_female_per_gen": [
+   10,
+   10,
+   10,
+   10,
+   10
+  ],
+  "n_male_per_gen": [
+   10,
+   10,
+   10,
+   10,
+   10
+  ],
+  "ne": 20.0,
+  "ne_per_gen": [
+   20.0,
+   20.0,
+   20.0,
+   20.0,
+   20.0
+  ]
+ },
+ "ne_variance_family_size": {
+  "cov_f": [
+   -0.3333333333333333,
+   0.2222222222222222,
+   0.3333333333333333,
+   0.4444444444444444
+  ],
+  "cov_m": [
+   -0.3333333333333333,
+   0.3333333333333333,
+   0.1111111111111111,
+   -0.1111111111111111
+  ],
+  "ne": 19.45945945945946,
+  "ne_per_transition": [
+   22.499999999999996,
+   17.142857142857142,
+   20.000000000000004,
+   18.947368421052634
+  ],
+  "v_ff": [
+   0.8888888888888888,
+   0.8888888888888888,
+   0.8888888888888888,
+   0.6666666666666666
+  ],
+  "v_fm": [
+   1.3333333333333333,
+   0.6666666666666666,
+   0.6666666666666666,
+   1.1111111111111112
+  ],
+  "v_mf": [
+   1.1111111111111112,
+   0.4444444444444444,
+   0.8888888888888888,
+   1.1111111111111112
+  ],
+  "v_mm": [
+   1.5555555555555556,
+   1.5555555555555556,
+   0.6666666666666666,
+   0.6666666666666666
+  ]
+ }
+}

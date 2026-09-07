@@ -1,21 +1,29 @@
-"""Result dataclasses for the Ne estimators (PGQ-006).
+"""Result records for the Ne estimators (PGQ-006, slice 6c).
 
-Every estimator returns one of these frozen dataclasses, each carrying a
-per-generation (or per-cohort) series plus a scenario-level scalar
-aggregate.  Serialization is shared: the records mix in
-:class:`_SerializableResult`, whose ``to_dict`` walks the dataclass fields
-through :func:`_to_jsonable` (dtype-driven, non-finite floats → ``None``)
-instead of each record re-implementing the same coercions.
-:class:`GenerationInterval` is the sex-split Hill 1979 ``L`` returned by
+Every estimator returns one of these frozen dataclasses, each carrying its
+observed generation labels next to the per-cohort or per-transition series
+it indexes, plus a scenario-level scalar aggregate.  Construction owns every
+array: each is copied contiguous and read-only in its declared dtype, and
+the lengths are checked against the label array they align with, so a
+result cannot be changed through a constructor input and cannot describe
+one cohort with two different arrays.
+
+Serialization is shared: the records mix in :class:`_SerializableResult`,
+whose ``to_dict`` walks the dataclass fields through :func:`_to_jsonable`
+(dtype-driven, non-finite floats → ``None``).  :class:`GenerationInterval`
+is the sex-split Hill 1979 ``L`` returned by
 :attr:`PedigreeGraph.generation_interval`.
 
-These types are pure data + serialization; the estimators that build
-them live in the ``_ne_*`` sibling modules.
+These types are pure data + serialization; the estimators that build them
+live in the ``_ne_*`` sibling modules and are exported from
+:mod:`pedigree_graph.effective_size`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -42,16 +50,16 @@ def _to_jsonable(value: Any) -> Any:
     scalars (Ne and diagnostics), 1-D numeric series (per-generation or
     per-cohort), integer counts, boolean flags, an optional nested
     :class:`~pedigree_graph._cohort_utils.CohortWindow`, and the Hill age
-    table (``dict[str, np.ndarray]``).  Each result used to serialize these
-    by hand; centralising the rules here removes ~150 lines of near-identical
-    ``to_dict`` boilerplate and keeps the coercions consistent.
+    table (a mapping of arrays).  Centralising the rules here keeps the
+    coercions consistent across every record.
 
     Numeric arrays follow their dtype: integer series become ``list[int]``,
     floating series become ``list[float | None]`` (non-finite → ``None``, so
     the output is always valid YAML/JSON rather than carrying ``nan``).
-    Scalars follow their Python type.  An unrecognised shape *raises* rather
-    than serializing silently, so a future field with an unusual type is
-    caught in review instead of shipped mis-serialized.
+    Scalars follow their Python type.  Mappings become fresh ordinary dicts.
+    An unrecognised shape *raises* rather than serializing silently, so a
+    future field with an unusual type is caught in review instead of shipped
+    mis-serialized.
     """
     if value is None:
         return None
@@ -68,7 +76,7 @@ def _to_jsonable(value: Any) -> Any:
         return int(value)
     if isinstance(value, (float, np.floating)):
         return _optional_float(value)
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {k: _to_jsonable(v) for k, v in value.items()}
     asdict_fn = getattr(value, "_asdict", None)  # NamedTuple records, e.g. CohortWindow
     if callable(asdict_fn):
@@ -89,6 +97,89 @@ class _SerializableResult:
     def to_dict(self) -> dict[str, Any]:
         """Serialize as a YAML-ready dict (numpy arrays → lists)."""
         return {f.name: _to_jsonable(getattr(self, f.name)) for f in fields(self)}  # ty: ignore[invalid-argument-type]
+
+
+def _owned_copy(values: object, dtype: type | np.dtype) -> np.ndarray:
+    """A fresh contiguous read-only 1-D copy in ``dtype``; never aliases the input."""
+    out = np.array(values, dtype=dtype, copy=True, order="C")
+    if out.ndim != 1:
+        raise ValueError(f"expected a 1-D array, got {out.ndim}-D")
+    out.setflags(write=False)
+    return out
+
+
+# Array fields declare the dtype they own and the label array they align
+# with.  ``cohort``/``transition`` align with ``generations`` (one entry per
+# observed cohort, or per adjacent pair), ``parent`` with
+# ``parent_generations``, ``cohort_year`` with Hill's ``cohort_years``.
+_AXIS_LABELS: Mapping[str, str] = MappingProxyType(
+    {
+        "cohort": "generations",
+        "transition": "generations",
+        "parent": "parent_generations",
+        "cohort_year": "cohort_years",
+    }
+)
+
+
+def _meta(dtype: type, axis: str, *, optional: bool = False, labels: bool = False) -> dict[str, Any]:
+    return {"dtype": dtype, "axis": axis, "optional": optional, "labels": labels}
+
+
+class _FrozenResult(_SerializableResult):
+    """Base for the final records: own every array and check the axes.
+
+    ``__post_init__`` copies each declared array field into a contiguous
+    read-only array of its declared dtype, then checks that every series
+    has one entry per label of the axis it declares, that label arrays are
+    strictly ascending, and that ``transition_from`` / ``transition_to``
+    are exactly the adjacent pairs of ``generations``.
+    """
+
+    __slots__ = ()
+
+    def __post_init__(self) -> None:
+        for f in fields(self):  # ty: ignore[invalid-argument-type]
+            meta = f.metadata
+            if "dtype" not in meta:
+                continue
+            value = getattr(self, f.name)
+            if value is None:
+                if meta["optional"]:
+                    continue
+                raise TypeError(f"{type(self).__name__}.{f.name} must be an array")
+            object.__setattr__(self, f.name, _owned_copy(value, meta["dtype"]))
+        self._check_axes()
+
+    def _check_axes(self) -> None:
+        name = type(self).__name__
+        for f in fields(self):  # ty: ignore[invalid-argument-type]
+            meta = f.metadata
+            if "axis" not in meta:
+                continue
+            value = getattr(self, f.name)
+            if value is None:
+                continue
+            labels = getattr(self, _AXIS_LABELS[meta["axis"]])
+            if labels is None:
+                raise ValueError(f"{name}.{f.name} is set but {_AXIS_LABELS[meta['axis']]} is None")
+            expected = max(labels.shape[0] - 1, 0) if meta["axis"] == "transition" else labels.shape[0]
+            if value.shape[0] != expected:
+                raise ValueError(f"{name}.{f.name} has {value.shape[0]} entries for {expected} labels")
+            if meta.get("labels") and value.shape[0] > 1 and not np.all(np.diff(value) > 0):
+                raise ValueError(f"{name}.{f.name} must be strictly ascending")
+        generations: np.ndarray | None = getattr(self, "generations", None)
+        transition_from: np.ndarray | None = getattr(self, "transition_from", None)
+        transition_to: np.ndarray | None = getattr(self, "transition_to", None)
+        if (
+            generations is not None
+            and transition_from is not None
+            and transition_to is not None
+            and not (
+                np.array_equal(transition_from, generations[:-1]) and np.array_equal(transition_to, generations[1:])
+            )
+        ):
+            raise ValueError(f"{name}: transition labels must be the adjacent pairs of generations")
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,56 +203,60 @@ class GenerationInterval(_SerializableResult):
 
 
 @dataclass(frozen=True, slots=True)
-class NeInbreedingResult(_SerializableResult):
+class NeInbreedingResult(_FrozenResult):
     """Inbreeding-rate (Ne_I) result.
 
     Attributes:
-        ne: scalar Ne from regression of ``ln(1 − F̄_t)`` on t (founders excluded).
-        ne_per_gen: per-transition Ne (one per gen-transition g − 1 → g, g ≥ 1).
-        mean_f_per_gen: per-cohort mean F.
+        ne: scalar Ne from regression of ``ln(1 − F̄)`` on the label offset,
+            first observed cohort excluded.
+        generations: observed generation labels, int32, ascending.
+        mean_f_per_gen: per-cohort mean F, aligned with ``generations``.
+        transition_from: ``generations[:-1]``.
+        transition_to: ``generations[1:]``.
+        ne_per_gen: Ne of each adjacent observed-cohort transition
+            (``transition_from[i] → transition_to[i]``), gap-corrected.
         slope: regression slope (log scale).
-        n_generations_used: number of points in the regression.
+        n_generations_used: post-baseline cohorts in the regression.
     """
 
     ne: float | None
-    ne_per_gen: np.ndarray
-    mean_f_per_gen: np.ndarray
-    slope: float
-    n_generations_used: int
+    generations: np.ndarray = field(metadata=_meta(np.int32, "cohort", labels=True))
+    mean_f_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
+    transition_from: np.ndarray = field(metadata=_meta(np.int32, "transition"))
+    transition_to: np.ndarray = field(metadata=_meta(np.int32, "transition"))
+    ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "transition"))
+    slope: float = float("nan")
+    n_generations_used: int = 0
 
 
 @dataclass(frozen=True, slots=True)
-class NeCoancestryResult(_SerializableResult):
+class NeCoancestryResult(_FrozenResult):
     """Coancestry-rate (Ne_C) result.
 
     Attributes:
-        ne: scalar Ne from regression of ``ln(1 − θ̄_t)`` on t (founders excluded).
-        ne_per_gen: per-transition Ne.
+        ne: scalar Ne from regression of ``ln(1 − θ̄)`` on the label offset,
+            first observed cohort excluded.
+        generations: observed generation labels, int32, ascending.
         mean_theta_per_gen: per-cohort mean θ over within-cohort pairs.
+        transition_from: ``generations[:-1]``.
+        transition_to: ``generations[1:]``.
+        ne_per_gen: Ne of each adjacent observed-cohort transition.
         slope: regression slope.
-        n_generations_used: number of points in the regression.
+        n_generations_used: post-baseline cohorts in the regression.
     """
 
     ne: float | None
-    ne_per_gen: np.ndarray
-    mean_theta_per_gen: np.ndarray
-    slope: float
-    n_generations_used: int
-
-    @classmethod
-    def empty(cls, g_max: int) -> NeCoancestryResult:
-        """All-NaN result of the right shape; used when Ne_C is skipped."""
-        return cls(
-            ne=None,
-            ne_per_gen=np.full(g_max + 1, np.nan, dtype=np.float64),
-            mean_theta_per_gen=np.full(g_max + 1, np.nan, dtype=np.float64),
-            slope=float("nan"),
-            n_generations_used=0,
-        )
+    generations: np.ndarray = field(metadata=_meta(np.int32, "cohort", labels=True))
+    mean_theta_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
+    transition_from: np.ndarray = field(metadata=_meta(np.int32, "transition"))
+    transition_to: np.ndarray = field(metadata=_meta(np.int32, "transition"))
+    ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "transition"))
+    slope: float = float("nan")
+    n_generations_used: int = 0
 
 
 @dataclass(frozen=True, slots=True)
-class NeVarianceResult(_SerializableResult):
+class NeVarianceResult(_FrozenResult):
     """Variance-of-family-size (Ne_V) result.
 
     Caballero 1994 eq. 6 with separate sexes.  ``V(k_m) = V(k_mm) +
@@ -169,64 +264,78 @@ class NeVarianceResult(_SerializableResult):
     variance built from the sex-of-offspring decomposition; symmetrically
     for females.
 
-    Per-transition arrays (``ne_per_transition``, ``v_mm``, …) are
-    indexed by **parent generation** ``p ∈ [0, g_max)``: entry ``p``
-    summarises the lifetime reproduction of cohort ``p``, which under
-    skip-gen pedigrees may include offspring spread across multiple
-    descendant generations.  Aggregate Ne is the harmonic mean.
+    Every array is indexed by **parent cohort**: entry ``p`` summarises the
+    lifetime reproduction of the cohort labelled ``parent_generations[p]``,
+    which under skip-gen pedigrees may include offspring spread across
+    several later cohorts.  Every observed label is present, including the
+    last one; a cohort with no usable reproduction stays NaN.
+    ``ne_per_transition`` keeps its historical name but describes that
+    lifetime reproduction, not a unique transition.  Aggregate Ne is the
+    harmonic mean.
     """
 
     ne: float | None
-    ne_per_transition: np.ndarray
-    v_mm: np.ndarray
-    v_mf: np.ndarray
-    v_fm: np.ndarray
-    v_ff: np.ndarray
-    cov_m: np.ndarray
-    cov_f: np.ndarray
+    parent_generations: np.ndarray = field(metadata=_meta(np.int32, "parent", labels=True))
+    ne_per_transition: np.ndarray = field(metadata=_meta(np.float64, "parent"))
+    v_mm: np.ndarray = field(metadata=_meta(np.float64, "parent"))
+    v_mf: np.ndarray = field(metadata=_meta(np.float64, "parent"))
+    v_fm: np.ndarray = field(metadata=_meta(np.float64, "parent"))
+    v_ff: np.ndarray = field(metadata=_meta(np.float64, "parent"))
+    cov_m: np.ndarray = field(metadata=_meta(np.float64, "parent"))
+    cov_f: np.ndarray = field(metadata=_meta(np.float64, "parent"))
 
 
 @dataclass(frozen=True, slots=True)
-class NeSexRatioResult(_SerializableResult):
+class NeSexRatioResult(_FrozenResult):
     """Wright sex-ratio (Ne_sr) result.
 
-    ``Ne_t = 4·Nm_t·Nf_t / (Nm_t + Nf_t)`` per generation; aggregate is
-    the harmonic mean across cohorts with at least one of each sex.
+    ``Ne_g = 4·Nm_g·Nf_g / (Nm_g + Nf_g)`` per observed cohort; aggregate
+    is the harmonic mean across cohorts with at least one of each sex.
     """
 
     ne: float | None
-    ne_per_gen: np.ndarray
-    n_male_per_gen: np.ndarray
-    n_female_per_gen: np.ndarray
+    generations: np.ndarray = field(metadata=_meta(np.int32, "cohort", labels=True))
+    ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
+    n_male_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
+    n_female_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
 
 
 @dataclass(frozen=True, slots=True)
-class NeIndividualDeltaFResult(_SerializableResult):
+class NeIndividualDeltaFResult(_FrozenResult):
     """Gutiérrez 2008/2009 individual ΔF (Ne_iΔF) result.
 
     Per individual i with EqG_i > 1 and F_i < 1:
     ``ΔF_i = 1 − (1 − F_i)^(1/(EqG_i − 1))``.  Per-cohort Ne_g =
     ``1/(2 · mean_g ΔF_i)``; aggregate Ne is the harmonic mean across
-    cohorts.
+    cohorts.  EqG already counts complete generations per individual, so
+    no label-gap correction applies.
     """
 
     ne: float | None
-    ne_per_gen: np.ndarray
-    mean_eqg_per_gen: np.ndarray
-    n_used_per_gen: np.ndarray
+    generations: np.ndarray = field(metadata=_meta(np.int32, "cohort", labels=True))
+    ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
+    mean_eqg_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
+    n_used_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
 
 
 @dataclass(frozen=True, slots=True)
-class NeLTCResult(_SerializableResult):
+class NeLTCResult(_FrozenResult):
     """Wray & Thompson 1990 long-term contribution (Ne_LTC) result.
 
-    Founder contributions are propagated forward through the pedigree
-    until the per-generation mean contribution stabilizes
-    (``max |Δc| < 1e-6``) or the last available generation is reached.
+    Represented-founder-genome contributions are averaged per observed
+    cohort and adjacent cohort vectors compared until the per-genome mean
+    stabilizes (``max |Δc| < tol``) or the last observed cohort is reached.
 
-    ``Ne = 1 / (2 · Σ_f c_f²)`` over founders at the final iteration.
+    ``Ne = 1 / (2 · Σ_f c_f²)`` over founder genomes at the final cohort.
     When the asymptote is not reached, ``ne`` is ``None`` and
     ``asymptote_reached`` is ``False``.
+
+    Attributes:
+        n_iterations: adjacent observed-cohort comparisons performed.
+        final_generation: label of the cohort whose vector produced
+            ``sum_c_squared`` — the convergence cohort, else the last
+            observed cohort; ``None`` when the graph is empty or has no
+            represented founder.
     """
 
     ne: float | None
@@ -234,10 +343,11 @@ class NeLTCResult(_SerializableResult):
     n_iterations: int
     max_delta_final: float
     sum_c_squared: float
+    final_generation: int | None
 
 
 @dataclass(frozen=True, slots=True)
-class NeHillResult(_SerializableResult):
+class NeHillResult(_FrozenResult):
     """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
 
     Two operating modes:
@@ -295,33 +405,46 @@ class NeHillResult(_SerializableResult):
     # rolling-window analyses and reproduction of paper-style "early N
     # cohorts" vs "recent N cohorts" comparisons.  All arrays share the
     # same index as ``cohort_years``.  None on the sentinel branch.
-    cohort_years: np.ndarray | None = None
-    ne_per_cohort: np.ndarray | None = None
-    Ne_m_per_cohort: np.ndarray | None = None
-    Ne_f_per_cohort: np.ndarray | None = None
-    Vk_m_per_cohort: np.ndarray | None = None
-    Vk_f_per_cohort: np.ndarray | None = None
-    N1_m_per_cohort: np.ndarray | None = None
-    N1_f_per_cohort: np.ndarray | None = None
+    cohort_years: np.ndarray | None = field(
+        default=None, metadata=_meta(np.int32, "cohort_year", optional=True, labels=True)
+    )
+    ne_per_cohort: np.ndarray | None = field(default=None, metadata=_meta(np.float64, "cohort_year", optional=True))
+    Ne_m_per_cohort: np.ndarray | None = field(default=None, metadata=_meta(np.float64, "cohort_year", optional=True))
+    Ne_f_per_cohort: np.ndarray | None = field(default=None, metadata=_meta(np.float64, "cohort_year", optional=True))
+    Vk_m_per_cohort: np.ndarray | None = field(default=None, metadata=_meta(np.float64, "cohort_year", optional=True))
+    Vk_f_per_cohort: np.ndarray | None = field(default=None, metadata=_meta(np.float64, "cohort_year", optional=True))
+    N1_m_per_cohort: np.ndarray | None = field(default=None, metadata=_meta(np.int64, "cohort_year", optional=True))
+    N1_f_per_cohort: np.ndarray | None = field(default=None, metadata=_meta(np.int64, "cohort_year", optional=True))
     # Per-individual age table — descriptive only, not used in Ne
-    age_table: dict[str, np.ndarray] | None = None
+    age_table: Mapping[str, np.ndarray] | None = None
     n_offspring_pairs: int = 0
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.age_table is not None:
+            frozen = {str(key): _owned_copy(value, np.asarray(value).dtype) for key, value in self.age_table.items()}
+            object.__setattr__(self, "age_table", MappingProxyType(frozen))
 
 
 @dataclass(frozen=True, slots=True)
-class NeCaballeroToroResult(_SerializableResult):
+class NeCaballeroToroResult(_FrozenResult):
     """Caballero & Toro 2002 self-coancestry rate (Ne_CT) result.
 
-    For each founder f and generation g > 0, computes the mean self-
-    coancestry of f's descendants at gen g:
-    ``f̄_s,f,g = mean_{i ∈ desc(f,g)} (1 + F_i) / 2``.
-    Averages over founders that have descendants at each gen, regresses
-    ``ln(1 − f̄_s,g)`` on g, and reports
-    ``ne = −1 / (2·slope)``.
+    For each represented founder genome f and observed cohort after the
+    first, computes the mean self-coancestry of f's descendants in that
+    cohort, ``f̄_s,f,g = mean_{i ∈ desc(f,g)} (1 + F_i) / 2``, averages over
+    founder genomes with descendants there, and regresses
+    ``ln(1 − f̄_s,g)`` on the label offset, reporting
+    ``ne = −1 / (2·slope)``.  The first observed cohort is the baseline: its
+    mean is NaN and its founder-descendant count 0, and the first transition
+    starts from the conceptual non-inbred self-coancestry ``0.5``.
     """
 
     ne: float | None
-    ne_per_gen: np.ndarray
-    mean_self_coancestry_per_gen: np.ndarray
-    n_founders_with_descendants_per_gen: np.ndarray
-    slope: float
+    generations: np.ndarray = field(metadata=_meta(np.int32, "cohort", labels=True))
+    mean_self_coancestry_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
+    n_founders_with_descendants_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
+    transition_from: np.ndarray = field(metadata=_meta(np.int32, "transition"))
+    transition_to: np.ndarray = field(metadata=_meta(np.int32, "transition"))
+    ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "transition"))
+    slope: float = float("nan")
