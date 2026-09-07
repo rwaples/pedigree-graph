@@ -1,94 +1,130 @@
-# Slice 5b candidate-value exactification profile
+# Slice 5b matrix exactification
 
-Profiled 2026-09-06 before implementing the matrix exact-value pass, as
-required by the 0.8.0 slice plan. The input was the fitACE-shaped simACE result
-`results/dev/dev_cont_n10k/rep1/pedigree.parquet`: 20,400 full-pedigree rows and
-4,991,524 upper-triangle entries (including diagonal) in the propagation-pruned
-`0.001` candidate matrix.
+Why `approximate_kinship_matrix` captures its values through one complete
+retiring DP rather than evaluating candidate pairs in bounded chunks.
 
-Host: Intel i7-9750H (12 logical CPUs), 30 GiB RAM. Runs were sequential fresh
-processes under the pedigree-graph Pixi manifest. Each strategy evaluated the
-same candidate coordinates with `_pairwise_kinship_with_stats`; the equal XOR
-checksum (`32915456`) checked returned bits.
+## Method
 
-| strategy | chunks | exact-value wall | evaluation RSS delta | largest memo capacity |
-|---|---:|---:|---:|---:|
-| one shared memo | 1 | 117.5 s | 960 MiB | 67,108,864 |
-| 256-column chunks | 80 | 404.1 s | 69 MiB | 16,777,216 |
-| fixed 262,144-pair chunks | 20 | 380.5 s | 40 MiB | 16,777,216 |
-| fixed 1,048,576-pair chunks | 5 | 207.3 s | 353 MiB | 33,554,432 |
-
-Candidate-support construction itself took 2.7–2.8 s. Peak-process RSS includes
-the graph, candidate CSC, and profiling-only materialisation of every upper
-coordinate; the delta isolates the strategy comparison better than total RSS.
-
-## Initial decision (superseded for approximate support)
-
-The first implementation used deterministic fixed-size pair chunks. They bound
-the recurrence memo independently of total candidate support, unlike one shared
-memo, and avoid the uneven work and slightly higher wall time of fixed column
-spans. A 1,048,576-pair internal chunk was the measured wall/RSS compromise.
-Chunking cannot alter values because ADR 0009 fixes recurrence evaluation within
-each pair; all four runs produced the same checksum, and the test suite compares
-complete data bytes across chunk sizes 1, 7, and 1,048,576.
-
-The 30k result below showed that a bound on one chunk's memo did not bound
-repeated work: each chunk discarded dependencies needed again by later chunks.
-Pair chunks remain appropriate for sparse relationship-selected support, but no
-longer exactify dense approximate support.
-
-## 30k integration observation
-
-The fixed 1,048,576-pair strategy was also run over the generated
-`random_30k` fixture (30,300 rows; seed/parameters in
-`tests/parity/pedigrees.py`; input SHA-256
-`f4d558a6957b9c12efe4a28778448a9b981769a5998c039849bbcec316d0b80d`;
-26,924,109 upper-triangle `0.001` candidates including diagonal). Exactifying a
-prebuilt candidate CSC completed in 6,781.3 s (1 h 53 min), with process RSS
-rising from 577 MiB to 2,956 MiB. A one-shared-memo run did not complete within
-a 30-minute observation window. This result triggered the fused-DP follow-up.
-
-## Fused complete-DP candidate capture
-
-The existing retiring threshold-zero DP was then profiled as the available exact
-working-set computation. It took 2.87 s / 666 MiB peak process RSS on the
-20,400-row fitACE pedigree and 54.6 s / 6,343 MiB on `random_30k`. The optimized
-path merges each complete exact DP row against the propagation-pruned candidate
-row and writes only matching values to the output CSC; complete rows continue to
-retire after their last direct child and no complete CSC is materialized.
-
-Final fresh-process end-to-end timings, including candidate-support construction,
-topology-space candidate indexing, exact capture, symmetric fill, and CSC freeze:
-
-| input | upper candidates | wall | peak process RSS | upper-value XOR |
-|---|---:|---:|---:|---:|
-| fitACE `dev_cont_n10k/rep1` (20,400 rows) | 4,991,524 | 6.48 s | 848 MiB | 32,915,456 |
-| generated `random_30k` (30,300 rows) | 26,924,109 | 76.44 s | 6,963 MiB | 963,002,880 |
-
-The fitACE checksum is unchanged from every pairwise strategy above. Small,
-MZ/inbred/deep, and row-permuted fixtures compare every retained value directly
-with `pair_kinship`. A dedicated 30k matrix integration test runs the public
-fused path; the differential parity test separately checks the frozen support
-hash without repeating exactification inside its already-large operation bundle.
-
-A matching final-source complete retiring-DP baseline took 2.89 s on the fitACE
-input (the earlier `random_30k` baseline was 54.6 s). The fused operation thus
-adds candidate indexing, capture, and symmetric-output overhead without repeating
-pairwise dependency discovery across chunks. Both final runs satisfy the locked
-under-10 s and under-120 s wall-time gates.
-
-The profiling drivers were temporary (`/tmp/profile_slice5b.py`,
-`/tmp/profile_slice5b_random30k.py`, `/tmp/profile_complete_streaming_dp.py`,
-and `/tmp/profile_fused_approximate.py`) and are not release artifacts. Commands
-had the form:
+Every figure below was produced by `benchmarks/matrix_exactification.py`, which
+is committed precisely so these numbers can be reproduced and challenged:
 
 ```bash
 pixi run --manifest-path external/pedigree-graph/pixi.toml \
-  python /tmp/profile_slice5b.py <shared|columns|pairs> \
-  results/dev/dev_cont_n10k/rep1/pedigree.parquet
+  python benchmarks/matrix_exactification.py --repeat 5 --out benchmarks/reports/w.json
+python benchmarks/render_exactification.py --reports benchmarks/reports
 ```
 
-The earlier support/downstream investigation remains under
-`benchmarks/threshold_structure/`; in particular, changing support rather than
-correcting retained values moved PCGC h2 by 0.033 on the 10,200-person phenotype
-subset.
+Each configuration runs in a fresh subprocess and is repeated, and the table
+quotes the median with the observed spread across runs. Peak RSS is the
+kernel's `VmHWM`, reset through `/proc/self/clear_refs` at the start of the
+timed region, so it is that region's peak rather than the process lifetime's.
+Setup is excluded from the timed region: for the pairwise strategies the
+candidate support is built first and not counted.
+
+`benchmarks/.gitignore` excludes `reports/`, so the raw JSON is local-only and
+this note carries the environment and spread inline. The table is generated by
+`render_exactification.py`, not typed.
+
+## Environment
+
+- commit `81a19549da` on `v0.8`, working tree dirty
+- Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz, 12 logical CPUs, 31.0 GiB RAM, kernel 7.0.11-76070011-generic
+- Python 3.13.11, pixi lock `07cf6c93c3038a0a`, harness `2931251e0a103d37`
+- every backend pinned to 1 thread
+
+## Inputs
+
+`fitACE dev_cont_n10k/rep1` is a 20,400-row simACE result with 4,991,524
+upper-triangle candidates, including the diagonal, at
+`min_propagated_kinship=0.001`.
+
+`random_30k` is generated by `tests/parity/pedigrees.py` with seed 30000,
+1,500 founders, 8 generations, and 3,600 per generation. It has 30,300 rows,
+input SHA-256
+`f4d558a6957b9c12efe4a28778448a9b981769a5998c039849bbcec316d0b80d`, and
+26,924,109 upper-triangle candidates at the same threshold.
+
+## Results
+
+| input | strategy | reps | wall (median) | spread | peak RSS (median) | upper-value XOR |
+|---|---|---:|---:|---:|---:|---|
+| fitACE `dev_cont_n10k/rep1` | propagation-pruned support only | 5 | 2.62 s | 1.5% | 730 MiB | n/a |
+| fitACE `dev_cont_n10k/rep1` | complete retiring DP (no output CSC) | 5 | 2.80 s | 1.3% | 705 MiB | n/a |
+| fitACE `dev_cont_n10k/rep1` | fused capture (public path) | 5 | 6.44 s | 2.6% | 819 MiB | `32915456` |
+| fitACE `dev_cont_n10k/rep1` | one shared memo | 3 | 112.67 s | 0.1% | 1,518 MiB | `32915456` |
+| fitACE `dev_cont_n10k/rep1` | 256-column chunks | 3 | 390.19 s | 0.1% | 626 MiB | `32915456` |
+| fitACE `dev_cont_n10k/rep1` | 262,144-pair chunks | 3 | 366.25 s | 0.3% | 598 MiB | `32915456` |
+| fitACE `dev_cont_n10k/rep1` | 1,048,576-pair chunks | 3 | 199.88 s | 0.2% | 911 MiB | `32915456` |
+| generated `random_30k` | propagation-pruned support only | 5 | 14.34 s | 1.3% | 2,351 MiB | n/a |
+| generated `random_30k` | complete retiring DP (no output CSC) | 5 | 52.46 s | 2.3% | 6,318 MiB | n/a |
+| generated `random_30k` | fused capture (public path) | 5 | 74.34 s | 2.2% | 6,947 MiB | `963002880` |
+| generated `random_30k` | 1,048,576-pair chunks | 2 | 6,745 s (112 min) | 0.0% | 2,740 MiB | `963002880` |
+| generated `random_30k` | one shared memo | 0 | did not finish within 1800 s | n/a | n/a | n/a |
+
+## What the numbers show
+
+Every strategy on a given input returns the same upper-triangle XOR. On the
+fitACE pedigree five separate strategies agree on `32915456`, across chunk
+counts of 1, 5, 20 and 80 and across two different engines, the pairwise
+recurrence and the fused DP. On `random_30k` the fused path and the
+1,048,576-pair strategy agree on `963002880`. This is ADR 0009's requirement
+that chunking must not alter bits, demonstrated rather than asserted.
+
+Chunking does bound the recurrence memo, as intended. On the fitACE input the
+shared memo reaches a capacity of 67,108,864 entries and 1,518 MiB, while
+262,144-pair chunks hold 16,777,216 entries and 598 MiB.
+
+Bounding one chunk's memo does not bound the total work. Each chunk discards
+dependencies that later chunks rediscover, and the cost of that grows with the
+candidate set. On `random_30k` the 1,048,576-pair strategy takes 6,745 s
+against 74.34 s for the fused capture, a factor of 90.7. The shared memo, which
+avoids the rediscovery entirely, does not finish inside 1,800 s.
+
+The fused path therefore wins by not being a pairwise evaluation at all. It
+merges each complete exact DP row against the propagation-pruned candidate row
+and writes only matching values, so rows still retire after their last direct
+child and no complete CSC is materialised.
+
+Sparse relationship-selected support still uses deterministic fixed-size pair
+chunks, which suit a much smaller candidate set. That choice has not been
+re-measured at a dense selector such as `max_degree=5` on a 30k pedigree, where
+the support approaches the size that produced the 6,745 s result above. Treat
+that as an open risk rather than a validated boundary.
+
+## The threshold bounds support, not cost
+
+On `random_30k`, building the pruned support costs 14.34 s and the fused
+capture brings the total to 74.34 s at 6,947 MiB. The complete retiring DP,
+which computes every coefficient, costs 52.46 s at 6,318 MiB. Raising
+`min_propagated_kinship` to fit a large pedigree in memory, the documented
+0.7.1 reason for the argument, no longer achieves anything. The public
+docstring says so.
+
+## Corrections to the superseded measurements
+
+The first round of these measurements ran from disposable `/tmp` drivers, once
+each, and its "evaluation RSS delta" column was computed from in-process
+`getrusage(RUSAGE_SELF)`. That value is a process-lifetime high-water mark that
+never falls, so it cannot attribute memory to a phase. Those deltas reported 69
+MiB for 256-column chunks and 40 MiB for 262,144-pair chunks, against measured
+region peaks of 626 MiB and 598 MiB. No magnitude from that column should be
+quoted.
+
+The superseded wall times were sound. Re-measured medians land roughly 4%
+faster with the ranking unchanged, consistent with pinning every backend to one
+thread. Its peak process RSS figures were also broadly sound, since a
+whole-process `ru_maxrss` is a valid process peak: 6,963 MiB against a measured
+6,947 for the 30k fused run.
+
+Sampling `/proc/self/statm` from a Python thread is not a valid substitute
+either, and was tried here first. A `@numba.njit` kernel holds the GIL for its
+whole call, so the sampler is starved. Measured against `_build_candidate` on
+the fitACE pedigree it ran for 1 of an expected 553 ticks and reported 358 MiB
+against a true peak of 759 MiB.
+
+## Related
+
+`benchmarks/threshold_structure/` holds the earlier support and downstream
+investigation. Its finding stands: changing the support, rather than correcting
+retained values, moved PCGC h2 by 0.033 on the 10,200-person phenotype subset,
+which is why the approximate support is load-bearing and cannot be deleted.

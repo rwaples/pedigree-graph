@@ -6,11 +6,10 @@ single runs, which the 0.8.0 slice plan forbids as sole evidence.  This driver
 is the committed replacement.
 
 Each configuration runs in a fresh subprocess, repeated ``--repeat`` times, and
-the report quotes the median with the observed spread.  Peak RSS is sampled
-from ``/proc/self/statm`` around the timed region only: ``getrusage`` reports a
-process-lifetime high-water mark that never falls, so it cannot attribute
-memory to one phase and reads as zero growth whenever setup already peaked
-higher.
+the report quotes the median with the observed spread.  Peak RSS comes from the
+kernel's ``VmHWM``, reset at the start of the timed region.  ``getrusage``
+alone cannot do this, because its high-water mark never falls and so reports
+setup rather than the phase under test.
 
 Usage::
 
@@ -28,7 +27,6 @@ import os
 import statistics
 import subprocess
 import sys
-import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -56,39 +54,44 @@ PINNED_ENV = {
     "PEDIGREE_GRAPH_THREADS": "1",
 }
 
-_PAGE_SIZE = os.sysconf("SC_PAGE_SIZE")
-
 
 class PeakRss:
-    """Sample resident set size around one timed region."""
+    """Measure peak RSS over one timed region using the kernel high-water mark.
 
-    def __init__(self, interval: float = 0.005) -> None:
-        self._interval = interval
-        self._statm = Path("/proc/self/statm")
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+    Sampling ``/proc/self/statm`` from a Python thread does not work here.  A
+    ``@numba.njit`` kernel holds the GIL for its whole call, so the sampler is
+    starved: measured against ``_build_candidate`` on the fitACE pedigree it
+    was scheduled for 1 of an expected 553 ticks and reported 358 MiB against
+    a true peak of 759 MiB.
+
+    Writing ``5`` to ``/proc/self/clear_refs`` resets ``VmHWM`` to the current
+    RSS, so reading ``VmHWM`` afterwards gives the kernel's own peak for the
+    region, with no sampling and no dependence on the GIL.
+    """
+
+    _STATUS = Path("/proc/self/status")
+    _CLEAR_REFS = Path("/proc/self/clear_refs")
+
+    def __init__(self) -> None:
         self.baseline_mib = 0.0
         self.peak_mib = 0.0
 
-    def _read_mib(self) -> float:
-        return int(self._statm.read_text().split()[1]) * _PAGE_SIZE / 1024.0**2
-
-    def _loop(self) -> None:
-        while not self._stop.wait(self._interval):
-            self.peak_mib = max(self.peak_mib, self._read_mib())
+    @classmethod
+    def _field_mib(cls, name: str) -> float:
+        for line in cls._STATUS.read_text().splitlines():
+            if line.startswith(name):
+                return int(line.split()[1]) / 1024.0
+        raise RuntimeError(f"{name} missing from /proc/self/status")
 
     def __enter__(self) -> PeakRss:
-        self.baseline_mib = self._read_mib()
-        self.peak_mib = self.baseline_mib
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-        self._thread.start()
+        # CLEAR_REFS_MM_HIWATER_RSS.  Without it VmHWM is a process-lifetime
+        # mark and setup would dominate every measurement.
+        self._CLEAR_REFS.write_text("5\n")
+        self.baseline_mib = self._field_mib("VmRSS")
         return self
 
     def __exit__(self, *exc: object) -> None:
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join()
-        self.peak_mib = max(self.peak_mib, self._read_mib())
+        self.peak_mib = self._field_mib("VmHWM")
 
 
 def upper_checksum(matrix: sp.csc_matrix) -> int:
