@@ -24,6 +24,7 @@ from relationship_predicates import AncestorWalk
 from pedigree_graph import (
     REL_REGISTRY,
     RELATIONSHIPS,
+    MissingMetadataError,
     PedigreeGraph,
     ResourceError,
     compute_all_ne,
@@ -295,6 +296,19 @@ def _numeric_equal(expected, actual, path: str, rtol: float = NE_RTOL) -> None:
         )
 
 
+# The row a refusal reports first depends on the row order by construction.
+_ORDER_DEPENDENT_FIELDS = frozenset(
+    {"first_row", "first_id", "represented_parent_role", "unrepresented_parent_role", "unrepresented_parent_status"}
+)
+
+
+def _value_or_refusal(compute):
+    try:
+        return compute()
+    except MissingMetadataError as exc:
+        return (exc.code, {k: v for k, v in exc.fields.items() if k not in _ORDER_DEPENDENT_FIELDS})
+
+
 def _assert_all_ne_matches(expected: dict, actual: dict, label: str) -> None:
     assert sorted(actual) == sorted(expected), f"{label}: estimator set changed"
     for estimator, fields in expected.items():
@@ -358,14 +372,14 @@ class _Snapshot:
         )
         self.theta = np.asarray(graph.per_gen_mean_kinship())
 
-        self.generation_interval = graph.generation_interval
-        try:
-            self.cohort_range = eligible_cohort_range(graph)
-        except ValueError as exc:
-            # single_individual has no parent-child edge to date; the estimator
-            # is undefined either way, so compare the refusal itself.
-            self.cohort_range = type(exc).__name__
-        self.all_ne = {code: result.to_dict() for code, result in compute_all_ne(graph).items()}
+        # A fixture without a parent-child edge to date, or with a one-parent
+        # row, is refused by the age-based and founder-based estimators in
+        # every row order; compare the refusal itself.
+        self.generation_interval = _value_or_refusal(lambda: graph.generation_interval)
+        self.cohort_range = _value_or_refusal(lambda: eligible_cohort_range(graph))
+        self.all_ne = _value_or_refusal(
+            lambda: {code: result.to_dict() for code, result in compute_all_ne(graph).items()}
+        )
 
         keep = np.flatnonzero(np.isin(ids, subsample_ids))
         sub = {key: np.asarray(value)[keep] for key, value in columns.items()}
@@ -441,7 +455,10 @@ def test_every_operation_is_invariant_under_row_order(name, constructor, capsys)
         _assert_theta_matches(reference.theta, actual.theta, f"{where}/per_gen_mean_kinship")
         assert actual.generation_interval == reference.generation_interval, f"{where}: generation_interval changed"
         assert actual.cohort_range == reference.cohort_range, f"{where}: eligible_cohort_range changed"
-        _assert_all_ne_matches(reference.all_ne, actual.all_ne, f"{where}/compute_all_ne")
+        if isinstance(reference.all_ne, dict):
+            _assert_all_ne_matches(reference.all_ne, actual.all_ne, f"{where}/compute_all_ne")
+        else:
+            assert actual.all_ne == reference.all_ne, f"{where}: compute_all_ne refusal changed"
 
     with capsys.disabled():
         print(f"cross-order drift {name}/{constructor}: {worst}")

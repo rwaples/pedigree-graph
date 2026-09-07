@@ -20,6 +20,7 @@ import numpy as np
 
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _checked_founder_matrix
+from pedigree_graph._ne_metadata import _require_closed_parentage
 from pedigree_graph._ne_results import NeLTCResult
 
 if TYPE_CHECKING:
@@ -191,6 +192,11 @@ def ne_long_term_contributions(pg: PedigreeGraph, *, tol: float = 1e-6) -> NeLTC
 
     When the asymptote is not reached before the last cohort, ``ne`` is
     ``None`` and ``asymptote_reached`` is ``False``.
+
+    Requires complete generation labels (or none), then closed represented
+    parentage: a row with exactly one represented parent raises
+    ``incomplete_parentage``.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_long_term_contributions")
+    _require_closed_parentage(pg, "ne_long_term_contributions")
     return _ltc_from(cohorts, _per_gen_founder_means(pg, cohorts=cohorts), tol)

@@ -23,6 +23,7 @@ from conftest import (
 from hypothesis import given, settings
 
 from pedigree_graph import (
+    MissingMetadataError,
     PedigreeGraph,
     compute_all_ne,
     ne_coancestry,
@@ -91,11 +92,27 @@ def test_ne_inbreeding_none_when_non_inbred(pg):
 
 @_UNIFORM_SEX_OK
 @_SETTINGS
-@given(pg=random_pedigree())
+@given(pg=complete_parentage_pedigree())
 def test_compute_all_ne_none_or_positive(pg):
     for name, result in compute_all_ne(pg).items():
         ne = result.ne
         assert ne is None or (np.isfinite(ne) and ne > 0.0), name
+
+
+@_UNIFORM_SEX_OK
+@_SETTINGS
+@given(pg=random_pedigree())
+def test_compute_all_ne_refuses_only_one_parent_rows(pg):
+    # The founder-based estimators need closed represented parentage; every
+    # other pedigree the strategy draws runs end to end.
+    one_parent = (np.asarray(pg.mother) < 0) != (np.asarray(pg.father) < 0)
+    if one_parent.any():
+        with pytest.raises(MissingMetadataError) as info:
+            compute_all_ne(pg)
+        assert info.value.code == "incomplete_parentage"
+        assert info.value.fields["affected_count"] == int(one_parent.sum())
+    else:
+        assert len(compute_all_ne(pg)) == 8
 
 
 def _ne_close(a, b):
@@ -121,7 +138,7 @@ def test_ne_coancestry_three_paths_agree(pg):
 
 @_UNIFORM_SEX_OK
 @_HEAVY
-@given(pg=random_pedigree())
+@given(pg=complete_parentage_pedigree())
 def test_compute_all_ne_thread_count_invariant(pg):
     # Independent estimators dispatched to worker threads must give bit-identical
     # results to the serial path (a cache race would surface as a mismatch).

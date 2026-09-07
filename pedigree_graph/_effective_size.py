@@ -50,6 +50,7 @@ from pedigree_graph._ne_family_size import FamilySizeTable as FamilySizeTable
 from pedigree_graph._ne_family_size import Sigma2Decomposition as Sigma2Decomposition
 from pedigree_graph._ne_family_size import (
     _generation_family_table,
+    _sex_column,
     _sex_ratio_from,
     _variance_from,
     _warn_if_uniform_sex,
@@ -81,6 +82,7 @@ from pedigree_graph._ne_legacy import (
     legacy_sex_ratio,
     legacy_variance,
 )
+from pedigree_graph._ne_metadata import _require_closed_parentage, _require_complete_sex
 from pedigree_graph._ne_rates import (
     _coancestry_from,
     _generation_kinship_summary,
@@ -172,6 +174,7 @@ def ne_coancestry(
 def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     """0.8.0-DELETE: :func:`pedigree_graph.effective_size.ne_variance_family_size` on the dense record."""
     cohorts = ObservedCohorts.for_graph(pg, "ne_variance_family_size")
+    _require_complete_sex(pg, "ne_variance_family_size")
     _warn_if_uniform_sex(pg, "ne_variance_family_size")
     return legacy_variance(_variance_from(cohorts, _generation_family_table(pg, cohorts)))
 
@@ -179,8 +182,9 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
 def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
     """0.8.0-DELETE: :func:`pedigree_graph.effective_size.ne_sex_ratio` on the dense record."""
     cohorts = ObservedCohorts.for_graph(pg, "ne_sex_ratio")
+    _require_complete_sex(pg, "ne_sex_ratio")
     _warn_if_uniform_sex(pg, "ne_sex_ratio")
-    return legacy_sex_ratio(_sex_ratio_from(cohorts, np.asarray(pg.sex)))
+    return legacy_sex_ratio(_sex_ratio_from(cohorts, _sex_column(pg)))
 
 
 def ne_individual_delta_f(pg: PedigreeGraph) -> NeIndividualDeltaFResult:
@@ -197,6 +201,7 @@ def ne_long_term_contributions(
 ) -> NeLTCResult:
     """0.8.0-DELETE: :func:`pedigree_graph.effective_size.ne_long_term_contributions` with injected means."""
     cohorts = ObservedCohorts.for_graph(pg, "ne_long_term_contributions")
+    _require_closed_parentage(pg, "ne_long_term_contributions")
     if mean_contributions is None:
         means = _per_gen_founder_means(pg, cohorts=cohorts)
     else:
@@ -215,6 +220,7 @@ def ne_caballero_toro(
 ) -> NeCaballeroToroResult:
     """0.8.0-DELETE: :func:`pedigree_graph.effective_size.ne_caballero_toro` with injected accumulators."""
     cohorts = ObservedCohorts.for_graph(pg, "ne_caballero_toro")
+    _require_closed_parentage(pg, "ne_caballero_toro")
     if ct_accumulators is None:
         ct_accumulators = _caballero_toro_accumulators(pg, _founder_idx(pg), pg._inbreeding_values(), cohorts=cohorts)
     return legacy_caballero_toro(_caballero_toro_from(cohorts, ct_accumulators))
@@ -277,6 +283,7 @@ def compute_all_ne(
 
     F = pg._inbreeding_values()
     cohorts = ObservedCohorts.for_graph(pg, "compute_all_ne")
+    _require_closed_parentage(pg, "ne_long_term_contributions")
     founder_idx = _founder_idx(pg)
     ltc_means = _per_gen_founder_means(pg, founder_idx=founder_idx, cohorts=cohorts)
     ct_acc = _caballero_toro_accumulators(pg, founder_idx, F, cohorts=cohorts)

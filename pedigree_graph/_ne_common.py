@@ -13,8 +13,8 @@ import math
 
 import numpy as np
 
-from pedigree_graph._cohorts import _require_complete_generation_labels as _require_complete_generation_labels
 from pedigree_graph._errors import ResourceError
+from pedigree_graph._ne_metadata import _require_complete_generation_labels as _require_complete_generation_labels
 
 
 def _harmonic_mean(values: np.ndarray) -> float:

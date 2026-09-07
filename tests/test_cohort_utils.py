@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from pedigree_graph import CohortWindow, PedigreeGraph, eligible_cohort_range
+from pedigree_graph import CohortWindow, MissingMetadataError, PedigreeGraph, eligible_cohort_range
 
 
 def _three_gen_pedigree(birth_year: np.ndarray) -> PedigreeGraph:
@@ -34,21 +34,32 @@ class TestEligibleCohortRange:
             mothers=np.array([-1, -1, 0]),
             fathers=np.array([-1, -1, 1]),
         )
-        with pytest.raises(ValueError, match=r"requires pg\.birth_year"):
+        with pytest.raises(MissingMetadataError) as info:
             eligible_cohort_range(pg)
+        assert info.value.code == "missing_birth_year"
+        assert info.value.fields == {"operation": "eligible_cohort_range", "status": "absent", "missing_count": 3}
 
     def test_wholly_unknown_birth_year_reads_as_omitted(self):
         # All-missing optional metadata normalizes to None, exactly like omission.
         pg = _three_gen_pedigree(np.array([-1, -1, -1]))
         assert pg.birth_year is None
-        with pytest.raises(ValueError, match=r"requires pg\.birth_year"):
+        with pytest.raises(MissingMetadataError) as info:
             eligible_cohort_range(pg)
+        assert info.value.code == "missing_birth_year"
+        assert info.value.fields["status"] == "absent"
 
     def test_raises_when_no_edges_with_both_birth_years(self):
         # All children have at least one parent with unknown birth_year.
         pg = _three_gen_pedigree(np.array([-1, -1, 2010]))
-        with pytest.raises(ValueError, match="no parent-child edges"):
+        with pytest.raises(MissingMetadataError) as info:
             eligible_cohort_range(pg)
+        assert info.value.code == "insufficient_parent_age_data"
+        assert info.value.fields["missing_parent_roles"] == ("mother", "father")
+
+    def test_one_role_with_known_ages_is_enough(self):
+        # Only the mother edge has both birth years; the percentile still exists.
+        pg = _three_gen_pedigree(np.array([1990, -1, 2010]))
+        assert eligible_cohort_range(pg).reproductive_age_p95 == 20.0
 
     def test_basic_window(self):
         # Two parents born 1990 and 1992; child born 2010.

@@ -71,6 +71,15 @@ METADATA_CODES: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "missing_sex": ("operation", "status", "missing_count"),
         "missing_birth_year": ("operation", "status", "missing_count"),
         "insufficient_parent_age_data": ("operation", "missing_parent_roles"),
+        "incomplete_parentage": (
+            "operation",
+            "affected_count",
+            "first_row",
+            "first_id",
+            "represented_parent_role",
+            "unrepresented_parent_role",
+            "unrepresented_parent_status",
+        ),
     }
 )
 

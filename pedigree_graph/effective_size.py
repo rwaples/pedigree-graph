@@ -21,11 +21,25 @@ Estimator coverage:
 * :func:`ne_hill_overlapping`        — Hill 1979 (collapses to Ne_V at L=1).
 * :func:`ne_caballero_toro`          — Caballero & Toro 2002 self-coancestry regression.
 
-Every estimator groups by the supplied generation labels, or by structural
-depth when the graph carries none; partly known labels raise
-:class:`~pedigree_graph.MissingMetadataError` (``missing_generation_labels``).
-An empty graph is a valid no-estimate case: every estimator returns its
-record with ``ne=None`` and zero-length arrays.
+Metadata dependency matrix.  Every guard raises
+:class:`~pedigree_graph.MissingMetadataError` naming the estimator in
+``operation``; guards run in the order listed, before any work, and an
+empty graph bypasses them all (every estimator then returns its record
+with ``ne=None`` and zero-length arrays).
+
+* ``ne_inbreeding``, ``ne_coancestry``, ``ne_individual_delta_f``: complete
+  generation labels, or none (``missing_generation_labels`` when partial;
+  absent labels group by structural depth).
+* ``ne_long_term_contributions``, ``ne_caballero_toro``: generation labels
+  as above, then closed represented parentage (``incomplete_parentage``
+  when a row has exactly one represented parent).
+* ``ne_variance_family_size``, ``ne_sex_ratio``: generation labels as
+  above, then complete sex (``missing_sex``, ``status`` ``"absent"`` or
+  ``"partial"``); uniform but known sex is valid and warns.
+* ``ne_hill_overlapping`` without birth years: as ``ne_variance_family_size``,
+  then collapses to it.  With birth years: ignores generation labels;
+  complete sex, then a known-age edge for each parent role
+  (``insufficient_parent_age_data``).
 """
 
 from __future__ import annotations

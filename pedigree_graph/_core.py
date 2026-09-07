@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Literal, overload
 import numpy as np
 import scipy.sparse as sp
 
+from pedigree_graph._cohort_utils import generation_interval as _generation_interval
 from pedigree_graph._compat import from_subsample as _from_subsample
 from pedigree_graph._compat import legacy_count_pairs as _legacy_count_pairs
 from pedigree_graph._compat import legacy_count_pairs_streaming as _legacy_count_pairs_streaming
@@ -351,38 +352,19 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     def generation_interval(self):
         """Sex-split generation interval (Hill 1979 ``L``).
 
-        Returns a :class:`~pedigree_graph._effective_size.GenerationInterval`
-        ``(T, T_m, T_f, n_edges)`` computed over all parent-child edges
-        where both endpoints have known ``birth_year`` (sentinel ``-1``
-        skipped).
+        Returns a :class:`~pedigree_graph.effective_size.GenerationInterval`
+        ``(T, T_m, T_f, n_edges)`` over all parent-child edges where both
+        endpoints have known ``birth_year``, or ``None`` only when
+        ``self.birth_year is None``; see
+        :func:`~pedigree_graph._cohort_utils.generation_interval`.  Cached
+        on the instance on first read.
 
-        * ``T_m`` = mean ``child.birth_year − sire.birth_year`` over
-          sire-offspring edges (parent = father field).
-        * ``T_f`` = symmetric for dam-offspring edges (parent = mother).
-        * ``T = (T_m + T_f) / 2``.
-        * Skip-generation edges included unconditionally.
-
-        Returns ``None`` if ``self.birth_year is None`` or if either sex
-        has zero qualifying edges.  Cached on the instance on first read.
+        Raises:
+            MissingMetadataError: ``insufficient_parent_age_data`` when birth
+                years are present but a parent role has no edge with both
+                birth years known.
         """
-        if self.birth_year is None:
-            return None
-
-        _, diffs_m = self._known_parent_edges_for("father")
-        _, diffs_f = self._known_parent_edges_for("mother")
-        if diffs_m.size == 0 or diffs_f.size == 0:
-            return None
-
-        from pedigree_graph._effective_size import GenerationInterval
-
-        T_m = float(diffs_m.mean())
-        T_f = float(diffs_f.mean())
-        return GenerationInterval(
-            T=(T_m + T_f) / 2.0,
-            T_m=T_m,
-            T_f=T_f,
-            n_edges=int(diffs_m.size + diffs_f.size),
-        )
+        return _generation_interval(self)
 
     # ------------------------------------------------------------------
     # Lazy sparse products (computed on first access)

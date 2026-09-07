@@ -8,7 +8,7 @@ import polars as pl
 import pytest
 from conftest import kernel_inputs
 
-from pedigree_graph import PedigreeGraph, PedigreeValidationError, PedigreeView
+from pedigree_graph import MissingMetadataError, PedigreeGraph, PedigreeValidationError, PedigreeView
 from pedigree_graph._kinship_pairwise import (
     _pairwise_kinship_py,
     _pairwise_kinship_with_stats,
@@ -920,25 +920,31 @@ class TestGenerationInterval:
         assert gi.T == pytest.approx(19.0)  # noqa: SIM300 (gi.T is an attribute, not a constant)
         assert gi.n_edges == 2
 
-    def test_returns_none_when_one_sex_has_no_edges(self):
-        # All fathers unknown → T_m undefined → result is None.
+    def test_raises_when_one_sex_has_no_edges(self):
+        # All fathers unknown → T_m undefined → the father role is missing.
         pg = PedigreeGraph.from_arrays(
             ids=np.array([0, 2]),
             mothers=np.array([-1, 0]),
             fathers=np.array([-1, -1]),
             birth_year=np.array([1990, 2010]),
         )
-        assert pg.generation_interval is None
+        with pytest.raises(MissingMetadataError) as info:
+            _ = pg.generation_interval
+        assert info.value.code == "insufficient_parent_age_data"
+        assert info.value.fields == {"operation": "generation_interval", "missing_parent_roles": ("father",)}
 
-    def test_returns_none_when_no_edges_have_known_birth_years(self):
-        # Edges exist but parent birth_years all unknown.
+    def test_raises_when_no_edges_have_known_birth_years(self):
+        # Edges exist but parent birth_years all unknown → both roles missing.
         pg = PedigreeGraph.from_arrays(
             ids=np.array([0, 1, 2]),
             mothers=np.array([-1, -1, 0]),
             fathers=np.array([-1, -1, 1]),
             birth_year=np.array([-1, -1, 2010]),
         )
-        assert pg.generation_interval is None
+        with pytest.raises(MissingMetadataError) as info:
+            _ = pg.generation_interval
+        assert info.value.code == "insufficient_parent_age_data"
+        assert info.value.fields["missing_parent_roles"] == ("mother", "father")
 
     def test_unknown_endpoints_skipped_from_mean(self):
         # Father 1's birth_year is unknown, so its two outgoing edges

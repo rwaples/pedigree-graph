@@ -6,6 +6,32 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: the effective-size metadata matrix** (ADR 0006, slice 6c-2).
+  Every estimator in `pedigree_graph.effective_size` validates the metadata
+  it needs, in a fixed order, before any work, and raises
+  `MissingMetadataError` naming itself in `operation`; the matrix is on the
+  module docstring.  New raise sites: `missing_sex` (`status` `"absent"`
+  when the graph carries no sex, `"partial"` with the `-1` count) from
+  `ne_variance_family_size`, `ne_sex_ratio`, and both Hill branches, since
+  dropping unknown rows would change offspring numerators and cohort
+  denominators; uniform but known sex stays valid and warns.
+  `incomplete_parentage` (new code: `operation`, `affected_count`,
+  `first_row`, `first_id`, `represented_parent_role`,
+  `unrepresented_parent_role`, `unrepresented_parent_status` of `"missing"`
+  or `"external"`) from `ne_long_term_contributions` and
+  `ne_caballero_toro` only, because a child with one represented parent
+  would keep half its founder ancestry; every other estimator runs.
+  `PedigreeGraph.generation_interval` returns `None` only when birth years
+  are absent and raises `insufficient_parent_age_data` with the roles that
+  have no known-age edge, so Hill's absent-birth-year collapse to Ne_V is
+  unchanged while inadequate parent ages surface instead of collapsing.
+  `eligible_cohort_range` raises `missing_birth_year` (`status="absent"`)
+  and `insufficient_parent_age_data` with both roles instead of plain
+  `ValueError`; one role with known ages is enough for its percentile.
+  Hill's birth-year branch ignores generation labels.  Empty graphs bypass
+  every guard.  `compute_all_ne` re-raises a selected estimator's failure
+  as before.
+
 - **Added: `pedigree_graph.effective_size`** (ADR 0006, slice 6c-1).  The
   final effective-size surface: the eight `ne_*` estimators with frozen
   signatures (`ne_long_term_contributions(pg, *, tol=1e-6)` and

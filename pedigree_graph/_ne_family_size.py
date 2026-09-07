@@ -18,6 +18,7 @@ import numpy as np
 
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _harmonic_mean
+from pedigree_graph._ne_metadata import _require_complete_sex
 from pedigree_graph._ne_results import NeSexRatioResult, NeVarianceResult
 
 if TYPE_CHECKING:
@@ -296,9 +297,15 @@ def _variance_from(cohorts: ObservedCohorts, table: FamilySizeTable) -> NeVarian
     )
 
 
+def _sex_column(pg: PedigreeGraph) -> np.ndarray:
+    """The validated sex column; an empty graph has none and needs none."""
+    sex = pg.sex
+    return np.zeros(0, dtype=np.int8) if sex is None else np.asarray(sex)
+
+
 def _generation_family_table(pg: PedigreeGraph, cohorts: ObservedCohorts) -> FamilySizeTable:
     """The family-size table grouped by generation label (Ne_V and Hill's collapse)."""
-    return _sex_specific_family_table(np.asarray(pg.mother), np.asarray(pg.father), np.asarray(pg.sex), cohorts)
+    return _sex_specific_family_table(np.asarray(pg.mother), np.asarray(pg.father), _sex_column(pg), cohorts)
 
 
 def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
@@ -321,6 +328,8 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     ``N_m = N_f``, this reduces to Wright's ``4 N_m N_f / (N_m + N_f)``.
     Aggregate Ne is the harmonic mean across parent cohorts.
 
+    Requires complete generation labels (or none) and complete sex, in
+    that order: absent or partly unknown sex raises ``missing_sex``.
     Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1 —
     almost always a sign that the caller forgot to pass ``sex=`` to
     :meth:`PedigreeGraph.from_arrays` and is unwittingly running on the
@@ -329,6 +338,7 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     is the only diagnostic.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_variance_family_size")
+    _require_complete_sex(pg, "ne_variance_family_size")
     _warn_if_uniform_sex(pg, "ne_variance_family_size")
     return _variance_from(cohorts, _generation_family_table(pg, cohorts))
 
@@ -367,5 +377,6 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
     the warning is the only diagnostic.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_sex_ratio")
+    _require_complete_sex(pg, "ne_sex_ratio")
     _warn_if_uniform_sex(pg, "ne_sex_ratio")
-    return _sex_ratio_from(cohorts, np.asarray(pg.sex))
+    return _sex_ratio_from(cohorts, _sex_column(pg))

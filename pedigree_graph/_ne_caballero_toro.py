@@ -16,6 +16,7 @@ import numpy as np
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _checked_founder_matrix, _scalar_ne_from_log_regression, _transition_ne
 from pedigree_graph._ne_founders import _founder_columns, _founder_idx
+from pedigree_graph._ne_metadata import _require_closed_parentage
 from pedigree_graph._ne_results import NeCaballeroToroResult
 
 if TYPE_CHECKING:
@@ -354,8 +355,13 @@ def ne_caballero_toro(pg: PedigreeGraph) -> NeCaballeroToroResult:
     descendant set, then averaged across genomes that have descendants in
     the cohort.  Ne from the regression slope of ``ln(1 − f̄_s)`` on the
     label offset; each adjacent transition is gap-corrected.
+
+    Requires complete generation labels (or none), then closed represented
+    parentage: a row with exactly one represented parent raises
+    ``incomplete_parentage``.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_caballero_toro")
+    _require_closed_parentage(pg, "ne_caballero_toro")
     founder_idx = _founder_idx(pg)
     acc = _caballero_toro_accumulators(pg, founder_idx, pg._inbreeding_values(), cohorts=cohorts)
     return _caballero_toro_from(cohorts, acc)

@@ -1,6 +1,8 @@
-"""Cohort eligibility utilities for overlapping-generation Ne estimators.
+"""Birth-year utilities for overlapping-generation Ne estimators.
 
-The Hill 1979 separate-sex Ne_H estimator needs to restrict to
+:func:`generation_interval` is the body of
+:attr:`PedigreeGraph.generation_interval`, the sex-split Hill 1979 ``L``.
+The Hill 1979 separate-sex Ne_H estimator also needs to restrict to
 *eligible* birth cohorts whose members have had time to complete
 their reproductive lifespans by the end of the observed pedigree.
 This module provides the public utility :func:`eligible_cohort_range`
@@ -21,8 +23,42 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
+from pedigree_graph._errors import MissingMetadataError
+from pedigree_graph._ne_results import GenerationInterval
+
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+
+
+def generation_interval(pg: PedigreeGraph) -> GenerationInterval | None:
+    """Sex-split generation interval (Hill 1979 ``L``) of ``pg``.
+
+    ``T_m`` is the mean ``child.birth_year − sire.birth_year`` over
+    sire-offspring edges with both birth years known, ``T_f`` the symmetric
+    dam form, ``T = (T_m + T_f) / 2``; skip-generation edges are included
+    unconditionally.  Returns ``None`` only when ``pg.birth_year is None``.
+
+    Raises:
+        MissingMetadataError: ``insufficient_parent_age_data`` when birth
+            years are present but a parent role has no edge with both birth
+            years known; ``missing_parent_roles`` lists the roles in
+            ``("mother", "father")`` order.
+    """
+    if pg.birth_year is None:
+        return None
+    diffs_f = pg._known_parent_edges_for("mother")[1]
+    diffs_m = pg._known_parent_edges_for("father")[1]
+    missing_roles = tuple(role for role, diffs in (("mother", diffs_f), ("father", diffs_m)) if diffs.size == 0)
+    if missing_roles:
+        raise MissingMetadataError(
+            "insufficient_parent_age_data",
+            f"generation_interval: no parent-child edge with both birth years known for {', '.join(missing_roles)}",
+            operation="generation_interval",
+            missing_parent_roles=missing_roles,
+        )
+    T_m = float(diffs_m.mean())
+    T_f = float(diffs_f.mean())
+    return GenerationInterval(T=(T_m + T_f) / 2.0, T_m=T_m, T_f=T_f, n_edges=int(diffs_m.size + diffs_f.size))
 
 
 class CohortWindow(NamedTuple):
@@ -71,9 +107,12 @@ def eligible_cohort_range(
         :class:`CohortWindow` ``(c_min, c_max, reproductive_age_p95)``.
 
     Raises:
-        ValueError: If ``pg.birth_year is None``, or if no parent-child
-            edges have both endpoints with known birth_year (so the
-            percentile is undefined).
+        MissingMetadataError: ``missing_birth_year`` (``status="absent"``,
+            every row counted) if ``pg.birth_year is None``;
+            ``insufficient_parent_age_data`` with both roles listed if no
+            parent-child edge has both birth years known, so the
+            percentile is undefined.  One role with qualifying edges is
+            enough for the percentile.
 
     Notes:
         The in-sample percentile is self-referentially biased under
@@ -86,21 +125,27 @@ def eligible_cohort_range(
         from a life table).
     """
     if pg.birth_year is None:
-        raise ValueError("eligible_cohort_range requires pg.birth_year to be set")
+        raise MissingMetadataError(
+            "missing_birth_year",
+            "eligible_cohort_range: the pedigree carries no birth years",
+            operation="eligible_cohort_range",
+            status="absent",
+            missing_count=pg.n_individuals,
+        )
 
     by = pg.birth_year
     known = by[by >= 0]
-    if known.size == 0:
-        raise ValueError("eligible_cohort_range: no individuals have known birth_year")
 
     y_min = int(known.min())
     y_max = int(known.max())
 
     diffs = [d for parent_label in ("mother", "father") if (d := pg._known_parent_edges_for(parent_label)[1]).size > 0]
     if not diffs:
-        raise ValueError(
-            "eligible_cohort_range: no parent-child edges with both birth_years known; "
-            "cannot compute reproductive_age_p95"
+        raise MissingMetadataError(
+            "insufficient_parent_age_data",
+            "eligible_cohort_range: no parent-child edge with both birth years known; the percentile is undefined",
+            operation="eligible_cohort_range",
+            missing_parent_roles=("mother", "father"),
         )
 
     all_diffs = np.concatenate(diffs)

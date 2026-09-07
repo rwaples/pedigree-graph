@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pedigree_graph._errors import MissingMetadataError
+from pedigree_graph._ne_metadata import _require_complete_generation_labels
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
@@ -41,32 +41,6 @@ def _densify_labels(labels: np.ndarray) -> tuple[np.ndarray, np.ndarray, int]:
     dense[labelled] = inverse.astype(np.int32)
     n_unlabelled = int(raw.shape[0] - np.count_nonzero(labelled))
     return dense, observed.astype(np.int32), n_unlabelled
-
-
-def _require_complete_generation_labels(pg: PedigreeGraph, operation: str) -> None:
-    """Reject a graph whose supplied generation labels are only partly known.
-
-    A ``-1`` label indexes no cohort; left unchecked it wraps into the last
-    bucket of every label-indexed accumulator and silently biases the result.
-    Absent labels are not an error here: the estimators fall back to
-    structural depth through :meth:`ObservedCohorts.for_graph`.
-
-    Raises:
-        MissingMetadataError: ``missing_generation_labels`` with
-            ``status="partial"`` and the number of unknown labels.
-    """
-    labels = pg.generation_labels
-    if labels is None:
-        return
-    missing = int(np.count_nonzero(labels < 0))
-    if missing:
-        raise MissingMetadataError(
-            "missing_generation_labels",
-            f"{operation}: {missing} of {labels.size} generation labels are unknown (-1)",
-            operation=operation,
-            status="partial",
-            missing_count=missing,
-        )
 
 
 @dataclass(frozen=True, slots=True)

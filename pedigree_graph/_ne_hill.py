@@ -24,6 +24,7 @@ from pedigree_graph._ne_family_size import (
     _waples_vk2_expectation,
     _warn_if_uniform_sex,
 )
+from pedigree_graph._ne_metadata import _require_complete_sex
 from pedigree_graph._ne_results import NeHillResult
 
 if TYPE_CHECKING:
@@ -68,6 +69,7 @@ def _birth_year_family_table(pg: PedigreeGraph) -> FamilySizeTable:
 def _hill_collapsed(pg: PedigreeGraph) -> NeHillResult:
     """The sentinel branch: Hill at ``L = 1`` is the Ne_V passthrough."""
     cohorts = ObservedCohorts.for_graph(pg, "ne_hill_overlapping")
+    _require_complete_sex(pg, "ne_hill_overlapping")
     _warn_if_uniform_sex(pg, "ne_hill_overlapping")
     v = _variance_from(cohorts, _generation_family_table(pg, cohorts))
     return NeHillResult(ne=v.ne, generation_interval=1.0, collapses_to_ne_v=True)
@@ -78,13 +80,17 @@ def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillR
 
     Dispatches on ``pg.birth_year``:
 
-    * **Sentinel branch** (``pg.birth_year is None``, or one sex has no
-      qualifying parent-child edges): the discrete-generation form of
-      Hill 1979 reduces to Ne_V (Caballero 1994 eq. 6 = Hill 1979 eq. 8
-      under symmetric sexes), so ``ne`` is the
-      :func:`ne_variance_family_size` passthrough and
-      ``collapses_to_ne_v=True``.
-    * **Birth-year branch**: per eligible birth-year cohort, computes
+    * **Sentinel branch** (``pg.birth_year is None``): the
+      discrete-generation form of Hill 1979 reduces to Ne_V (Caballero
+      1994 eq. 6 = Hill 1979 eq. 8 under symmetric sexes), so ``ne`` is
+      the :func:`ne_variance_family_size` passthrough and
+      ``collapses_to_ne_v=True``.  This branch inherits Ne_V's guards:
+      complete generation labels (or none), then complete sex.
+    * **Birth-year branch**: ignores generation labels; requires complete
+      sex, then a qualifying known-age edge for each parent role
+      (:attr:`PedigreeGraph.generation_interval` raises
+      ``insufficient_parent_age_data`` otherwise).  Per eligible
+      birth-year cohort, computes
       sex-specific Ne via Hill 1979 eq. (4)::
 
           Ne_s(c) = 4·N1_s(c)·T / (σ²_s(c) + 2)         s ∈ {m, f}
@@ -121,11 +127,11 @@ def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillR
     """
     if pg.n == 0:
         return NeHillResult(ne=None, generation_interval=1.0, collapses_to_ne_v=True)
-    # pg.generation_interval is None iff pg.birth_year is None or one sex
-    # has no qualifying edges — both cases collapse to Ne_V passthrough.
-    gi = pg.generation_interval
-    if gi is None:
+    if pg.birth_year is None:
         return _hill_collapsed(pg)
+    _require_complete_sex(pg, "ne_hill_overlapping")
+    gi = pg.generation_interval
+    assert gi is not None  # birth years are present, so the property returns or raises
 
     window = eligible_cohort_range(pg)
     table = _birth_year_family_table(pg)
