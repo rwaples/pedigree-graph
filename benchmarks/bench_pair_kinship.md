@@ -132,6 +132,10 @@ memo comes with no cold cost at all.
   retention limit is 1 GiB (`_MEMO_RETAIN_LIMIT`); a table over it is dropped
   after the call rather than raised on, and `_release_kinship_matrices` drops
   it on demand.
+- The 0.7.1 adapter `compute_pair_kinship`, which is what pedsum and fitACE
+  call today, does not retain the memo. Their resident memory after the call
+  is what it was before this slice; the saving is available once they move to
+  `pair_kinship`.
 
 ## Related
 

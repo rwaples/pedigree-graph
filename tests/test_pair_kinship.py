@@ -541,6 +541,41 @@ class TestPersistentMemo:
         assert graph._pair_memo.entries == memo.entries
         assert graph._pair_memo.keys is memo.keys
 
+    def test_a_failed_call_drops_the_memo_instead_of_a_stale_count(self, monkeypatch):
+        # The kernel fills the retained table in place before a doubling, so a
+        # failure part-way leaves more live keys than the retained count; the
+        # next call would overfill the table and the probe would never stop.
+        graph = _graph("deep_inbred_60g")
+        rows = np.arange(graph.n_individuals)
+        graph.pair_kinship(rows[:8], rows[:8])
+        assert graph._pair_memo is not None
+        import pedigree_graph._kinship_pairwise as module
+
+        def fail(*args, **kwargs):
+            raise MemoryError("simulated doubling failure")
+
+        monkeypatch.setattr(module, "_run_kernel", fail)
+        with pytest.raises(MemoryError):
+            graph.pair_kinship(rows, rows)
+        assert graph._pair_memo is None
+        monkeypatch.undo()
+        cold = _graph("deep_inbred_60g").pair_kinship(rows, rows)
+        assert graph.pair_kinship(rows, rows).tobytes() == cold.tobytes()
+
+    def test_the_legacy_adapter_does_not_retain(self):
+        graph = _graph("deep_inbred_60g")
+        pairs = graph.extract_pairs(max_degree=2)
+        graph.compute_pair_kinship(pairs)
+        assert graph._pair_memo is None
+        import polars as pl
+
+        frame = _ped_mz_twins_with_descendants()
+        sub = PedigreeGraph.from_subsample(frame, frame.filter(pl.col("id").is_in([8, 9])))
+        sub.compute_pair_kinship({"x": (np.array([0]), np.array([1]))})
+        assert sub._pair_memo is None
+        assert sub._legacy_view is not None
+        assert sub._legacy_view._graph._pair_memo is None
+
     def test_the_empty_memo_starts_cold(self):
         memo = _PairMemo()
         assert memo.capacity == 0

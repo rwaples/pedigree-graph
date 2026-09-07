@@ -1214,7 +1214,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         ``pairs[code]``.  The values are those of :meth:`pair_kinship`, an
         explicit 0.8 change from the 0.7.1 float64 recurrence, and like every
         0.8 result the arrays are read-only; the dict form and the caller-space
-        rows of a ``from_subsample`` graph are preserved.
+        rows of a ``from_subsample`` graph are preserved.  Unlike
+        :meth:`pair_kinship`, this adapter does not keep the recurrence memo
+        on the graph afterwards, so a 0.7.1 caller's resident memory is
+        unchanged.
         """
         codes = [code for code, (idx1, _) in pairs.items() if len(idx1)]
         empty = np.zeros(0, dtype=np.float32)
@@ -1224,10 +1227,14 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             return result
         first = np.concatenate([np.asarray(pairs[code][0]) for code in codes])
         second = np.concatenate([np.asarray(pairs[code][1]) for code in codes])
+        # The adapter neither commits the thread budget nor retains the memo:
+        # its callers (pedsum, fitACE) hold the graph past this call and sized
+        # their memory for 0.7.1, so the retained closure would be a silent
+        # resident-memory increase until they migrate to pair_kinship.
         if self._legacy_view is None:
-            flat = graph_pair_kinship(self, first, second, commit_threads=False)
+            flat = graph_pair_kinship(self, first, second, commit_threads=False, retain_memo=False)
         else:
-            flat = view_pair_kinship(self._legacy_view, first, second, commit_threads=False)
+            flat = view_pair_kinship(self._legacy_view, first, second, commit_threads=False, retain_memo=False)
         assert isinstance(flat, np.ndarray)
         offset = 0
         for code in codes:

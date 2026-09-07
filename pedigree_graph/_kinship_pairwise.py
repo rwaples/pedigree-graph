@@ -292,8 +292,9 @@ def _pairwise_kinship_core(
 
     Returns ``(out, stats)`` where ``stats`` is ``int64[5]`` = ``[entries,
     capacity, grows, max_stack_depth, overflow]`` with ``entries`` the table's
-    fill after this call and ``grows`` always ``0`` here; ``out`` is
-    unfinished when ``overflow`` is ``1``.
+    fill after this call; ``grows`` is written by :func:`_run_kernel`, the
+    only place growth happens.  ``out`` is unfinished when ``overflow`` is
+    ``1``.
 
     The combine expressions mirror :func:`_pairwise_kinship_py` term-for-term
     in float32, so the two agree to the bit whatever the traversal order, and
@@ -311,7 +312,6 @@ def _pairwise_kinship_core(
         return out, stats
 
     cap = memo_keys.shape[0]
-    grows = 0
 
     # Explicit work stack of canonical keys.
     stack = np.empty(_next_pow2(4 * p if p > 16 else 64), dtype=np.int64)
@@ -411,7 +411,6 @@ def _pairwise_kinship_core(
 
     stats[_STAT_ENTRIES] = entries
     stats[_STAT_CAPACITY] = cap
-    stats[_STAT_GROWS] = grows
     stats[_STAT_MAX_STACK] = max_stack
     return out, stats
 
@@ -719,26 +718,39 @@ def _shape_result(query: _PairQuery, values: np.ndarray) -> np.ndarray | Mapping
     return MappingProxyType(dict(zip(query.block_lengths, pieces, strict=True)))
 
 
-def memoised_kinship(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> np.ndarray:
+def memoised_kinship(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray, *, retain: bool = True) -> np.ndarray:
     """Run the kernel on *graph* from its retained memo and retain what it leaves.
 
     *first* and *second* are already in the graph's depth-major order.  This is
     the one place a graph's memo is read and written, so ``pair_kinship`` and
-    the relationship matrix share it.  The table is kept when it fits under the
-    graph's retention limit and dropped otherwise; either way the values are
-    those of a cold call.
+    the relationship matrix share it.  The table is kept when *retain* is set
+    and it fits under the graph's retention limit, and dropped otherwise;
+    either way the values are those of a cold call.
+
+    The kernel writes into the starting table in place before any growth, so
+    a call that fails part-way (a doubling that cannot be allocated, an
+    interrupt between re-entries) leaves a table whose fill exceeds the count
+    the graph holds.  Handing that table to the next call would overfill it
+    and the probe loop would never terminate, so any exception drops the memo
+    before it propagates.
     """
     mother, father, twin = graph._topological_parents
-    out, _, memo = _run_kernel(mother, father, twin, first, second, memo=graph._pair_memo)
-    graph._pair_memo = memo if memo.nbytes <= graph._pair_memo_limit else None
+    try:
+        out, _, memo = _run_kernel(mother, father, twin, first, second, memo=graph._pair_memo)
+    except BaseException:
+        graph._pair_memo = None
+        raise
+    graph._pair_memo = memo if retain and memo.nbytes <= graph._pair_memo_limit else None
     return out
 
 
-def _evaluate(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray, *, commit_threads: bool) -> np.ndarray:
+def _evaluate(
+    graph: PedigreeGraph, first: np.ndarray, second: np.ndarray, *, commit_threads: bool, retain_memo: bool
+) -> np.ndarray:
     if commit_threads:
         thread_budget()
     topology = graph._topology
-    return memoised_kinship(graph, topology.translate(first), topology.translate(second))
+    return memoised_kinship(graph, topology.translate(first), topology.translate(second), retain=retain_memo)
 
 
 def graph_pair_kinship(
@@ -747,12 +759,14 @@ def graph_pair_kinship(
     second: object | None,
     *,
     commit_threads: bool = True,  # 0.8.0-DELETE: the 0.7.1 adapter leaves the budget open.
+    retain_memo: bool = True,  # 0.8.0-DELETE: the 0.7.1 adapter keeps its callers' memory profile.
 ) -> np.ndarray | Mapping[str, np.ndarray]:
     """Answer ``PedigreeGraph.pair_kinship`` in graph rows."""
     query = _resolve_query(
         first, second, token=graph._coordinate_token, n_individuals=graph.n_individuals, receiver_type="PedigreeGraph"
     )
-    return _shape_result(query, _evaluate(graph, query.first, query.second, commit_threads=commit_threads))
+    values = _evaluate(graph, query.first, query.second, commit_threads=commit_threads, retain_memo=retain_memo)
+    return _shape_result(query, values)
 
 
 def view_pair_kinship(
@@ -761,6 +775,7 @@ def view_pair_kinship(
     second: object | None,
     *,
     commit_threads: bool = True,  # 0.8.0-DELETE: the 0.7.1 adapter leaves the budget open.
+    retain_memo: bool = True,  # 0.8.0-DELETE: the 0.7.1 adapter keeps its callers' memory profile.
 ) -> np.ndarray | Mapping[str, np.ndarray]:
     """Answer ``PedigreeView.pair_kinship``: validate in view rows, evaluate in graph rows."""
     query = _resolve_query(
@@ -768,6 +783,10 @@ def view_pair_kinship(
     )
     rows = view.graph_rows
     values = _evaluate(
-        view._graph, readonly(rows[query.first]), readonly(rows[query.second]), commit_threads=commit_threads
+        view._graph,
+        readonly(rows[query.first]),
+        readonly(rows[query.second]),
+        commit_threads=commit_threads,
+        retain_memo=retain_memo,
     )
     return _shape_result(query, values)
