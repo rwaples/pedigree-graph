@@ -22,7 +22,8 @@ Why this answers the "rewrite in C++?" question:
     a C++ port buys ~nothing (see docs/adr/0001).
 
 Two memory signals are reported per op:
-  * ``rss_delta_mb``      — peak RSS over a background sampler thread. Captures
+  * ``rss_delta_mb``      — peak RSS from the kernel's VmHWM, reset via
+    /proc/self/clear_refs at region entry (benchmarks/_harness.py). Captures
                             scipy's C-side buffers (the real matmul footprint).
   * ``tracemalloc_mb``    — peak Python-level allocation only. If rss_delta far
                             exceeds tracemalloc, the memory lives in C/scipy.
@@ -42,14 +43,13 @@ import gc
 import io
 import logging
 import pstats
-import threading
+import sys
 import time
 import tracemalloc
 from pathlib import Path
 
 import numpy as np
 import polars as pl
-import psutil
 from simace.simulation.simulate import run_simulation
 
 from pedigree_graph import PedigreeGraph, ResourceError, compute_all_ne
@@ -58,6 +58,11 @@ from pedigree_graph._kinship_pairwise import (
     _pairwise_kinship_with_stats,
     pairwise_kinship,
 )
+
+# The shared benchmark contract lives beside this file, not on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _harness import PeakRss
 
 # --- representative pedigree presets -------------------------------------
 # (N = individuals per generation, G_ped = recorded generations.)
@@ -89,29 +94,6 @@ SIM_PARAMS = {
 }
 
 
-class _RSSSampler(threading.Thread):
-    """Background thread that records peak RSS while an op runs."""
-
-    def __init__(self, interval: float = 0.01) -> None:
-        super().__init__(daemon=True)
-        self.interval = interval
-        self._proc = psutil.Process()
-        self._stop = threading.Event()
-        self.peak = self._proc.memory_info().rss
-
-    def run(self) -> None:
-        while not self._stop.is_set():
-            rss = self._proc.memory_info().rss
-            if rss > self.peak:
-                self.peak = rss
-            self._stop.wait(self.interval)
-
-    def stop(self) -> int:
-        self._stop.set()
-        self.join()
-        return self.peak
-
-
 class _LogCapture(logging.Handler):
     """Collect formatted DEBUG records from the ``pedigree_graph`` logger.
 
@@ -132,29 +114,21 @@ class _LogCapture(logging.Handler):
 def measure(label: str, fn, logcap: _LogCapture) -> tuple[dict, object]:
     """Run ``fn`` once, capturing wall-time, peak RSS, tracemalloc, and logs."""
     gc.collect()
-    proc = psutil.Process()
-    baseline = proc.memory_info().rss
     logcap.records.clear()
-
-    sampler = _RSSSampler()
-    sampler.peak = baseline
-    sampler.start()
     tracemalloc.start()
 
-    t0 = time.perf_counter()
-    result = fn()
-    elapsed = time.perf_counter() - t0
+    with PeakRss() as region:
+        result = fn()
 
     _, tm_peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-    peak_rss = sampler.stop()
 
     rec = {
         "label": label,
-        "seconds": elapsed,
-        "rss_baseline_mb": baseline / 1e6,
-        "rss_peak_mb": peak_rss / 1e6,
-        "rss_delta_mb": (peak_rss - baseline) / 1e6,
+        "seconds": region.wall_s,
+        "rss_baseline_mb": region.baseline_mib * 1.048576,
+        "rss_peak_mb": region.peak_mib * 1.048576,
+        "rss_delta_mb": region.growth_mib * 1.048576,
         "tracemalloc_mb": tm_peak / 1e6,
         "logs": list(logcap.records),
     }
