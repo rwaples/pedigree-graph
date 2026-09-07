@@ -21,9 +21,10 @@ relative paths above do not resolve under it.
 Each cell runs in a fresh subprocess and is repeated five times, and the table
 quotes the median with the observed spread across runs. Peak RSS is the
 kernel's `VmHWM`, reset through `/proc/self/clear_refs` at the start of the
-timed region. The arm has no setup, so the timed region is one
-`graph.inbreeding()` call and nothing else; fixture construction happens before
-it and is excluded.
+timed region. The harness times the whole arm (`_harness.py:640`), so the region
+is the `graph.inbreeding()` call plus the checksum and the two reported facts
+over the returned array. Fixture construction happens before the region and is
+excluded.
 
 `benchmarks/.gitignore` excludes `reports/`, so the raw JSON is local-only and
 this note carries the environment and spread inline.
@@ -91,8 +92,14 @@ the kernel's own arrays, since `F` and `D` alone are two float64 vectors of
 
 ## What the numbers show
 
-The checksum is identical across all five repetitions of every cell, so each
-cell computed the same coefficients every time.
+The checksum is identical across all five repetitions of every cell. Read that
+narrowly. `checksum_values` XORs the raw bits (`_harness.py:190`), and XOR is
+blind to order and cancels values appearing an even number of times, so a stable
+checksum shows each repetition produced the same *multiset* of coefficients, not
+the same vector. It would not catch a regression that scattered `F` onto the
+wrong graph rows, which is exactly the failure a `per_row_to_graph` port could
+introduce. The row-order guarantee is held by the test suite instead, where
+`tests/test_row_order.py` compares `inbreeding()` per id across permuted inputs.
 
 The coefficients are real inbreeding, not zeros. Mean `F` is 0.0095 on
 `random_1k`, 0.65 on `deep_inbred_60g`, 0.00043 on `random_30k`, and 3.68e-05

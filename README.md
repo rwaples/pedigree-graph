@@ -28,10 +28,12 @@ pytest -m "not slow"   # inner loop, about 2.5 minutes
 pytest                 # before a commit, about 13 minutes
 ```
 
-The `slow` tests are the `random_30k` integration gates.  Each one runs the
-pair-kinship kernel over the whole 30,300-row pedigree, and a single kernel
-call there costs 30 to 250 seconds regardless of how many pairs it is asked
-for, so the full suite is dominated by a handful of tests.
+Five of the nine `slow` tests are the `random_30k` integration gates.  Each runs
+the pair-kinship kernel over the whole 30,300-row pedigree, and a single kernel
+call there costs 30 to 250 seconds regardless of how many pairs it is asked for,
+so the full suite is dominated by a handful of tests.  The other four are the
+N=2000 effective-size scaling tests in `tests/test_effective_size_scaling.py`,
+which touch neither `random_30k` nor the pair-kinship kernel.
 
 Requires Python ≥ 3.13.  Runtime deps: `numpy`, `scipy`, `numba`.
 Pandas is optional and only needed if you pass DataFrames to the
