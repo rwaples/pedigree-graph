@@ -6,6 +6,23 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `PedigreeGraph.mean_kinship_by_generation()`** (ADR 0006, slice 6a).
+  Returns a frozen `pedigree_graph.summaries.GenerationKinshipSummary` with
+  read-only `generations` (int32, ascending, observed labels only),
+  `mean_kinship` (float64, NaN where no pair is averaged), `pair_counts`
+  (int64), and `unlabelled_individual_count`.  Wholly absent generation labels
+  fall back to structural depth; partial labels exclude the `-1` rows and
+  report their count instead of raising; sparse or rebased labels return only
+  the labels some row carries.  An MZ twin pair leaves a group's sum and
+  denominator only when both co-twins are in that group; a twin whose partner
+  is unlabelled or elsewhere is an ordinary member.  The kinship is streamed
+  from the retiring DP, or walked from the complete matrix when that is already
+  cached, and the accumulator is sized by the number of distinct labels rather
+  than by the largest label value.  Computed once per graph.
+  `per_gen_mean_kinship()` is now a `# 0.8.0-DELETE` adapter over the summary:
+  same `max(label) + 1` array, same partial-label rejection, same
+  `min_kinship` cache, and bit-identical values on the v0.7.1 parity corpus.
+
 - **Breaking: cached kinship-matrix arrays are read-only.** Every matrix
   family marks `data`, `indices`, and `indptr` non-writeable so a caller
   cannot corrupt a cached result in place. `scipy.sparse` constructors do not

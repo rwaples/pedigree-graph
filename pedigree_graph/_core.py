@@ -29,7 +29,7 @@ from pedigree_graph._compat import from_subsample as _from_subsample
 from pedigree_graph._compat import legacy_count_pairs as _legacy_count_pairs
 from pedigree_graph._compat import legacy_count_pairs_streaming as _legacy_count_pairs_streaming
 from pedigree_graph._compat import legacy_extract_pairs as _legacy_extract_pairs
-from pedigree_graph._effective_size import _per_gen_mean_kinship
+from pedigree_graph._compat import legacy_per_gen_mean_kinship as _legacy_per_gen_mean_kinship
 from pedigree_graph._errors import PedigreeValidationError, ResourceError
 from pedigree_graph._frames import FrameLike
 from pedigree_graph._input import (
@@ -38,7 +38,6 @@ from pedigree_graph._input import (
 )
 from pedigree_graph._kinship_kernel import (
     _compute_F_meuwissen_luo,
-    _compute_theta_per_gen,
 )
 from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
 from pedigree_graph._kinship_pairwise import _MEMO_RETAIN_LIMIT, graph_pair_kinship, view_pair_kinship
@@ -46,7 +45,7 @@ from pedigree_graph._lineage_kernel import (
     _compute_n_ancestors,
     _compute_n_descendants,
 )
-from pedigree_graph._ne_common import _require_complete_generation_labels
+from pedigree_graph._ne_rates import _generation_kinship_summary
 from pedigree_graph._pair_extractor import relationship_pairs as _relationship_pairs
 from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
 from pedigree_graph._properties import PedigreeProperties
@@ -65,6 +64,7 @@ if TYPE_CHECKING:
     from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
     from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
+    from pedigree_graph.summaries import GenerationKinshipSummary
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +182,8 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         # per_gen_mean_kinship(); keyed by min_kinship so callers using a
         # non-default threshold do not get a stale θ̄.
         self._theta_per_gen_cache: dict[float, np.ndarray] = {}
+        # mean_kinship_by_generation() is threshold-free: one summary per graph.
+        self._generation_kinship_summary: GenerationKinshipSummary | None = None
         # Matrix-engine counts written by extract_pairs(), keyed on
         # ("matrix", max_degree, min_kinship).  Value is a (raw_counts,
         # subsample_counts) pair so the scope='full' and scope='subsample'
@@ -977,59 +979,45 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     # Sparse kinship, inbreeding, and exact pair kinship
     # ------------------------------------------------------------------
 
-    def per_gen_mean_kinship(self, min_kinship: float = 0.0) -> np.ndarray:
-        """Per-generation mean kinship θ̄_g, computed without building K.
+    def mean_kinship_by_generation(self) -> GenerationKinshipSummary:
+        """Mean pedigree-expected kinship within each observed generation.
 
-        Streams the DP row storage through :func:`_compute_theta_per_gen`;
-        no CSC matrix is ever materialized.  Result is cached under
-        ``min_kinship`` in ``self._theta_per_gen_cache``.  If the full
-        kinship matrix is already cached at the same threshold, θ̄ is
-        derived from that matrix instead of re-running the DP.
+        Groups rows by the supplied generation labels, or by structural
+        :attr:`depth` when none were supplied, and averages the ADR 0009
+        kinship over the unordered pairs of distinct individuals in each
+        group.  An MZ twin pair is left out of a group's sum and denominator
+        only when both co-twins are in that group; a twin whose partner is
+        unlabelled or elsewhere is an ordinary member.  Rows whose label is
+        ``-1`` join no group and are reported in
+        ``unlabelled_individual_count``, never assigned a depth.  Only labels
+        some row carries appear, ascending.
 
-        Args:
-            min_kinship: kernel-side pruning threshold.  Off-diagonal
-                entries with ``value <= min_kinship`` are dropped during
-                DP propagation.  Diagonal always kept.
+        The kinship is streamed from the retiring DP without materializing
+        the kinship matrix, unless the complete matrix is already cached, in
+        which case that matrix is walked instead; both routes give the same
+        values.  The summary is computed once per graph and the same frozen
+        object returned afterwards.  The call commits the package thread
+        budget (:func:`~pedigree_graph.configure_threads`) like every 0.8
+        operation.
 
         Returns:
-            ``np.ndarray`` of dtype float64, length ``g_max + 1``, with
-            mean within-cohort kinship per generation (NaN for cohorts
-            with fewer than 2 non-twin members).
+            A :class:`~pedigree_graph.summaries.GenerationKinshipSummary`
+            with read-only ``generations``, ``mean_kinship`` (NaN where
+            ``pair_counts`` is 0), and ``pair_counts`` arrays.
         """
-        key = float(min_kinship)
-        cached = self._theta_per_gen_cache.get(key)
-        if cached is not None:
-            return cached
-        _require_complete_generation_labels(self, "per_gen_mean_kinship")
+        thread_budget()
+        return _generation_kinship_summary(self)
 
-        t0 = time.perf_counter()
-        K = self._kinship_cache.get(key)
-        if K is not None:
-            theta = _per_gen_mean_kinship(
-                K,
-                np.asarray(self.generation),
-                np.asarray(self.twin),
-            )
-        else:
-            theta = _compute_theta_per_gen(
-                self.n,
-                self.mother,
-                self.father,
-                self.twin,
-                self.depth,
-                min_kinship,
-                labels=self.generation,
-            )
-        self._theta_per_gen_cache[key] = theta
+    def per_gen_mean_kinship(self, min_kinship: float = 0.0) -> np.ndarray:
+        """0.8.0-DELETE: per-generation mean kinship θ̄_g in the 0.7.1 array form.
 
-        logger.info(
-            "per_gen_mean_kinship: n=%d, g_max=%d, min_kinship=%.4g, %.2fs",
-            self.n,
-            theta.shape[0] - 1,
-            min_kinship,
-            time.perf_counter() - t0,
-        )
-        return theta
+        Adapter over :meth:`mean_kinship_by_generation`, see
+        :func:`pedigree_graph._compat.legacy_per_gen_mean_kinship`: a float64
+        array of length ``max(label) + 1`` with NaN where a label is absent or
+        its cohort has fewer than 2 non-twin members, partial labels rejected
+        as in 0.7.1, and the result cached under ``min_kinship``.
+        """
+        return _legacy_per_gen_mean_kinship(self, min_kinship)
 
     def inbreeding(self) -> np.ndarray:
         """Return the inbreeding coefficient *F* of every individual, in graph rows.

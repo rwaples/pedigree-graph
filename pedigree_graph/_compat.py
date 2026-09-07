@@ -21,6 +21,9 @@ import numpy as np
 from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._frames import _coerce_to_array_dict
 from pedigree_graph._input import validate_id_field
+from pedigree_graph._kinship_kernel import _compute_theta_per_gen, _scatter_summary
+from pedigree_graph._ne_common import _require_complete_generation_labels
+from pedigree_graph._ne_rates import _generation_kinship_summary, _per_gen_mean_kinship
 from pedigree_graph._pair_extractor import MatrixPairExtractor
 from pedigree_graph._pair_utils import project_pairs
 from pedigree_graph._registry import RELATIONSHIPS, _validate_max_degree
@@ -207,3 +210,39 @@ def from_subsample(
     pg = cls(_coerce_to_array_dict(full_pedigree))
     pg._legacy_view = pg.view(ids=df_ids)
     return pg
+
+
+def legacy_per_gen_mean_kinship(pg: PedigreeGraph, min_kinship: float) -> np.ndarray:
+    """Return the 0.7.1 ``max(label) + 1`` mean-kinship array.
+
+    The body of :meth:`PedigreeGraph.per_gen_mean_kinship`.  Partial labels
+    are rejected, since the estimators that consume this array cannot
+    represent an excluded cohort.  At ``min_kinship == 0.0`` the array is the
+    0.8 summary scattered over the raw labels, NaN in the gaps; a positive
+    threshold re-runs the pruned DP as before; a matrix cached at the same
+    threshold is walked instead.  Cached per threshold on the graph.
+    """
+    key = float(min_kinship)
+    cached = pg._theta_per_gen_cache.get(key)
+    if cached is not None:
+        return cached
+    _require_complete_generation_labels(pg, "per_gen_mean_kinship")
+
+    labels = np.asarray(pg.generation)
+    K = pg._kinship_cache.get(key)
+    if K is not None:
+        theta = _per_gen_mean_kinship(K, labels, np.asarray(pg.twin))
+    elif key == 0.0:
+        theta = _scatter_summary(_generation_kinship_summary(pg), labels)
+    else:
+        theta = _compute_theta_per_gen(
+            pg.n,
+            pg.mother,
+            pg.father,
+            pg.twin,
+            pg.depth,
+            min_kinship,
+            labels=labels,
+        )
+    pg._theta_per_gen_cache[key] = theta
+    return theta

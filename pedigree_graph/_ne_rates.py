@@ -7,17 +7,26 @@ Gutiérrez 2008 individual-ΔF estimator:
 * :func:`ne_coancestry`         — regression of ``ln(1 − θ̄_t)`` on t.
 * :func:`ne_individual_delta_f` — Gutiérrez individual ΔF_i via EqG.
 
-Also owns :func:`_per_gen_mean_kinship` (per-cohort mean θ over
-within-cohort pairs), shared with :meth:`PedigreeGraph.per_gen_mean_kinship`.
+Also owns :func:`_summary_from_matrix`, the cached-matrix route to
+:meth:`PedigreeGraph.mean_kinship_by_generation`, and its 0.7.1 array
+adapter :func:`_per_gen_mean_kinship`.
 """
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pedigree_graph._kinship_kernel import _compute_eqg, _finalize_from_sum_theta
+from pedigree_graph._kinship_kernel import (
+    _compute_eqg,
+    _compute_generation_kinship_summary,
+    _densify_labels,
+    _finalize_summary,
+    _scatter_summary,
+)
 from pedigree_graph._ne_common import (
     _harmonic_mean,
     _require_complete_generation_labels,
@@ -33,6 +42,83 @@ if TYPE_CHECKING:
     import scipy.sparse as sp
 
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph.summaries import GenerationKinshipSummary
+
+
+logger = logging.getLogger(__name__)
+
+
+def _summary_from_matrix(
+    K: sp.csc_matrix,
+    labels: np.ndarray,
+    twin_idx: np.ndarray,
+) -> GenerationKinshipSummary:
+    """Generation kinship summary walked from a complete kinship matrix.
+
+    Same grouping and MZ rule as the streamed DP path
+    (:func:`~pedigree_graph._kinship_dp._compute_generation_kinship_summary`),
+    so the two are interchangeable oracles: upper-triangle entries whose rows
+    share an observed label, minus ``(i, twin[i])`` pairs, summed per label
+    and divided by :func:`~pedigree_graph._kinship_dp._finalize_summary`.
+
+    Args:
+        K: full-symmetric sparse kinship (φ-scale) from
+            :meth:`PedigreeGraph.kinship_matrix`.
+        labels: per-row cohort label, ``-1`` unknown.
+        twin_idx: per-row twin partner row index, ``-1`` for non-twins.
+    """
+    dense, observed, n_unlabelled = _densify_labels(labels)
+    twin = np.ascontiguousarray(twin_idx, dtype=np.int32)
+    k = int(observed.shape[0])
+    coo = K.tocoo()
+    rows, cols, vals = coo.row, coo.col, coo.data
+    pair_mask = (rows < cols) & (dense[rows] == dense[cols]) & (dense[rows] < k)
+    pair_mask &= ~((twin[rows] >= 0) & (twin[rows] == cols))
+    sum_theta = np.bincount(
+        dense[rows[pair_mask]].astype(np.intp),
+        weights=vals[pair_mask].astype(np.float64),
+        minlength=k + 1,
+    )
+    return _finalize_summary(sum_theta, dense, twin, observed, n_unlabelled)
+
+
+def _generation_kinship_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
+    """Memoised body of :meth:`PedigreeGraph.mean_kinship_by_generation`.
+
+    Walks the complete kinship matrix when the graph already caches it, else
+    streams the retiring DP; both group by the supplied labels, or by
+    structural depth when none were supplied.  Stored on the graph, so every
+    later call returns the same frozen object.
+    """
+    cached = pg._generation_kinship_summary
+    if cached is not None:
+        return cached
+    labels = pg.generation_labels
+    if labels is None:
+        labels = pg.depth
+    t0 = time.perf_counter()
+    K = pg._complete_kinship_cache
+    if K is not None:
+        summary = _summary_from_matrix(K, np.asarray(labels), np.asarray(pg.twin))
+    else:
+        summary = _compute_generation_kinship_summary(
+            pg.n,
+            pg.mother,
+            pg.father,
+            pg.twin,
+            pg.depth,
+            0.0,
+            labels=labels,
+        )
+    pg._generation_kinship_summary = summary
+    logger.info(
+        "mean_kinship_by_generation: n=%d, groups=%d, unlabelled=%d, %.2fs",
+        pg.n,
+        len(summary),
+        summary.unlabelled_individual_count,
+        time.perf_counter() - t0,
+    )
+    return summary
 
 
 def _per_gen_mean_kinship(
@@ -40,35 +126,12 @@ def _per_gen_mean_kinship(
     generation: np.ndarray,
     twin_idx: np.ndarray,
 ) -> np.ndarray:
-    """Mean θ over unordered within-cohort pairs, per generation.
+    """0.8.0-DELETE: :func:`_summary_from_matrix` in the 0.7.1 array form.
 
-    Excludes the diagonal and MZ twin pairs.  Returns ``np.nan`` for
-    cohorts with fewer than 2 non-twin members or where every pair is
-    a twin pair.
-
-    Args:
-        K: full-symmetric sparse kinship (φ-scale) from
-            :meth:`PedigreeGraph.kinship_matrix`.
-        generation: per-individual generation index (founders = 0).
-        twin_idx: per-individual twin partner row index, ``-1`` for
-            non-twins.
+    Float64 array of length ``max(generation) + 1``; NaN where a label is
+    absent or its cohort has no eligible pair.
     """
-    g_max = int(generation.max())
-
-    # COO traversal — restrict to upper triangle, same generation,
-    # non-twin pairs.  Sum per-gen θ via bincount, then divide through
-    # the shared finalizer that knows the within-cohort pair-count math.
-    coo = K.tocoo()
-    rows, cols, vals = coo.row, coo.col, coo.data
-    pair_mask = (rows < cols) & (generation[rows] == generation[cols])
-    pair_mask &= ~((twin_idx[rows] >= 0) & (twin_idx[rows] == cols))
-    pair_gens = generation[rows[pair_mask]].astype(np.intp)
-    sum_theta = np.bincount(
-        pair_gens,
-        weights=vals[pair_mask].astype(np.float64),
-        minlength=g_max + 1,
-    )
-    return _finalize_from_sum_theta(sum_theta, generation, twin_idx)
+    return _scatter_summary(_summary_from_matrix(K, generation, twin_idx), generation)
 
 
 def ne_inbreeding(pg: PedigreeGraph) -> NeInbreedingResult:

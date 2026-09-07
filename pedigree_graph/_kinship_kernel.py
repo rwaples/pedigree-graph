@@ -24,10 +24,12 @@ __all__ = [
     "_compute_F_meuwissen_luo",
     "_compute_depth",
     "_compute_eqg",
+    "_compute_generation_kinship_summary",
     "_compute_last_direct_child_depth",
     "_compute_theta_per_gen",
     "_dp_kinship",
     "_per_gen_mean_kinship_from_dp",
+    "_summary_from_dp_rows",
 ]
 
 from pedigree_graph._inbreeding_kernel import _compute_F_meuwissen_luo
@@ -52,9 +54,14 @@ from pedigree_graph._kinship_depth import (
 from pedigree_graph._kinship_dp import KinshipDPConfig as KinshipDPConfig
 from pedigree_graph._kinship_dp import (
     _build_kinship_csc,
+    _compute_generation_kinship_summary,
     _compute_theta_per_gen,
     _dp_kinship,
     _per_gen_mean_kinship_from_dp,
+    _summary_from_dp_rows,
 )
+from pedigree_graph._kinship_dp import _densify_labels as _densify_labels
 from pedigree_graph._kinship_dp import _finalize_from_sum_theta as _finalize_from_sum_theta
+from pedigree_graph._kinship_dp import _finalize_summary as _finalize_summary
 from pedigree_graph._kinship_dp import _run_dp_core as _run_dp_core
+from pedigree_graph._kinship_dp import _scatter_summary as _scatter_summary
