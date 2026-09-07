@@ -450,10 +450,11 @@ class TestThreads:
         configure_threads(3)
 
 
-# Closest categories spanning degrees 0-3, full and half.  A kernel call on
-# random_30k costs its ancestral closure rather than its pair count, so the
-# matrix gate selects these blocks instead of repeating the max_degree=3 walk.
-MATRIX_GATE_CATEGORIES = ("MZ", "FS", "MHS", "Av", "HAv", "1C", "H1C")
+# Closest categories spanning degrees 0-3, both half-sib kinds included.  A
+# kernel call on random_30k costs its ancestral closure rather than its pair
+# count: HAv or H1C alone add 30-70 s, so the matrix gate selects these blocks
+# instead of repeating the max_degree=3 walk.
+MATRIX_GATE_CATEGORIES = ("MZ", "FS", "MHS", "PHS", "Av", "1C")
 
 
 @pytest.mark.slow
