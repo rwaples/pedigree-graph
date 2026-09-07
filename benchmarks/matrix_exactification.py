@@ -259,6 +259,20 @@ def _complete_dp(graph, **_) -> dict:
     return {"reduction": float(np.nansum(theta))}
 
 
+def _relationship(max_degree: int) -> Callable[..., dict]:
+    """Time the public relationship-selected matrix, which still uses pair chunks."""
+
+    def run(graph, **_) -> dict:
+        matrix = graph.relationship_kinship_matrix(max_degree=max_degree)
+        return {
+            "nnz": int(matrix.nnz),
+            "upper_candidates": (int(matrix.nnz) + graph.n_individuals) // 2,
+            "checksum": upper_checksum(matrix),
+        }
+
+    return run
+
+
 def _fused(graph, **_) -> dict:
     matrix = graph.approximate_kinship_matrix(min_propagated_kinship=THRESHOLD)
     return {
@@ -275,6 +289,12 @@ STRATEGIES: dict[str, Strategy] = {
     "pairwise_shared": Strategy("pairwise_shared", _shared, _pairwise_setup, "one shared recurrence memo"),
     "pairwise_columns256": Strategy("pairwise_columns256", _by_columns(256), _pairwise_setup, "256-column chunks"),
     "pairwise_pairs262144": Strategy("pairwise_pairs262144", _by_pairs(262144), _pairwise_setup, "262,144-pair chunks"),
+    "relationship_degree5": Strategy(
+        "relationship_degree5", _relationship(5), note="public relationship_kinship_matrix(max_degree=5)"
+    ),
+    "relationship_degree3": Strategy(
+        "relationship_degree3", _relationship(3), note="public relationship_kinship_matrix(max_degree=3)"
+    ),
     "pairwise_pairs1048576": Strategy(
         "pairwise_pairs1048576", _by_pairs(1048576), _pairwise_setup, "1,048,576-pair chunks"
     ),
@@ -294,6 +314,10 @@ CONFIGS: list[str] = [
     "fitace/pairwise_columns256",
     "random30k/pairwise_pairs1048576",
     "random30k/pairwise_shared",
+    "fitace/relationship_degree3",
+    "fitace/relationship_degree5",
+    "random30k/relationship_degree3",
+    "random30k/relationship_degree5",
 ]
 
 
