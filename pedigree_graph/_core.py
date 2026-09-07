@@ -1026,17 +1026,26 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         same row; the walk itself materialises no kinship.  The array is computed
         once and memoised, so every later call hands back the same frozen object.
         This operation is intentionally full-graph-only: ADR 0006 keeps inbreeding
-        off views until a view contract for it is scientifically pinned.  The
-        computing call commits the package thread budget
-        (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation; a memo
-        hit does not.
+        off views until a view contract for it is scientifically pinned.  The call
+        commits the package thread budget
+        (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation.
 
         Returns:
             A read-only float64 array of length ``n_individuals``, one entry per
             graph row.
         """
+        thread_budget()
+        return self._inbreeding_values()
+
+    def _inbreeding_values(self) -> np.ndarray:
+        """Return the memoised *F* without committing the package thread budget.
+
+        The 0.7.1 surfaces read F through here.  They carry their own thread
+        arguments and predate the package budget, so committing it on their
+        behalf would change their execution behaviour before the slice that
+        retires them.  :meth:`inbreeding` is the 0.8 entry point that commits.
+        """
         if self._inbreeding is None:
-            thread_budget()
             topo = self._topology
             m_idx, f_idx, tw_idx = self._topological_parents
             F = _compute_F_meuwissen_luo(m_idx, f_idx, tw_idx, topo.gather(topo.depth), self.n)
@@ -1050,10 +1059,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         The 0.7.1 name and its per-graph-row float64 array are preserved; the
         values are those of :meth:`inbreeding`, MZ-aware from 0.8 onward rather
         than the 0.7.1 MZ-naive walk, and like every 0.8 result the array is
-        read-only.  Unlike :meth:`compute_pair_kinship`, this adapter delegates
-        straight through, so a computing call commits the package thread budget.
+        read-only.  Like :meth:`compute_pair_kinship`, it leaves the package
+        thread budget uncommitted.
         """
-        return self.inbreeding()
+        return self._inbreeding_values()
 
     def compute_n_descendants(self) -> np.ndarray:
         """Per-individual descendant count, **path-count semantics**.

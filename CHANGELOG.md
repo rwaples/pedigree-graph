@@ -28,16 +28,17 @@ live on the corresponding GitHub release pages.
   tested invariant of this surface: exact on the shallow dyadic ADR 0008
   fixtures, and within `2**-22` on the 60-generation closed herd (measured
   1.21e-07 against a bound of 2.38e-07).  Full-graph only, because ADR 0006
-  keeps inbreeding off views.  The computing call commits the package thread
-  budget like every 0.8 operation; a memo hit does not.  Wall time and peak RSS
-  at production scale are in `benchmarks/bench_inbreeding.md`, the baseline the
-  ADR 0007 Rust port ports against.
+  keeps inbreeding off views.  The call commits the package thread budget like
+  every 0.8 operation.  Wall time and peak RSS at production scale are in
+  `benchmarks/bench_inbreeding.md`, the baseline the ADR 0007 Rust port ports
+  against.
 - **Changed: `compute_inbreeding()` is a compatibility adapter**
   (0.8.0-DELETE).  It returns exactly the object `inbreeding()` returns, so the
   array is read-only now, as every 0.8 result is, and a consumer that mutated it
-  in place must copy first.  Unlike `compute_pair_kinship`, it delegates
-  straight through rather than preserving 0.7.1 thread behaviour, so it commits
-  the package thread budget too.
+  in place must copy first.  Like `compute_pair_kinship`, it preserves 0.7.1
+  thread behaviour and leaves the package thread budget uncommitted, as does the
+  `compute_all_ne` / `ne_*` surface, which reads F through the same
+  non-committing path and keeps its own `n_threads` argument until slice 6c.
 
 - **Added: three explicit kinship-matrix families** (ADR 0006, ADR 0009,
   slice 5b). `kinship_matrix()` is complete;

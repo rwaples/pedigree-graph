@@ -5,8 +5,9 @@ On the ADR 0008 fixtures F is exactly ``2 * phi(i, i) - 1`` against both the
 hand-derived values the fixture table carries.  Sixty generations of accumulated
 inbreeding hold that identity inside ``2**-22``.  The array is float64 and
 read-only, and it is computed once: a second call hands back the same object
-without re-entering the kernel.  A computing call commits the package thread
-budget, and ``compute_inbreeding`` is the 0.7.1 adapter onto that same array.
+without re-entering the kernel.  ``inbreeding`` commits the package thread
+budget; the 0.7.1 surfaces onto the same array, ``compute_inbreeding`` and the
+Ne estimators, carry their own thread arguments and leave it open.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from test_inbreeding_kernel import ADR_0008_FIXTURES, _mz_frame
 
 import pedigree_graph._core
 from pedigree_graph import PedigreeGraph
+from pedigree_graph._effective_size import compute_all_ne
 from pedigree_graph._threads import _reset_thread_state, configure_threads
 
 DEEP_FIXTURE = parity_fixtures("deep_inbred_60g")["deep_inbred_60g"]
@@ -99,6 +101,14 @@ class TestThreads:
         _graph(MZ_ONLY_LINK).inbreeding()
         with pytest.raises(RuntimeError):
             configure_threads(3)
+
+    def test_adapter_leaves_the_budget_open(self):
+        _graph(MZ_ONLY_LINK).compute_inbreeding()
+        configure_threads(3)
+
+    def test_the_ne_surface_leaves_the_budget_open(self):
+        compute_all_ne(_graph(MZ_ONLY_LINK))
+        configure_threads(3)
 
 
 def test_adapter_returns_the_canonical_array():

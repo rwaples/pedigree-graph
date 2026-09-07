@@ -310,7 +310,7 @@ def ne_caballero_toro(
     """
     if ct_accumulators is None:
         founder_idx = _founder_idx(pg)
-        F = pg.inbreeding()
+        F = pg._inbreeding_values()
         ct_accumulators = _caballero_toro_accumulators(pg, founder_idx, F)
 
     sums = ct_accumulators.sums
