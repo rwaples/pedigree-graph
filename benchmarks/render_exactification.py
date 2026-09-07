@@ -23,6 +23,8 @@ LABELS = {
     "pairwise_columns256": "256-column chunks",
     "pairwise_pairs262144": "262,144-pair chunks",
     "pairwise_pairs1048576": "1,048,576-pair chunks",
+    "relationship_degree3": "relationship support, max_degree=3 (public path)",
+    "relationship_degree5": "relationship support, max_degree=5 (public path)",
 }
 
 INPUT_LABELS = {
@@ -80,6 +82,10 @@ def render(reports: Path) -> str:
         "random30k/fused",
         "random30k/pairwise_pairs1048576",
         "random30k/pairwise_shared",
+        "fitace/relationship_degree3",
+        "fitace/relationship_degree5",
+        "random30k/relationship_degree3",
+        "random30k/relationship_degree5",
     )
     lines.extend(_row(by_config[config]) for config in ordered if config in by_config)
     table = "\n".join(lines)
