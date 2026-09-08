@@ -43,7 +43,7 @@ constructors.
 
 ```python
 import numpy as np
-from pedigree_graph import PedigreeGraph, REL_REGISTRY, PAIR_KINSHIP
+from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 
 # Construct from arrays (no pandas needed)
 pg = PedigreeGraph.from_arrays(
@@ -65,18 +65,27 @@ pg = PedigreeGraph.from_frame(
 )
 # pg = PedigreeGraph.from_frame(df)
 
-# The 0.7.1 forms still work and keep their defaults (all-female sex, and
-# generation falling back to structural depth).  0.8.0 removes them.
-# pg = PedigreeGraph(df)
-# pg = PedigreeGraph.from_dataframe(df)
-# pg = PedigreeGraph.from_arrays(ids, mothers, fathers)
+# Pairs by relationship category, up to a given degree; each block holds
+# read-only int32 first_rows / second_rows in the category's role orientation
+pairs = pg.relationship_pairs(max_degree=3)
+first, second = pairs["FS"]  # full sibs
+print(len(pairs["1C"]))  # 1st cousins (degree 3)
+print(RELATIONSHIPS["FS"].nominal_kinship)  # 0.25
 
-# Extract pairs by relationship type, up to a given degree
-pairs = pg.extract_pairs(max_degree=3)
-print(pairs["FS"])  # full sibs:  (idx1, idx2)
-print(pairs["1C"])  # 1st cousins (degree 3)
-print(PAIR_KINSHIP["FS"])  # 0.25
+# Pedigree-expected kinship for those pairs, or for any two row arrays
+kin = pg.pair_kinship(pairs)  # {code: float32 array}
+kin_fs = pg.pair_kinship(first, second)
+
+# Counts without materialising pairs, and the three kinship-matrix families
+counts = pg.relationship_counts(max_degree=3)
+K = pg.kinship_matrix()  # complete, CSC float32
 ```
+
+Absent optional columns read as absent: there is no sex default and no
+generation fallback.  Effective-size estimators live in
+`pedigree_graph.effective_size`; the `FrameLike` protocol in
+`pedigree_graph.typing`.  Migrating from 0.7.1: see the old-to-new table in
+`CHANGELOG.md`.
 
 ## Relationship registry
 
@@ -95,7 +104,9 @@ Codes follow the convention `up_down_n_anc`:
 | `1C`   | 1st cousin                    | 2  | 2    | 2     | 0.0625  | 3      |
 | ...    | (full registry up to 2nd cousin / kinship 1/64) | | | | | |
 
-See `REL_REGISTRY` for the complete list.
+See `RELATIONSHIPS` for the complete list; each `RelationshipCategory`
+carries `code`, `label`, `degree`, `nominal_kinship`, `up`, `down`,
+`ancestor_count`, and the two positional roles.
 
 ## Experimental engines
 
@@ -106,13 +117,13 @@ The package ships an alternate relationship-counting engine in
 from pedigree_graph import PedigreeGraph
 from pedigree_graph.experimental import count_pairs_bfs
 
-pg = PedigreeGraph(df)
+pg = PedigreeGraph.from_frame(df)
 counts = count_pairs_bfs(pg)  # dict[str, int] over 23 codes
 ```
 
 `count_pairs_bfs` uses boolean sparse matmul (set-union semantics) plus
 a parallel numba kernel for cousin-style codes.  It is **counts-only**;
-there is no pair-array equivalent of `extract_pairs`.
+there is no pair-array equivalent of `relationship_pairs`.
 
 The submodule is **not** re-exported at the top level — callers must
 import explicitly via `pedigree_graph.experimental`.  First call emits
@@ -124,9 +135,11 @@ a `FutureWarning`.
    change or the function may be removed in any minor release.  No
    deprecation cycle is owed.
 
-2. **Inbred-pedigree counting differs from the matrix engine.**
-   On non-inbred pedigrees the BFS counts equal `PedigreeGraph.count_pairs`
-   exactly.  On inbred pedigrees, BFS counts *distinct shared
+2. **Counts are unfolded, and inbred-pedigree counting differs from the
+   matrix engine.**  BFS counts a pair under every category it satisfies,
+   where `PedigreeGraph.relationship_counts` keeps only the closest.  On
+   non-inbred pedigrees the BFS counts equal the matrix engine's unfolded
+   blocks exactly.  On inbred pedigrees, BFS counts *distinct shared
    ancestors* at depth ≥ 2 while the matrix engine counts *paths*
    (multiplicity); the four cousin-style codes
    (`1C1R`, `H1C1R`, `1C2R`, `2C`) may diverge.  See
@@ -134,11 +147,11 @@ a `FutureWarning`.
    for a hand-built fixture pinning the exact divergence.
 
 3. **`max_degree=5` only.**  Lower values raise `NotImplementedError` —
-   use `PedigreeGraph.count_pairs(max_degree=k)` for partial extractions.
+   use `PedigreeGraph.relationship_counts(max_degree=k)` for partial
+   extractions.
 
-4. **No subsample support.**  `PedigreeGraph.from_subsample(...)` graphs
-   raise `NotImplementedError`.  Construct directly or use the matrix
-   engine.
+4. **No view support.**  Pass a full graph; `PedigreeView` has no BFS
+   counterpart.
 
 5. **Threading.**  The numba kernel uses `prange` for cousin-style
    enumeration.  Numba reads `NUMBA_NUM_THREADS` at first JIT

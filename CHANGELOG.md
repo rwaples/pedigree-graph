@@ -6,6 +6,46 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Removed: the 0.7.1 compatibility surface** (ADR 0006, slice 7).  Every
+  `0.8.0-DELETE` adapter described in the entries below is gone, the package
+  root is frozen to `PedigreeGraph`, `PedigreeView`, `RELATIONSHIPS`,
+  `RelationshipCategory`, `RelationshipPairs`, `RelationshipPairBlock`,
+  `RelationshipCountResult`, the three errors, and `configure_threads`, and
+  `tests/test_architecture_guardrails.py` fails the suite if an old name or
+  a delete marker reappears.  Public non-root modules are
+  `pedigree_graph.relationships`, `pedigree_graph.summaries`,
+  `pedigree_graph.effective_size`, and `pedigree_graph.typing`.
+
+  | 0.7.1 | 0.8.0 |
+  |---|---|
+  | `PedigreeGraph(data)`, `PedigreeGraph.from_dataframe(df)` | `PedigreeGraph.from_frame(frame_or_dict)`; no sex default, no generation fallback |
+  | `from_arrays(ids, mothers, fathers, ...)` and the `mothers=` / `fathers=` / `twins=` keywords | `from_arrays(ids=, mother_ids=, father_ids=, twin_ids=, sex=, generation=, birth_year=, sex_encoding=)`, keyword-only |
+  | `PedigreeGraph.from_subsample(full, sub)` | `PedigreeGraph.from_frame(full).view(ids=...)`; pairs, counts, and kinship in view rows |
+  | `pg.n`, `pg.mother` / `father` / `twin`, `pg.generation` | `n_individuals`, `mother_rows` / `father_rows` / `twin_rows`, `generation_labels` (or `depth`) |
+  | `extract_pairs(max_degree=)` -> `{code: (lo, hi)}` | `relationship_pairs(max_degree=)` -> `RelationshipPairs` of role-oriented blocks, one closest category per pair |
+  | `count_pairs(max_degree=)` | `relationship_counts(max_degree=)` -> `RelationshipCountResult` |
+  | `count_pairs_streaming(max_degree=)` (unfolded raw counts) | `estimate_relationship_counts(max_degree=)` (fold-aware; MHS / PHS minus the parent-offspring overlap) |
+  | `compute_pair_kinship(pairs)` | `pair_kinship(pairs)` or `pair_kinship(first_rows, second_rows)` |
+  | `compute_inbreeding()` | `inbreeding()` |
+  | `compute_n_ancestors()`, `compute_n_descendants()` (int32) | `distinct_ancestor_counts()`, `descendant_path_counts()` (int64, never overflows) |
+  | `per_gen_mean_kinship()` (dense `max(label)+1` array) | `mean_kinship_by_generation()` -> `GenerationKinshipSummary` over observed labels |
+  | `kinship_matrix(min_kinship=0)`, `kinship_matrix(min_kinship=t)`, `kinship_matrix(max_degree=d)` | `kinship_matrix()`, `approximate_kinship_matrix(min_propagated_kinship=t)`, `relationship_kinship_matrix(max_degree=d)` |
+  | root `compute_all_ne`, `ne_*`, `Ne*Result`, `CohortWindow`, `eligible_cohort_range`, `GenerationInterval` | `pedigree_graph.effective_size.estimate_effective_sizes` and the same names in `pedigree_graph.effective_size` |
+  | root `FrameLike` | `pedigree_graph.typing.FrameLike` |
+  | `REL_REGISTRY`, `PAIR_KINSHIP`, `RelType` | `RELATIONSHIPS[code]` (`nominal_kinship`, `up`, `down`, `ancestor_count`; collateral categories are stored `up >= down`) |
+  | `pedigree_graph._registry.streaming_exact_codes()` | `estimate_exact_codes()` (ADR 0011) |
+
+  Three facts to carry across.  Pair and matrix kinship values are the
+  pinned float32 recurrence of ADR 0009: exports that widen them to
+  float64 carry float32-origin values, and consumers comparing against a
+  float64 recurrence must allow its envelope.  Generation summaries and
+  effective-size records are indexed by *observed* generation label
+  (`generations` on each record), never by a dense `0 .. max(label)`
+  range; a label nobody carries has no row.  `approximate_kinship_matrix`
+  has propagation-pruned *candidate* support, not a final-value cutoff:
+  a retained coefficient is exact, an absent one may be nonzero, so it is
+  not a substitute for `relationship_kinship_matrix` or the complete matrix.
+
 - **Fixed after review of slice 6c.**  A flat mean series (a non-inbred
   pedigree's coancestry or self-coancestry) no longer regresses to an Ne of
   order 1e15 from least-squares noise: the scalar regression reports no
