@@ -248,7 +248,7 @@ def sparse_line_graph() -> PedigreeGraph:
 
 
 def test_empty_graph_constructs(empty_graph):
-    assert empty_graph.n == 0
+    assert empty_graph.n_individuals == 0
     assert empty_graph.generation_labels is None
 
 
@@ -456,7 +456,7 @@ def test_sparse_labels_spread_one_delta_f_over_the_label_gap():
 
 def test_unresolved_external_parent_still_makes_a_represented_founder():
     pg = _external_parent_pedigree()
-    assert np.asarray(pg.mother)[0] == -1
+    assert np.asarray(pg.mother_rows)[0] == -1
     founder_idx = _founder_idx(pg)
     assert np.array_equal(founder_idx, [0, 1])
     assert np.array_equal(_founder_columns(pg, founder_idx), [0, 1, -1])

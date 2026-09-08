@@ -249,7 +249,7 @@ def _caballero_toro_accumulators(
     Args:
         pg: Pedigree graph.
         founder_idx: Canonical founder-genome rows (:func:`_founder_idx`).
-        F: Per-individual inbreeding coefficients (length ``pg.n``), in
+        F: Per-individual inbreeding coefficients (length ``pg.n_individuals``), in
             graph rows.
         cohorts: Optional precomputed grouping; defaults to the graph's.
 
@@ -258,7 +258,7 @@ def _caballero_toro_accumulators(
     """
     if cohorts is None:
         cohorts = ObservedCohorts.for_graph(pg, "ne_caballero_toro")
-    n = pg.n
+    n = pg.n_individuals
     n_founders = int(founder_idx.shape[0])
     sums = _checked_founder_matrix(cohorts.k, n_founders, "ct_accumulators", np.float64, 0.0)
     counts = _checked_founder_matrix(cohorts.k, n_founders, "ct_accumulators", np.int64, 0)

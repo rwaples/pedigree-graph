@@ -51,10 +51,10 @@ from pedigree_graph._effective_size import (
 
 def _ref_founder_contribution_matrix(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray]:
     """Verbatim copy of the deleted dense forward recursion."""
-    n = pg.n
+    n = pg.n_individuals
     gen = np.asarray(pg.generation)
-    mother = np.asarray(pg.mother)
-    father = np.asarray(pg.father)
+    mother = np.asarray(pg.mother_rows)
+    father = np.asarray(pg.father_rows)
     founder_idx = np.where(gen == 0)[0]
     n_founders = len(founder_idx)
     c = np.zeros((n, n_founders), dtype=np.float64)
@@ -84,7 +84,7 @@ def _ref_per_gen_means(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray]:
     """Reference per-gen founder means built from the dense matrix."""
     c, founder_idx = _ref_founder_contribution_matrix(pg)
     gen = np.asarray(pg.generation)
-    g_max = int(gen.max()) if pg.n > 0 else 0
+    g_max = int(gen.max()) if pg.n_individuals > 0 else 0
     n_founders = len(founder_idx)
     m_g = np.full((g_max + 1, n_founders), np.nan, dtype=np.float64)
     for g in range(g_max + 1):
@@ -106,7 +106,7 @@ def _ref_ct_accumulators(pg: PedigreeGraph, F: np.ndarray) -> CTAccumulators:
     sums = np.zeros((cohorts.k, n_founders), dtype=np.float64)
     counts = np.zeros((cohorts.k, n_founders), dtype=np.int64)
     self_coancestry = (1.0 + F) / 2.0
-    is_founder = (np.asarray(pg.mother) < 0) & (np.asarray(pg.father) < 0)
+    is_founder = (np.asarray(pg.mother_rows) < 0) & (np.asarray(pg.father_rows) < 0)
     for b, rows in enumerate(cohorts.members()):
         in_b = rows[~is_founder[rows]]
         if len(in_b) == 0:
@@ -290,10 +290,10 @@ def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
     )
 
     r = _run_dp_core(
-        pg.n,
-        np.asarray(pg.mother, dtype=np.int32),
-        np.asarray(pg.father, dtype=np.int32),
-        np.asarray(pg.twin, dtype=np.int32),
+        pg.n_individuals,
+        np.asarray(pg.mother_rows, dtype=np.int32),
+        np.asarray(pg.father_rows, dtype=np.int32),
+        np.asarray(pg.twin_rows, dtype=np.int32),
         np.asarray(pg.depth, dtype=np.int32),
         0.0,
         None,
@@ -314,10 +314,10 @@ def test_per_gen_mean_kinship_retire_matches_legacy(
     pg = parity_pedigree
     theta_retiring = pg.per_gen_mean_kinship()
     theta_legacy = _compute_theta_per_gen(
-        pg.n,
-        pg.mother,
-        pg.father,
-        pg.twin,
+        pg.n_individuals,
+        pg.mother_rows,
+        pg.father_rows,
+        pg.twin_rows,
         pg.depth,
         0.0,
         _debug_no_retire=True,
@@ -359,7 +359,7 @@ def test_per_gen_mean_kinship_retire_matches_K_reference(
     theta_K = _per_gen_mean_kinship(
         K,
         np.asarray(pg.generation),
-        np.asarray(pg.twin),
+        np.asarray(pg.twin_rows),
     )
     np.testing.assert_allclose(
         theta_retiring,
@@ -391,10 +391,10 @@ def test_compute_theta_per_gen_debug_no_retire_independent_of_caches(
     poisoned_K = sp.csc_matrix(K.shape, dtype=K.dtype)
     pg._kinship_cache[0.0] = poisoned_K
     theta_legacy = _compute_theta_per_gen(
-        pg.n,
-        pg.mother,
-        pg.father,
-        pg.twin,
+        pg.n_individuals,
+        pg.mother_rows,
+        pg.father_rows,
+        pg.twin_rows,
         pg.depth,
         0.0,
         _debug_no_retire=True,
@@ -423,10 +423,10 @@ def test_compute_theta_per_gen_debug_asserts_pass_on_well_formed_pedigree(
     pg = parity_pedigree
     theta_default = pg.per_gen_mean_kinship()
     theta_asserts = _compute_theta_per_gen(
-        pg.n,
-        pg.mother,
-        pg.father,
-        pg.twin,
+        pg.n_individuals,
+        pg.mother_rows,
+        pg.father_rows,
+        pg.twin_rows,
         pg.depth,
         0.0,
         _debug_asserts=True,
@@ -507,8 +507,8 @@ def test_sex_specific_family_table_attributes_skip_gen_offspring() -> None:
     df = _build_skip_gen_pedigree()
     pg = PedigreeGraph(df)
     table = _sex_specific_family_table(
-        np.asarray(pg.mother),
-        np.asarray(pg.father),
+        np.asarray(pg.mother_rows),
+        np.asarray(pg.father_rows),
         np.asarray(pg.sex),
         ObservedCohorts.for_graph(pg, "test"),
     )
@@ -634,7 +634,7 @@ def test_sentinel_metrics_at_n2000_g8() -> None:
     n_per_gen, n_gens = 2000, 8
     df = _build_random_mating_pedigree(rng, n_per_gen=n_per_gen, n_gens=n_gens)
     pg = PedigreeGraph(df)
-    F = np.zeros(pg.n, dtype=np.float64)
+    F = np.zeros(pg.n_individuals, dtype=np.float64)
     founder_idx = _founder_idx(pg)
     n_founders = len(founder_idx)
 
@@ -653,10 +653,10 @@ def test_sentinel_metrics_at_n2000_g8() -> None:
     # Live ancestor-set metrics: bounded by N (population cap) — the
     # streaming structure never needs (n · n_founders) cells live at once.
     assert 0 <= ct.peak_ancestor_set_size <= n_founders
-    assert 0 <= ct.peak_live_ancestor_sets <= pg.n
+    assert 0 <= ct.peak_live_ancestor_sets <= pg.n_individuals
     # Total work: ancestor-pair visits.  Strictly bounded above by N · n_founders
     # (saturated case); typically far less.
-    assert ct.total_ancestor_pair_visits <= pg.n * n_founders
+    assert ct.total_ancestor_pair_visits <= pg.n_individuals * n_founders
 
 
 # ---------------------------------------------------------------------------
@@ -743,7 +743,7 @@ _RSS_SCRIPT = textwrap.dedent(
                                    generation=generation, sex=sex)
     # Synthesize F via the lazy cache without forcing the full kinship
     # matrix (which is unrelated to this PR and dominates RSS at scale).
-    F = np.zeros(pg.n, dtype=np.float64)
+    F = np.zeros(pg.n_individuals, dtype=np.float64)
     founder_idx = _founder_idx(pg)
     m_g, _ = _per_gen_founder_means(pg, founder_idx=founder_idx)
     ct = _caballero_toro_accumulators(pg, founder_idx, F)

@@ -168,7 +168,7 @@ def ne_coancestry(
     if theta_per_gen is not None:
         summary = _summary_from_dense_theta(theta_per_gen, cohorts)
     elif K is not None:
-        summary = _summary_from_matrix(K, np.asarray(pg.generation), np.asarray(pg.twin))
+        summary = _summary_from_matrix(K, np.asarray(pg.generation), np.asarray(pg.twin_rows))
     else:
         summary = _generation_kinship_summary(pg)
     return legacy_coancestry(_coancestry_from(cohorts, summary))
@@ -193,7 +193,7 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
 def ne_individual_delta_f(pg: PedigreeGraph) -> NeIndividualDeltaFResult:
     """0.8.0-DELETE: :func:`pedigree_graph.effective_size.ne_individual_delta_f` on the dense record."""
     cohorts = ObservedCohorts.for_graph(pg, "ne_individual_delta_f")
-    eqg = _compute_eqg(np.asarray(pg.mother), np.asarray(pg.father), pg.n)
+    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), pg.n_individuals)
     return legacy_individual_delta_f(_individual_delta_f_from(cohorts, pg._inbreeding_values(), eqg))
 
 

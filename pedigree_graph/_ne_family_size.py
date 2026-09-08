@@ -173,7 +173,7 @@ def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
     a legitimately single-sex pedigree), so the warning is the only
     diagnostic.
     """
-    if pg.n == 0:
+    if pg.n_individuals == 0:
         return
     sex = np.asarray(pg.sex)
     if len(np.unique(sex)) < 2:
@@ -305,7 +305,7 @@ def _sex_column(pg: PedigreeGraph) -> np.ndarray:
 
 def _generation_family_table(pg: PedigreeGraph, cohorts: ObservedCohorts) -> FamilySizeTable:
     """The family-size table grouped by generation label (Ne_V and Hill's collapse)."""
-    return _sex_specific_family_table(np.asarray(pg.mother), np.asarray(pg.father), _sex_column(pg), cohorts)
+    return _sex_specific_family_table(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), _sex_column(pg), cohorts)
 
 
 def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:

@@ -43,7 +43,7 @@ def test_kinship_diagonal_encodes_inbreeding(pg):
 @given(pg=random_pedigree())
 def test_founders_unrelated_and_self_half(pg):
     K = pg.kinship_matrix(0.0).toarray()
-    founders = np.where((pg.mother == -1) & (pg.father == -1))[0]
+    founders = np.where((pg.mother_rows == -1) & (pg.father_rows == -1))[0]
     for a in founders:
         assert K[a, a] == pytest.approx(0.5)
     for x in range(len(founders)):
@@ -55,8 +55,8 @@ def test_founders_unrelated_and_self_half(pg):
 @given(pg=non_inbred_pedigree())
 def test_parent_offspring_quarter_when_non_inbred(pg):
     K = pg.kinship_matrix(0.0).toarray()
-    for child in range(pg.n):
-        for parent in (int(pg.mother[child]), int(pg.father[child])):
+    for child in range(pg.n_individuals):
+        for parent in (int(pg.mother_rows[child]), int(pg.father_rows[child])):
             if parent != -1:
                 assert K[child, parent] == pytest.approx(0.25)
 
@@ -68,9 +68,9 @@ def test_kinship_recursion(pg):
     # of j (gen[i] >= gen[j], i != j); a missing parent contributes 0.
     K = pg.kinship_matrix(0.0).toarray()
     gen = pg.generation
-    n = pg.n
+    n = pg.n_individuals
     for i in range(n):
-        m, f = int(pg.mother[i]), int(pg.father[i])
+        m, f = int(pg.mother_rows[i]), int(pg.father_rows[i])
         if m == -1 and f == -1:
             continue  # founder: no recursion
         for j in range(n):

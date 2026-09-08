@@ -106,13 +106,13 @@ def _generation_kinship_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
     t0 = time.perf_counter()
     K = pg._complete_kinship_cache
     if K is not None:
-        summary = _summary_from_matrix(K, np.asarray(labels), np.asarray(pg.twin))
+        summary = _summary_from_matrix(K, np.asarray(labels), np.asarray(pg.twin_rows))
     else:
         summary = _compute_generation_kinship_summary(
-            pg.n,
-            pg.mother,
-            pg.father,
-            pg.twin,
+            pg.n_individuals,
+            pg.mother_rows,
+            pg.father_rows,
+            pg.twin_rows,
             pg.depth,
             0.0,
             labels=labels,
@@ -120,7 +120,7 @@ def _generation_kinship_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
     pg._generation_kinship_summary = summary
     logger.info(
         "mean_kinship_by_generation: n=%d, groups=%d, unlabelled=%d, %.2fs",
-        pg.n,
+        pg.n_individuals,
         len(summary),
         summary.unlabelled_individual_count,
         time.perf_counter() - t0,
@@ -250,5 +250,5 @@ def ne_individual_delta_f(pg: PedigreeGraph) -> NeIndividualDeltaFResult:
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_individual_delta_f")
     F = pg._inbreeding_values()
-    eqg = _compute_eqg(np.asarray(pg.mother), np.asarray(pg.father), pg.n)
+    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), pg.n_individuals)
     return _individual_delta_f_from(cohorts, F, eqg)

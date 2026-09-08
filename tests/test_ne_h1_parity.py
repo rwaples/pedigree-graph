@@ -42,8 +42,8 @@ FIXTURES = sorted(golden.fixtures())
 
 
 def _parentless_mz_pairs(pg: PedigreeGraph) -> int:
-    parentless = (np.asarray(pg.mother) < 0) & (np.asarray(pg.father) < 0)
-    return int(np.count_nonzero(parentless & (np.asarray(pg.twin) >= 0)) // 2)
+    parentless = (np.asarray(pg.mother_rows) < 0) & (np.asarray(pg.father_rows) < 0)
+    return int(np.count_nonzero(parentless & (np.asarray(pg.twin_rows) >= 0)) // 2)
 
 
 @pytest.mark.parametrize("name", FIXTURES)

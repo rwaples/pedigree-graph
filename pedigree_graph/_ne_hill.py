@@ -65,7 +65,9 @@ def _birth_year_family_table(pg: PedigreeGraph) -> FamilySizeTable:
     """The family-size table grouped by birth year (Hill's birth-year branch)."""
     assert pg.birth_year is not None
     cohorts = ObservedCohorts.from_labels(np.asarray(pg.birth_year))
-    return _sex_specific_family_table(np.asarray(pg.mother), np.asarray(pg.father), np.asarray(pg.sex), cohorts)
+    return _sex_specific_family_table(
+        np.asarray(pg.mother_rows), np.asarray(pg.father_rows), np.asarray(pg.sex), cohorts
+    )
 
 
 def _hill_from_variance(variance: NeVarianceResult, vk_scale: bool) -> NeHillResult:
@@ -134,7 +136,7 @@ def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillR
             growth or decline.  Default ``False`` (raw sample
             variances).
     """
-    if pg.n == 0:
+    if pg.n_individuals == 0:
         return NeHillResult(ne=None, generation_interval=1.0, collapses_to_ne_v=True, vk_scaled=vk_scale)
     if pg.birth_year is None:
         return _hill_collapsed(pg, vk_scale)

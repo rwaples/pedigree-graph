@@ -177,9 +177,9 @@ def count_pairs_bfs(
         numba.set_num_threads(int(n_threads))
     threads = n_threads if n_threads is not None else _BFS_DEFAULT_THREADS
 
-    n = pg.n
-    mother = pg.mother.astype(np.int64)
-    father = pg.father.astype(np.int64)
+    n = pg.n_individuals
+    mother = pg.mother_rows.astype(np.int64)
+    father = pg.father_rows.astype(np.int64)
 
     # ---- P_1: parent matrix; P_k via boolean (set-union) matmul.
     t0 = time.perf_counter()

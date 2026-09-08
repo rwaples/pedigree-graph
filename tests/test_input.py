@@ -364,8 +364,8 @@ class TestOwnership:
         mothers = np.array([-1, -1, 0], dtype=np.int64)
         pg = PedigreeGraph({"id": np.array([0, 1, 2]), "mother": mothers, "father": np.array([-1, -1, 1])})
         mothers[2] = 1
-        assert pg.mother.tolist() == [-1, -1, 0]
-        assert pg._orig_mother.tolist() == [-1, -1, 0]
+        assert pg.mother_rows.tolist() == [-1, -1, 0]
+        assert pg.mother_ids.tolist() == [-1, -1, 0]
 
 
 class TestCycles:
@@ -465,5 +465,5 @@ def test_dict_construction_matches_from_arrays(arrays):
     ids, mother, father, sex = arrays
     from_dict = PedigreeGraph({"id": ids, "mother": mother, "father": father, "sex": sex})
     from_arrays = PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
-    for attribute in ("mother", "father", "twin", "generation", "sex"):
+    for attribute in ("mother_rows", "father_rows", "twin_rows", "generation", "sex"):
         np.testing.assert_array_equal(getattr(from_dict, attribute), getattr(from_arrays, attribute))

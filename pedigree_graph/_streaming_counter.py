@@ -138,7 +138,7 @@ class StreamingPairCounter:
         """
         pg = self.pg
         t_total = time.perf_counter()
-        n = pg.n
+        n = pg.n_individuals
         self._clamped = set()
 
         counts: dict[str, int] = dict.fromkeys(RELATIONSHIPS, 0)
@@ -151,12 +151,12 @@ class StreamingPairCounter:
             return self._finalise(counts, overlaps, t_total)
 
         # ---- Degree 1: MO, FO, FS -------------------------------------
-        counts["MO"] = int(np.count_nonzero(pg.mother >= 0))
-        counts["FO"] = int(np.count_nonzero(pg.father >= 0))
+        counts["MO"] = int(np.count_nonzero(pg.mother_rows >= 0))
+        counts["FO"] = int(np.count_nonzero(pg.father_rows >= 0))
 
-        sm = pg._orig_mother
-        sf = pg._orig_father
-        nt = ((sm >= 0) | (sf >= 0)) & (pg.twin < 0)
+        sm = pg.mother_ids
+        sf = pg.father_ids
+        nt = ((sm >= 0) | (sf >= 0)) & (pg.twin_rows < 0)
         nt_idx = np.where(nt)[0]
         nt_m = sm[nt_idx]
         nt_f = sf[nt_idx]
@@ -206,9 +206,9 @@ class StreamingPairCounter:
             counts["MHS"] = int(((m_sizes * (m_sizes - 1)) // 2).sum()) - fs_count
         if has_f:
             counts["PHS"] = int(((f_sizes * (f_sizes - 1)) // 2).sum()) - fs_count
-        nontwin = pg.twin < 0
-        overlaps["MHS"] = _half_sibs_that_are_parent_offspring(pg.father, sm, nontwin)
-        overlaps["PHS"] = _half_sibs_that_are_parent_offspring(pg.mother, sf, nontwin)
+        nontwin = pg.twin_rows < 0
+        overlaps["MHS"] = _half_sibs_that_are_parent_offspring(pg.father_rows, sm, nontwin)
+        overlaps["PHS"] = _half_sibs_that_are_parent_offspring(pg.mother_rows, sf, nontwin)
 
         # Lazily rebuild _Am / _Af if extract_pairs deleted them; needed for
         # adjacency powers from degree 2 onward.

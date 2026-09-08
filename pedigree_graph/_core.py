@@ -86,8 +86,8 @@ def _known_parent_edges(
     diagnostic).
 
     Args:
-        parent_arr: per-row parent row-index array (``self.mother`` or
-            ``self.father``).
+        parent_arr: per-row parent row-index array (``self.mother_rows`` or
+            ``self.father_rows``).
         birth_year: per-row birth_year array (sentinel ``-1`` = unknown).
 
     Returns:
@@ -157,8 +157,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         """Populate the graph's storage, caches, and parent matrices from *parsed*."""
         self._input = parsed
         self._legacy_defaults = legacy_defaults  # 0.8.0-DELETE
-        n = parsed.n_individuals
-        self.n = n  # 0.8.0-DELETE: renamed n_individuals.
         self._coordinate_token = CoordinateToken()
 
         self._legacy_view: PedigreeView | None = None  # 0.8.0-DELETE: set only by from_subsample.
@@ -206,15 +204,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         # diagnostics so the full-pedigree edge scan runs once per side.
         self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
-        # 0.8.0-DELETE: the whole block, renamed to the ids / *_ids / *_rows
-        # properties; the kernels and 0.7.1 consumers still read these names.
-        self._ids = parsed.ids
-        self._orig_mother = parsed.mother_ids
-        self._orig_father = parsed.father_ids
-        self.mother = parsed.mother_rows
-        self.father = parsed.father_rows
-        self.twin = parsed.twin_rows
-
         self._validate_birth_year_topology()
 
         # Build parent→child matrices using ALL available edges.
@@ -241,7 +230,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 continue
             first = int(np.argmax(violations))
             child_row = int(edge_rows[first])
-            parent_arr = self.mother if parent_role == "mother" else self.father
+            parent_arr = self.mother_rows if parent_role == "mother" else self.father_rows
             parent_row = int(parent_arr[child_row])
             raise PedigreeValidationError(
                 "birth_year_topology",
@@ -250,8 +239,8 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 parent_role=parent_role,
                 child_row=child_row,
                 parent_row=parent_row,
-                child_id=int(self._ids[child_row]),
-                parent_id=int(self._ids[parent_row]),
+                child_id=int(self.ids[child_row]),
+                parent_id=int(self.ids[parent_row]),
                 child_birth_year=int(self.birth_year[child_row]),
                 parent_birth_year=int(self.birth_year[parent_row]),
                 violation_count=int(violations.sum()),
@@ -283,9 +272,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         """``(mother, father, twin)`` rewritten into the private topological order."""
         topo = self._topology
         return (
-            topo.to_topological(self.mother),
-            topo.to_topological(self.father),
-            topo.to_topological(self.twin),
+            topo.to_topological(self.mother_rows),
+            topo.to_topological(self.father_rows),
+            topo.to_topological(self.twin_rows),
         )
 
     def _ensure_parent_csr(self) -> None:
@@ -310,15 +299,15 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         one canonical builder prevents the dtype/shape contract from
         drifting between constructor and re-builder.
         """
-        n = self.n
-        m_idx = np.where(self.mother >= 0)[0]
-        f_idx = np.where(self.father >= 0)[0]
+        n = self.n_individuals
+        m_idx = np.where(self.mother_rows >= 0)[0]
+        f_idx = np.where(self.father_rows >= 0)[0]
         self._Am = sp.csr_matrix(
-            (np.ones(len(m_idx), dtype=np.int32), (m_idx, self.mother[m_idx])),
+            (np.ones(len(m_idx), dtype=np.int32), (m_idx, self.mother_rows[m_idx])),
             shape=(n, n),
         )
         self._Af = sp.csr_matrix(
-            (np.ones(len(f_idx), dtype=np.int32), (f_idx, self.father[f_idx])),
+            (np.ones(len(f_idx), dtype=np.int32), (f_idx, self.father_rows[f_idx])),
             shape=(n, n),
         )
 
@@ -340,7 +329,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         hit = self._known_parent_edges_cache.get(parent_label)
         if hit is not None:
             return hit
-        parent_arr = self.mother if parent_label == "mother" else self.father
+        parent_arr = self.mother_rows if parent_label == "mother" else self.father_rows
         if self.birth_year is None:
             result = (np.array([], dtype=np.intp), np.array([], dtype=np.int32))
         else:
@@ -424,7 +413,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     def _get_Ak(self, k: int) -> sp.spmatrix:
         """Return the k-hop parent-reach matrix (k=0 returns identity)."""
         if k == 0:
-            return sp.eye(self.n, format="csr")
+            return sp.eye(self.n_individuals, format="csr")
         if k == 1:
             return self._A
         return getattr(self, f"_A{k}")
@@ -446,10 +435,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         hs2 = np.concatenate([mat_hs[1], pat_hs[1]])
         if len(hs1) > 0:
             ones = np.ones(len(hs1), dtype=np.int32)
-            H = sp.csr_matrix((ones, (hs1, hs2)), shape=(self.n, self.n))
+            H = sp.csr_matrix((ones, (hs1, hs2)), shape=(self.n_individuals, self.n_individuals))
             self._half_sib_matrix = H + H.T
         else:
-            self._half_sib_matrix = sp.csr_matrix((self.n, self.n))
+            self._half_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
 
     # ------------------------------------------------------------------
     # Relationship extraction
@@ -457,9 +446,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
 
     def _mz_twin_pairs(self) -> tuple[np.ndarray, np.ndarray]:
         """MZ twin pairs: twin != -1, deduplicated with id < twin_id."""
-        has_twin = self.twin >= 0
+        has_twin = self.twin_rows >= 0
         ids = np.where(has_twin)[0]
-        partners = self.twin[has_twin]
+        partners = self.twin_rows[has_twin]
         mask = ids < partners
         return ids[mask], partners[mask].astype(np.intp)
 
@@ -476,15 +465,15 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         graph-data accessor: read by both the matrix extractor and the
         experimental BFS counter.
         """
-        m_mask = self.mother >= 0
+        m_mask = self.mother_rows >= 0
         m_children = np.where(m_mask)[0]
 
-        f_mask = self.father >= 0
+        f_mask = self.father_rows >= 0
         f_children = np.where(f_mask)[0]
 
-        return (m_children, self.mother[m_children].astype(np.intp)), (
+        return (m_children, self.mother_rows[m_children].astype(np.intp)), (
             f_children,
-            self.father[f_children].astype(np.intp),
+            self.father_rows[f_children].astype(np.intp),
         )
 
     # 0.8.0-DELETE: public name; callers request FS / MHS / PHS from relationship_pairs.
@@ -515,17 +504,17 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         empty = np.array([], dtype=np.intp), np.array([], dtype=np.intp)
 
         # Non-twin individuals with at least one known parent
-        has_parent = (self._orig_mother >= 0) | (self._orig_father >= 0)
-        nt_mask = has_parent & (self.twin < 0)
+        has_parent = (self.mother_ids >= 0) | (self.father_ids >= 0)
+        nt_mask = has_parent & (self.twin_rows < 0)
         nt_idx = np.where(nt_mask)[0]
 
         if len(nt_idx) < 2:
-            self._full_sib_matrix = sp.csr_matrix((self.n, self.n))
-            self._half_sib_matrix = sp.csr_matrix((self.n, self.n))
+            self._full_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
+            self._half_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
             return empty, empty, empty
 
-        nt_mother = self._orig_mother[nt_idx]
-        nt_father = self._orig_father[nt_idx]
+        nt_mother = self.mother_ids[nt_idx]
+        nt_father = self.father_ids[nt_idx]
 
         # --- Full sibs: same KNOWN mother AND same KNOWN father ---
         both_known = (nt_mother >= 0) & (nt_father >= 0)
@@ -565,10 +554,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         sib1, sib2 = full_sib
         if len(sib1) > 0:
             ones = np.ones(len(sib1), dtype=np.int32)
-            F = sp.csr_matrix((ones, (sib1, sib2)), shape=(self.n, self.n))
+            F = sp.csr_matrix((ones, (sib1, sib2)), shape=(self.n_individuals, self.n_individuals))
             self._full_sib_matrix = F + F.T
         else:
-            self._full_sib_matrix = sp.csr_matrix((self.n, self.n))
+            self._full_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
 
         return full_sib, mat_hs, pat_hs
 
@@ -1040,7 +1029,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         if self._inbreeding is None:
             topo = self._topology
             m_idx, f_idx, tw_idx = self._topological_parents
-            F = _compute_F_meuwissen_luo(m_idx, f_idx, tw_idx, topo.gather(topo.depth), self.n)
+            F = _compute_F_meuwissen_luo(m_idx, f_idx, tw_idx, topo.gather(topo.depth), self.n_individuals)
             self._inbreeding = readonly(topo.per_row_to_graph(F))
         return self._inbreeding
 

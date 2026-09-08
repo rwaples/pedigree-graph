@@ -33,7 +33,7 @@ def test_pair_keys_no_self_pairs_and_unique(pg):
 @given(pg=random_pedigree())
 def test_full_vs_half_sib_classification(pg):
     pairs = pg.extract_pairs(max_degree=5)
-    mo, fa = pg.mother, pg.father
+    mo, fa = pg.mother_rows, pg.father_rows
 
     for i, j in zip(*pairs["FS"], strict=True):
         assert mo[i] != -1

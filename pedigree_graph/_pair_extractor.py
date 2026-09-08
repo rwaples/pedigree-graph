@@ -162,8 +162,8 @@ class MatrixPairExtractor:
         )
 
         # Remove sibling/half-sib pairs (those sharing a parent)
-        share_mother = (pg._orig_mother[p1] >= 0) & (pg._orig_mother[p1] == pg._orig_mother[p2])
-        share_father = (pg._orig_father[p1] >= 0) & (pg._orig_father[p1] == pg._orig_father[p2])
+        share_mother = (pg.mother_ids[p1] >= 0) & (pg.mother_ids[p1] == pg.mother_ids[p2])
+        share_father = (pg.father_ids[p1] >= 0) & (pg.father_ids[p1] == pg.father_ids[p2])
         is_sib = share_mother | share_father
         p1, p2 = p1[~is_sib], p2[~is_sib]
 

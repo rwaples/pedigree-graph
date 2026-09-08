@@ -32,7 +32,9 @@ def distinct_ancestor_counts(pg: PedigreeGraph) -> np.ndarray:
     """
     cached = pg._distinct_ancestor_counts
     if cached is None:
-        cached = readonly(_compute_n_ancestors(pg.mother, pg.father, pg.n).astype(np.int32, copy=False))
+        cached = readonly(
+            _compute_n_ancestors(pg.mother_rows, pg.father_rows, pg.n_individuals).astype(np.int32, copy=False)
+        )
         pg._distinct_ancestor_counts = cached
     return cached
 
@@ -50,10 +52,10 @@ def descendant_path_counts(pg: PedigreeGraph) -> np.ndarray:
     cached = pg._descendant_path_counts
     if cached is None:
         if pg._rows_are_topological:
-            counts = _compute_n_descendants(pg.mother, pg.father, pg.n)
+            counts = _compute_n_descendants(pg.mother_rows, pg.father_rows, pg.n_individuals)
         else:
             m_idx, f_idx, _ = pg._topological_parents
-            counts = pg._topology.per_row_to_graph(_compute_n_descendants(m_idx, f_idx, pg.n))
+            counts = pg._topology.per_row_to_graph(_compute_n_descendants(m_idx, f_idx, pg.n_individuals))
         cached = readonly(np.ascontiguousarray(counts, dtype=np.int64))
         pg._descendant_path_counts = cached
     return cached
@@ -72,13 +74,13 @@ def connected_component_ids(pg: PedigreeGraph) -> np.ndarray:
     cached = pg._connected_component_ids
     if cached is not None:
         return cached
-    n = pg.n
+    n = pg.n_individuals
     if n == 0:
         cached = readonly(np.empty(0, dtype=np.int64))
         pg._connected_component_ids = cached
         return cached
-    child = np.concatenate([np.flatnonzero(pg.mother >= 0), np.flatnonzero(pg.father >= 0)])
-    parent = np.concatenate([pg.mother[pg.mother >= 0], pg.father[pg.father >= 0]])
+    child = np.concatenate([np.flatnonzero(pg.mother_rows >= 0), np.flatnonzero(pg.father_rows >= 0)])
+    parent = np.concatenate([pg.mother_rows[pg.mother_rows >= 0], pg.father_rows[pg.father_rows >= 0]])
     edges = sp.csr_matrix(
         (np.ones(child.shape[0], dtype=np.int8), (child.astype(np.int64), parent.astype(np.int64))),
         shape=(n, n),

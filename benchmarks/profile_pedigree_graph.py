@@ -322,7 +322,7 @@ def pairwise_diagnostics(df, max_degree: int, seed: int, py_cap: int = 10_000) -
     pg = PedigreeGraph(df)
     pairs = pg.extract_pairs(max_degree=max_degree)
     mother, father, twin, a, b = _kernel_inputs(pg, *_flatten_pairs(pairs))
-    n, p = pg.n, a.shape[0]
+    n, p = pg.n_individuals, a.shape[0]
 
     t0 = time.perf_counter()
     _, stats = _pairwise_kinship_with_stats(mother, father, twin, a, b)
@@ -375,7 +375,7 @@ def stress_diagnostics(seed: int) -> str:
     pg = PedigreeGraph(df)
     pairs = pg.extract_pairs(max_degree=5)
     a, b = _flatten_pairs(pairs)
-    n, p = pg.n, a.shape[0]
+    n, p = pg.n_individuals, a.shape[0]
 
     overflowed = False
     try:

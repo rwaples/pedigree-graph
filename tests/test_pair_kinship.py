@@ -197,7 +197,7 @@ class TestWithinGraphParity:
         graph = _graph(name)
         first, second = _all_pairs(graph.n_individuals)
         kernel = pairwise_kinship(*kernel_inputs(graph, first, second))
-        oracle = _pairwise_kinship_py(graph.mother, graph.father, graph.twin, graph.depth, first, second)
+        oracle = _pairwise_kinship_py(graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, first, second)
         assert kernel.tobytes() == oracle.tobytes()
 
     @pytest.mark.parametrize("name", ["deep_inbred_60g", "random_1k"])

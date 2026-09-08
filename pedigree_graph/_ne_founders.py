@@ -43,13 +43,13 @@ class FounderContributionMeans(NamedTuple):
 
 def _founder_rows(pg: PedigreeGraph) -> np.ndarray:
     """Graph rows with no represented mother and no represented father."""
-    return np.flatnonzero((np.asarray(pg.mother) < 0) & (np.asarray(pg.father) < 0)).astype(np.intp)
+    return np.flatnonzero((np.asarray(pg.mother_rows) < 0) & (np.asarray(pg.father_rows) < 0)).astype(np.intp)
 
 
 def _genome_of(pg: PedigreeGraph) -> np.ndarray:
     """Canonical genome-node row per graph row: itself, or the lower-indexed co-twin."""
-    rows = np.arange(pg.n, dtype=np.intp)
-    twin = np.asarray(pg.twin, dtype=np.intp)
+    rows = np.arange(pg.n_individuals, dtype=np.intp)
+    twin = np.asarray(pg.twin_rows, dtype=np.intp)
     return np.where((twin >= 0) & (twin < rows), twin, rows)
 
 
@@ -64,7 +64,7 @@ def _founder_idx(pg: PedigreeGraph) -> np.ndarray:
 
 def _founder_columns(pg: PedigreeGraph, founder_idx: np.ndarray) -> np.ndarray:
     """Column of ``founder_idx`` each represented founder row seeds; ``-1`` elsewhere."""
-    columns = np.full(pg.n, -1, dtype=np.int64)
+    columns = np.full(pg.n_individuals, -1, dtype=np.int64)
     founders = _founder_rows(pg)
     if founders.shape[0]:
         columns[founders] = np.searchsorted(founder_idx, _genome_of(pg)[founders])
@@ -109,13 +109,13 @@ def _per_gen_founder_means(
     if cohorts is None:
         cohorts = ObservedCohorts.for_graph(pg, "ne_long_term_contributions")
     n_founders = int(founder_idx.shape[0])
-    n = pg.n
+    n = pg.n_individuals
     m_g = _checked_founder_matrix(cohorts.k, n_founders, "founder_means", np.float64, np.nan)
     if n_founders == 0 or cohorts.k == 0:
         return FounderContributionMeans(m_g, founder_idx)
 
-    mother = np.asarray(pg.mother)
-    father = np.asarray(pg.father)
+    mother = np.asarray(pg.mother_rows)
+    father = np.asarray(pg.father_rows)
     depth = np.asarray(pg.depth)
     columns = _founder_columns(pg, founder_idx)
     founders = np.flatnonzero(columns >= 0)

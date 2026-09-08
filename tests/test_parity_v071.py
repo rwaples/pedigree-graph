@@ -124,14 +124,14 @@ def _mz_affected_rows(graph) -> np.ndarray:
     These are exactly the rows ADR 0008's genome-node walk may move away
     from the 0.7.1 MZ-naive value.
     """
-    affected = np.asarray(graph.twin) >= 0
-    mother, father = np.asarray(graph.mother), np.asarray(graph.father)
+    affected = np.asarray(graph.twin_rows) >= 0
+    mother, father = np.asarray(graph.mother_rows), np.asarray(graph.father_rows)
     known = [(parents, parents >= 0) for parents in (mother, father)]
     previous = -1
     while affected.sum() != previous:
         previous = int(affected.sum())
         for parents, has_parent in known:
-            inherited = np.zeros(graph.n, dtype=bool)
+            inherited = np.zeros(graph.n_individuals, dtype=bool)
             inherited[has_parent] = affected[parents[has_parent]]
             affected |= inherited
     return affected

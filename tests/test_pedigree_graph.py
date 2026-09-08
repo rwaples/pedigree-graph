@@ -761,9 +761,9 @@ class TestFromArrays:
         pg_arr = PedigreeGraph.from_arrays(ids, mothers, fathers, twins, generation)
 
         # Same n, same remapped parent indices
-        assert pg_df.n == pg_arr.n
-        np.testing.assert_array_equal(pg_df.mother, pg_arr.mother)
-        np.testing.assert_array_equal(pg_df.father, pg_arr.father)
+        assert pg_df.n_individuals == pg_arr.n_individuals
+        np.testing.assert_array_equal(pg_df.mother_rows, pg_arr.mother_rows)
+        np.testing.assert_array_equal(pg_df.father_rows, pg_arr.father_rows)
         np.testing.assert_array_equal(pg_df.generation, pg_arr.generation)
 
     def test_derives_generation_when_none(self):
@@ -786,7 +786,7 @@ class TestFromArrays:
             generation=np.array([0, 0, 1]),
         )
         # All twin entries remap to -1 (no twins)
-        assert np.all(pg.twin == -1)
+        assert np.all(pg.twin_rows == -1)
 
     def test_birth_year_omitted_is_none(self):
         pg = PedigreeGraph.from_arrays(
@@ -1031,7 +1031,7 @@ class TestInputValidation:
 
     def test_integral_float_ids_are_accepted(self):
         df = pl.DataFrame({"id": [0.0, 1.0], **self._BASE})
-        assert PedigreeGraph(df)._ids.tolist() == [0, 1]
+        assert PedigreeGraph(df).ids.tolist() == [0, 1]
 
     def test_mismatched_column_length_raises(self):
         data = {
@@ -1065,8 +1065,8 @@ class TestInputValidation:
             fathers=np.array([-1, -1, 1, 1]),
             generation=np.array([0, 0, 1, 1]),
         )
-        assert pg.mother.tolist() == [-1, -1, 0, 0]
-        assert pg.father.tolist() == [-1, -1, 1, 1]
+        assert pg.mother_rows.tolist() == [-1, -1, 0, 0]
+        assert pg.father_rows.tolist() == [-1, -1, 1, 1]
 
     def test_unsorted_ids_remap_correctly(self):
         # searchsorted must honor argsort order, not assume sorted ids.
@@ -1082,8 +1082,8 @@ class TestInputValidation:
         )
         pg = PedigreeGraph(df)
         # row 2 (id 9): mother id 5 -> row 0, father id 2 -> row 1
-        assert pg.mother.tolist() == [-1, -1, 0, 1]
-        assert pg.father.tolist() == [-1, -1, 1, 0]
+        assert pg.mother_rows.tolist() == [-1, -1, 0, 1]
+        assert pg.father_rows.tolist() == [-1, -1, 1, 0]
 
     def test_absent_parent_ids_remap_leniently(self):
         # Partial pedigree (falconer's PedigreeGraph(df) path): parents
@@ -1099,8 +1099,8 @@ class TestInputValidation:
             }
         )
         pg = PedigreeGraph(df)
-        assert pg.mother.tolist() == [-1, -1]
-        assert pg._orig_mother.tolist() == [99, 99]
+        assert pg.mother_rows.tolist() == [-1, -1]
+        assert pg.mother_ids.tolist() == [99, 99]
 
     def test_absent_twin_id_remaps_leniently(self):
         df = pl.DataFrame(
@@ -1114,7 +1114,7 @@ class TestInputValidation:
             }
         )
         pg = PedigreeGraph(df)
-        assert pg.twin.tolist() == [-1, -1]
+        assert pg.twin_rows.tolist() == [-1, -1]
 
     def test_duplicate_full_pedigree_ids_raise_in_from_subsample(self):
         full = pl.DataFrame(
@@ -1447,8 +1447,8 @@ def _oracle_all_pairs(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.nda
     individual cells.
     """
     K = pg.kinship_matrix(0.0).toarray()
-    ii, jj = np.triu_indices(pg.n)
-    got = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, ii, jj)
+    ii, jj = np.triu_indices(pg.n_individuals)
+    got = _pairwise_kinship_py(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
     exp = K[ii, jj]
     return got, exp, ii, jj
 
@@ -1606,7 +1606,9 @@ class TestPairwiseKinshipReference:
     _sib_mating = staticmethod(_ped_sib_mating)
 
     def _phi(self, pg, a, b):
-        return _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, np.array([a]), np.array([b]))[0]
+        return _pairwise_kinship_py(
+            pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, np.array([a]), np.array([b])
+        )[0]
 
     @pytest.mark.parametrize(
         "fixture",
@@ -1658,8 +1660,12 @@ class TestPairwiseKinshipReference:
         # phi is symmetric; reversed input order must give the same value and
         # not reorder the output.
         pg = PedigreeGraph(self._sib_mating())
-        fwd = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, np.array([2, 4]), np.array([4, 2]))
-        rev = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, np.array([4, 2]), np.array([2, 4]))
+        fwd = _pairwise_kinship_py(
+            pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, np.array([2, 4]), np.array([4, 2])
+        )
+        rev = _pairwise_kinship_py(
+            pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, np.array([4, 2]), np.array([2, 4])
+        )
         np.testing.assert_array_equal(fwd, rev[::-1])
 
     def test_self_pairs_return_diagonal(self):
@@ -1671,7 +1677,7 @@ class TestPairwiseKinshipReference:
     def test_empty_input_returns_empty_float32(self):
         pg = PedigreeGraph(self._sib_mating())
         empty = np.array([], dtype=np.int64)
-        out = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, empty, empty)
+        out = _pairwise_kinship_py(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, empty, empty)
         assert out.dtype == np.float32
         assert out.shape == (0,)
 
@@ -1688,8 +1694,8 @@ class TestPairwiseKinshipNumba:
     @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
     def test_numba_bit_exact_vs_python(self, build):
         pg = PedigreeGraph(build())
-        ii, jj = np.triu_indices(pg.n)
-        py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, ii, jj)
+        ii, jj = np.triu_indices(pg.n_individuals)
+        py = _pairwise_kinship_py(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
         nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
         assert nb.dtype == np.float32
         np.testing.assert_array_equal(nb, py)
@@ -1698,7 +1704,7 @@ class TestPairwiseKinshipNumba:
     def test_numba_matches_matrix_oracle(self, build):
         pg = PedigreeGraph(build())
         K = pg.kinship_matrix(0.0).toarray()
-        ii, jj = np.triu_indices(pg.n)
+        ii, jj = np.triu_indices(pg.n_individuals)
         nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
         np.testing.assert_array_equal(nb, K[ii, jj])
 
@@ -1707,11 +1713,11 @@ class TestPairwiseKinshipNumba:
         checked = 0
         for _ in range(200):
             pg = PedigreeGraph(_random_pedigree(rng))
-            if pg.n < 2:
+            if pg.n_individuals < 2:
                 continue
             K = pg.kinship_matrix(0.0).toarray()
-            ii, jj = np.triu_indices(pg.n)
-            py = _pairwise_kinship_py(pg.mother, pg.father, pg.twin, pg.depth, ii, jj)
+            ii, jj = np.triu_indices(pg.n_individuals)
+            py = _pairwise_kinship_py(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
             nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
             np.testing.assert_array_equal(nb, py)
             np.testing.assert_array_equal(nb, K[ii, jj])
@@ -1736,9 +1742,9 @@ class TestPairwiseKinshipNumba:
         # relative to n**2 — the scaling guarantee in miniature.
         rng = np.random.default_rng(7)
         pg = PedigreeGraph(_random_pedigree(rng))
-        ii, jj = np.triu_indices(pg.n)
+        ii, jj = np.triu_indices(pg.n_individuals)
         out, stats = _pairwise_kinship_with_stats(*kernel_inputs(pg, ii, jj))
         assert out.shape == ii.shape
-        assert stats["memo_entries"] <= pg.n * pg.n
+        assert stats["memo_entries"] <= pg.n_individuals * pg.n_individuals
         assert stats["max_stack_depth"] >= 1
         assert stats["memo_capacity"] >= stats["memo_entries"]

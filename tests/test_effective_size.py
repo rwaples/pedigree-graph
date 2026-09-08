@@ -155,7 +155,7 @@ def test_toy1_full_sib_mating_F_theta_eqg():
 
     # EqG: founders 0; gen-1 with both founder parents → 1; gen-2 with two
     # gen-1 parents (each with EqG=1) → 1 + 0.5*(1+1) = 2.
-    eqg = _compute_eqg(np.asarray(pg.mother), np.asarray(pg.father), pg.n)
+    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), pg.n_individuals)
     assert eqg[0] == 0.0
     assert eqg[1] == 0.0
     assert eqg[2] == pytest.approx(1.0, abs=1e-12)
@@ -606,8 +606,8 @@ def test_ne_hill_serializes_to_dict():
 
 def _family_table(pg: PedigreeGraph, cohorts: ObservedCohorts | None = None):
     return _sex_specific_family_table(
-        np.asarray(pg.mother),
-        np.asarray(pg.father),
+        np.asarray(pg.mother_rows),
+        np.asarray(pg.father_rows),
         np.asarray(pg.sex),
         ObservedCohorts.for_graph(pg, "test") if cohorts is None else cohorts,
     )
@@ -713,10 +713,10 @@ def test_compute_all_ne_threaded_matches_serial():
 def _streaming_theta(pg: PedigreeGraph) -> np.ndarray:
     """Helper: compute θ̄_g via the streaming path (no K materialization)."""
     return _compute_theta_per_gen(
-        pg.n,
-        np.asarray(pg.mother, dtype=np.int32),
-        np.asarray(pg.father, dtype=np.int32),
-        np.asarray(pg.twin, dtype=np.int32),
+        pg.n_individuals,
+        np.asarray(pg.mother_rows, dtype=np.int32),
+        np.asarray(pg.father_rows, dtype=np.int32),
+        np.asarray(pg.twin_rows, dtype=np.int32),
         np.asarray(pg.depth, dtype=np.int32),
         0.0,
         labels=np.asarray(pg.generation, dtype=np.int32),
@@ -743,7 +743,7 @@ def test_streaming_theta_matches_K_path_toy1():
     theta_k = _per_gen_mean_kinship(
         pg.kinship_matrix(),
         np.asarray(pg.generation),
-        np.asarray(pg.twin),
+        np.asarray(pg.twin_rows),
     )
     theta_stream = _streaming_theta(pg)
     # NaN positions must match.
@@ -761,7 +761,7 @@ def test_streaming_theta_matches_K_path_random_mating():
     theta_k = _per_gen_mean_kinship(
         pg.kinship_matrix(),
         np.asarray(pg.generation),
-        np.asarray(pg.twin),
+        np.asarray(pg.twin_rows),
     )
     theta_stream = _streaming_theta(pg)
     assert np.array_equal(np.isnan(theta_k), np.isnan(theta_stream))

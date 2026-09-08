@@ -105,7 +105,7 @@ def test_compute_all_ne_none_or_positive(pg):
 def test_compute_all_ne_disables_only_the_founder_estimators_on_one_parent_rows(pg):
     # The founder-based estimators need closed represented parentage; the
     # adapter reports no estimate for them and keeps the other six.
-    one_parent = (np.asarray(pg.mother) < 0) != (np.asarray(pg.father) < 0)
+    one_parent = (np.asarray(pg.mother_rows) < 0) != (np.asarray(pg.father_rows) < 0)
     results = compute_all_ne(pg)
     assert len(results) == 8
     if one_parent.any():

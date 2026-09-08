@@ -232,15 +232,15 @@ def legacy_per_gen_mean_kinship(pg: PedigreeGraph, min_kinship: float) -> np.nda
     labels = np.asarray(pg.generation)
     K = pg._kinship_cache.get(key)
     if K is not None:
-        theta = _per_gen_mean_kinship(K, labels, np.asarray(pg.twin))
+        theta = _per_gen_mean_kinship(K, labels, np.asarray(pg.twin_rows))
     elif key == 0.0:
         theta = _scatter_summary(_generation_kinship_summary(pg), labels)
     else:
         theta = _compute_theta_per_gen(
-            pg.n,
-            pg.mother,
-            pg.father,
-            pg.twin,
+            pg.n_individuals,
+            pg.mother_rows,
+            pg.father_rows,
+            pg.twin_rows,
             pg.depth,
             min_kinship,
             labels=labels,
