@@ -238,7 +238,7 @@ class TestCompatibilitySnapshotsAreDetached:
     def test_engines_ignore_the_mutated_snapshots(self, monkeypatch):
         monkeypatch.setitem(PAIR_KINSHIP, "FS", 0.0)
         monkeypatch.delitem(REL_REGISTRY, "MZ")
-        counts = PedigreeGraph(small_pedigree()).count_pairs(max_degree=5)
+        counts = PedigreeGraph.from_frame(small_pedigree()).relationship_counts(max_degree=5)
         assert set(counts) == set(RELATIONSHIPS)
 
 

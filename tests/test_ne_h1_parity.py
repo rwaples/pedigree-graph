@@ -1,11 +1,19 @@
-"""Slice 6c reduces to slice 6b bit for bit on dense ``0..g_max`` labels.
+"""The 0.8 estimators reduce to the frozen slice-6b golden bit for bit on dense labels.
 
-Every fixture in ``tests/data/ne_baseline_6b`` carries dense labels, so each
-gap is ``h = 1`` and the gap formula must evaluate exactly the one-step
-arithmetic the 6b estimators used.  The golden was written by
+Every fixture in ``tests/data/ne_baseline_6b`` carries dense ``0..g_max``
+labels, so each gap is ``h = 1`` and the gap formula must evaluate exactly
+the one-step arithmetic the 6b estimators used.  The golden was written by
 ``tests/parity/generate_ne_baseline.py`` at ``00a3667``; this test replays
-the same fixtures through the ``compute_all_ne`` adapter and compares the
+the same fixtures through ``estimate_effective_sizes`` and compares the
 serialized records field by field, with float equality.
+
+The golden's records predate the observed-cohort reshape, so each 0.8 record
+is projected onto their dense layout first: the label vectors it does not
+carry are dropped, a rate estimator's per-transition ``ne_per_gen`` is
+scattered onto its target cohort (index 0 has no incoming transition), and
+the family-size arrays drop their maximum parent cohort, which 6b did not
+report.  Dense labels make that projection exact — the test asserts the
+labels really are ``0..k-1`` before relying on it.
 
 One documented migration is allowed through: 6b gave each parentless MZ
 co-twin its own Caballero-Toro founder column, 6c gives the pair one
@@ -32,6 +40,7 @@ import numpy as np
 import pytest
 
 from pedigree_graph import PedigreeGraph
+from pedigree_graph.effective_size import estimate_effective_sizes
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "parity"))
@@ -40,20 +49,44 @@ import generate_ne_baseline as golden  # noqa: E402
 
 FIXTURES = sorted(golden.fixtures())
 
+_LABEL_FIELDS = ("generations", "parent_generations", "transition_from", "transition_to", "final_generation")
+_RATE_BASED = ("ne_inbreeding", "ne_coancestry", "ne_caballero_toro")
+
 
 def _parentless_mz_pairs(pg: PedigreeGraph) -> int:
     parentless = (np.asarray(pg.mother_rows) < 0) & (np.asarray(pg.father_rows) < 0)
     return int(np.count_nonzero(parentless & (np.asarray(pg.twin_rows) >= 0)) // 2)
 
 
+def _projected(name: str, result: object) -> dict:
+    """One 0.8 record in the golden's dense per-label layout."""
+    payload = result.to_dict()
+    labels = payload.get("parent_generations") or payload.get("generations")
+    if labels is not None:
+        assert labels == list(range(len(labels))), f"{name}: the golden only covers dense 0..g_max labels"
+    for field in _LABEL_FIELDS:
+        payload.pop(field, None)
+    if name in _RATE_BASED:
+        payload["ne_per_gen"] = [None, *payload["ne_per_gen"]]
+    if name == "ne_variance_family_size":
+        payload = {key: value[:-1] if isinstance(value, list) else value for key, value in payload.items()}
+    return payload
+
+
+def _capture(name: str, df) -> dict[str, dict]:
+    pg = PedigreeGraph.from_frame(df)
+    results = estimate_effective_sizes(pg, hill_vk_scale=name.endswith("birth_years"))
+    return {key: _projected(key, result) for key, result in results.items()}
+
+
 @pytest.mark.parametrize("name", FIXTURES)
-def test_compute_all_ne_matches_slice_6b(name: str) -> None:
+def test_the_estimators_match_slice_6b(name: str) -> None:
     df = golden.fixtures()[name]
     expected = json.loads((golden.OUT / f"{name}.json").read_text())
-    actual = golden.capture(name, df)
+    actual = _capture(name, df)
     assert sorted(actual) == sorted(expected)
 
-    merged_pairs = _parentless_mz_pairs(PedigreeGraph(df))
+    merged_pairs = _parentless_mz_pairs(PedigreeGraph.from_frame(df))
     if merged_pairs:
         ct_key = "n_founders_with_descendants_per_gen"
         ct_drop = np.asarray(expected["ne_caballero_toro"][ct_key]) - np.asarray(actual["ne_caballero_toro"][ct_key])
@@ -73,4 +106,4 @@ def test_compute_all_ne_matches_slice_6b(name: str) -> None:
 
 
 def test_small_pedigree_exercises_the_founder_genome_migration() -> None:
-    assert _parentless_mz_pairs(PedigreeGraph(golden.fixtures()["small_pedigree"])) == 3
+    assert _parentless_mz_pairs(PedigreeGraph.from_frame(golden.fixtures()["small_pedigree"])) == 3

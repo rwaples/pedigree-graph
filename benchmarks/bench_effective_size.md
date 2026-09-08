@@ -32,6 +32,10 @@ across arms; it does on both fixtures. Only the orchestration differs.
 `adapter_pool4` is the baseline, `estimate_serial` the gated subject under the
 family 5% rule, and `adapter_serial` shows the cost of the pool itself.
 
+The `adapter_pool4` and `adapter_serial` rows were measured at commit `aa71c35`,
+before both arms were deleted with the 0.7.1 adapters; `estimate_serial` is the
+only arm the suite still declares, and it is no longer gated against anything.
+
 `benchmarks/.gitignore` excludes `reports/`, so the raw JSON is local-only and
 this note carries the environment and spread inline.
 

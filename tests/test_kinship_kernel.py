@@ -119,8 +119,8 @@ def test_founder_mz_twins_propagate_to_descendants():
 
 
 def test_founder_mz_twins_match_pairwise_kinship():
-    # kinship_matrix() and compute_pair_kinship() disagreed on exactly these
-    # pairs; #5 was filed on that disagreement.  Both APIs, both cap paths.
+    # kinship_matrix() and pair_kinship() disagreed on exactly these pairs;
+    # #5 was filed on that disagreement.
     ped = pl.DataFrame(
         {
             "id": [0, 1, 2, 3, 4, 5],
@@ -132,11 +132,10 @@ def test_founder_mz_twins_match_pairwise_kinship():
         }
     )
     rows, cols = np.triu_indices(6)
-    exact = PedigreeGraph(ped).compute_pair_kinship({"all": (rows.astype(np.int64), cols.astype(np.int64))})["all"]
-
-    for kwargs in ({}, {"max_degree": 2}, {"max_degree": 3}):
-        K = PedigreeGraph(ped).kinship_matrix(**kwargs).toarray()
-        np.testing.assert_allclose(K[rows, cols], exact, err_msg=f"kinship_matrix({kwargs})")
+    graph = PedigreeGraph.from_frame(ped)
+    exact = graph.pair_kinship(rows.astype(np.int64), cols.astype(np.int64))
+    K = graph.kinship_matrix().toarray()
+    np.testing.assert_allclose(K[rows, cols], exact)
 
 
 def test_inbred_mz_regression():

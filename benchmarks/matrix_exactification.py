@@ -119,9 +119,9 @@ def _candidate_support(graph, _prepared) -> Measurement:
 
 
 def _complete_dp(graph, _prepared) -> Measurement:
-    from pedigree_graph._kinship_dp import _compute_theta_per_gen
+    from pedigree_graph._kinship_dp import _compute_generation_kinship_summary
 
-    theta = _compute_theta_per_gen(
+    summary = _compute_generation_kinship_summary(
         graph.n_individuals,
         graph.mother_rows,
         graph.father_rows,
@@ -130,6 +130,7 @@ def _complete_dp(graph, _prepared) -> Measurement:
         0.0,
         labels=graph.depth,
     )
+    theta = summary.mean_kinship
     return Measurement(
         checksum_values(np.ascontiguousarray(theta, dtype=np.float32)),
         {"reduction": float(np.nansum(theta))},

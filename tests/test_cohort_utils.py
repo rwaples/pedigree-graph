@@ -3,7 +3,8 @@
 import numpy as np
 import pytest
 
-from pedigree_graph import CohortWindow, MissingMetadataError, PedigreeGraph, eligible_cohort_range
+from pedigree_graph import MissingMetadataError, PedigreeGraph
+from pedigree_graph.effective_size import CohortWindow, eligible_cohort_range
 
 
 def _three_gen_pedigree(birth_year: np.ndarray) -> PedigreeGraph:
@@ -13,8 +14,8 @@ def _three_gen_pedigree(birth_year: np.ndarray) -> PedigreeGraph:
     #   id 2: child
     return PedigreeGraph.from_arrays(
         ids=np.array([0, 1, 2]),
-        mothers=np.array([-1, -1, 0]),
-        fathers=np.array([-1, -1, 1]),
+        mother_ids=np.array([-1, -1, 0]),
+        father_ids=np.array([-1, -1, 1]),
         birth_year=birth_year,
     )
 
@@ -31,8 +32,8 @@ class TestEligibleCohortRange:
     def test_raises_when_birth_year_missing(self):
         pg = PedigreeGraph.from_arrays(
             ids=np.array([0, 1, 2]),
-            mothers=np.array([-1, -1, 0]),
-            fathers=np.array([-1, -1, 1]),
+            mother_ids=np.array([-1, -1, 0]),
+            father_ids=np.array([-1, -1, 1]),
         )
         with pytest.raises(MissingMetadataError) as info:
             eligible_cohort_range(pg)
@@ -95,8 +96,8 @@ class TestEligibleCohortRange:
         # Five children all of the same two parents, spread across years.
         pg = PedigreeGraph.from_arrays(
             ids=np.arange(7),
-            mothers=np.array([-1, -1, 0, 0, 0, 0, 0]),
-            fathers=np.array([-1, -1, 1, 1, 1, 1, 1]),
+            mother_ids=np.array([-1, -1, 0, 0, 0, 0, 0]),
+            father_ids=np.array([-1, -1, 1, 1, 1, 1, 1]),
             birth_year=np.array([1990, 1990, 2000, 2005, 2010, 2015, 2020]),
         )
         w50 = eligible_cohort_range(pg, percentile=50.0)
@@ -109,8 +110,8 @@ class TestEligibleCohortRange:
         # Mother-edge has unknown mother birth_year; only father edge counts.
         pg = PedigreeGraph.from_arrays(
             ids=np.array([0, 1, 2]),
-            mothers=np.array([-1, -1, 0]),
-            fathers=np.array([-1, -1, 1]),
+            mother_ids=np.array([-1, -1, 0]),
+            father_ids=np.array([-1, -1, 1]),
             birth_year=np.array([-1, 1992, 2010]),
         )
         w = eligible_cohort_range(pg)

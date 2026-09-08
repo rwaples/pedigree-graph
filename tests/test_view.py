@@ -238,31 +238,32 @@ def test_view_outlives_the_graph_name():
     assert isinstance(view._graph, PedigreeGraph)
 
 
-class TestOldPairOutputIsUnchanged:
-    def test_count_pairs_survives_building_views(self, small_pedigree):
-        pg = PedigreeGraph(small_pedigree)
-        before = pg.count_pairs(max_degree=5)
+class TestPairOutputSurvivesBuildingViews:
+    def test_graph_counts_survive_building_views(self, small_pedigree):
+        pg = PedigreeGraph.from_frame(small_pedigree)
+        before = dict(pg.relationship_counts(max_degree=5))
         assert sum(before.values()) > 0
         ids = small_pedigree["id"].to_numpy()
         pg.view(ids=ids[[4, 5]])
         pg.view(rows=[9, 0])
         pg.view(ids=[])
-        assert pg.count_pairs(max_degree=5) == before
+        assert dict(pg.relationship_counts(max_degree=5)) == before
 
-    def test_from_subsample_extract_pairs_survives_building_views(self, small_pedigree):
-        subsample = small_pedigree.tail(60)
-        pg = PedigreeGraph.from_subsample(small_pedigree, subsample)
-        before = pg.extract_pairs(max_degree=2)
-        assert any(len(first) for first, _ in before.values())
+    def test_view_pairs_survive_building_further_views(self, small_pedigree):
+        selected = small_pedigree.tail(60)["id"].to_numpy()
+        pg = PedigreeGraph.from_frame(small_pedigree)
+        view = pg.view(ids=selected)
+        before = view.relationship_pairs(max_degree=2)
+        assert any(len(block) for block in before.values())
 
-        pg.view(ids=subsample["id"].to_numpy()[[4, 6, 5]])
+        pg.view(ids=selected[[4, 6, 5]])
         pg.view(rows=[2, 0])
 
-        after = pg.extract_pairs(max_degree=2)
+        after = view.relationship_pairs(max_degree=2)
         assert set(after) == set(before)
-        for code, (first, second) in before.items():
-            np.testing.assert_array_equal(after[code][0], first)
-            np.testing.assert_array_equal(after[code][1], second)
+        for code, block in before.items():
+            np.testing.assert_array_equal(after[code].first_rows, block.first_rows)
+            np.testing.assert_array_equal(after[code].second_rows, block.second_rows)
 
 
 class TestErrorPrecedence:

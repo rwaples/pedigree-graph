@@ -9,14 +9,20 @@
 - `pedigrees.py` builds every input deterministically and imports nothing from
   `pedigree_graph`, so it runs unchanged under 0.7.1 and 0.8.
 - `generate_baseline.py` runs the 0.7.1 API against a package root you name and
-  refuses to run if `pedigree_graph` resolves anywhere else.
+  refuses to run if `pedigree_graph` resolves anywhere else. It is frozen at
+  base commit `aa71c35`; the 0.8 branch deleted the API it calls, so the suite
+  never executes it and only imports its hashing helpers and constants.
+- `capture_v08.py` reproduces the generator's `(arrays, summary)` layout
+  through the 0.8 API, so the frozen hashes compare bit for bit wherever 0.8
+  preserves the value. Its module docstring lists the mapping per section.
 - `manifest.json` records the generator version, package commit, fixture
   parameters, SHA-256 of every input, and SHA-256 of every output.
 - One `<fixture>.npz` per small fixture with the full arrays. Large fixtures
   have hashes and counts only.
 
-`tests/test_parity_v071.py` replays `generate_baseline._capture` against the
-installed package and asserts every count and hash in `manifest.json`.
+`tests/test_parity_v071.py` replays `capture_v08.capture` against the
+installed package and asserts every count and hash in `manifest.json` except
+`streaming_counts` (see below).
 
 ## Regenerate
 
@@ -28,18 +34,33 @@ pixi run python tests/parity/generate_baseline.py --package-root ../pedigree-gra
 Regeneration must reproduce every hash in `manifest.json`. Bump
 `GENERATOR_VERSION` in `pedigrees.py` when an input changes.
 
-## What is frozen, per fixture
+## What is frozen, per fixture, and how 0.8 reproduces it
 
 - `extract_pairs(max_degree=5)` in 0.7.1 orientation, sorted by `(first, second)`.
-- `compute_pair_kinship` (float64) aligned to those pairs.
-- `count_pairs_streaming(max_degree=5)`.
+  0.7.1 reported a pair under every category it satisfied; the 0.8
+  `relationship_pairs` keeps one category per pair (ADR 0006), so the capture
+  reads the matrix engine's blocks before that precedence fold through the
+  private `MatrixPairExtractor` and folds the ten collateral asymmetric codes
+  back to `(min, max)`.
+- `compute_pair_kinship` (float64) aligned to those pairs: `pair_kinship`
+  widened from float32.
+- `count_pairs_streaming(max_degree=5)`: not reproduced. The 0.8
+  `estimate_relationship_counts` subtracts the half-sib pairs a
+  parent-offspring category claims, so the unfolded raw values have no 0.8
+  equivalent and the test skips this section.
 - `compute_inbreeding`, `compute_n_ancestors`, `compute_n_descendants`,
-  `per_gen_mean_kinship`, and the derived `generation` (structural depth).
+  `per_gen_mean_kinship`, and the derived `generation` (structural depth):
+  `inbreeding`, `distinct_ancestor_counts` (int32), `descendant_path_counts`
+  (int64, cast to int32 after a bounds check), `mean_kinship_by_generation`
+  scattered onto the dense `max(depth) + 1` layout with NaN in the gaps, and
+  `depth`.
 - Upper triangle of `kinship_matrix(min_kinship=0.001)`: the propagated
-  support slice 5b must reproduce. Small fixtures also freeze
-  `kinship_matrix(0.0)`.
+  support slice 5b must reproduce, now
+  `approximate_kinship_matrix(min_propagated_kinship=0.001)`. Small fixtures
+  also freeze `kinship_matrix(0.0)`, now `kinship_matrix()`.
 - `from_subsample` pairs over a seeded half-size shuffled selection, in
-  caller coordinates.
+  caller coordinates: the same pre-precedence blocks projected through
+  `view(ids=...)` into view rows and folded to `(min, max)`.
 
 ## Baseline facts worth knowing
 

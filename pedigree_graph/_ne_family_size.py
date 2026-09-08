@@ -165,11 +165,10 @@ def _sex_specific_family_table(
 def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
     """RuntimeWarning when ``pg.sex`` is uniform — usually a missing ``sex=``.
 
-    Fired by :func:`ne_variance_family_size` and :func:`ne_sex_ratio`
-    (both estimators are degenerate on single-sex pedigrees and the
-    overwhelmingly common cause is the caller forgetting to pass ``sex=``
-    to :meth:`PedigreeGraph.from_arrays`, which silently defaults the
-    array to all-female).  Estimators still return ``ne=None`` (matching
+    Fired by :func:`ne_variance_family_size` and :func:`ne_sex_ratio`,
+    which are degenerate on a single-sex pedigree.  Absent sex is refused
+    before this point (``missing_sex``), so a uniform column here was
+    supplied by the caller.  Estimators still return ``ne=None`` (matching
     a legitimately single-sex pedigree), so the warning is the only
     diagnostic.
     """
@@ -178,9 +177,7 @@ def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
     sex = np.asarray(pg.sex)
     if len(np.unique(sex)) < 2:
         warnings.warn(
-            f"{caller}: pg.sex is uniform (all {int(sex[0])}); estimator is "
-            "degenerate and will return ne=None. Did you forget to pass sex= "
-            "to PedigreeGraph.from_arrays?",
+            f"{caller}: pg.sex is uniform (all {int(sex[0])}); estimator is degenerate and will return ne=None",
             RuntimeWarning,
             stacklevel=3,
         )
@@ -330,12 +327,9 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
 
     Requires complete generation labels (or none) and complete sex, in
     that order: absent or partly unknown sex raises ``missing_sex``.
-    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1 —
-    almost always a sign that the caller forgot to pass ``sex=`` to
-    :meth:`PedigreeGraph.from_arrays` and is unwittingly running on the
-    all-female default.  The estimator still returns ``ne=None``
-    (consistent with a legitimate single-sex pedigree), so the warning
-    is the only diagnostic.
+    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1.  The
+    estimator still returns ``ne=None`` (consistent with a legitimate
+    single-sex pedigree), so the warning is the only diagnostic.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_variance_family_size")
     _require_complete_sex(pg, "ne_variance_family_size")
@@ -369,12 +363,9 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
     ``Ne_g = 4·Nm_g·Nf_g / (Nm_g + Nf_g)`` per observed cohort; aggregate is
     the harmonic mean across cohorts with both sexes present.
 
-    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1 —
-    almost always a sign the caller forgot to pass ``sex=`` to
-    :meth:`PedigreeGraph.from_arrays` and is unwittingly running on the
-    all-female default.  The estimator still returns ``ne=None`` in
-    that case (consistent with a legitimate single-sex pedigree), so
-    the warning is the only diagnostic.
+    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1.  The
+    estimator still returns ``ne=None`` in that case (consistent with a
+    legitimate single-sex pedigree), so the warning is the only diagnostic.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_sex_ratio")
     _require_complete_sex(pg, "ne_sex_ratio")

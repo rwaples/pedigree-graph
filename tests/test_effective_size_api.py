@@ -2,7 +2,7 @@
 
 Covers the shape of every result record, the read-only ownership of its
 arrays, label rebasing / sparsity / depth-merging, the represented-founder
-rules, the structured allocation guards, and the 0.7.1 legacy adapters.
+rules, and the structured allocation guards.
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ import numpy as np
 import polars as pl
 import pytest
 
-import pedigree_graph
 from pedigree_graph import PedigreeGraph, ResourceError, effective_size
 from pedigree_graph import _ne_common as ne_common
 from pedigree_graph._cohorts import _densify_labels as _cohorts_densify_labels
@@ -26,7 +25,7 @@ from pedigree_graph._ne_common import (
     _transition_ne,
 )
 from pedigree_graph._ne_founders import _founder_columns, _founder_idx, _per_gen_founder_means
-from pedigree_graph.effective_size import NeInbreedingResult
+from pedigree_graph.effective_size import NeInbreedingResult, estimate_effective_sizes
 
 
 def _df(records: list[dict]) -> pl.DataFrame:
@@ -66,7 +65,7 @@ def _relabelled(df: pl.DataFrame, mapping: dict[int, int]) -> pl.DataFrame:
 
 
 def _mz_founder_pedigree() -> PedigreeGraph:
-    return PedigreeGraph(
+    return PedigreeGraph.from_frame(
         _df(
             [
                 {"id": 0, "sex": 0, "generation": 0, "twin": 1},
@@ -82,7 +81,7 @@ def _mz_founder_pedigree() -> PedigreeGraph:
 
 
 def _single_founder_pedigree() -> PedigreeGraph:
-    return PedigreeGraph(
+    return PedigreeGraph.from_frame(
         _df(
             [
                 {"id": 0, "sex": 0, "generation": 0},
@@ -97,7 +96,7 @@ def _single_founder_pedigree() -> PedigreeGraph:
 
 
 def _late_founder_pedigree() -> PedigreeGraph:
-    return PedigreeGraph(
+    return PedigreeGraph.from_frame(
         _df(
             [
                 {"id": 0, "sex": 1, "generation": 0},
@@ -111,7 +110,7 @@ def _late_founder_pedigree() -> PedigreeGraph:
 
 
 def _off_label_founder_pedigree() -> PedigreeGraph:
-    return PedigreeGraph(
+    return PedigreeGraph.from_frame(
         _df(
             [
                 {"id": 0, "sex": 1, "generation": 0},
@@ -126,15 +125,15 @@ def _off_label_founder_pedigree() -> PedigreeGraph:
 def _external_parent_pedigree() -> PedigreeGraph:
     return PedigreeGraph.from_arrays(
         ids=[10, 11, 12],
-        mothers=[99, -1, 10],
-        fathers=[-1, -1, 11],
+        mother_ids=[99, -1, 10],
+        father_ids=[-1, -1, 11],
         sex=[0, 1, 0],
         generation=[0, 0, 1],
     )
 
 
 def _two_cohort_reproduction_pedigree() -> PedigreeGraph:
-    return PedigreeGraph(
+    return PedigreeGraph.from_frame(
         _df(
             [
                 {"id": 0, "sex": 1, "generation": 0},
@@ -163,7 +162,7 @@ def _birth_year_pedigree() -> PedigreeGraph:
         {"id": 6, "sex": 0, "generation": 1, "birth_year": 1910, "father": 0, "mother": 2},
         {"id": 7, "sex": 0, "generation": 1, "birth_year": 1910, "father": 1, "mother": 3},
     ]
-    return PedigreeGraph(_df(rows).with_columns(pl.Series("birth_year", [r["birth_year"] for r in rows])))
+    return PedigreeGraph.from_frame(_df(rows).with_columns(pl.Series("birth_year", [r["birth_year"] for r in rows])))
 
 
 @dataclass(frozen=True)
@@ -234,17 +233,17 @@ def _assert_plain_python(value: object, where: str) -> None:
 
 @pytest.fixture(scope="module")
 def empty_graph() -> PedigreeGraph:
-    return PedigreeGraph.from_arrays(ids=[], mothers=[], fathers=[], sex=[])
+    return PedigreeGraph.from_arrays(ids=[], mother_ids=[], father_ids=[], sex=[])
 
 
 @pytest.fixture(scope="module")
 def line_graph() -> PedigreeGraph:
-    return PedigreeGraph(_closed_line(4))
+    return PedigreeGraph.from_frame(_closed_line(4))
 
 
 @pytest.fixture(scope="module")
 def sparse_line_graph() -> PedigreeGraph:
-    return PedigreeGraph(_relabelled(_closed_line(3), {0: 0, 1: 0, 2: 2, 3: 5}))
+    return PedigreeGraph.from_frame(_relabelled(_closed_line(3), {0: 0, 1: 0, 2: 2, 3: 5}))
 
 
 def test_empty_graph_constructs(empty_graph):
@@ -275,8 +274,8 @@ def test_empty_graph_hill_collapses_to_ne_v(empty_graph):
     assert result.generation_interval == 1.0
 
 
-def test_empty_graph_compute_all_ne_serializes(empty_graph):
-    results = pedigree_graph.compute_all_ne(empty_graph)
+def test_empty_graph_batch_serializes(empty_graph):
+    results = estimate_effective_sizes(empty_graph)
     assert set(results) == ESTIMATOR_NAMES
     for name, result in results.items():
         for field_name, value in _array_fields(result).items():
@@ -418,8 +417,10 @@ def test_scalar_ne_from_log_regression_is_label_shift_invariant():
 
 @_over(LABELLED)
 def test_rebasing_the_labels_leaves_the_estimate_unchanged(est):
-    base = est.call(PedigreeGraph(_closed_line(4)))
-    shifted = est.call(PedigreeGraph(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation"))))
+    base = est.call(PedigreeGraph.from_frame(_closed_line(4)))
+    shifted = est.call(
+        PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
+    )
     assert base.ne == shifted.ne
     for name, value in _array_fields(base).items():
         if value.dtype.kind != "f":
@@ -428,9 +429,9 @@ def test_rebasing_the_labels_leaves_the_estimate_unchanged(est):
 
 
 def test_rebasing_the_labels_shifts_only_the_ltc_final_generation():
-    base = effective_size.ne_long_term_contributions(PedigreeGraph(_closed_line(4)))
+    base = effective_size.ne_long_term_contributions(PedigreeGraph.from_frame(_closed_line(4)))
     shifted = effective_size.ne_long_term_contributions(
-        PedigreeGraph(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
+        PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
     )
     assert base.final_generation == 1
     assert shifted.final_generation == 11
@@ -438,15 +439,15 @@ def test_rebasing_the_labels_shifts_only_the_ltc_final_generation():
 
 
 def test_sparse_labels_are_reported_as_observed():
-    result = effective_size.ne_inbreeding(PedigreeGraph(_relabelled(_closed_line(2), {0: 0, 1: 2, 2: 5})))
+    result = effective_size.ne_inbreeding(PedigreeGraph.from_frame(_relabelled(_closed_line(2), {0: 0, 1: 2, 2: 5})))
     assert np.array_equal(result.generations, [0, 2, 5])
     assert np.array_equal(result.transition_from, [0, 2])
     assert np.array_equal(result.transition_to, [2, 5])
 
 
 def test_sparse_labels_spread_one_delta_f_over_the_label_gap():
-    sparse = effective_size.ne_inbreeding(PedigreeGraph(_relabelled(_closed_line(2), {0: 0, 1: 2, 2: 5})))
-    dense = effective_size.ne_inbreeding(PedigreeGraph(_closed_line(2)))
+    sparse = effective_size.ne_inbreeding(PedigreeGraph.from_frame(_relabelled(_closed_line(2), {0: 0, 1: 2, 2: 5})))
+    dense = effective_size.ne_inbreeding(PedigreeGraph.from_frame(_closed_line(2)))
     assert np.isnan(sparse.ne_per_gen[0])
     assert np.isnan(dense.ne_per_gen[0])
     assert dense.ne_per_gen[1] == pytest.approx(2.0)
@@ -511,7 +512,7 @@ def test_a_founder_is_not_its_own_descendant():
 
 def test_caballero_toro_first_transition_starts_from_the_half_baseline():
     """Self-coancestry is (1 + F) / 2, so a non-inbred baseline is 0.5, not 0."""
-    pg = PedigreeGraph(_closed_line(4).with_columns((pl.col("generation") // 2).alias("generation")))
+    pg = PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") // 2).alias("generation")))
     result = effective_size.ne_caballero_toro(pg)
     expected = _transition_ne(
         np.array([0.5, result.mean_self_coancestry_per_gen[1]]),
@@ -522,7 +523,7 @@ def test_caballero_toro_first_transition_starts_from_the_half_baseline():
 
 def test_labels_that_merge_structural_depths_propagate_by_structure():
     """Two structural depths share each label, so grouping changes but ancestry does not."""
-    pg = PedigreeGraph(_closed_line(4).with_columns((pl.col("generation") // 2).alias("generation")))
+    pg = PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") // 2).alias("generation")))
     assert np.array_equal(pg.generation_labels, [0, 0, 0, 0, 1, 1, 1, 1, 2, 2])
     assert np.array_equal(pg.depth, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4])
     m_g = _per_gen_founder_means(pg).m_g
@@ -533,7 +534,7 @@ def test_labels_that_merge_structural_depths_propagate_by_structure():
 
 
 def test_a_parent_and_its_child_in_one_label_group_still_run():
-    pg = PedigreeGraph(_relabelled(_closed_line(2), {0: 0, 1: 1, 2: 1}))
+    pg = PedigreeGraph.from_frame(_relabelled(_closed_line(2), {0: 0, 1: 1, 2: 1}))
     assert effective_size.ne_long_term_contributions(pg).final_generation == 1
     assert np.array_equal(effective_size.ne_caballero_toro(pg).generations, [0, 1])
 
@@ -576,44 +577,15 @@ def test_final_inbreeding_reports_the_observed_cohorts(sparse_line_graph):
     assert result.ne_per_gen == pytest.approx([3.73205081, 8.47975451])
 
 
-def test_legacy_inbreeding_fills_gap_label_slots(sparse_line_graph):
-    legacy = pedigree_graph.ne_inbreeding(sparse_line_graph)
-    assert legacy.mean_f_per_gen.shape == (6,)
-    assert legacy.mean_f_per_gen == pytest.approx([0.0, 0.0, 0.25, 0.0, 0.0, 0.375])
-
-
-def test_legacy_inbreeding_scatters_transitions_onto_their_target_labels(sparse_line_graph):
-    final = effective_size.ne_inbreeding(sparse_line_graph)
-    legacy = pedigree_graph.ne_inbreeding(sparse_line_graph)
-    assert legacy.ne_per_gen.shape == (6,)
-    assert np.array_equal(legacy.ne_per_gen[final.transition_to], final.ne_per_gen)
-    gaps = np.ones(legacy.ne_per_gen.shape[0], dtype=bool)
-    gaps[final.transition_to] = False
-    assert np.isnan(legacy.ne_per_gen[gaps]).all()
-
-
-def test_legacy_variance_arrays_drop_the_maximum_label(sparse_line_graph):
-    legacy = pedigree_graph.ne_variance_family_size(sparse_line_graph)
-    for name, value in _array_fields(legacy).items():
-        assert value.shape == (5,), name
-
-
-def test_legacy_ltc_iterations_are_the_final_generation_label(sparse_line_graph):
-    legacy = pedigree_graph.ne_long_term_contributions(sparse_line_graph)
-    final = effective_size.ne_long_term_contributions(sparse_line_graph)
-    assert legacy.n_iterations == 2
-    assert legacy.n_iterations == final.final_generation
-
-
-def test_compute_all_ne_returns_the_eight_estimators(sparse_line_graph):
-    assert set(pedigree_graph.compute_all_ne(sparse_line_graph)) == ESTIMATOR_NAMES
+def test_a_batch_returns_the_eight_estimators(sparse_line_graph):
+    assert set(estimate_effective_sizes(sparse_line_graph)) == ESTIMATOR_NAMES
 
 
 def test_mean_kinship_by_generation_reports_unlabelled_rows():
     pg = PedigreeGraph.from_arrays(
         ids=list(range(8)),
-        mothers=[-1, -1, 0, 0, 2, 2, 4, 4],
-        fathers=[-1, -1, 1, 1, 3, 3, 5, 5],
+        mother_ids=[-1, -1, 0, 0, 2, 2, 4, 4],
+        father_ids=[-1, -1, 1, 1, 3, 3, 5, 5],
         sex=[0, 1, 0, 1, 0, 1, 0, 1],
         generation=[0, 0, 1, 1, 2, 2, -1, -1],
     )

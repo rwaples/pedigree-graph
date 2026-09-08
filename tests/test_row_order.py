@@ -21,27 +21,15 @@ import pytest
 from conftest import parity_columns, parity_fixtures
 from relationship_predicates import AncestorWalk
 
-from pedigree_graph import (
-    REL_REGISTRY,
-    RELATIONSHIPS,
-    MissingMetadataError,
-    PedigreeGraph,
-    ResourceError,
-    compute_all_ne,
-    eligible_cohort_range,
-)
+from pedigree_graph import RELATIONSHIPS, MissingMetadataError, PedigreeGraph
+from pedigree_graph.effective_size import eligible_cohort_range, estimate_effective_sizes
 from pedigree_graph.experimental import count_pairs_bfs
 
 if TYPE_CHECKING:
     from pedigree_graph import PedigreeView
+    from pedigree_graph.summaries import GenerationKinshipSummary
 
 MAX_DEGREE = 5
-
-# In the 0.7.1 ``extract_pairs`` adapter only the lineal codes carry semantic
-# orientation; every collateral code is ``(min row, max row)``, which cannot
-# survive a permutation.  ``relationship_pairs`` orients every asymmetric code
-# and is compared in full below.
-ORIENTED_CODES = frozenset(code for code, rel in REL_REGISTRY.items() if rel.down == 0 and rel.up > 0)
 
 
 # lineal_five_generations, random_1k and every motif with a skip-generation
@@ -52,7 +40,7 @@ FIXTURE_NAMES = sorted(FIXTURES)
 
 
 def _reference_depth(fixture: dict[str, np.ndarray]) -> np.ndarray:
-    return np.asarray(PedigreeGraph(parity_columns(fixture)).generation, dtype=np.int64)
+    return np.asarray(PedigreeGraph.from_frame(parity_columns(fixture)).depth, dtype=np.int64)
 
 
 def _dated_columns(fixture: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
@@ -76,34 +64,30 @@ def _permute(columns: dict[str, np.ndarray], perm: np.ndarray) -> dict[str, np.n
 
 def _build(columns: dict[str, np.ndarray], constructor: str) -> PedigreeGraph:
     if constructor == "dict":
-        return PedigreeGraph(columns)
+        return PedigreeGraph.from_frame(columns)
     return PedigreeGraph.from_arrays(
         ids=columns["id"],
-        mothers=columns["mother"],
-        fathers=columns["father"],
-        twins=columns["twin"],
+        mother_ids=columns["mother"],
+        father_ids=columns["father"],
+        twin_ids=columns["twin"],
         sex=columns["sex"],
         birth_year=columns.get("birth_year"),
     )
 
 
-def _pair_sets(pairs: dict[str, tuple[np.ndarray, np.ndarray]], ids: np.ndarray) -> dict:
-    """``{code: (unordered ID-pair set, oriented ID-pair set)}``."""
-    sets = {}
-    for code, (first, second) in pairs.items():
-        a = ids[np.asarray(first, dtype=np.intp)].tolist()
-        b = ids[np.asarray(second, dtype=np.intp)].tolist()
-        oriented = set(zip(a, b, strict=True))
-        sets[code] = ({frozenset(pair) for pair in oriented}, oriented)
-    return sets
-
-
-def _assert_pair_sets_match(expected: dict, actual: dict, label: str, *, check_orientation: bool = True) -> None:
-    assert sorted(actual) == sorted(expected), f"{label}: category set changed"
-    for code, (unordered, oriented) in expected.items():
-        assert actual[code][0] == unordered, f"{label}/{code}: unordered ID-pair set changed"
-        if check_orientation and code in ORIENTED_CODES:
-            assert actual[code][1] == oriented, f"{label}/{code}: oriented ID-pair set changed"
+def _unordered_pair_sets(pairs: dict[str, tuple[np.ndarray, np.ndarray]], ids: np.ndarray) -> dict[str, set]:
+    """``{code: unordered ID-pair set}`` for symmetric pair arrays in graph rows."""
+    return {
+        code: {
+            frozenset(pair)
+            for pair in zip(
+                ids[np.asarray(first, dtype=np.intp)].tolist(),
+                ids[np.asarray(second, dtype=np.intp)].tolist(),
+                strict=True,
+            )
+        }
+        for code, (first, second) in pairs.items()
+    }
 
 
 def _relationship_pair_sets(
@@ -194,18 +178,22 @@ def _assert_within_envelope(expected: dict, actual: dict, depth_by_id: dict, lab
     return int(_float32_ulp_distance(want, got).max())
 
 
-def _assert_theta_matches(expected: np.ndarray, actual: np.ndarray, label: str) -> None:
+def _assert_theta_matches(expected: GenerationKinshipSummary, actual: GenerationKinshipSummary, label: str) -> None:
     """θ̄_g is a float64 mean of float32 kinship, so it inherits the ADR 0009
     cross-order envelope of its terms.  Cohort g here is structural depth (the
     fixtures carry no supplied labels), so every within-cohort pair has both
     endpoints at depth g and the per-cohort bound is ``2 * (2g + 1) * 2**-25``.
     """
-    assert actual.shape == expected.shape, f"{label}: cohort count changed"
-    np.testing.assert_array_equal(np.isnan(actual), np.isnan(expected), err_msg=f"{label}: NaN cohorts moved")
-    cohorts = np.arange(expected.shape[0], dtype=np.float64)
+    np.testing.assert_array_equal(actual.generations, expected.generations, err_msg=f"{label}: cohorts changed")
+    np.testing.assert_array_equal(actual.pair_counts, expected.pair_counts, err_msg=f"{label}: pair counts changed")
+    assert actual.unlabelled_individual_count == expected.unlabelled_individual_count, f"{label}: unlabelled changed"
+    np.testing.assert_array_equal(
+        np.isnan(actual.mean_kinship), np.isnan(expected.mean_kinship), err_msg=f"{label}: NaN cohorts moved"
+    )
+    cohorts = expected.generations.astype(np.float64)
     tolerance = np.maximum(1e-9, 2.0 * (2.0 * cohorts + 1.0) * 2.0**-25)
-    known = ~np.isnan(expected)
-    deviation = np.abs(actual[known] - expected[known])
+    known = ~np.isnan(expected.mean_kinship)
+    deviation = np.abs(actual.mean_kinship[known] - expected.mean_kinship[known])
     assert np.all(deviation <= tolerance[known]), f"{label}: max deviation {deviation.max():.3e}"
 
 
@@ -283,7 +271,7 @@ def _numeric_equal(expected, actual, path: str, rtol: float = NE_RTOL) -> None:
         assert sorted(actual) == sorted(expected), f"{path}: keys changed"
         for key in expected:
             _numeric_equal(expected[key], actual[key], f"{path}.{key}", rtol)
-    elif isinstance(expected, bool | int | str):
+    elif isinstance(expected, bool | int | str | tuple):
         assert actual == expected, f"{path}: {expected!r} vs {actual!r}"
     else:
         np.testing.assert_allclose(
@@ -309,6 +297,15 @@ def _value_or_refusal(compute):
         return (exc.code, {k: v for k, v in exc.fields.items() if k not in _ORDER_DEPENDENT_FIELDS})
 
 
+def _effective_sizes(graph: PedigreeGraph) -> dict:
+    """Every estimator's serialized result, refusals stripped of their order-dependent fields."""
+    results = estimate_effective_sizes(graph).to_dict()
+    for record in results.values():
+        if "fields" in record:
+            record["fields"] = {k: v for k, v in record["fields"].items() if k not in _ORDER_DEPENDENT_FIELDS}
+    return results
+
+
 def _assert_all_ne_matches(expected: dict, actual: dict, label: str) -> None:
     assert sorted(actual) == sorted(expected), f"{label}: estimator set changed"
     for estimator, fields in expected.items():
@@ -327,74 +324,47 @@ class _Snapshot:
         ids = np.asarray(columns["id"])
         graph = _build(columns, constructor)
         id_list = ids.tolist()
-        self.depth_by_id = dict(zip(id_list, np.asarray(graph.generation).tolist(), strict=True))
+        self.depth_by_id = dict(zip(id_list, np.asarray(graph.depth).tolist(), strict=True))
 
         self.by_id = {
-            "generation": dict(self.depth_by_id),
-            "n_ancestors": dict(zip(id_list, np.asarray(graph.compute_n_ancestors()).tolist(), strict=True)),
+            "depth": dict(self.depth_by_id),
             "distinct_ancestor_counts": dict(zip(id_list, graph.distinct_ancestor_counts().tolist(), strict=True)),
             "descendant_path_counts": dict(zip(id_list, graph.descendant_path_counts().tolist(), strict=True)),
             "connected_component_ids": dict(zip(id_list, graph.connected_component_ids().tolist(), strict=True)),
             "inbreeding": dict(zip(id_list, np.asarray(graph.inbreeding()).tolist(), strict=True)),
         }
-        self.n_descendants_overflow = False
-        try:
-            descendants = np.asarray(graph.compute_n_descendants())
-        except ResourceError:
-            self.n_descendants_overflow = True
-        else:
-            self.by_id["n_descendants"] = dict(zip(id_list, descendants.tolist(), strict=True))
 
-        pairs = graph.extract_pairs(max_degree=MAX_DEGREE)
-        self.pairs = _pair_sets(pairs, ids)
-        kinship = graph.compute_pair_kinship(pairs)
+        pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
+        kinship = graph.pair_kinship(pairs)
         self.pair_kinship = {
             _id_key(int(a), int(b)): float(value)
             for code, (first, second) in pairs.items()
-            for a, b, value in zip(
-                ids[np.asarray(first, dtype=np.intp)],
-                ids[np.asarray(second, dtype=np.intp)],
-                kinship[code],
-                strict=True,
-            )
+            for a, b, value in zip(ids[first], ids[second], kinship[code], strict=True)
         }
-        full_sib, maternal, paternal = graph.sibling_pairs()
-        self.sibling_pairs = _pair_sets({"FS": full_sib, "MHS": maternal, "PHS": paternal}, ids)
+        full_sib, maternal, paternal = graph._sibling_pairs()
+        self.sibling_pairs = _unordered_pair_sets({"FS": full_sib, "MHS": maternal, "PHS": paternal}, ids)
         self.relationship_pairs = _relationship_pair_sets(graph, ids)
 
-        self.count_pairs = graph.count_pairs(max_degree=MAX_DEGREE)
-        self.count_pairs_streaming = graph.count_pairs_streaming(max_degree=MAX_DEGREE)
+        self.relationship_counts = dict(graph.relationship_counts(max_degree=MAX_DEGREE))
+        self.estimated_counts = dict(graph.estimate_relationship_counts(max_degree=MAX_DEGREE))
         self.count_pairs_bfs = count_pairs_bfs(graph, max_degree=MAX_DEGREE)
 
         self.complete_kinship = _matrix_by_id(graph.kinship_matrix(), ids)
         self.approx_kinship = _matrix_by_id(
             graph.approximate_kinship_matrix(min_propagated_kinship=APPROX_THRESHOLD), ids
         )
-        self.theta = np.asarray(graph.per_gen_mean_kinship())
+        self.theta = graph.mean_kinship_by_generation()
 
         # A fixture without a parent-child edge to date is refused by the
         # age-based helpers in every row order; compare the refusal itself.
         self.generation_interval = _value_or_refusal(lambda: graph.generation_interval)
         self.cohort_range = _value_or_refusal(lambda: eligible_cohort_range(graph))
-        self.all_ne = {code: result.to_dict() for code, result in compute_all_ne(graph).items()}
-
-        keep = np.flatnonzero(np.isin(ids, subsample_ids))
-        sub = {key: np.asarray(value)[keep] for key, value in columns.items()}
-        sub_graph = PedigreeGraph.from_subsample(columns, sub)
-        self.subsample_pairs = _pair_sets(sub_graph.extract_pairs(max_degree=MAX_DEGREE), np.asarray(sub["id"]))
+        self.all_ne = _effective_sizes(graph)
 
         view = graph.view(ids=subsample_ids)
         self.view_relationship_pairs = _relationship_pair_sets(
             view, view.ids, walk=AncestorWalk(graph), rows=view.graph_rows
         )
-
-
-def _descendants_or_refusal(graph: PedigreeGraph) -> object:
-    """Descendant path counts, or the structured refusal deep_inbred_60g earns."""
-    try:
-        return np.asarray(graph.compute_n_descendants()).tolist()
-    except ResourceError as exc:
-        return exc.code
 
 
 @pytest.mark.parametrize("constructor", ["dict", "from_arrays"])
@@ -412,27 +382,17 @@ def test_every_operation_is_invariant_under_row_order(name, constructor, capsys)
 
         for field, expected in reference.by_id.items():
             assert actual.by_id[field] == expected, f"{where}: {field} changed"
-        assert actual.n_descendants_overflow == reference.n_descendants_overflow
 
-        _assert_pair_sets_match(reference.pairs, actual.pairs, f"{where}/extract_pairs")
-        _assert_pair_sets_match(reference.sibling_pairs, actual.sibling_pairs, f"{where}/sibling_pairs")
+        assert actual.sibling_pairs == reference.sibling_pairs, f"{where}: sibling pair sets changed"
         _assert_relationship_pairs_match(
             reference.relationship_pairs, actual.relationship_pairs, f"{where}/relationship_pairs"
         )
         _assert_relationship_pairs_match(
             reference.view_relationship_pairs, actual.view_relationship_pairs, f"{where}/view.relationship_pairs"
         )
-        # from_subsample re-canonicalises every pair to (min caller row, max
-        # caller row) in _pair_utils, so even the lineal codes lose orientation.
-        _assert_pair_sets_match(
-            reference.subsample_pairs,
-            actual.subsample_pairs,
-            f"{where}/from_subsample",
-            check_orientation=False,
-        )
 
-        assert actual.count_pairs == reference.count_pairs, f"{where}: count_pairs changed"
-        assert actual.count_pairs_streaming == reference.count_pairs_streaming, f"{where}: streaming changed"
+        assert actual.relationship_counts == reference.relationship_counts, f"{where}: relationship_counts changed"
+        assert actual.estimated_counts == reference.estimated_counts, f"{where}: estimated counts changed"
         assert actual.count_pairs_bfs == reference.count_pairs_bfs, f"{where}: count_pairs_bfs changed"
 
         depths = reference.depth_by_id
@@ -449,10 +409,10 @@ def test_every_operation_is_invariant_under_row_order(name, constructor, capsys)
             _assert_within_envelope(reference.pair_kinship, actual.pair_kinship, depths, f"{where}/pair_kinship"),
         )
 
-        _assert_theta_matches(reference.theta, actual.theta, f"{where}/per_gen_mean_kinship")
+        _assert_theta_matches(reference.theta, actual.theta, f"{where}/mean_kinship_by_generation")
         assert actual.generation_interval == reference.generation_interval, f"{where}: generation_interval changed"
         assert actual.cohort_range == reference.cohort_range, f"{where}: eligible_cohort_range changed"
-        _assert_all_ne_matches(reference.all_ne, actual.all_ne, f"{where}/compute_all_ne")
+        _assert_all_ne_matches(reference.all_ne, actual.all_ne, f"{where}/estimate_effective_sizes")
 
     with capsys.disabled():
         print(f"cross-order drift {name}/{constructor}: {worst}")
@@ -468,7 +428,7 @@ def test_pair_kinship_is_bit_identical_to_the_matrix_under_permutation(name):
         graph = _build(_permute(columns, perm), "dict")
         pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
         kinship = graph.pair_kinship(pairs)
-        K = graph.kinship_matrix(0.0)
+        K = graph.kinship_matrix()
         for code, values in kinship.items():
             if len(values) == 0:
                 continue
@@ -478,7 +438,7 @@ def test_pair_kinship_is_bit_identical_to_the_matrix_under_permutation(name):
 
 
 @pytest.mark.parametrize("name", ["random_1k", "deep_inbred_60g"])
-def test_per_gen_mean_kinship_groups_by_the_supplied_label(name):
+def test_mean_kinship_by_generation_groups_by_the_supplied_label(name):
     """Cohorts follow the label even when a cohort spans two structural depths.
 
     ``depth // 2`` merges each pair of adjacent depths into one cohort, so the
@@ -490,13 +450,16 @@ def test_per_gen_mean_kinship_groups_by_the_supplied_label(name):
     labels = _reference_depth(fixture) // 2
     columns = {**parity_columns(fixture), "generation": labels}
 
-    streamed = PedigreeGraph(columns)
-    from_matrix = PedigreeGraph(columns)
-    from_matrix.kinship_matrix(0.0)
+    streamed = PedigreeGraph.from_frame(columns)
+    from_matrix = PedigreeGraph.from_frame(columns)
+    from_matrix.kinship_matrix()
 
-    theta = streamed.per_gen_mean_kinship()
-    assert theta.shape[0] == int(labels.max()) + 1
-    np.testing.assert_allclose(theta, from_matrix.per_gen_mean_kinship(), rtol=0, atol=1e-12, equal_nan=True)
+    theta = streamed.mean_kinship_by_generation()
+    walked = from_matrix.mean_kinship_by_generation()
+    np.testing.assert_array_equal(theta.generations, np.unique(labels))
+    np.testing.assert_array_equal(walked.generations, theta.generations)
+    np.testing.assert_array_equal(walked.pair_counts, theta.pair_counts)
+    np.testing.assert_allclose(theta.mean_kinship, walked.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
 
 
 @pytest.mark.parametrize("labelling", ["zeros", "shuffled", "offset"])
@@ -511,27 +474,27 @@ def test_generation_labels_do_not_drive_structure(name, labelling):
         "offset": depth + 7,
     }[labelling]
 
-    unlabelled = PedigreeGraph(columns)
-    labelled = PedigreeGraph({**columns, "generation": labels})
+    unlabelled = PedigreeGraph.from_frame(columns)
+    labelled = PedigreeGraph.from_frame({**columns, "generation": labels})
 
-    assert labelled.generation.tolist() == labels.tolist()
+    assert labelled.generation_labels.tolist() == labels.tolist()
     np.testing.assert_array_equal(labelled.depth, unlabelled.depth)
     np.testing.assert_array_equal(labelled.inbreeding(), unlabelled.inbreeding())
-    assert _descendants_or_refusal(labelled) == _descendants_or_refusal(unlabelled)
+    np.testing.assert_array_equal(labelled.descendant_path_counts(), unlabelled.descendant_path_counts())
 
-    expected_pairs = unlabelled.extract_pairs(max_degree=MAX_DEGREE)
-    actual_pairs = labelled.extract_pairs(max_degree=MAX_DEGREE)
-    assert sorted(actual_pairs) == sorted(expected_pairs)
+    expected_pairs = unlabelled.relationship_pairs(max_degree=MAX_DEGREE)
+    actual_pairs = labelled.relationship_pairs(max_degree=MAX_DEGREE)
+    assert list(actual_pairs) == list(expected_pairs)
     for code, (first, second) in expected_pairs.items():
-        np.testing.assert_array_equal(actual_pairs[code][0], first)
-        np.testing.assert_array_equal(actual_pairs[code][1], second)
+        np.testing.assert_array_equal(actual_pairs[code].first_rows, first)
+        np.testing.assert_array_equal(actual_pairs[code].second_rows, second)
 
-    expected_kinship = unlabelled.compute_pair_kinship(expected_pairs)
-    actual_kinship = labelled.compute_pair_kinship(actual_pairs)
+    expected_kinship = unlabelled.pair_kinship(expected_pairs)
+    actual_kinship = labelled.pair_kinship(actual_pairs)
     for code, values in expected_kinship.items():
         assert actual_kinship[code].tobytes() == values.tobytes(), f"{code}: pair kinship moved with the label"
 
-    expected_k, actual_k = unlabelled.kinship_matrix(0.0), labelled.kinship_matrix(0.0)
+    expected_k, actual_k = unlabelled.kinship_matrix(), labelled.kinship_matrix()
     np.testing.assert_array_equal(expected_k.indptr, actual_k.indptr)
     np.testing.assert_array_equal(expected_k.indices, actual_k.indices)
     assert actual_k.data.tobytes() == expected_k.data.tobytes()

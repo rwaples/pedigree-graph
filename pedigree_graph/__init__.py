@@ -44,44 +44,13 @@ Threads:
         changing it after the budget is committed is a RuntimeError.
 
 Effective population size (Ne):
-    Result classes: NeCaballeroToroResult, NeCoancestryResult, NeHillResult,
-        NeIndividualDeltaFResult, NeInbreedingResult, NeLTCResult,
-        NeSexRatioResult, NeVarianceResult
-    Estimators: ne_caballero_toro, ne_coancestry, ne_hill_overlapping,
-        ne_inbreeding, ne_individual_delta_f, ne_long_term_contributions,
-        ne_sex_ratio, ne_variance_family_size
-    Convenience: compute_all_ne (runs all eight estimators, sharing
-        cached F, streamed θ̄, and founder-contribution summaries where
-        applicable)
+    pedigree_graph.effective_size — estimators, result classes,
+        estimate_effective_sizes, and the cohort utilities
 """
 
-from pedigree_graph._cohort_utils import (
-    CohortWindow,
-    eligible_cohort_range,
-)
 from pedigree_graph._core import (
     FrameLike,
     PedigreeGraph,
-)
-from pedigree_graph._effective_size import (
-    GenerationInterval,
-    NeCaballeroToroResult,
-    NeCoancestryResult,
-    NeHillResult,
-    NeInbreedingResult,
-    NeIndividualDeltaFResult,
-    NeLTCResult,
-    NeSexRatioResult,
-    NeVarianceResult,
-    compute_all_ne,
-    ne_caballero_toro,
-    ne_coancestry,
-    ne_hill_overlapping,
-    ne_inbreeding,
-    ne_individual_delta_f,
-    ne_long_term_contributions,
-    ne_sex_ratio,
-    ne_variance_family_size,
 )
 from pedigree_graph._errors import (
     MissingMetadataError,
@@ -107,18 +76,8 @@ __all__ = [
     "PAIR_KINSHIP",  # 0.8.0-DELETE
     "RELATIONSHIPS",
     "REL_REGISTRY",  # 0.8.0-DELETE
-    "CohortWindow",
     "FrameLike",
-    "GenerationInterval",
     "MissingMetadataError",
-    "NeCaballeroToroResult",
-    "NeCoancestryResult",
-    "NeHillResult",
-    "NeInbreedingResult",
-    "NeIndividualDeltaFResult",
-    "NeLTCResult",
-    "NeSexRatioResult",
-    "NeVarianceResult",
     "PedigreeGraph",
     "PedigreeValidationError",
     "PedigreeView",
@@ -128,15 +87,5 @@ __all__ = [
     "RelationshipPairBlock",
     "RelationshipPairs",
     "ResourceError",
-    "compute_all_ne",
     "configure_threads",
-    "eligible_cohort_range",
-    "ne_caballero_toro",
-    "ne_coancestry",
-    "ne_hill_overlapping",
-    "ne_inbreeding",
-    "ne_individual_delta_f",
-    "ne_long_term_contributions",
-    "ne_sex_ratio",
-    "ne_variance_family_size",
 ]

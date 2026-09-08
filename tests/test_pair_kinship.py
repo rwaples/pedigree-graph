@@ -52,7 +52,7 @@ MOTIF_NAMES = sorted(pedigrees.motif_fixtures())
 
 
 def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph(parity_columns(FIXTURES[name]))
+    return PedigreeGraph.from_frame(parity_columns(FIXTURES[name]))
 
 
 def _all_pairs(n: int) -> tuple[np.ndarray, np.ndarray]:
@@ -60,7 +60,7 @@ def _all_pairs(n: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _matrix_values(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> np.ndarray:
-    return np.asarray(graph.kinship_matrix(0.0)[first, second], dtype=np.float32).ravel()
+    return np.asarray(graph.kinship_matrix()[first, second], dtype=np.float32).ravel()
 
 
 def _ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -71,17 +71,17 @@ def _ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def _sib_mating() -> PedigreeGraph:
     """0,1 founders; 2,3 full sibs; 4 = child(2,3) with F = 0.25."""
-    return PedigreeGraph(_ped_sib_mating())
+    return PedigreeGraph.from_frame(_ped_sib_mating())
 
 
 def _mz_twins_with_descendants() -> PedigreeGraph:
     """4,5 MZ twins of full-sib parents (2,3); 8 = child(4,6), 9 = child(5,7)."""
-    return PedigreeGraph(_ped_mz_twins_with_descendants())
+    return PedigreeGraph.from_frame(_ped_mz_twins_with_descendants())
 
 
 def _double_first_cousins() -> PedigreeGraph:
     """(8,9) and (9,10) are double first cousins: phi = 0.125, not the nominal 1/16."""
-    return PedigreeGraph(_ped_double_first_cousins())
+    return PedigreeGraph.from_frame(_ped_double_first_cousins())
 
 
 class TestCallForms:
@@ -159,7 +159,7 @@ class TestValues:
         assert _double_first_cousins().pair_kinship([8, 9], [9, 10]).tolist() == [0.125, 0.125]
 
     def test_half_first_cousin_parents_are_not_pruned(self):
-        graph = PedigreeGraph(
+        graph = PedigreeGraph.from_frame(
             {
                 "id": np.arange(10),
                 "mother": np.array([-1, -1, -1, -1, -1, 0, 0, 5, 6, 7]),
@@ -180,7 +180,7 @@ class TestValues:
         graph = _graph("random_1k")
         first, second = _all_pairs(graph.n_individuals)
         values = graph.pair_kinship(first, second)
-        matrix = graph.kinship_matrix(0.0)
+        matrix = graph.kinship_matrix()
         support = np.asarray(matrix[first, second] != 0).ravel()
         np.testing.assert_array_equal(values != 0, support)
 
@@ -208,11 +208,11 @@ class TestWithinGraphParity:
         fresh = _graph(name)
         before = pairs_of(fresh)
         cached = _graph(name)
-        cached.kinship_matrix(0.0)
+        cached.kinship_matrix()
         after = pairs_of(cached)
         for code in RELATIONSHIPS:
             assert before[code].tobytes() == after[code].tobytes(), code
-        fresh.kinship_matrix(0.0)
+        fresh.kinship_matrix()
         again = pairs_of(fresh)
         for code in RELATIONSHIPS:
             assert before[code].tobytes() == again[code].tobytes(), code
@@ -220,7 +220,7 @@ class TestWithinGraphParity:
     def test_relationship_pairs_of_a_reordered_graph_match_its_own_matrix(self):
         fixture = FIXTURES["deep_inbred_60g"]
         perm = np.random.default_rng(5).permutation(len(fixture["ids"]))
-        graph = PedigreeGraph({key: value[perm] for key, value in parity_columns(fixture).items()})
+        graph = PedigreeGraph.from_frame({key: value[perm] for key, value in parity_columns(fixture).items()})
         pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
         values = graph.pair_kinship(pairs)
         for code, block in pairs.items():
@@ -241,7 +241,7 @@ class TestCrossOrderEnvelope:
         differing = 0
         for seed in (11, 12):
             perm = np.random.default_rng(seed).permutation(n)
-            permuted = PedigreeGraph({key: value[perm] for key, value in parity_columns(fixture).items()})
+            permuted = PedigreeGraph.from_frame({key: value[perm] for key, value in parity_columns(fixture).items()})
             inverse = np.empty(n, dtype=np.intp)
             inverse[perm] = np.arange(n)
             got = permuted.pair_kinship(inverse[first], inverse[second])
@@ -562,42 +562,11 @@ class TestPersistentMemo:
         cold = _graph("deep_inbred_60g").pair_kinship(rows, rows)
         assert graph.pair_kinship(rows, rows).tobytes() == cold.tobytes()
 
-    def test_the_legacy_adapter_does_not_retain(self):
-        graph = _graph("deep_inbred_60g")
-        pairs = graph.extract_pairs(max_degree=2)
-        graph.compute_pair_kinship(pairs)
-        assert graph._pair_memo is None
-        import polars as pl
-
-        frame = _ped_mz_twins_with_descendants()
-        sub = PedigreeGraph.from_subsample(frame, frame.filter(pl.col("id").is_in([8, 9])))
-        sub.compute_pair_kinship({"x": (np.array([0]), np.array([1]))})
-        assert sub._pair_memo is None
-        assert sub._legacy_view is not None
-        assert sub._legacy_view._graph._pair_memo is None
-
     def test_the_empty_memo_starts_cold(self):
         memo = _PairMemo()
         assert memo.capacity == 0
         assert memo.entries == 0
         assert memo.nbytes == 0
-
-
-class TestLegacyAdapter:
-    def test_compute_pair_kinship_returns_the_new_values(self):
-        graph = _graph("deep_inbred_60g")
-        pairs = graph.extract_pairs(max_degree=MAX_DEGREE)
-        legacy = graph.compute_pair_kinship(pairs)
-        for code, (first, second) in pairs.items():
-            assert legacy[code].dtype == np.float32
-            assert legacy[code].tobytes() == graph.pair_kinship(np.asarray(first), np.asarray(second)).tobytes(), code
-
-    def test_from_subsample_rows_are_caller_space(self):
-        import polars as pl
-
-        frame = _ped_mz_twins_with_descendants()
-        sub = PedigreeGraph.from_subsample(frame, frame.filter(pl.col("id").is_in([8, 9])).reverse())
-        assert sub.compute_pair_kinship({"x": (np.array([0]), np.array([1]))})["x"].tolist() == [0.15625]
 
 
 class TestThreads:
@@ -618,10 +587,6 @@ class TestThreads:
         with pytest.raises(RuntimeError):
             configure_threads(3)
 
-    def test_adapter_leaves_the_budget_uncommitted(self):
-        _sib_mating().compute_pair_kinship({"x": (np.array([0]), np.array([1]))})
-        configure_threads(3)
-
 
 # Closest categories spanning degrees 0-3, both half-sib kinds included.  A
 # kernel call on random_30k costs its ancestral closure rather than its pair
@@ -633,7 +598,7 @@ MATRIX_GATE_CATEGORIES = ("MZ", "FS", "MHS", "PHS", "Av", "1C")
 @pytest.mark.slow
 def test_random_30k_integration():
     fixture = pedigrees.build_random("random_30k", pedigrees.LARGE_FIXTURES["random_30k"])
-    graph = PedigreeGraph(parity_columns(fixture))
+    graph = PedigreeGraph.from_frame(parity_columns(fixture))
     pairs = graph.relationship_pairs(max_degree=3)
     values = graph.pair_kinship(pairs)
     assert sum(len(block) for block in pairs.values()) > 0

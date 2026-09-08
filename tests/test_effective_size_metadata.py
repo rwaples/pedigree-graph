@@ -13,8 +13,9 @@ import warnings
 import numpy as np
 import pytest
 
-from pedigree_graph import MissingMetadataError, PedigreeGraph, compute_all_ne
+from pedigree_graph import MissingMetadataError, PedigreeGraph
 from pedigree_graph import effective_size as es
+from pedigree_graph.effective_size import UnavailableEffectiveSize, estimate_effective_sizes
 
 _IDS = np.arange(8)
 _MOTHER = np.array([-1, -1, 0, 0, 2, 2, 4, 4])
@@ -183,25 +184,33 @@ def test_empty_graph_bypasses_every_guard(estimator):
         assert estimator(pg).ne is None
 
 
-def test_compute_all_ne_disables_only_the_refused_estimators():
-    results = compute_all_ne(_graph(father=np.array([-1, -1, 1, 1, 3, -1, 5, 5])))
+@pytest.mark.parametrize(
+    ("overrides", "code", "disabled"),
+    [
+        ({"father": np.array([-1, -1, 1, 1, 3, -1, 5, 5])}, "incomplete_parentage", tuple(map(_name, NEEDS_PARENTAGE))),
+        ({"generation": np.array([0, 0, 1, 1, 2, 2, -1, -1])}, "missing_generation_labels", None),
+    ],
+    ids=["incomplete_parentage", "partial_generation_labels"],
+)
+def test_a_batch_reports_the_guard_that_disabled_each_estimator(overrides, code, disabled):
+    results = estimate_effective_sizes(_graph(**overrides))
     assert len(results) == 8
-    assert results["ne_long_term_contributions"].ne is None
-    assert results["ne_caballero_toro"].ne is None
-    assert np.isnan(results["ne_caballero_toro"].mean_self_coancestry_per_gen).all()
-    assert results["ne_inbreeding"].ne is not None
-    assert results["ne_sex_ratio"].ne is not None
+    expected = tuple(map(_name, ALL)) if disabled is None else disabled
+    for name, result in results.items():
+        refused = isinstance(result, UnavailableEffectiveSize)
+        assert refused == (name in expected), name
+        if refused:
+            assert result.code == code, name
+            assert result.fields["operation"] == name, name
+    for name in ("ne_inbreeding", "ne_sex_ratio"):
+        if name not in expected:
+            assert results[name].ne is not None, name
 
 
-def test_compute_all_ne_collapses_hill_when_a_parent_role_has_no_known_ages():
+def test_a_batch_refuses_hill_when_a_parent_role_has_no_known_ages():
     birth_year = np.array([1900, -1, 1920, 1920, 1940, -1, 1960, 1960])
     pg = _graph(birth_year=birth_year, father=np.array([-1, -1, 1, 1, 1, 1, 5, 5]))
-    hill = compute_all_ne(pg)["ne_hill_overlapping"]
-    assert hill.collapses_to_ne_v
-    assert hill.ne is None
-
-
-def test_compute_all_ne_still_rejects_partial_generation_labels():
-    with pytest.raises(MissingMetadataError) as info:
-        compute_all_ne(_graph(generation=np.array([0, 0, 1, 1, 2, 2, -1, -1])))
-    assert info.value.code == "missing_generation_labels"
+    hill = estimate_effective_sizes(pg, ["ne_hill_overlapping"])["ne_hill_overlapping"]
+    assert hill.reason == "missing_metadata"
+    assert hill.code == "insufficient_parent_age_data"
+    assert hill.fields["missing_parent_roles"] == ("father",)

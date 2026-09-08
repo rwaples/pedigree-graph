@@ -1,9 +1,8 @@
-"""Construction: the 0.8 entry points, the 0.7.1 compatibility forms, and MZ validation.
+"""Construction: the two entry points, their absent defaults, and MZ validation.
 
-Pins slice 1c. ``from_frame`` and the canonical keyword-only ``from_arrays`` apply no
-defaults; the loose constructor, ``from_dataframe``, and the ``mothers``/``fathers`` form
-keep the 0.7.1 ones. Every entry point parses through :mod:`pedigree_graph._input`, so all
-of them raise the same structured errors and enforce the same MZ pair contract.
+``from_frame`` and the keyword-only ``from_arrays`` apply no defaults: an absent
+optional column reads as absent.  Both parse through :mod:`pedigree_graph._input`,
+so they raise the same structured errors and enforce the same MZ pair contract.
 """
 
 import numpy as np
@@ -73,30 +72,9 @@ def _from_arrays_canonical(data):
     )
 
 
-def _from_arrays_legacy(data):
-    return PedigreeGraph.from_arrays(
-        ids=data["id"],
-        mothers=data["mother"],
-        fathers=data["father"],
-        twins=data.get("twin"),
-        sex=data.get("sex"),
-    )
-
-
-def _loose_constructor(data):
-    return PedigreeGraph(data)
-
-
-def _from_dataframe(data):
-    return PedigreeGraph.from_dataframe(pl.DataFrame(data))
-
-
 ENTRY_POINTS = [
     pytest.param(_from_frame, id="from_frame"),
-    pytest.param(_from_arrays_canonical, id="from_arrays_canonical"),
-    pytest.param(_from_arrays_legacy, id="from_arrays_legacy"),
-    pytest.param(_loose_constructor, id="loose_constructor"),
-    pytest.param(_from_dataframe, id="from_dataframe"),
+    pytest.param(_from_arrays_canonical, id="from_arrays"),
 ]
 
 
@@ -144,76 +122,26 @@ class TestFromArraysCanonical:
         assert pg.birth_year.tolist() == [1980, 1980, 2010, 2010]
 
 
-class TestLegacyForms:
-    def test_loose_constructor(self):
-        pg = PedigreeGraph(_trio())
-        assert pg.mother_rows.tolist() == [-1, -1, 0]
-
-    def test_from_dataframe(self):
-        pg = PedigreeGraph.from_dataframe(pl.DataFrame(_trio()))
-        assert pg.mother_rows.tolist() == [-1, -1, 0]
-
-    def test_from_arrays_positional(self):
-        pg = PedigreeGraph.from_arrays(IDS, MOTHERS, FATHERS)
-        assert pg.mother_rows.tolist() == [-1, -1, 0]
-
-    def test_from_arrays_legacy_keywords(self):
-        pg = PedigreeGraph.from_arrays(ids=IDS, mothers=MOTHERS, fathers=FATHERS)
-        assert pg.mother_rows.tolist() == [-1, -1, 0]
-
-    def test_from_arrays_all_positional_columns(self):
-        data = _full()
-        pg = PedigreeGraph.from_arrays(
-            data["id"],
-            data["mother"],
-            data["father"],
-            data["twin"],
-            data["generation"],
-            data["birth_year"],
-            data["sex"],
-        )
-        assert pg.twin_rows.tolist() == [-1, -1, 3, 2]
-        assert pg.generation.tolist() == [0, 0, 1, 1]
-        assert pg.sex.tolist() == [0, 1, 1, 1]
-
-
-class TestFromArraysDispatch:
+class TestFromArraysCallForms:
     @pytest.mark.parametrize(
         "call",
         [
             pytest.param(
-                lambda: PedigreeGraph.from_arrays(ids=IDS, mothers=MOTHERS, mother_ids=MOTHERS, father_ids=FATHERS),
-                id="mothers_and_mother_ids",
-            ),
-            pytest.param(
                 lambda: PedigreeGraph.from_arrays(IDS, mother_ids=MOTHERS, father_ids=FATHERS),
-                id="canonical_keywords_with_a_positional",
+                id="ids_passed_positionally",
             ),
-            pytest.param(lambda: PedigreeGraph.from_arrays(ids=IDS), id="neither_family"),
             pytest.param(
-                lambda: PedigreeGraph.from_arrays(ids=IDS, mothers=MOTHERS, fathers=FATHERS, sex_encoding="plink"),
-                id="sex_encoding_with_the_legacy_form",
+                lambda: PedigreeGraph.from_arrays(IDS, MOTHERS, FATHERS),
+                id="every_column_positionally",
             ),
-            pytest.param(lambda: PedigreeGraph.from_arrays(ids=IDS, mothers=MOTHERS), id="legacy_without_fathers"),
-            pytest.param(
-                lambda: PedigreeGraph.from_arrays(IDS, MOTHERS, FATHERS, twin_ids=np.full(len(IDS), -1)),
-                id="twin_ids_with_the_legacy_form",
-            ),
+            pytest.param(lambda: PedigreeGraph.from_arrays(ids=IDS), id="only_ids"),
             pytest.param(
                 lambda: PedigreeGraph.from_arrays(mother_ids=MOTHERS, father_ids=FATHERS),
-                id="canonical_without_ids",
+                id="without_ids",
             ),
             pytest.param(
                 lambda: PedigreeGraph.from_arrays(ids=IDS, mother_ids=MOTHERS),
-                id="canonical_without_father_ids",
-            ),
-            pytest.param(
-                lambda: PedigreeGraph.from_arrays(IDS, MOTHERS, FATHERS, None, None, None, None, None),
-                id="eight_positional_arguments",
-            ),
-            pytest.param(
-                lambda: PedigreeGraph.from_arrays(IDS, MOTHERS, FATHERS, ids=IDS),
-                id="ids_positionally_and_by_keyword",
+                id="without_father_ids",
             ),
         ],
     )
@@ -243,28 +171,6 @@ class TestCanonicalDefaults:
         assert pg.birth_year is None
 
 
-class TestLegacyDefaults:
-    @pytest.mark.parametrize("build", [_from_arrays_legacy, _loose_constructor, _from_dataframe])
-    def test_omitted_sex_is_all_zero_int8(self, build):
-        pg = build(_trio())
-        assert pg.sex.dtype == np.int8
-        np.testing.assert_array_equal(pg.sex, np.zeros(3, dtype=np.int8))
-
-    @pytest.mark.parametrize("build", [_from_arrays_legacy, _loose_constructor, _from_dataframe])
-    def test_defaulted_sex_is_read_only_and_stable(self, build):
-        pg = build(_trio())
-        assert pg.sex.flags.writeable is False
-        assert pg.sex is pg.sex
-        with pytest.raises(ValueError, match="read-only"):
-            pg.sex[0] = 1
-
-    @pytest.mark.parametrize("build", [_from_arrays_legacy, _loose_constructor, _from_dataframe])
-    def test_omitted_generation_falls_back_to_depth(self, build):
-        pg = build(_trio())
-        assert pg.generation_labels is None
-        np.testing.assert_array_equal(pg.generation, pg.depth)
-
-
 class TestSexEncoding:
     def test_plink_through_from_frame(self):
         pg = PedigreeGraph.from_frame(_trio(sex=[1, 2, 0]), sex_encoding="plink")
@@ -283,14 +189,6 @@ class TestSexEncoding:
     def test_simace_is_the_default_and_stores_values_unchanged(self):
         pg = PedigreeGraph.from_frame(_trio(sex=[1, 0, -1]))
         assert pg.sex.tolist() == [1, 0, -1]
-
-    def test_loose_constructor_has_no_sex_encoding_parameter(self):
-        with pytest.raises(TypeError):
-            PedigreeGraph(_trio(sex=[1, 2, 0]), sex_encoding="plink")
-
-    def test_from_dataframe_has_no_sex_encoding_parameter(self):
-        with pytest.raises(TypeError):
-            PedigreeGraph.from_dataframe(pl.DataFrame(_trio(sex=[1, 2, 0])), sex_encoding="plink")
 
 
 _SHARED_PROPERTIES = (
@@ -318,10 +216,10 @@ def _assert_same_graph(left_graph, right_graph):
             np.testing.assert_array_equal(left, right, err_msg=name)
 
 
-class TestCanonicalLegacyEquivalence:
-    def test_from_arrays_forms_agree_on_full_data(self):
+class TestEntryPointEquivalence:
+    def test_from_frame_agrees_with_from_arrays_on_full_data(self):
         data = _full()
-        canonical = PedigreeGraph.from_arrays(
+        from_arrays = PedigreeGraph.from_arrays(
             ids=data["id"],
             mother_ids=data["mother"],
             father_ids=data["father"],
@@ -330,51 +228,13 @@ class TestCanonicalLegacyEquivalence:
             generation=data["generation"],
             birth_year=data["birth_year"],
         )
-        legacy = PedigreeGraph.from_arrays(
-            ids=data["id"],
-            mothers=data["mother"],
-            fathers=data["father"],
-            twins=data["twin"],
-            sex=data["sex"],
-            generation=data["generation"],
-            birth_year=data["birth_year"],
-        )
-        _assert_same_graph(canonical, legacy)
-        np.testing.assert_array_equal(canonical.sex, legacy.sex)
+        _assert_same_graph(PedigreeGraph.from_frame(data), from_arrays)
+        np.testing.assert_array_equal(PedigreeGraph.from_frame(data).sex, from_arrays.sex)
 
-    def test_from_arrays_forms_differ_only_in_the_sex_default(self):
-        canonical = PedigreeGraph.from_arrays(ids=IDS, mother_ids=MOTHERS, father_ids=FATHERS)
-        legacy = PedigreeGraph.from_arrays(ids=IDS, mothers=MOTHERS, fathers=FATHERS)
-        _assert_same_graph(canonical, legacy)
-        assert canonical.sex is None
-        np.testing.assert_array_equal(legacy.sex, np.zeros(3, dtype=np.int8))
-
-    def test_from_frame_agrees_with_the_loose_constructor(self):
-        data = _full()
-        _assert_same_graph(PedigreeGraph.from_frame(data), PedigreeGraph(data))
-
-    def test_legacy_positional_agrees_with_legacy_keywords(self):
-        data = _full()
-        positional = PedigreeGraph.from_arrays(
-            data["id"],
-            data["mother"],
-            data["father"],
-            data["twin"],
-            data["generation"],
-            data["birth_year"],
-            data["sex"],
-        )
-        keywords = PedigreeGraph.from_arrays(
-            ids=data["id"],
-            mothers=data["mother"],
-            fathers=data["father"],
-            twins=data["twin"],
-            generation=data["generation"],
-            birth_year=data["birth_year"],
-            sex=data["sex"],
-        )
-        _assert_same_graph(positional, keywords)
-        np.testing.assert_array_equal(positional.sex, keywords.sex)
+    def test_from_frame_agrees_with_from_arrays_on_required_columns_only(self):
+        from_arrays = PedigreeGraph.from_arrays(ids=IDS, mother_ids=MOTHERS, father_ids=FATHERS)
+        _assert_same_graph(PedigreeGraph.from_frame(_trio()), from_arrays)
+        assert from_arrays.sex is None
 
 
 class TestStructuredErrorsReachEveryEntryPoint:
@@ -454,7 +314,7 @@ class TestMzValidation:
         assert pg.sex is None
 
 
-# Both fixtures used to fail inside compute_inbreeding; MZ validation now rejects them
+# Both fixtures used to fail inside the inbreeding walk; MZ validation now rejects them
 # at construction, so no constructor can hand the kernels a broken pair.
 _MIGRATED_IDS = [0, 1, 2, 3, 4]
 _MIGRATED_MOTHERS = [-1, -1, 0, 0, 1]

@@ -23,7 +23,7 @@ _HEAVY = settings(deadline=None, max_examples=30)
 @_SETTINGS
 @given(pg=random_pedigree())
 def test_kinship_matrix_symmetric_and_bounded(pg):
-    K = pg.kinship_matrix(0.0)
+    K = pg.kinship_matrix()
     dense = K.toarray()
     assert np.allclose(dense, dense.T, atol=1e-9)
     assert np.all(K.data >= -1e-12)
@@ -34,7 +34,7 @@ def test_kinship_matrix_symmetric_and_bounded(pg):
 @given(pg=random_pedigree())
 def test_kinship_diagonal_encodes_inbreeding(pg):
     # The builders never set twins, so the matrix diagonal (1+F)/2 matches ML F.
-    K = pg.kinship_matrix(0.0)
+    K = pg.kinship_matrix()
     F = pg.inbreeding()
     assert np.allclose(np.asarray(K.diagonal()), 0.5 * (1.0 + F), atol=1e-9)
 
@@ -42,7 +42,7 @@ def test_kinship_diagonal_encodes_inbreeding(pg):
 @_SETTINGS
 @given(pg=random_pedigree())
 def test_founders_unrelated_and_self_half(pg):
-    K = pg.kinship_matrix(0.0).toarray()
+    K = pg.kinship_matrix().toarray()
     founders = np.where((pg.mother_rows == -1) & (pg.father_rows == -1))[0]
     for a in founders:
         assert K[a, a] == pytest.approx(0.5)
@@ -54,7 +54,7 @@ def test_founders_unrelated_and_self_half(pg):
 @_SETTINGS
 @given(pg=non_inbred_pedigree())
 def test_parent_offspring_quarter_when_non_inbred(pg):
-    K = pg.kinship_matrix(0.0).toarray()
+    K = pg.kinship_matrix().toarray()
     for child in range(pg.n_individuals):
         for parent in (int(pg.mother_rows[child]), int(pg.father_rows[child])):
             if parent != -1:
@@ -66,8 +66,8 @@ def test_parent_offspring_quarter_when_non_inbred(pg):
 def test_kinship_recursion(pg):
     # phi(i,j) = 1/2 (phi(mother_i,j) + phi(father_i,j)) for i not an ancestor
     # of j (gen[i] >= gen[j], i != j); a missing parent contributes 0.
-    K = pg.kinship_matrix(0.0).toarray()
-    gen = pg.generation
+    K = pg.kinship_matrix().toarray()
+    gen = pg.depth
     n = pg.n_individuals
     for i in range(n):
         m, f = int(pg.mother_rows[i]), int(pg.father_rows[i])
@@ -83,17 +83,17 @@ def test_kinship_recursion(pg):
 
 @_HEAVY
 @given(arrays=pedigree_arrays())
-def test_compute_pair_kinship_matches_matrix(arrays):
+def test_pair_kinship_matches_matrix(arrays):
     ids, mother, father, sex = arrays
     n = len(ids)
     if n < 2:
         return
-    pg = PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
+    pg = PedigreeGraph.from_arrays(ids=ids, mother_ids=mother, father_ids=father, sex=sex)
     a, b = np.triu_indices(n, k=1)
     # The recurrence and the DP matrix implement one pinned float32 recurrence
     # (ADR 0009), so the two independent paths agree to the bit.
     pairwise = pg.pair_kinship(a, b)
-    K = pg.kinship_matrix(0.0).toarray()
+    K = pg.kinship_matrix().toarray()
     assert pairwise.tobytes() == K[a, b].tobytes()
 
 
@@ -101,7 +101,7 @@ def test_compute_pair_kinship_matches_matrix(arrays):
 @given(arrays=pedigree_arrays(), data=st.data())
 def test_id_remap_invariance(arrays, data):
     ids, mother, father, sex = arrays
-    pg1 = PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
+    pg1 = PedigreeGraph.from_arrays(ids=ids, mother_ids=mother, father_ids=father, sex=sex)
     pg2 = relabel_pedigree(arrays, data)
-    assert np.array_equal(pg1.kinship_matrix(0.0).toarray(), pg2.kinship_matrix(0.0).toarray())
-    assert pg1.count_pairs(max_degree=3) == pg2.count_pairs(max_degree=3)
+    assert np.array_equal(pg1.kinship_matrix().toarray(), pg2.kinship_matrix().toarray())
+    assert pg1.relationship_counts(max_degree=3) == pg2.relationship_counts(max_degree=3)

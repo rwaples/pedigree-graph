@@ -21,13 +21,10 @@ PKG_DIR = Path(pedigree_graph.__file__).parent
 # over pushing an existing one past this.
 DEFAULT_MAX_LINES = 1000
 
-# Reviewed exceptions: filename -> its own cap.  ``_core.py`` is the central
-# PedigreeGraph class (already cut from ~1982 to ~1160 lines by PGQ-003);
-# the cap keeps it from regrowing.  Prefer extracting read-only collaborators
-# (ADR 0002) over growing it further.
-ALLOWLIST = {
-    "_core.py": 1250,
-}
+# Reviewed exceptions: filename -> its own cap.  Empty since slice 7 deleted
+# the 0.7.1 adapters from ``_core.py``; prefer extracting read-only
+# collaborators (ADR 0002) over adding an entry.
+ALLOWLIST: dict[str, int] = {}
 
 
 def _line_count(path: Path) -> int:

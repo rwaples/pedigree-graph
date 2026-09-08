@@ -9,9 +9,23 @@ import numpy as np
 import polars as pl
 import pytest
 
-from pedigree_graph import (
-    PedigreeGraph,
-    compute_all_ne,
+from pedigree_graph import PedigreeGraph
+from pedigree_graph._cohorts import ObservedCohorts
+from pedigree_graph._kinship_kernel import _compute_eqg, _compute_generation_kinship_summary
+from pedigree_graph._ne_caballero_toro import CTAccumulators, _caballero_toro_accumulators
+from pedigree_graph._ne_family_size import (
+    FamilySizeEntry,
+    Sigma2Decomposition,
+    _sex_specific_family_table,
+    _sigma2_from_quadrants,
+)
+from pedigree_graph._ne_founders import _founder_idx
+from pedigree_graph._ne_rates import _summary_from_matrix
+from pedigree_graph.effective_size import (
+    ALL_EFFECTIVE_SIZE_ESTIMATORS,
+    EffectiveSizeResults,
+    NeInbreedingResult,
+    estimate_effective_sizes,
     ne_caballero_toro,
     ne_coancestry,
     ne_hill_overlapping,
@@ -21,22 +35,7 @@ from pedigree_graph import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
-from pedigree_graph._cohorts import ObservedCohorts
-from pedigree_graph._effective_size import (
-    CTAccumulators,
-    FamilySizeEntry,
-    NeInbreedingResult,
-    Sigma2Decomposition,
-    _caballero_toro_accumulators,
-    _founder_idx,
-    _per_gen_mean_kinship,
-    _sex_specific_family_table,
-    _sigma2_from_quadrants,
-)
-from pedigree_graph._kinship_kernel import (
-    _compute_eqg,
-    _compute_theta_per_gen,
-)
+from pedigree_graph.summaries import GenerationKinshipSummary
 
 
 def _df(records: list[dict]) -> pl.DataFrame:
@@ -139,7 +138,7 @@ def test_toy1_full_sib_mating_F_theta_eqg():
             {"id": 4, "sex": 1, "generation": 2, "mother": 3, "father": 2},
         ]
     )
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     F = pg.inbreeding()
 
     # F[founders] = 0; F[full sibs of unrelated parents] = 0; F[inbred] = 0.25
@@ -206,7 +205,7 @@ def _build_random_mating_pedigree(
 def test_toy2_random_mating_NeV_NeSr_match_N():
     rng = np.random.default_rng(0)
     df = _build_random_mating_pedigree(rng, n_male=10, n_female=10, n_offspring=20)
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
 
     sr = ne_sex_ratio(pg)
     # Gen 0: 10 M, 10 F → Ne_sr_0 = 4*10*10/20 = 20.
@@ -257,7 +256,7 @@ def test_toy3_skewed_male_NeV_below_sex_ratio():
         )
         next_id += 1
     df = _df(records)
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
 
     sr = ne_sex_ratio(pg)
     assert sr.ne_per_gen[0] == pytest.approx(8.0, abs=1e-9)
@@ -299,7 +298,7 @@ def test_toy4_closed_line_F_recursion():
     F values: F_0=F_1=0, F_2=0.25, F_3=0.375, F_4=0.5, F_5=0.59375.
     Asymptotic Ne ≈ 2.62 (eigenvalue (1+√5)/4 ≈ 0.809).
     """
-    pg = PedigreeGraph(_build_closed_line(n_gens=5))
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
 
     res = ne_inbreeding(pg)
     expected = [0.0, 0.0, 0.25, 0.375, 0.5, 0.59375]
@@ -330,7 +329,7 @@ def test_ne_coancestry_toy1_smoke():
             {"id": 4, "sex": 1, "generation": 2, "mother": 3, "father": 2},
         ]
     )
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     res = ne_coancestry(pg)
     assert res.mean_theta_per_gen[0] == pytest.approx(0.0, abs=1e-12)
     assert res.mean_theta_per_gen[1] == pytest.approx(0.25, abs=1e-12)
@@ -354,7 +353,7 @@ def test_ne_individual_delta_f_closed_line():
       ΔF_5 = 1 − (0.40625)^(1/4)  = 0.20144841…
     Per-gen Ne_g = 1/(2·ΔF̄_g).  Aggregate is harmonic mean.
     """
-    pg = PedigreeGraph(_build_closed_line(n_gens=5))
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
     res = ne_individual_delta_f(pg)
 
     # Gen 0 (founders, F=0, EqG=0) and gen 1 (EqG=1) excluded — n_used=0.
@@ -389,7 +388,7 @@ def test_ne_long_term_contributions_closed_line():
     The master plan's "Ne ≈ 2·N_founders" rule of thumb does not hold for
     the formula ``Ne = 1/(2·Σ c²)``; the analytic value here is 1.
     """
-    pg = PedigreeGraph(_build_closed_line(n_gens=5))
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
     res = ne_long_term_contributions(pg)
     assert res.asymptote_reached
     # Stabilizes at gen 1 (c_per_gen[0] == c_per_gen[1] = (0.5, 0.5)).
@@ -417,7 +416,7 @@ def test_ne_long_term_contributions_4_founders_symmetric():
             {"id": 7, "sex": 0, "generation": 1, "mother": 2, "father": 1},
         ]
     )
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     res = ne_long_term_contributions(pg)
     assert res.asymptote_reached
     assert res.sum_c_squared == pytest.approx(0.25, abs=1e-12)
@@ -431,7 +430,7 @@ def test_ne_long_term_contributions_4_founders_symmetric():
 
 def test_ne_hill_collapses_to_ne_v():
     """Discrete-generation sentinel: Hill 1979 reduces to Ne_V at L=1."""
-    pg = PedigreeGraph(_build_closed_line(n_gens=5))
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
     h = ne_hill_overlapping(pg)
     v = ne_variance_family_size(pg)
     assert h.collapses_to_ne_v
@@ -456,7 +455,7 @@ def test_ne_hill_uses_birth_year_handcomputed_balanced():
     eq. (10): Ne = 8·4·10 / (0 + 0 + 4) = 80.
     """
     df = _toy_birth_year_pedigree(paternity="balanced")
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     res = ne_hill_overlapping(pg)
     assert res.collapses_to_ne_v is False
     assert res.T_m == pytest.approx(10.0)
@@ -477,7 +476,7 @@ def test_ne_hill_uses_birth_year_handcomputed_skewed():
     Ne = 8·4·10 / (8+8+4) = 16.
     """
     df = _toy_birth_year_pedigree(paternity="skewed")
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     res = ne_hill_overlapping(pg)
     assert res.Vk_m == pytest.approx(8.0, abs=1e-9)
     assert res.Vk_f == pytest.approx(8.0, abs=1e-9)
@@ -486,8 +485,8 @@ def test_ne_hill_uses_birth_year_handcomputed_skewed():
 
 def test_ne_hill_monotonic_in_sigma_m():
     """Ne_H decreases as σ²_m increases (all else equal)."""
-    pg_lo = PedigreeGraph(_toy_birth_year_pedigree(paternity="balanced"))
-    pg_hi = PedigreeGraph(_toy_birth_year_pedigree(paternity="skewed"))
+    pg_lo = PedigreeGraph.from_frame(_toy_birth_year_pedigree(paternity="balanced"))
+    pg_hi = PedigreeGraph.from_frame(_toy_birth_year_pedigree(paternity="skewed"))
     ne_lo = ne_hill_overlapping(pg_lo).ne
     ne_hi = ne_hill_overlapping(pg_hi).ne
     assert ne_lo is not None
@@ -497,8 +496,8 @@ def test_ne_hill_monotonic_in_sigma_m():
 
 def test_ne_hill_linear_in_T():
     """Ne_H scales linearly in T when σ²_m, σ²_f, N1 are fixed."""
-    pg_t10 = PedigreeGraph(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1910))
-    pg_t20 = PedigreeGraph(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1920))
+    pg_t10 = PedigreeGraph.from_frame(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1910))
+    pg_t20 = PedigreeGraph.from_frame(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1920))
     ne_t10 = ne_hill_overlapping(pg_t10).ne
     ne_t20 = ne_hill_overlapping(pg_t20).ne
     assert ne_t10 is not None
@@ -508,8 +507,8 @@ def test_ne_hill_linear_in_T():
 
 def test_ne_hill_sex_symmetry():
     """Swapping (N_m, σ²_m) ↔ (N_f, σ²_f) leaves Ne unchanged."""
-    pg_m = PedigreeGraph(_toy_birth_year_pedigree(paternity="male_skewed_only"))
-    pg_f = PedigreeGraph(_toy_birth_year_pedigree(paternity="female_skewed_only"))
+    pg_m = PedigreeGraph.from_frame(_toy_birth_year_pedigree(paternity="male_skewed_only"))
+    pg_f = PedigreeGraph.from_frame(_toy_birth_year_pedigree(paternity="female_skewed_only"))
     res_m = ne_hill_overlapping(pg_m)
     res_f = ne_hill_overlapping(pg_f)
     # σ²_m and σ²_f should swap; Ne is invariant.
@@ -544,7 +543,7 @@ def test_ne_hill_eligible_cohort_filtering():
         for i, (f, m) in enumerate(pairs_1920)
     )
     df = _df_by(records)
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     res = ne_hill_overlapping(pg)
     assert res.cohort_window is not None
     # p95 of edge Δs = 10 (all edges are 10y); c_max = 1920 - 10 = 1910.
@@ -559,7 +558,7 @@ def test_ne_hill_eligible_cohort_filtering():
 
 def test_ne_hill_age_table_descriptive():
     """age_table is populated at the simulated parental ages."""
-    pg = PedigreeGraph(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1910))
+    pg = PedigreeGraph.from_frame(_toy_birth_year_pedigree(cohort_a=1900, cohort_b=1910))
     res = ne_hill_overlapping(pg)
     assert res.age_table is not None
     # All father-child edges are 10y; same for mothers.
@@ -571,23 +570,15 @@ def test_ne_hill_age_table_descriptive():
     assert res.n_offspring_pairs == 8  # 4 mother + 4 father edges
 
 
-def test_ne_hill_threaded_matches_serial_with_birth_year():
-    """compute_all_ne n_threads=2 matches n_threads=1 for birth-year branch.
-
-    Targeted regression for the hill_from_variance bypass risk that
-    existed before Step 7.
-    """
-    pg = PedigreeGraph(_toy_birth_year_pedigree(paternity="skewed"))
-    r1 = compute_all_ne(pg, n_threads=1)["ne_hill_overlapping"]
-    r2 = compute_all_ne(pg, n_threads=2)["ne_hill_overlapping"]
-    assert r1.collapses_to_ne_v == r2.collapses_to_ne_v is False
-    assert r1.ne == pytest.approx(r2.ne, rel=1e-12)
-    assert r1.Vk_m == pytest.approx(r2.Vk_m, rel=1e-12)
+def test_ne_hill_birth_year_branch_survives_the_batch():
+    """The orchestrated Hill record is the direct one, birth-year branch included."""
+    pg = PedigreeGraph.from_frame(_toy_birth_year_pedigree(paternity="skewed"))
+    assert estimate_effective_sizes(pg)["ne_hill_overlapping"] == ne_hill_overlapping(pg)
 
 
 def test_ne_hill_serializes_to_dict():
     """to_dict() yields a YAML-ready dict including new fields."""
-    pg = PedigreeGraph(_toy_birth_year_pedigree(paternity="balanced"))
+    pg = PedigreeGraph.from_frame(_toy_birth_year_pedigree(paternity="balanced"))
     res = ne_hill_overlapping(pg)
     d = res.to_dict()
     assert d["collapses_to_ne_v"] is False
@@ -615,9 +606,9 @@ def _family_table(pg: PedigreeGraph, cohorts: ObservedCohorts | None = None):
 
 def test_sex_specific_family_table_has_every_observed_label():
     """Keys are the observed labels, the maximum included, with all-zero counts there."""
-    pg = PedigreeGraph(_build_closed_line(n_gens=5))
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
     table = _family_table(pg)
-    g_max = int(np.asarray(pg.generation).max())
+    g_max = int(np.asarray(pg.generation_labels).max())
     assert list(table) == list(range(g_max + 1))
     for p in range(g_max + 1):
         assert len(table[p].males_in_parent_gen) == 1
@@ -628,8 +619,8 @@ def test_sex_specific_family_table_has_every_observed_label():
 
 def test_sex_specific_family_table_keys_on_rebased_labels():
     """Birth years (or any rebased labels) key the table by their own values."""
-    pg = PedigreeGraph(_build_closed_line(n_gens=5))
-    fake_birth_year = (np.asarray(pg.generation) + 1970).astype(np.int32)
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
+    fake_birth_year = (np.asarray(pg.generation_labels) + 1970).astype(np.int32)
     table = _family_table(pg, ObservedCohorts.from_labels(fake_birth_year))
     assert set(table) == {1970, 1971, 1972, 1973, 1974, 1975}
     np.testing.assert_array_equal(table[1975].k_mm, [0])
@@ -640,8 +631,8 @@ def test_sex_specific_family_table_keys_on_rebased_labels():
 
 def test_sex_specific_family_table_unlabelled_rows_belong_to_no_cohort():
     """A ``-1`` row has no entry but its offspring still count for its parents."""
-    pg = PedigreeGraph(_build_closed_line(n_gens=3))
-    cohort = np.asarray(pg.generation).copy()
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=3))
+    cohort = np.asarray(pg.generation_labels).copy()
     cohort[0] = -1
     table = _family_table(pg, ObservedCohorts.from_labels(cohort))
     assert -1 not in table
@@ -662,7 +653,7 @@ def test_ne_caballero_toro_closed_line_self_coancestry():
       gen 4: F=0.5   ⇒ 0.75
       gen 5: F=0.59375 ⇒ 0.796875
     """
-    pg = PedigreeGraph(_build_closed_line(n_gens=5))
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
     res = ne_caballero_toro(pg)
     expected_fs = np.array([0.5, 0.625, 0.6875, 0.75, 0.796875])
     np.testing.assert_allclose(res.mean_self_coancestry_per_gen[1:], expected_fs, atol=1e-12)
@@ -673,58 +664,52 @@ def test_ne_caballero_toro_closed_line_self_coancestry():
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — compute_all_ne entry point
+# Step 2 — estimate_effective_sizes entry point
 # ---------------------------------------------------------------------------
 
 
-def test_compute_all_ne_returns_eight_keys():
-    """compute_all_ne dispatches every estimator with the K and contribution caches."""
-    pg = PedigreeGraph(_build_closed_line(n_gens=5))
-    results = compute_all_ne(pg)
-    expected_keys = {
-        "ne_inbreeding",
-        "ne_coancestry",
-        "ne_variance_family_size",
-        "ne_sex_ratio",
-        "ne_individual_delta_f",
-        "ne_long_term_contributions",
-        "ne_hill_overlapping",
-        "ne_caballero_toro",
-    }
-    assert set(results.keys()) == expected_keys
-    # Every entry serializes to a YAML-ready dict.
-    for k, r in results.items():
-        d = r.to_dict()
+def test_estimate_effective_sizes_returns_eight_serializable_records():
+    """Every estimator runs over one prerequisite memo and serializes."""
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
+    results = estimate_effective_sizes(pg)
+    assert set(results) == set(ALL_EFFECTIVE_SIZE_ESTIMATORS)
+    for name, result in results.items():
+        d = result.to_dict()
         assert isinstance(d, dict)
-        assert "ne" in d, f"{k} missing 'ne' field"
+        assert "ne" in d, f"{name} missing 'ne' field"
 
 
-def test_compute_all_ne_threaded_matches_serial():
-    """Threaded estimator dispatch preserves the serial result payloads."""
-    rng = np.random.default_rng(2027)
-    df = _build_random_mating_pedigree(rng, n_male=12, n_female=12, n_offspring=48)
-
-    serial = {k: v.to_dict() for k, v in compute_all_ne(PedigreeGraph(df), n_threads=1).items()}
-    threaded = {k: v.to_dict() for k, v in compute_all_ne(PedigreeGraph(df), n_threads=4).items()}
-
-    assert threaded == serial
-
-
-def _streaming_theta(pg: PedigreeGraph) -> np.ndarray:
-    """Helper: compute θ̄_g via the streaming path (no K materialization)."""
-    return _compute_theta_per_gen(
+def _streamed_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
+    """Helper: the generation kinship summary via the streaming path (no K materialization)."""
+    return _compute_generation_kinship_summary(
         pg.n_individuals,
         np.asarray(pg.mother_rows, dtype=np.int32),
         np.asarray(pg.father_rows, dtype=np.int32),
         np.asarray(pg.twin_rows, dtype=np.int32),
         np.asarray(pg.depth, dtype=np.int32),
         0.0,
-        labels=np.asarray(pg.generation, dtype=np.int32),
+        labels=np.asarray(pg.generation_labels, dtype=np.int32),
     )
 
 
-def test_streaming_theta_matches_K_path_toy1():
-    """Streaming θ̄_g must equal the K-path on toy 1 within float tolerance.
+def _matrix_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
+    """Helper: the same summary walked from the complete kinship matrix."""
+    return _summary_from_matrix(
+        pg.kinship_matrix(),
+        np.asarray(pg.generation_labels),
+        np.asarray(pg.twin_rows),
+    )
+
+
+def _assert_summaries_agree(a: GenerationKinshipSummary, b: GenerationKinshipSummary) -> None:
+    np.testing.assert_array_equal(a.generations, b.generations)
+    np.testing.assert_array_equal(a.pair_counts, b.pair_counts)
+    np.testing.assert_allclose(a.mean_kinship, b.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
+    assert a.unlabelled_individual_count == b.unlabelled_individual_count
+
+
+def test_streamed_summary_matches_matrix_path_toy1():
+    """The streamed summary must equal the matrix walk on toy 1 within float tolerance.
 
     Different summation orders (row-major streaming vs. col-major COO)
     preclude bit-identical results in general; ``rtol=0, atol=1e-12`` is
@@ -739,99 +724,40 @@ def test_streaming_theta_matches_K_path_toy1():
             {"id": 4, "sex": 1, "generation": 2, "mother": 3, "father": 2},
         ]
     )
-    pg = PedigreeGraph(df)
-    theta_k = _per_gen_mean_kinship(
-        pg.kinship_matrix(),
-        np.asarray(pg.generation),
-        np.asarray(pg.twin_rows),
-    )
-    theta_stream = _streaming_theta(pg)
-    # NaN positions must match.
-    assert np.array_equal(np.isnan(theta_k), np.isnan(theta_stream))
-    # Non-NaN values must agree.
-    mask = ~np.isnan(theta_k)
-    assert np.allclose(theta_k[mask], theta_stream[mask], rtol=0, atol=1e-12)
+    pg = PedigreeGraph.from_frame(df)
+    _assert_summaries_agree(_matrix_summary(pg), _streamed_summary(pg))
 
 
-def test_streaming_theta_matches_K_path_random_mating():
-    """Streaming θ̄_g must equal K-path on a multi-gen random-mating pedigree."""
+def test_streamed_summary_matches_matrix_path_random_mating():
+    """The streamed summary must equal the matrix walk on a multi-gen random-mating pedigree."""
     rng = np.random.default_rng(2026)
     df = _build_random_mating_pedigree(rng, n_male=12, n_female=12, n_offspring=48)
-    pg = PedigreeGraph(df)
-    theta_k = _per_gen_mean_kinship(
-        pg.kinship_matrix(),
-        np.asarray(pg.generation),
-        np.asarray(pg.twin_rows),
-    )
-    theta_stream = _streaming_theta(pg)
-    assert np.array_equal(np.isnan(theta_k), np.isnan(theta_stream))
-    mask = ~np.isnan(theta_k)
-    assert np.allclose(theta_k[mask], theta_stream[mask], rtol=0, atol=1e-12)
+    pg = PedigreeGraph.from_frame(df)
+    _assert_summaries_agree(_matrix_summary(pg), _streamed_summary(pg))
 
 
-def test_per_gen_mean_kinship_reuses_cached_K():
-    """When K is already cached, per_gen_mean_kinship avoids a fresh DP."""
+def test_mean_kinship_by_generation_reuses_the_cached_matrix():
+    """When K is already cached, the public summary walks it instead of a fresh DP."""
     rng = np.random.default_rng(2032)
     df = _build_random_mating_pedigree(rng, n_male=8, n_female=8, n_offspring=32)
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
 
-    # Force K build first; this populates pg._kinship_cache[0.0].
-    _ = pg.kinship_matrix()
-    # Now θ̄ via the public API must come from the cached K, not a fresh DP.
-    theta_via_cache = pg.per_gen_mean_kinship()
-    # Compare against the streaming path directly.
-    theta_streamed = _streaming_theta(pg)
-    assert np.array_equal(np.isnan(theta_via_cache), np.isnan(theta_streamed))
-    mask = ~np.isnan(theta_via_cache)
-    assert np.allclose(theta_via_cache[mask], theta_streamed[mask], rtol=0, atol=1e-12)
+    pg.kinship_matrix()
+    _assert_summaries_agree(pg.mean_kinship_by_generation(), _streamed_summary(pg))
 
 
-def test_per_gen_mean_kinship_cached_per_threshold():
-    """Cache is keyed by min_kinship — different thresholds get fresh results."""
-    rng = np.random.default_rng(2031)
-    df = _build_random_mating_pedigree(rng, n_male=8, n_female=8, n_offspring=32)
-    pg = PedigreeGraph(df)
-
-    theta_0 = pg.per_gen_mean_kinship()  # min_kinship=0.0
-    theta_0_cached = pg.per_gen_mean_kinship()  # cache hit
-    # Same object returned (cache hit, not recomputed).
-    assert theta_0 is theta_0_cached
-
-    # A different threshold must produce a different array (different
-    # cache slot).  Use a threshold high enough to prune some entries.
-    theta_pruned = pg.per_gen_mean_kinship(min_kinship=0.05)
-    assert theta_pruned is not theta_0
-    # Cache stores both.
-    assert 0.0 in pg._theta_per_gen_cache
-    assert 0.05 in pg._theta_per_gen_cache
-
-
-def test_streaming_theta_helper_directly_bit_identical_to_self():
-    """_per_gen_mean_kinship_from_dp must be deterministic across calls."""
+def test_streamed_summary_is_bit_identical_to_itself():
+    """The retiring DP accumulator must be deterministic across calls."""
     rng = np.random.default_rng(2030)
     df = _build_random_mating_pedigree(rng, n_male=8, n_female=8, n_offspring=32)
-    pg = PedigreeGraph(df)
-    a = _streaming_theta(pg)
-    b = _streaming_theta(pg)
-    # Same inputs in same order — bit-identical accumulator state.
-    assert np.array_equal(np.isnan(a), np.isnan(b))
-    mask = ~np.isnan(a)
-    assert (a[mask] == b[mask]).all()
-
-
-def test_compute_all_ne_threaded_matches_serial_when_coancestry_skipped():
-    """Threaded dispatch also preserves the large-pedigree skip branch."""
-    rng = np.random.default_rng(2028)
-    df = _build_random_mating_pedigree(rng, n_male=12, n_female=12, n_offspring=48)
-
-    serial = {
-        k: v.to_dict() for k, v in compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True, n_threads=1).items()
-    }
-    threaded = {
-        k: v.to_dict() for k, v in compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True, n_threads=4).items()
-    }
-
-    assert threaded == serial
+    pg = PedigreeGraph.from_frame(df)
+    a = _streamed_summary(pg)
+    b = _streamed_summary(pg)
+    np.testing.assert_array_equal(a.generations, b.generations)
+    np.testing.assert_array_equal(a.pair_counts, b.pair_counts)
+    assert np.array_equal(np.isnan(a.mean_kinship), np.isnan(b.mean_kinship))
+    mask = ~np.isnan(a.mean_kinship)
+    assert (a.mean_kinship[mask] == b.mean_kinship[mask]).all()
 
 
 # ---------------------------------------------------------------------------
@@ -848,7 +774,7 @@ class TestTypedPayloadModels:
     """
 
     def test_family_table_entries_are_typed(self):
-        pg = PedigreeGraph(_build_closed_line(n_gens=4))
+        pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
         table = _family_table(pg)
         entry = next(iter(table.values()))
         assert isinstance(entry, FamilySizeEntry)
@@ -873,7 +799,7 @@ class TestTypedPayloadModels:
             )
 
     def test_sigma2_from_quadrants_returns_none_below_two_per_sex(self):
-        pg = PedigreeGraph(_build_closed_line(n_gens=4))
+        pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
         table = _family_table(pg)
         # _build_closed_line has one male + one female per cohort, so
         # every cohort lacks two of a sex → decomposition is None.
@@ -892,7 +818,7 @@ class TestTypedPayloadModels:
                 "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1]),
             }
         )
-        pg = PedigreeGraph(df)
+        pg = PedigreeGraph.from_frame(df)
         table = _family_table(pg)
         decomp = _sigma2_from_quadrants(table[0])
         assert isinstance(decomp, Sigma2Decomposition)
@@ -914,14 +840,13 @@ class TestTypedPayloadModels:
         )
 
     def test_ct_accumulators_are_typed(self):
-        pg = PedigreeGraph(_build_closed_line(n_gens=4))
+        pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
         F = pg.inbreeding()
         acc = _caballero_toro_accumulators(pg, _founder_idx(pg), F)
         assert isinstance(acc, CTAccumulators)
-        k = int(np.asarray(pg.generation).max()) + 1
-        n_founders = len(_founder_idx(pg))
-        assert acc.sums.shape == (k, n_founders)
-        assert acc.counts.shape == (k, n_founders)
+        shape = (ObservedCohorts.for_graph(pg, "test").k, len(_founder_idx(pg)))
+        assert acc.sums.shape == shape
+        assert acc.counts.shape == shape
         assert acc.sums.dtype == np.float64
         assert acc.counts.dtype == np.int64
 
@@ -934,12 +859,12 @@ class TestTypedPayloadModels:
                 founder_idx=np.empty(0, dtype=np.intp),
             )
 
-    def test_compute_all_ne_values_are_typed_results(self):
-        pg = PedigreeGraph(_build_closed_line(n_gens=4))
-        results = compute_all_ne(pg)
-        # Container stays a plain dict (public contract); values are
+    def test_estimate_effective_sizes_values_are_typed_results(self):
+        pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
+        results = estimate_effective_sizes(pg)
+        # The container is the immutable eight-key mapping; values are
         # never untyped dicts.
-        assert isinstance(results, dict)
+        assert isinstance(results, EffectiveSizeResults)
         for value in results.values():
             assert not isinstance(value, dict)
             assert hasattr(value, "to_dict")

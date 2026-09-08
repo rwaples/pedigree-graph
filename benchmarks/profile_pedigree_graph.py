@@ -5,11 +5,11 @@ Builds a representative pedigree with simACE's ``run_simulation`` (the same
 DataFrame real consumers feed in), then profiles each public ``PedigreeGraph``
 operation to attribute wall-time and peak memory to one of three layers:
 
-  * **scipy / SuiteSparse sparse matmuls** — ``extract_pairs`` is dominated by
-    ``A2 @ A2.T``, ``A3 @ A3.T``, ... (compiled C; can't fuse a threshold into
+  * **scipy / SuiteSparse sparse matmuls** — ``relationship_pairs`` is dominated
+    by ``A2 @ A2.T``, ``A3 @ A3.T``, ... (compiled C; can't fuse a threshold into
     the product, so the full intermediate ``nnz`` is materialised first).
-  * **numba ``@njit`` kernels** — ``compute_inbreeding`` (Meuwissen-Luo) and
-    ``per_gen_mean_kinship`` / kinship-matrix DP. LLVM-compiled; ~C++ parity.
+  * **numba ``@njit`` kernels** — ``inbreeding`` (Meuwissen-Luo) and
+    ``mean_kinship_by_generation`` / kinship-matrix DP. LLVM-compiled; ~C++ parity.
   * **python orchestration** — the rest.
 
 Why this answers the "rewrite in C++?" question:
@@ -31,7 +31,7 @@ Two memory signals are reported per op:
 Usage:
   python benchmarks/profile_pedigree_graph.py --scale medium
   python benchmarks/profile_pedigree_graph.py --n 50000 --g 6 --max-degree 5
-  python benchmarks/profile_pedigree_graph.py --scale small --ops extract5,inbreeding
+  python benchmarks/profile_pedigree_graph.py --scale small --ops pairs5,inbreeding
 """
 
 from __future__ import annotations
@@ -52,12 +52,13 @@ import numpy as np
 import polars as pl
 from simace.simulation.simulate import run_simulation
 
-from pedigree_graph import PedigreeGraph, ResourceError, compute_all_ne
+from pedigree_graph import PedigreeGraph, ResourceError
 from pedigree_graph._kinship_pairwise import (
     _pairwise_kinship_py,
     _pairwise_kinship_with_stats,
     pairwise_kinship,
 )
+from pedigree_graph.effective_size import ALL_EFFECTIVE_SIZE_ESTIMATORS, estimate_effective_sizes
 
 # The shared benchmark contract lives beside this file, not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -76,7 +77,7 @@ SCALES: dict[str, dict[str, int]] = {
 # Variance components + mating mirror config/_default.yaml's pedigree block,
 # so the simulated structure (full/half sibs, MZ twins, cousins) matches what
 # fitACE / pedsum actually consume. p_mztwin > 0 deliberately puts MZ twins in
-# the pedigree; previously this forced compute_pair_kinship onto its full
+# the pedigree; previously this forced pair kinship onto its full
 # DP-matrix path. As of the direct-recurrence routine the matrix is no longer
 # built — the twins still make the case representative (MZ co-coalescence).
 SIM_PARAMS = {
@@ -144,20 +145,25 @@ def warmup() -> float:
     """
     t0 = time.perf_counter()
     df = run_simulation(seed=0, N=64, G_ped=3, G_sim=4, **SIM_PARAMS)
-    pg = PedigreeGraph(df)
-    pg.compute_inbreeding()
-    pg.per_gen_mean_kinship()
-    pg.extract_pairs(max_degree=5)
-    pg2 = PedigreeGraph(df)
-    pg2.compute_pair_kinship(pg2.extract_pairs(max_degree=2))
+    pg = PedigreeGraph.from_frame(df)
+    pg.inbreeding()
+    pg.mean_kinship_by_generation()
+    pg.relationship_pairs(max_degree=5)
+    pg2 = PedigreeGraph.from_frame(df)
+    pg2.pair_kinship(pg2.relationship_pairs(max_degree=2))
     # Warm the direct pairwise-kinship kernel explicitly (also reached via
-    # compute_pair_kinship above, but warm it directly so the stats wrapper and
+    # pair_kinship above, but warm it directly so the stats wrapper and
     # bare-kernel microbench below never pay first-call JIT).
     pairwise_kinship(*_kernel_inputs(pg2, np.array([0, 1]), np.array([1, 2])))
     _pairwise_kinship_with_stats(*_kernel_inputs(pg2, np.array([0]), np.array([1])))
     with contextlib.suppress(Exception):  # tiny pedigree may degenerate some estimators
-        compute_all_ne(PedigreeGraph(df), skip_ne_coancestry=True)
+        estimate_effective_sizes(PedigreeGraph.from_frame(df), _estimators(skip_coancestry=True))
     return time.perf_counter() - t0
+
+
+def _estimators(*, skip_coancestry: bool) -> tuple[str, ...]:
+    """Every Ne estimator, minus the O(n^2)-ish coancestry DP when asked."""
+    return tuple(n for n in ALL_EFFECTIVE_SIZE_ESTIMATORS if not (skip_coancestry and n == "ne_coancestry"))
 
 
 def build_ops(df, max_degree: int, logcap: _LogCapture, skip_coancestry: bool):
@@ -168,37 +174,39 @@ def build_ops(df, max_degree: int, logcap: _LogCapture, skip_coancestry: bool):
     """
 
     def _construct():
-        return measure("PedigreeGraph(df)", lambda: PedigreeGraph(df), logcap)
+        return measure("PedigreeGraph.from_frame(df)", lambda: PedigreeGraph.from_frame(df), logcap)
 
     def _extract(degree):
-        pg = PedigreeGraph(df)
-        return measure(f"extract_pairs(max_degree={degree})", lambda: pg.extract_pairs(max_degree=degree), logcap)
+        pg = PedigreeGraph.from_frame(df)
+        return measure(
+            f"relationship_pairs(max_degree={degree})", lambda: pg.relationship_pairs(max_degree=degree), logcap
+        )
 
     def _inbreeding():
-        pg = PedigreeGraph(df)
-        return measure("compute_inbreeding", pg.compute_inbreeding, logcap)
+        pg = PedigreeGraph.from_frame(df)
+        return measure("inbreeding", pg.inbreeding, logcap)
 
     def _per_gen():
-        pg = PedigreeGraph(df)
-        return measure("per_gen_mean_kinship", pg.per_gen_mean_kinship, logcap)
+        pg = PedigreeGraph.from_frame(df)
+        return measure("mean_kinship_by_generation", pg.mean_kinship_by_generation, logcap)
 
     def _pair_kinship():
-        pg = PedigreeGraph(df)
-        pairs = pg.extract_pairs(max_degree=max_degree)  # prerequisite, untimed
-        return measure("compute_pair_kinship", lambda: pg.compute_pair_kinship(pairs), logcap)
+        pg = PedigreeGraph.from_frame(df)
+        pairs = pg.relationship_pairs(max_degree=max_degree)  # prerequisite, untimed
+        return measure("pair_kinship", lambda: pg.pair_kinship(pairs), logcap)
 
     def _all_ne():
-        pg = PedigreeGraph(df)
+        pg = PedigreeGraph.from_frame(df)
         return measure(
-            f"compute_all_ne(skip_coancestry={skip_coancestry})",
-            lambda: compute_all_ne(pg, skip_ne_coancestry=skip_coancestry),
+            f"estimate_effective_sizes(skip_coancestry={skip_coancestry})",
+            lambda: estimate_effective_sizes(pg, _estimators(skip_coancestry=skip_coancestry)),
             logcap,
         )
 
     return {
         "construct": _construct,
-        "extract2": lambda: _extract(2),
-        "extract5": lambda: _extract(max_degree),
+        "pairs2": lambda: _extract(2),
+        "pairs5": lambda: _extract(max_degree),
         "inbreeding": _inbreeding,
         "per_gen": _per_gen,
         "pair_kinship": _pair_kinship,
@@ -214,14 +222,14 @@ def cprofile_pass(df, max_degree: int) -> str:
     sparse matmul entry points vs numba dispatch vs python orchestration.
     """
     pr = cProfile.Profile()
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     pr.enable()
-    pg.extract_pairs(max_degree=max_degree)
-    pg2 = PedigreeGraph(df)
-    pairs = pg2.extract_pairs(max_degree=2)
-    pg2.compute_pair_kinship(pairs)
-    pg2.per_gen_mean_kinship()
-    pg2.compute_inbreeding()
+    pg.relationship_pairs(max_degree=max_degree)
+    pg2 = PedigreeGraph.from_frame(df)
+    pairs = pg2.relationship_pairs(max_degree=2)
+    pg2.pair_kinship(pairs)
+    pg2.mean_kinship_by_generation()
+    pg2.inbreeding()
     pr.disable()
 
     buf = io.StringIO()
@@ -264,13 +272,13 @@ def _kernel_inputs(pg, a, b):
     return mother, father, twin, pg._topology.translate(a), pg._topology.translate(b)
 
 
-def _flatten_pairs(pairs: dict) -> tuple[np.ndarray, np.ndarray]:
-    """Concatenate every code's (idx1, idx2) into flat graph-space arrays."""
-    non_empty = [v for v in pairs.values() if len(v[0])]
+def _flatten_pairs(pairs) -> tuple[np.ndarray, np.ndarray]:
+    """Concatenate every block's endpoints into flat graph-space arrays."""
+    non_empty = [block for block in pairs.values() if len(block)]
     if not non_empty:
         return np.array([], dtype=np.int64), np.array([], dtype=np.int64)
-    a = np.concatenate([v[0] for v in non_empty]).astype(np.int64)
-    b = np.concatenate([v[1] for v in non_empty]).astype(np.int64)
+    a = np.concatenate([block.first_rows for block in non_empty]).astype(np.int64)
+    b = np.concatenate([block.second_rows for block in non_empty]).astype(np.int64)
     return a, b
 
 
@@ -319,8 +327,8 @@ def pairwise_diagnostics(df, max_degree: int, seed: int, py_cap: int = 10_000) -
     The Python reference is timed on a capped random subset (it is far slower);
     the cap is reported, never silent.
     """
-    pg = PedigreeGraph(df)
-    pairs = pg.extract_pairs(max_degree=max_degree)
+    pg = PedigreeGraph.from_frame(df)
+    pairs = pg.relationship_pairs(max_degree=max_degree)
     mother, father, twin, a, b = _kernel_inputs(pg, *_flatten_pairs(pairs))
     n, p = pg.n_individuals, a.shape[0]
 
@@ -369,11 +377,11 @@ def stress_diagnostics(seed: int) -> str:
 
     Builds a deep, heavily-inbred pedigree (large ancestor sets), runs the
     direct kernel on all extracted pairs, and compares wall time + correctness
-    against the full ``kinship_matrix(0.0)`` path it replaces.
+    against the full ``kinship_matrix()`` path it replaces.
     """
     df = _deep_inbred_pedigree(seed=seed)
-    pg = PedigreeGraph(df)
-    pairs = pg.extract_pairs(max_degree=5)
+    pg = PedigreeGraph.from_frame(df)
+    pairs = pg.relationship_pairs(max_degree=5)
     a, b = _flatten_pairs(pairs)
     n, p = pg.n_individuals, a.shape[0]
 
@@ -390,9 +398,9 @@ def stress_diagnostics(seed: int) -> str:
             None,
         )
 
-    pg_mat = PedigreeGraph(df)
+    pg_mat = PedigreeGraph.from_frame(df)
     t0 = time.perf_counter()
-    k = pg_mat.kinship_matrix(0.0)
+    k = pg_mat.kinship_matrix()
     mat_t = time.perf_counter() - t0
     nnz = k.nnz
     ok = "n/a"
@@ -425,10 +433,10 @@ def main() -> None:
     ap.add_argument("--n", type=int, default=None, help="individuals per generation (overrides --scale)")
     ap.add_argument("--g", type=int, default=None, help="recorded generations G_ped (overrides --scale)")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--max-degree", type=int, default=5, help="max_degree for the heavy extract_pairs op (1-5)")
+    ap.add_argument("--max-degree", type=int, default=5, help="max_degree for the heavy relationship_pairs op (1-5)")
     ap.add_argument(
         "--ops",
-        default="construct,extract2,extract5,inbreeding,per_gen,pair_kinship,all_ne",
+        default="construct,pairs2,pairs5,inbreeding,per_gen,pair_kinship,all_ne",
         help="comma-separated subset of ops to run",
     )
     ap.add_argument(
@@ -518,7 +526,7 @@ def main() -> None:
     print(f"\nFull report (incl. cProfile top-30): {report_path}")
     print(
         "\nReading it:\n"
-        "  * extract_pairs dominates wall-time AND rss_delta >> tracemalloc, with a\n"
+        "  * relationship_pairs dominates wall-time AND rss_delta >> tracemalloc, with a\n"
         "    large `A3 @ A3.T (nnz=...)` line  -> the lever is a fused thresholded\n"
         "    sparse product (numba or C++); a straight C++ port of the njit kernels\n"
         "    is not the win.\n"

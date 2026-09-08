@@ -38,6 +38,11 @@ Counts are identical at every thread count.
 
 The avuncular family is within 0.01 percent on this twin-having pedigree.
 
+Those `count_pairs_streaming` figures were measured at commit `aa71c35`, before
+the call was deleted with the 0.7.1 adapters; `estimate_relationship_counts` is
+the scalar counter on the 0.8 surface, and its values are fold-aware, so the
+streaming numbers above are not reproducible through it.
+
 ## Reproduce
 
 ```bash

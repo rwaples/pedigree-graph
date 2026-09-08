@@ -362,7 +362,7 @@ class TestOwnership:
 
     def test_graph_arrays_survive_caller_mutation(self):
         mothers = np.array([-1, -1, 0], dtype=np.int64)
-        pg = PedigreeGraph({"id": np.array([0, 1, 2]), "mother": mothers, "father": np.array([-1, -1, 1])})
+        pg = PedigreeGraph.from_frame({"id": np.array([0, 1, 2]), "mother": mothers, "father": np.array([-1, -1, 1])})
         mothers[2] = 1
         assert pg.mother_rows.tolist() == [-1, -1, 0]
         assert pg.mother_ids.tolist() == [-1, -1, 0]
@@ -399,8 +399,8 @@ class TestCycles:
 
     def test_acyclic_reordered_rows_construct_with_structural_depth(self):
         data = {"id": np.array([0, 1]), "mother": np.array([1, -1]), "father": np.array([-1, -1])}
-        pg = PedigreeGraph(data)
-        assert pg.generation.tolist() == [1, 0]
+        pg = PedigreeGraph.from_frame(data)
+        assert pg.depth.tolist() == [1, 0]
 
 
 class TestIdFieldValidation:
@@ -461,9 +461,9 @@ def test_parse_round_trips_ids_and_rows(arrays):
 
 @_SETTINGS
 @given(arrays=pedigree_arrays())
-def test_dict_construction_matches_from_arrays(arrays):
+def test_frame_construction_matches_from_arrays(arrays):
     ids, mother, father, sex = arrays
-    from_dict = PedigreeGraph({"id": ids, "mother": mother, "father": father, "sex": sex})
-    from_arrays = PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
-    for attribute in ("mother_rows", "father_rows", "twin_rows", "generation", "sex"):
+    from_dict = PedigreeGraph.from_frame({"id": ids, "mother": mother, "father": father, "sex": sex})
+    from_arrays = PedigreeGraph.from_arrays(ids=ids, mother_ids=mother, father_ids=father, sex=sex)
+    for attribute in ("mother_rows", "father_rows", "twin_rows", "depth", "sex"):
         np.testing.assert_array_equal(getattr(from_dict, attribute), getattr(from_arrays, attribute))

@@ -39,7 +39,7 @@ class ScalarCounts(NamedTuple):
     """What :meth:`StreamingPairCounter.count` returns.
 
     Attributes:
-        raw: The 0.7.1 scalar counts, all 23 codes, ``0`` above the cutoff.
+        raw: The unfolded scalar counts, all 23 codes, ``0`` above the cutoff.
         overlaps: Per code, how many of ``raw`` a parent-offspring category
             claims under the precedence fold; non-zero only for MHS and PHS.
         clamped: Codes whose residual was floored at zero.
@@ -55,18 +55,15 @@ class CachedEstimate(NamedTuple):
 
     Attributes:
         result: The public fold-aware result.
-        raw: The unfolded counts the 0.7.1 ``count_pairs_streaming`` adapter returns.
     """
 
     result: RelationshipCountResult
-    raw: dict[str, int]
 
 
 def estimate_relationship_counts(graph: PedigreeGraph, *, max_degree: int) -> RelationshipCountResult:
     """Estimate the number of pairs in every category up to *max_degree*.
 
-    The body of :meth:`PedigreeGraph.estimate_relationship_counts`; the one
-    path that commits the thread budget (the 0.7.1 adapter does not).
+    The body of :meth:`PedigreeGraph.estimate_relationship_counts`.
 
     Args:
         graph: The full graph to count on.
@@ -90,7 +87,7 @@ def _estimate(graph: PedigreeGraph, max_degree: int) -> CachedEstimate:
     warning filter the first call raises without caching and a retry
     recomputes; a cached retrieval is silent and each cutoff warns on its
     own.  ``stacklevel=4`` reaches the caller of the public method through
-    both the new method and the ``count_pairs_streaming`` adapter.
+    the module function and the graph method.
     """
     md = _validate_max_degree(max_degree)
     cached = graph._estimate_cache.get(md)
@@ -111,7 +108,7 @@ def _estimate(graph: PedigreeGraph, max_degree: int) -> CachedEstimate:
             RuntimeWarning,
             stacklevel=4,
         )
-    entry = CachedEstimate(result, raw)
+    entry = CachedEstimate(result)
     graph._estimate_cache[md] = entry
     # _A…_A5 would otherwise stay resident for the graph's lifetime and inflate
     # later inbreeding / Ne work (issue #4).
@@ -210,7 +207,7 @@ class StreamingPairCounter:
         overlaps["MHS"] = _half_sibs_that_are_parent_offspring(pg.father_rows, sm, nontwin)
         overlaps["PHS"] = _half_sibs_that_are_parent_offspring(pg.mother_rows, sf, nontwin)
 
-        # Lazily rebuild _Am / _Af if extract_pairs deleted them; needed for
+        # Lazily rebuild _Am / _Af if a pair extraction released them; needed for
         # adjacency powers from degree 2 onward.
         pg._ensure_parent_csr()
         children_count = np.diff(pg._A.tocsc().indptr).astype(np.int64)

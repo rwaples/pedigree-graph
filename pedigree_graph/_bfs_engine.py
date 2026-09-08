@@ -9,14 +9,16 @@ The engine is intentionally decoupled from :mod:`pedigree_graph._core`:
 it takes a :class:`PedigreeGraph` as a parameter (typed under
 ``TYPE_CHECKING``), reads only the shared read-only collaborators the
 matrix engine also uses (``pg._mz_twin_pairs`` / ``pg._parent_offspring_pairs``
-/ ``pg.sibling_pairs``; ADR 0002) plus the free ``_pair_utils`` helpers,
+/ ``pg._sibling_pairs``; ADR 0002) plus the free ``_pair_utils`` helpers,
 and sources the relationship code set from :mod:`pedigree_graph._registry`.
 
-Counts-only API.  Differs from the matrix engine
-(:meth:`PedigreeGraph.count_pairs`) on inbred pedigrees: BFS counts
-*distinct* shared ancestors at depth ≥ 2 while the matrix engine counts
-*paths* (multiplicity).  Identical on non-inbred pedigrees.  The codes
-that may diverge are exactly :func:`pedigree_graph._registry.bfs_divergent_codes`.
+Counts-only API.  Counts every category a pair satisfies, before the ADR
+0006 closest-category fold that :meth:`PedigreeGraph.relationship_counts`
+applies, so it compares against the matrix engine's unfolded blocks.  On
+inbred pedigrees it differs from those too: BFS counts *distinct* shared
+ancestors at depth ≥ 2 while the matrix engine counts *paths*
+(multiplicity).  The codes that may diverge are exactly
+:func:`pedigree_graph._registry.bfs_divergent_codes`.
 """
 
 from __future__ import annotations
@@ -133,27 +135,26 @@ def count_pairs_bfs(
     through degree 5). Does NOT return ``PO`` or ``by_degree`` aggregates —
     callers compose those themselves.
 
-    On non-inbred pedigrees the counts match
-    :meth:`PedigreeGraph.count_pairs` exactly. On inbred pedigrees BFS counts
+    The counts are unfolded: a pair is counted under every category it
+    satisfies, unlike :meth:`PedigreeGraph.relationship_counts`, which keeps
+    only the closest.  On non-inbred pedigrees they match the matrix engine's
+    unfolded blocks exactly. On inbred pedigrees BFS counts
     *distinct* shared ancestors at depth ≥ 2 while the matrix engine counts
     *paths* (multiplicity); the codes that may diverge are exactly those in
     :func:`pedigree_graph._registry.bfs_divergent_codes`
     (``1C1R``, ``H1C1R``, ``1C2R``, ``2C``).
 
     Args:
-        pg: A :class:`PedigreeGraph` built directly (not via
-            :meth:`PedigreeGraph.from_subsample`). Subsample support is not
-            implemented for BFS.
+        pg: The graph to count on.  Views are not supported.
         max_degree: Must be 5. Lower values raise :class:`NotImplementedError`
-            — use :meth:`PedigreeGraph.count_pairs` for partial extractions.
+            — use :meth:`PedigreeGraph.relationship_counts` for partial extractions.
         n_threads: Optional override for numba's prange thread count. Numba
             caches the thread count at first JIT compilation, so this only
             takes effect on the first call in a process. To control threading
             on all calls, set ``NUMBA_NUM_THREADS`` in the environment.
 
     Raises:
-        NotImplementedError: If ``max_degree != 5`` or ``pg`` was built via
-            ``from_subsample``.
+        NotImplementedError: If ``max_degree != 5``.
 
     Note:
         Emits a :class:`FutureWarning` on every call (Python's default
@@ -162,11 +163,7 @@ def count_pairs_bfs(
     """
     if max_degree != 5:
         raise NotImplementedError(
-            "count_pairs_bfs only supports max_degree=5; use PedigreeGraph.count_pairs for partial extractions",
-        )
-    if pg._legacy_view is not None:  # 0.8.0-DELETE
-        raise NotImplementedError(
-            "count_pairs_bfs does not support subsampled graphs yet; use PedigreeGraph.count_pairs() instead",
+            "count_pairs_bfs only supports max_degree=5; use PedigreeGraph.relationship_counts for partial extractions",
         )
     warnings.warn(
         "count_pairs_bfs is experimental — API and semantics may change or be removed in any minor release",
@@ -239,7 +236,7 @@ def count_pairs_bfs(
     else:
         po_lo = po_hi = np.array([], dtype=np.intp)
 
-    fs, mat_hs, pat_hs = pg.sibling_pairs()
+    fs, mat_hs, pat_hs = pg._sibling_pairs()
     fs_lo, fs_hi = fs
     mat_hs_lo, mat_hs_hi = mat_hs
     pat_hs_lo, pat_hs_hi = pat_hs

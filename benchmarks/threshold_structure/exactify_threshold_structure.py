@@ -11,9 +11,9 @@ ped=pl.read_parquet(a.pedigree); ph=pl.read_parquet(a.phenotype); K=sp.load_npz(
 full_ids=ped['id'].to_numpy(); id_to_row={int(x):i for i,x in enumerate(full_ids)}
 view_to_full=np.asarray([id_to_row[int(x)] for x in ph['id'].to_numpy()], dtype=np.int64)
 coo=sp.triu(K,k=1).tocoo(); first=view_to_full[coo.row]; second=view_to_full[coo.col]
-g=PedigreeGraph.from_arrays(ids=full_ids,mothers=ped['mother'].to_numpy(),fathers=ped['father'].to_numpy(),twins=ped['twin'].to_numpy(),generation=ped['generation'].to_numpy())
-t0=time.perf_counter(); vals=g.compute_pair_kinship({'off':(first,second),'diag':(view_to_full,view_to_full)}); wall=time.perf_counter()-t0
-exact=sp.coo_matrix((np.concatenate([vals['off'],vals['off'],vals['diag']]).astype(np.float32),(np.concatenate([coo.row,coo.col,np.arange(n)]),np.concatenate([coo.col,coo.row,np.arange(n)]))),shape=(n,n)).tocsc(); exact.eliminate_zeros()
+g=PedigreeGraph.from_arrays(ids=full_ids,mother_ids=ped['mother'].to_numpy(),father_ids=ped['father'].to_numpy(),twin_ids=ped['twin'].to_numpy(),generation=ped['generation'].to_numpy())
+t0=time.perf_counter(); off=g.pair_kinship(first,second); diag=g.pair_kinship(view_to_full,view_to_full); wall=time.perf_counter()-t0
+exact=sp.coo_matrix((np.concatenate([off,off,diag]).astype(np.float32),(np.concatenate([coo.row,coo.col,np.arange(n)]),np.concatenate([coo.col,coo.row,np.arange(n)]))),shape=(n,n)).tocsc(); exact.eliminate_zeros()
 diff=np.abs(K.data.astype(np.float64)-exact.data.astype(np.float64))
 report={'n':n,'pairs':len(first),'wall_s':wall,'nonzero_diff':int(np.count_nonzero(diff)),'max_abs':float(diff.max()),'mean_abs':float(diff.mean()),'quantiles':np.quantile(diff,[0,.5,.9,.99,1]).tolist()}
 print(json.dumps(report,indent=2)); Path(a.out).write_text(json.dumps(report,indent=2)+'\n'); sp.save_npz(Path(a.out).with_suffix('.npz'),exact)

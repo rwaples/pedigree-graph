@@ -74,17 +74,17 @@ def _motif(up, down, n_anc, *, shared_is_mother):
 def test_extracted_pair_kinship_matches_registry(code):
     rt = REL_REGISTRY[code]
     ids, mo, fa, a, b = _motif(rt.up, rt.down, rt.n_anc, shared_is_mother=code not in _SHARED_IS_FATHER)
-    pg = PedigreeGraph.from_arrays(ids=ids, mothers=mo, fathers=fa)
+    pg = PedigreeGraph.from_arrays(ids=ids, mother_ids=mo, father_ids=fa)
 
-    phi = pg.compute_pair_kinship({code: (np.array([a]), np.array([b]))})[code][0]
+    phi = pg.pair_kinship(np.array([a]), np.array([b]))[0]
     assert phi == pytest.approx(PAIR_KINSHIP[code])
 
     # Non-vacuity: the matrix engine must classify (a, b) under exactly this
     # code. Directed codes (parent-offspring, grandparent, ...) keep a
     # meaningful (descendant, ancestor) orientation rather than canonical lo<hi,
     # so accept either orientation.
-    pairs = pg.extract_pairs(max_degree=5)
-    extracted = set(zip(pairs[code][0].tolist(), pairs[code][1].tolist(), strict=True))
+    pairs = pg.relationship_pairs(max_degree=5)
+    extracted = set(zip(pairs[code].first_rows.tolist(), pairs[code].second_rows.tolist(), strict=True))
     assert (a, b) in extracted or (b, a) in extracted
 
 
@@ -93,9 +93,9 @@ def test_mz_twin_kinship():
     mo = np.array([-1, -1, 0, 0], dtype=np.int64)
     fa = np.array([-1, -1, 1, 1], dtype=np.int64)
     twins = np.array([-1, -1, 3, 2], dtype=np.int64)  # 2 and 3 are MZ
-    pg = PedigreeGraph.from_arrays(ids=ids, mothers=mo, fathers=fa, twins=twins)
+    pg = PedigreeGraph.from_arrays(ids=ids, mother_ids=mo, father_ids=fa, twin_ids=twins)
 
-    phi = pg.compute_pair_kinship({"MZ": (np.array([2]), np.array([3]))})["MZ"][0]
+    phi = pg.pair_kinship(np.array([2]), np.array([3]))[0]
     assert phi == pytest.approx(PAIR_KINSHIP["MZ"])
-    pairs = pg.extract_pairs(max_degree=5)
-    assert (2, 3) in set(zip(pairs["MZ"][0].tolist(), pairs["MZ"][1].tolist(), strict=True))
+    pairs = pg.relationship_pairs(max_degree=5)
+    assert (2, 3) in set(zip(pairs["MZ"].first_rows.tolist(), pairs["MZ"].second_rows.tolist(), strict=True))

@@ -2,13 +2,14 @@
 
 Covers:
 - Smoke (kernel imports, JIT compiles).
-- Parity vs the matrix engine on the non-inbred small_pedigree fixture.
+- Parity vs the matrix engine's pre-fold classification on the
+  small_pedigree fixture.
 - Hand-built tiny pedigree (mirror of TestKnownTinyPedigree).
 - Full-vs-half 2nd-cousin handling (mirror of TestSecondCousinFullVsHalf).
 - Inbred-with-cousins fixture exercising the documented distinct-ancestor
   vs path-multiplicity divergence.
-- API contract: NotImplementedError on max_degree != 5 and on subsampled
-  graphs; n_threads kwarg accepted; FutureWarning emitted.
+- API contract: NotImplementedError on max_degree != 5; n_threads kwarg
+  accepted; FutureWarning emitted.
 """
 
 from __future__ import annotations
@@ -19,7 +20,8 @@ import numpy as np
 import polars as pl
 import pytest
 
-from pedigree_graph import PAIR_KINSHIP, PedigreeGraph
+from pedigree_graph import RELATIONSHIPS, PedigreeGraph
+from pedigree_graph._pair_extractor import MatrixPairExtractor, dependency_closure
 from pedigree_graph._registry import bfs_divergent_codes
 from pedigree_graph.experimental import count_pairs_bfs
 
@@ -28,7 +30,7 @@ from pedigree_graph.experimental import count_pairs_bfs
 # Sourced from the relationship plan (PGQ-004/009) so the test stays
 # synchronized with the engine's documented divergence set.
 COUSIN_CODES = set(bfs_divergent_codes())
-NON_COUSIN_CODES = set(PAIR_KINSHIP) - COUSIN_CODES
+NON_COUSIN_CODES = set(RELATIONSHIPS) - COUSIN_CODES
 
 
 def _bfs(pg: PedigreeGraph) -> dict[str, int]:
@@ -36,6 +38,12 @@ def _bfs(pg: PedigreeGraph) -> dict[str, int]:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)
         return count_pairs_bfs(pg)
+
+
+def _unfolded_counts(pg: PedigreeGraph) -> dict[str, int]:
+    """Matrix-engine counts before precedence folding, which is what BFS reports."""
+    pairs = MatrixPairExtractor(pg, max_workers=1).extract(dependency_closure(frozenset(RELATIONSHIPS)))
+    return {code: len(pairs[code][0]) for code in RELATIONSHIPS}
 
 
 def _tiny_lineage_df() -> pl.DataFrame:
@@ -54,21 +62,21 @@ def _tiny_lineage_df() -> pl.DataFrame:
 
 def test_kernel_imports_and_jits():
     """Smoke: count_pairs_bfs runs end-to-end on a 3-individual lineage."""
-    pg = PedigreeGraph(_tiny_lineage_df())
+    pg = PedigreeGraph.from_frame(_tiny_lineage_df())
     out = _bfs(pg)
     assert out["MO"] == 1
     assert out["FO"] == 1
     assert out["FS"] == 0
     assert out["MZ"] == 0
     # All 23 codes present.
-    assert set(out) == set(PAIR_KINSHIP)
+    assert set(out) == set(RELATIONSHIPS)
 
 
 def test_bfs_matches_matrix_on_small_pedigree(small_pedigree):
-    """Non-inbred fixture → BFS counts == matrix counts for all 23 codes."""
-    matrix_counts = PedigreeGraph(small_pedigree).count_pairs(max_degree=5)
-    bfs_counts = _bfs(PedigreeGraph(small_pedigree))
-    for code in PAIR_KINSHIP:
+    """Non-inbred fixture → BFS counts == pre-fold matrix counts for all 23 codes."""
+    matrix_counts = _unfolded_counts(PedigreeGraph.from_frame(small_pedigree))
+    bfs_counts = _bfs(PedigreeGraph.from_frame(small_pedigree))
+    for code in RELATIONSHIPS:
         assert matrix_counts[code] == bfs_counts[code], f"{code}: matrix={matrix_counts[code]} bfs={bfs_counts[code]}"
 
 
@@ -95,7 +103,7 @@ def tiny_pedigree():
 
 def test_known_tiny_counts(tiny_pedigree):
     """Hand-counted: FS=3, MO=7, FO=7, GP=12, Av=6, 1C=2."""
-    out = _bfs(PedigreeGraph(tiny_pedigree))
+    out = _bfs(PedigreeGraph.from_frame(tiny_pedigree))
     assert out["FS"] == 3
     assert out["MO"] == 7
     assert out["FO"] == 7
@@ -243,7 +251,7 @@ def pedigree_with_half_2c():
 
 def test_second_cousin_full_vs_half(pedigree_with_half_2c):
     """Only 1 full 2C pair should exist in this pedigree."""
-    out = _bfs(PedigreeGraph(pedigree_with_half_2c))
+    out = _bfs(PedigreeGraph.from_frame(pedigree_with_half_2c))
     assert out["2C"] == 1
 
 
@@ -362,8 +370,8 @@ def inbred_with_cousins_pedigree():
 
 def test_inbred_with_cousins_non_cousin_codes_match(inbred_with_cousins_pedigree):
     """All non-cousin codes must agree between matrix and BFS engines."""
-    matrix_counts = PedigreeGraph(inbred_with_cousins_pedigree).count_pairs(max_degree=5)
-    bfs_counts = _bfs(PedigreeGraph(inbred_with_cousins_pedigree))
+    matrix_counts = PedigreeGraph.from_frame(inbred_with_cousins_pedigree).relationship_counts(max_degree=5)
+    bfs_counts = _bfs(PedigreeGraph.from_frame(inbred_with_cousins_pedigree))
     for code in NON_COUSIN_CODES:
         assert matrix_counts[code] == bfs_counts[code], (
             f"non-cousin code {code} differs: matrix={matrix_counts[code]} bfs={bfs_counts[code]}"
@@ -378,8 +386,8 @@ def test_inbred_with_cousins_cousin_codes_diverge(inbred_with_cousins_pedigree):
     BFS's distinct-shared-ancestor counting differs from the matrix
     engine's path-multiplicity counting on inbred cousins.
     """
-    matrix_counts = PedigreeGraph(inbred_with_cousins_pedigree).count_pairs(max_degree=5)
-    bfs_counts = _bfs(PedigreeGraph(inbred_with_cousins_pedigree))
+    matrix_counts = PedigreeGraph.from_frame(inbred_with_cousins_pedigree).relationship_counts(max_degree=5)
+    bfs_counts = _bfs(PedigreeGraph.from_frame(inbred_with_cousins_pedigree))
 
     # 1C1R: matrix counts (10,11), (9,12) (each via path-multiplicity 2);
     # BFS sees both as count==1 distinct → relegates them to H1C1R.
@@ -406,25 +414,16 @@ def test_inbred_with_cousins_cousin_codes_diverge(inbred_with_cousins_pedigree):
 
 
 def test_max_degree_lt_5_raises_not_implemented():
-    pg = PedigreeGraph(_tiny_lineage_df())
+    pg = PedigreeGraph.from_frame(_tiny_lineage_df())
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)
         with pytest.raises(NotImplementedError, match="max_degree=5"):
             count_pairs_bfs(pg, max_degree=3)
 
 
-def test_subsample_raises_not_implemented(small_pedigree):
-    sub = small_pedigree.head(50)
-    pg = PedigreeGraph.from_subsample(small_pedigree, sub)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", FutureWarning)
-        with pytest.raises(NotImplementedError, match="subsampled"):
-            count_pairs_bfs(pg)
-
-
 def test_n_threads_kwarg_accepts_int():
     """Smoke: n_threads=2 doesn't crash."""
-    pg = PedigreeGraph(_tiny_lineage_df())
+    pg = PedigreeGraph.from_frame(_tiny_lineage_df())
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", FutureWarning)
         out = count_pairs_bfs(pg, n_threads=2)
@@ -432,7 +431,7 @@ def test_n_threads_kwarg_accepts_int():
 
 
 def test_future_warning_fires():
-    pg = PedigreeGraph(_tiny_lineage_df())
+    pg = PedigreeGraph.from_frame(_tiny_lineage_df())
     with pytest.warns(FutureWarning, match="experimental"):
         count_pairs_bfs(pg)
 

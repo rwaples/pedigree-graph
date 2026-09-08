@@ -6,10 +6,9 @@ sentinel metrics, and end-to-end RSS / convergence at scales the old
 dense path could not reach.
 
 The reference dense implementation embedded in this file is a verbatim
-copy of the deleted ``_founder_contribution_matrix`` from
-``_effective_size.py`` (pre-refactor) — kept here purely so the parity
-test compares the new streaming helpers against the algorithm they
-replace.
+copy of the deleted ``_founder_contribution_matrix`` — kept here purely
+so the parity test compares the streaming helpers against the algorithm
+they replace.
 """
 
 from __future__ import annotations
@@ -23,9 +22,27 @@ import polars as pl
 import pytest
 import scipy.sparse as sp
 
-from pedigree_graph import (
-    PedigreeGraph,
-    compute_all_ne,
+from pedigree_graph import PedigreeGraph
+from pedigree_graph._cohorts import ObservedCohorts
+from pedigree_graph._kinship_kernel import (
+    KinshipDPConfig,
+    _compute_generation_kinship_summary,
+    _densify_labels,
+    _finalize_summary,
+    _run_dp_core,
+)
+from pedigree_graph._ne_caballero_toro import CTAccumulators, _caballero_toro_accumulators, _caballero_toro_from
+from pedigree_graph._ne_family_size import _sex_specific_family_table
+from pedigree_graph._ne_founders import (
+    FounderContributionMeans,
+    _founder_idx,
+    _ltc_from,
+    _per_gen_founder_means,
+)
+from pedigree_graph._ne_rates import _summary_from_matrix
+from pedigree_graph.effective_size import (
+    ALL_EFFECTIVE_SIZE_ESTIMATORS,
+    estimate_effective_sizes,
     ne_caballero_toro,
     ne_coancestry,
     ne_hill_overlapping,
@@ -35,14 +52,7 @@ from pedigree_graph import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
-from pedigree_graph._cohorts import ObservedCohorts
-from pedigree_graph._effective_size import (
-    CTAccumulators,
-    _caballero_toro_accumulators,
-    _founder_idx,
-    _per_gen_founder_means,
-    _sex_specific_family_table,
-)
+from pedigree_graph.summaries import GenerationKinshipSummary
 
 # ---------------------------------------------------------------------------
 # Reference dense implementation (pre-refactor `_founder_contribution_matrix`).
@@ -52,7 +62,7 @@ from pedigree_graph._effective_size import (
 def _ref_founder_contribution_matrix(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray]:
     """Verbatim copy of the deleted dense forward recursion."""
     n = pg.n_individuals
-    gen = np.asarray(pg.generation)
+    gen = np.asarray(pg.generation_labels)
     mother = np.asarray(pg.mother_rows)
     father = np.asarray(pg.father_rows)
     founder_idx = np.where(gen == 0)[0]
@@ -83,7 +93,7 @@ def _ref_founder_contribution_matrix(pg: PedigreeGraph) -> tuple[np.ndarray, np.
 def _ref_per_gen_means(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray]:
     """Reference per-gen founder means built from the dense matrix."""
     c, founder_idx = _ref_founder_contribution_matrix(pg)
-    gen = np.asarray(pg.generation)
+    gen = np.asarray(pg.generation_labels)
     g_max = int(gen.max()) if pg.n_individuals > 0 else 0
     n_founders = len(founder_idx)
     m_g = np.full((g_max + 1, n_founders), np.nan, dtype=np.float64)
@@ -247,7 +257,7 @@ def parity_pedigree(request: pytest.FixtureRequest) -> PedigreeGraph:
         df = _build_random_mating_pedigree(rng, n_per_gen=20, n_gens=4)
     else:  # skip_gen
         df = _build_skip_gen_pedigree()
-    return PedigreeGraph(df)
+    return PedigreeGraph.from_frame(df)
 
 
 def test_per_gen_founder_means_matches_reference(parity_pedigree: PedigreeGraph) -> None:
@@ -274,7 +284,21 @@ def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None
     np.testing.assert_allclose(new.sums, ref.sums, atol=1e-12, rtol=0.0)
 
 
-def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
+def _kernel_summary(pg: PedigreeGraph, **flags) -> GenerationKinshipSummary:
+    """The generation kinship summary straight from the kernel, arrays only."""
+    return _compute_generation_kinship_summary(
+        pg.n_individuals,
+        pg.mother_rows,
+        pg.father_rows,
+        pg.twin_rows,
+        pg.depth,
+        0.0,
+        labels=pg.generation_labels,
+        **flags,
+    )
+
+
+def _eager_retire_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
     """Parity helper: retire=True with lazy=False.
 
     Drives the same path as production but with the lazy-alloc gate
@@ -283,12 +307,7 @@ def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
     is expected at small N — lazy alloc shifts the buffer layout but
     not the order of arithmetic operations.
     """
-    from pedigree_graph._kinship_kernel import (
-        KinshipDPConfig,
-        _finalize_from_sum_theta,
-        _run_dp_core,
-    )
-
+    dense, observed, n_unlabelled = _densify_labels(np.asarray(pg.generation_labels, dtype=np.int32))
     r = _run_dp_core(
         pg.n_individuals,
         np.asarray(pg.mother_rows, dtype=np.int32),
@@ -297,44 +316,28 @@ def _theta_retire_eager(pg: PedigreeGraph) -> np.ndarray:
         np.asarray(pg.depth, dtype=np.int32),
         0.0,
         None,
-        labels=np.asarray(pg.generation, dtype=np.int32),
+        labels=dense,
         config=KinshipDPConfig(retire=True, lazy=False, debug_asserts=False),
     )
-    return _finalize_from_sum_theta(r.sum_theta, r.labels, r.tw_idx)
+    return _finalize_summary(r.sum_theta, r.labels, r.tw_idx, observed, n_unlabelled)
 
 
-def test_per_gen_mean_kinship_retire_matches_legacy(
-    parity_pedigree: PedigreeGraph,
-) -> None:
+def _assert_summaries_agree(a: GenerationKinshipSummary, b: GenerationKinshipSummary) -> None:
+    np.testing.assert_array_equal(a.generations, b.generations)
+    np.testing.assert_array_equal(a.pair_counts, b.pair_counts)
+    np.testing.assert_allclose(a.mean_kinship, b.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
+    assert a.unlabelled_individual_count == b.unlabelled_individual_count
+
+
+def test_retiring_summary_matches_the_post_hoc_walk(parity_pedigree: PedigreeGraph) -> None:
     # Inline and post-hoc accumulation sum the same pairs in different
     # orders, so float-level bit identity is not achievable; require
     # 1e-12 absolute.
-    from pedigree_graph._kinship_kernel import _compute_theta_per_gen
-
     pg = parity_pedigree
-    theta_retiring = pg.per_gen_mean_kinship()
-    theta_legacy = _compute_theta_per_gen(
-        pg.n_individuals,
-        pg.mother_rows,
-        pg.father_rows,
-        pg.twin_rows,
-        pg.depth,
-        0.0,
-        _debug_no_retire=True,
-        labels=pg.generation,
-    )
-    np.testing.assert_allclose(
-        theta_retiring,
-        theta_legacy,
-        rtol=0,
-        atol=1e-12,
-        equal_nan=True,
-    )
+    _assert_summaries_agree(pg.mean_kinship_by_generation(), _kernel_summary(pg, _debug_no_retire=True))
 
 
-def test_per_gen_mean_kinship_lazy_matches_eager_retire(
-    parity_pedigree: PedigreeGraph,
-) -> None:
+def test_lazy_retire_summary_matches_eager_retire(parity_pedigree: PedigreeGraph) -> None:
     """Lazy-allocated retire bit-identical to eager retire.
 
     Same arithmetic, different storage layout — bit identity is the
@@ -343,102 +346,50 @@ def test_per_gen_mean_kinship_lazy_matches_eager_retire(
     exactly.
     """
     pg = parity_pedigree
-    theta_lazy = pg.per_gen_mean_kinship()  # production: lazy=True
-    theta_eager = _theta_retire_eager(pg)  # test-only: lazy=False
-    np.testing.assert_array_equal(theta_lazy, theta_eager)
+    assert pg.mean_kinship_by_generation() == _eager_retire_summary(pg)
 
 
-def test_per_gen_mean_kinship_retire_matches_K_reference(
-    parity_pedigree: PedigreeGraph,
-) -> None:
-    from pedigree_graph._effective_size import _per_gen_mean_kinship
-
+def test_retiring_summary_matches_the_matrix_walk(parity_pedigree: PedigreeGraph) -> None:
     pg = parity_pedigree
-    theta_retiring = pg.per_gen_mean_kinship()
-    K = pg.kinship_matrix()
-    theta_K = _per_gen_mean_kinship(
-        K,
-        np.asarray(pg.generation),
+    streamed = pg.mean_kinship_by_generation()
+    walked = _summary_from_matrix(
+        pg.kinship_matrix(),
+        np.asarray(pg.generation_labels),
         np.asarray(pg.twin_rows),
     )
-    np.testing.assert_allclose(
-        theta_retiring,
-        theta_K,
-        rtol=0,
-        atol=1e-12,
-        equal_nan=True,
-    )
+    _assert_summaries_agree(streamed, walked)
 
 
-def test_compute_theta_per_gen_debug_no_retire_independent_of_caches(
-    parity_pedigree: PedigreeGraph,
-) -> None:
+def test_the_kernel_summary_never_reads_the_graph_caches(parity_pedigree: PedigreeGraph) -> None:
     """The kernel debug path is array-only and never reads pg caches.
 
-    Poison both per-gen and K caches on the graph, then call the
-    kernel's legacy DP directly with arrays — it must return the
-    correct θ̄ regardless.  Replaces the older
-    ``per_gen_mean_kinship(_debug_no_retire=True)`` API test now that
-    the public method no longer exposes the flag.
+    Poison both the summary memo and the complete-matrix cache on the
+    graph, then call the kernel directly with arrays — it must return
+    the correct summary regardless.
     """
-    from pedigree_graph._kinship_kernel import _compute_theta_per_gen
-
     pg = parity_pedigree
-    theta_retiring = pg.per_gen_mean_kinship()
-    cached = pg._theta_per_gen_cache[0.0]
-    pg._theta_per_gen_cache[0.0] = np.full_like(cached, -999.0)
+    streamed = pg.mean_kinship_by_generation()
+    poisoned_summary = GenerationKinshipSummary(
+        generations=streamed.generations,
+        mean_kinship=np.full_like(streamed.mean_kinship, -999.0),
+        pair_counts=streamed.pair_counts,
+        unlabelled_individual_count=streamed.unlabelled_individual_count,
+    )
+    pg._generation_kinship_summary = poisoned_summary
     K = pg.kinship_matrix()
     poisoned_K = sp.csc_matrix(K.shape, dtype=K.dtype)
-    pg._kinship_cache[0.0] = poisoned_K
-    theta_legacy = _compute_theta_per_gen(
-        pg.n_individuals,
-        pg.mother_rows,
-        pg.father_rows,
-        pg.twin_rows,
-        pg.depth,
-        0.0,
-        _debug_no_retire=True,
-        labels=pg.generation,
-    )
-    assert not np.allclose(theta_legacy, -999.0, equal_nan=True)
-    np.testing.assert_array_equal(
-        pg._theta_per_gen_cache[0.0],
-        np.full_like(cached, -999.0),
-    )
-    assert pg._kinship_cache[0.0] is poisoned_K
-    np.testing.assert_allclose(
-        theta_legacy,
-        theta_retiring,
-        rtol=0,
-        atol=1e-12,
-        equal_nan=True,
-    )
+    pg._complete_kinship_cache = poisoned_K
+
+    from_kernel = _kernel_summary(pg, _debug_no_retire=True)
+    assert not np.allclose(from_kernel.mean_kinship, -999.0, equal_nan=True)
+    assert pg._generation_kinship_summary is poisoned_summary
+    assert pg._complete_kinship_cache is poisoned_K
+    _assert_summaries_agree(from_kernel, streamed)
 
 
-def test_compute_theta_per_gen_debug_asserts_pass_on_well_formed_pedigree(
-    parity_pedigree: PedigreeGraph,
-) -> None:
-    from pedigree_graph._kinship_kernel import _compute_theta_per_gen
-
+def test_kernel_debug_asserts_pass_on_a_well_formed_pedigree(parity_pedigree: PedigreeGraph) -> None:
     pg = parity_pedigree
-    theta_default = pg.per_gen_mean_kinship()
-    theta_asserts = _compute_theta_per_gen(
-        pg.n_individuals,
-        pg.mother_rows,
-        pg.father_rows,
-        pg.twin_rows,
-        pg.depth,
-        0.0,
-        _debug_asserts=True,
-        labels=pg.generation,
-    )
-    np.testing.assert_allclose(
-        theta_default,
-        theta_asserts,
-        rtol=0,
-        atol=1e-12,
-        equal_nan=True,
-    )
+    _assert_summaries_agree(pg.mean_kinship_by_generation(), _kernel_summary(pg, _debug_asserts=True))
 
 
 def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> None:
@@ -450,11 +401,10 @@ def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> No
     res_ltc_new = ne_long_term_contributions(pg)
     res_ct_new = ne_caballero_toro(pg)
 
-    # Reference path: feed dense-derived structures through the public API.
-    m_g_ref, founder_idx_ref = _ref_per_gen_means(pg)
-    res_ltc_ref = ne_long_term_contributions(pg, mean_contributions=(m_g_ref, founder_idx_ref))
-    ref_acc = _ref_ct_accumulators(pg, F)
-    res_ct_ref = ne_caballero_toro(pg, ct_accumulators=ref_acc)
+    # Reference path: feed dense-derived structures through the reducers.
+    cohorts = ObservedCohorts.for_graph(pg, "reference")
+    res_ltc_ref = _ltc_from(cohorts, FounderContributionMeans(*_ref_per_gen_means(pg)), 1e-6)
+    res_ct_ref = _caballero_toro_from(cohorts, _ref_ct_accumulators(pg, F))
 
     # LTC dataclass parity
     assert res_ltc_new.asymptote_reached == res_ltc_ref.asymptote_reached
@@ -505,7 +455,7 @@ def test_sex_specific_family_table_attributes_skip_gen_offspring() -> None:
     gen-0 individuals.  This test pins the corrected attribution.
     """
     df = _build_skip_gen_pedigree()
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     table = _sex_specific_family_table(
         np.asarray(pg.mother_rows),
         np.asarray(pg.father_rows),
@@ -538,7 +488,7 @@ def test_sex_specific_family_table_attributes_skip_gen_offspring() -> None:
 
 @pytest.fixture
 def skip_gen_pedigree() -> PedigreeGraph:
-    return PedigreeGraph(_build_skip_gen_pedigree())
+    return PedigreeGraph.from_frame(_build_skip_gen_pedigree())
 
 
 def test_ne_inbreeding_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
@@ -558,7 +508,7 @@ def test_ne_coancestry_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
     # Founders: every off-diagonal pair is unrelated → mean θ at gen 0 == 0.
     assert res.mean_theta_per_gen[0] == 0.0
     # Some downstream cohorts have non-trivial pairs; just assert they're finite or NaN
-    # (cohorts with <2 members produce NaN per the existing _per_gen_mean_kinship rules).
+    # (a cohort with fewer than 2 members has no pair, so its mean is NaN).
     assert all(np.isnan(v) or np.isfinite(v) for v in res.mean_theta_per_gen)
 
 
@@ -594,13 +544,12 @@ def test_ne_variance_family_size_skip_gen_captures_lifetime_offspring(
     fix prevents.
     """
     res = ne_variance_family_size(skip_gen_pedigree)
-    # ne_per_transition is now indexed by parent generation 0..g_max-1.
-    assert res.ne_per_transition.shape == (3,)  # g_max = 3 → indices 0, 1, 2
+    # One entry per observed parent cohort, the last one included.
+    np.testing.assert_array_equal(res.parent_generations, [0, 1, 2, 3])
     # Only parent-gen 0 has both n_m ≥ 2 and n_f ≥ 2 in this fixture.
     assert np.isfinite(res.ne_per_transition[0])
-    # gen 1 has only 1 male; gen 2 has 0 females → both NaN.
-    assert np.isnan(res.ne_per_transition[1])
-    assert np.isnan(res.ne_per_transition[2])
+    # gen 1 has only 1 male; gen 2 has 0 females; gen 3 has no offspring.
+    assert np.isnan(res.ne_per_transition[1:]).all()
     # Scalar Ne is the harmonic mean over the one finite entry.
     assert res.ne == pytest.approx(res.ne_per_transition[0], abs=1e-12)
 
@@ -633,7 +582,7 @@ def test_sentinel_metrics_at_n2000_g8() -> None:
     rng = np.random.default_rng(7)
     n_per_gen, n_gens = 2000, 8
     df = _build_random_mating_pedigree(rng, n_per_gen=n_per_gen, n_gens=n_gens)
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     F = np.zeros(pg.n_individuals, dtype=np.float64)
     founder_idx = _founder_idx(pg)
     n_founders = len(founder_idx)
@@ -670,11 +619,8 @@ _RSS_SCRIPT = textwrap.dedent(
     import sys
 
     from pedigree_graph import PedigreeGraph
-    from pedigree_graph._effective_size import (
-        _caballero_toro_accumulators,
-        _founder_idx,
-        _per_gen_founder_means,
-    )
+    from pedigree_graph._ne_caballero_toro import _caballero_toro_accumulators
+    from pedigree_graph._ne_founders import _founder_idx, _per_gen_founder_means
 
 
     def read_vm_hwm_kb() -> int:
@@ -737,9 +683,7 @@ _RSS_SCRIPT = textwrap.dedent(
     # import cost cannot consume the budget.
     base_kb = read_vm_hwm_kb()
     ids, mothers, fathers, generation, sex = build(n_per_gen=2000, n_gens=8, seed=42)
-    # sex is unused by the three helpers below, but passing it avoids the
-    # all-female from_arrays default documented as a foot-gun.
-    pg = PedigreeGraph.from_arrays(ids=ids, mothers=mothers, fathers=fathers,
+    pg = PedigreeGraph.from_arrays(ids=ids, mother_ids=mothers, father_ids=fathers,
                                    generation=generation, sex=sex)
     # Synthesize F via the lazy cache without forcing the full kinship
     # matrix (which is unrelated to this PR and dominates RSS at scale).
@@ -784,8 +728,8 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
 
     Observed delta is 62.4–62.8 MB across repeat runs (~0.5% spread);
     the 120 MB bound leaves generous headroom for platform variance.
-    Excludes ``compute_all_ne`` because the sparse kinship matrix at this
-    scale is unrelated to this refactor and would mask the result.
+    Excludes ``estimate_effective_sizes`` because the sparse kinship matrix
+    at this scale is unrelated to this refactor and would mask the result.
 
     Caveat inherent to VmHWM: it is a high-water mark, so if imports ever
     peaked *above* the helpers' peak the delta would read ~0 and pass
@@ -818,7 +762,7 @@ def test_ltc_runs_at_scale_old_code_could_not() -> None:
     """
     rng = np.random.default_rng(13)
     df = _build_random_mating_pedigree(rng, n_per_gen=2000, n_gens=10)
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
     res = ne_long_term_contributions(pg)
     # Loose bound: under WF random mating with N=2000, the LTC asymptote
     # (when reached) sits near N/2.  Don't assert convergence — at this
@@ -831,7 +775,7 @@ def test_ltc_runs_at_scale_old_code_could_not() -> None:
 
 
 # ---------------------------------------------------------------------------
-# compute_all_ne smoke at scale — confirms full orchestration path works.
+# Batch smoke at scale — confirms the full orchestration path works.
 # ---------------------------------------------------------------------------
 
 
@@ -849,7 +793,7 @@ def test_streaming_ne_coancestry_recovery_at_n2000_g8() -> None:
     """
     rng = np.random.default_rng(2026)
     df = _build_random_mating_pedigree(rng, n_per_gen=2000, n_gens=8)
-    pg = PedigreeGraph(df)
+    pg = PedigreeGraph.from_frame(df)
 
     nec = ne_coancestry(pg)
     nev = ne_variance_family_size(pg)
@@ -865,22 +809,12 @@ def test_streaming_ne_coancestry_recovery_at_n2000_g8() -> None:
 
 
 @pytest.mark.slow
-def test_compute_all_ne_at_n2000_g8_smoke() -> None:
+def test_estimate_effective_sizes_at_n2000_g8_smoke() -> None:
     """End-to-end smoke at the scale targeted by the refactor."""
     rng = np.random.default_rng(11)
     df = _build_random_mating_pedigree(rng, n_per_gen=2000, n_gens=8)
-    pg = PedigreeGraph(df)
-    out = compute_all_ne(pg)
-    assert set(out.keys()) == {
-        "ne_inbreeding",
-        "ne_coancestry",
-        "ne_variance_family_size",
-        "ne_sex_ratio",
-        "ne_individual_delta_f",
-        "ne_long_term_contributions",
-        "ne_hill_overlapping",
-        "ne_caballero_toro",
-    }
+    pg = PedigreeGraph.from_frame(df)
+    out = estimate_effective_sizes(pg)
+    assert set(out) == set(ALL_EFFECTIVE_SIZE_ESTIMATORS)
     for name, result in out.items():
-        d = result.to_dict()
-        assert "ne" in d, name
+        assert "ne" in result.to_dict(), name

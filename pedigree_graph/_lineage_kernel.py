@@ -34,7 +34,7 @@ def _compute_n_descendants(
 
     Topological order is required (parents precede children in row
     index).  Public rows may arrive in any acyclic order, so
-    ``PedigreeGraph.compute_n_descendants`` runs this on the parent
+    ``PedigreeGraph.descendant_path_counts`` runs this on the parent
     arrays remapped by :mod:`pedigree_graph._topology` and maps the
     result back.  We iterate row indices in reverse, pushing each row's
     contribution up to its parents.  When we visit i, every descendant

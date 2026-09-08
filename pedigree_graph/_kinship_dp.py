@@ -60,7 +60,7 @@ class KinshipDPConfig(NamedTuple):
 
     Fields:
         retire: free DP rows in place at end-of-depth + accumulate
-            inline θ̄.  Required for ``per_gen_mean_kinship``; turned
+            inline θ̄.  Required for the generation kinship summary; turned
             off for CSC assembly which needs the full row storage.
         lazy: defer row-slot allocation to the first write.  Only
             valid with ``retire=True``; the never-allocated → live
@@ -723,58 +723,6 @@ def _finalize_summary(
     )
 
 
-def _scatter_summary(summary: GenerationKinshipSummary, labels: np.ndarray) -> np.ndarray:
-    """0.8.0-DELETE: lay a summary out as the 0.7.1 ``max(label) + 1`` array.
-
-    Labels absent from the summary (gaps in a sparse labelling) are NaN, the
-    same value the old code produced for a cohort with no eligible pairs.
-    """
-    raw = np.asarray(labels, dtype=np.int32)
-    g_max = int(raw.max()) if raw.size else 0
-    out = np.full(g_max + 1, np.nan, dtype=np.float64)
-    out[summary.generations] = summary.mean_kinship
-    return out
-
-
-def _finalize_from_sum_theta(
-    sum_theta: np.ndarray,
-    generation: np.ndarray,
-    twin_idx: np.ndarray,
-) -> np.ndarray:
-    """0.8.0-DELETE: divide raw-label θ̄ sums into the 0.7.1 array form.
-
-    ``sum_theta`` is indexed by raw label (``label.max() + 1`` buckets), the
-    layout the retiring DP produces when handed raw labels.  Used only by
-    tests that drive :func:`_run_dp_core` directly with raw labels; the
-    package's own paths go through :func:`_densify_labels` and
-    :func:`_finalize_summary`.
-    """
-    gen = np.ascontiguousarray(generation, dtype=np.int32)
-    twin = np.ascontiguousarray(twin_idx, dtype=np.int32)
-    dense, observed, n_unlabelled = _densify_labels(gen)
-    dense_sums = np.zeros(observed.shape[0] + 1, dtype=np.float64)
-    dense_sums[: observed.shape[0]] = np.asarray(sum_theta, dtype=np.float64)[observed]
-    return _scatter_summary(_finalize_summary(dense_sums, dense, twin, observed, n_unlabelled), gen)
-
-
-def _per_gen_mean_kinship_from_dp(
-    cols: np.ndarray,
-    vals: np.ndarray,
-    row_start: np.ndarray,
-    row_count: np.ndarray,
-    generation: np.ndarray,
-    twin_idx: np.ndarray,
-) -> np.ndarray:
-    """0.8.0-DELETE: mean θ per generation in the 0.7.1 array form.
-
-    Streams the DP row storage through :func:`_summary_from_dp_rows` and
-    scatters the result over ``max(label) + 1`` slots.
-    """
-    gen = np.ascontiguousarray(generation, dtype=np.int32)
-    summary = _summary_from_dp_rows(cols, vals, row_start, row_count, gen, twin_idx)
-    return _scatter_summary(summary, gen)
-
-
 def _summary_from_dp_rows(
     cols: np.ndarray,
     vals: np.ndarray,
@@ -883,36 +831,3 @@ def _compute_generation_kinship_summary(
     # r.labels / r.tw_idx are in the kernel's row space; the denominators only
     # need same-group membership of twin pairs, which any permutation keeps.
     return _finalize_summary(sum_theta, r.labels, r.tw_idx, observed, n_unlabelled)
-
-
-def _compute_theta_per_gen(
-    n: int,
-    m_idx: np.ndarray,
-    f_idx: np.ndarray,
-    tw_idx: np.ndarray,
-    depth: np.ndarray,
-    min_kinship: float,
-    init_cap_per_row: int | None = None,
-    _debug_no_retire: bool = False,
-    _debug_asserts: bool = False,
-    *,
-    labels: np.ndarray | None = None,
-) -> np.ndarray:
-    """0.8.0-DELETE: :func:`_compute_generation_kinship_summary` in array form.
-
-    Returns the 0.7.1 float64 array of length ``max(label) + 1`` with NaN
-    where a label is absent or has no eligible pair.
-    """
-    summary = _compute_generation_kinship_summary(
-        n,
-        m_idx,
-        f_idx,
-        tw_idx,
-        depth,
-        min_kinship,
-        init_cap_per_row,
-        _debug_no_retire,
-        _debug_asserts,
-        labels=labels,
-    )
-    return _scatter_summary(summary, depth if labels is None else labels)

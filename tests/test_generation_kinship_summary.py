@@ -11,7 +11,8 @@ import numpy as np
 import pytest
 from conftest import parity_columns, parity_fixtures
 
-from pedigree_graph import MissingMetadataError, PedigreeGraph, ne_coancestry
+from pedigree_graph import MissingMetadataError, PedigreeGraph
+from pedigree_graph.effective_size import ne_coancestry
 from pedigree_graph.summaries import GenerationKinshipSummary
 
 # Two founder couples, each with two children, then one grandchild couple:
@@ -58,14 +59,12 @@ def test_partial_labels_exclude_and_count_the_unlabelled_rows():
     _assert_summary(pg.mean_kinship_by_generation(), [0, 1, 2], [0.0, 0.25, 0.25], [1, 1, 1], 4)
 
 
-def test_partial_labels_still_reject_the_estimators_and_the_adapter():
+def test_partial_labels_still_reject_the_estimators():
     pg = _graph(generation=[0, 0, 1, 1, -1, -1, -1, -1, 2, 2])
     pg.mean_kinship_by_generation()
-    with pytest.raises(MissingMetadataError):
-        ne_coancestry(pg)
     with pytest.raises(MissingMetadataError) as info:
-        pg.per_gen_mean_kinship()
-    assert info.value.fields["operation"] == "per_gen_mean_kinship"
+        ne_coancestry(pg)
+    assert info.value.fields["operation"] == "ne_coancestry"
 
 
 def test_sparse_labels_return_only_observed_groups():
@@ -147,18 +146,9 @@ def test_cached_matrix_path_and_streamed_path_agree_on_partial_labels():
     twin = [-1, -1, 3, 2, -1, -1, -1, -1, -1, -1]
     streamed = _graph(generation=labels, twin=twin).mean_kinship_by_generation()
     with_matrix = _graph(generation=labels, twin=twin)
-    with_matrix.kinship_matrix(0.0)
+    with_matrix.kinship_matrix()
     walked = with_matrix.mean_kinship_by_generation()
     _assert_summary(walked, streamed.generations, streamed.mean_kinship, streamed.pair_counts, 1)
-
-
-def test_adapter_scatters_sparse_labels_with_nan_gaps():
-    theta = _graph(generation=[5, 5, 9, 9, 5, 5, 9, 9, 30, 30]).per_gen_mean_kinship()
-    assert theta.shape == (31,)
-    observed = np.array([5, 9, 30])
-    np.testing.assert_allclose(theta[observed], _DEPTH_MEANS, rtol=0, atol=1e-12)
-    gaps = np.setdiff1d(np.arange(31), observed)
-    assert np.isnan(theta[gaps]).all()
 
 
 FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
@@ -167,17 +157,17 @@ FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 @pytest.mark.parametrize("name", sorted(FIXTURES))
 def test_matrix_path_parity_on_safe_sizes(name):
     fixture = FIXTURES[name]
-    depth = np.asarray(PedigreeGraph(parity_columns(fixture)).depth, dtype=np.int64)
+    depth = np.asarray(PedigreeGraph.from_frame(parity_columns(fixture)).depth, dtype=np.int64)
     # Merge adjacent depths, blank one row in three, and rebase, so the
     # cohorts are sparse, partial, and span structural depths at once.
     labels = 10 * (depth // 2) + 100
     labels[np.arange(len(labels)) % 3 == 0] = -1
     columns = {**parity_columns(fixture), "generation": labels}
 
-    graph = PedigreeGraph(columns)
+    graph = PedigreeGraph.from_frame(columns)
     streamed = graph.mean_kinship_by_generation()
-    with_matrix = PedigreeGraph(columns)
-    with_matrix.kinship_matrix(0.0)
+    with_matrix = PedigreeGraph.from_frame(columns)
+    with_matrix.kinship_matrix()
     walked = with_matrix.mean_kinship_by_generation()
 
     # A column that is -1 everywhere parses as no labels at all, so the tiny
@@ -194,13 +184,13 @@ def test_matrix_path_parity_on_safe_sizes(name):
 def test_summary_is_invariant_to_input_row_order(name):
     fixture = FIXTURES[name]
     columns = parity_columns(fixture)
-    depth = np.asarray(PedigreeGraph(columns).depth, dtype=np.int64)
+    depth = np.asarray(PedigreeGraph.from_frame(columns).depth, dtype=np.int64)
     labels = depth // 2
     labels[np.arange(len(labels)) % 5 == 0] = -1
-    reference = PedigreeGraph({**columns, "generation": labels}).mean_kinship_by_generation()
+    reference = PedigreeGraph.from_frame({**columns, "generation": labels}).mean_kinship_by_generation()
 
     order = np.random.default_rng(6).permutation(len(labels))
-    shuffled = PedigreeGraph(
+    shuffled = PedigreeGraph.from_frame(
         {key: np.asarray(value)[order] for key, value in {**columns, "generation": labels}.items()}
     )
     permuted = shuffled.mean_kinship_by_generation()

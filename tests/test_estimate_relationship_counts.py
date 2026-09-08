@@ -1,9 +1,10 @@
 """Tests for ``PedigreeGraph.estimate_relationship_counts`` (ADR 0006, ADR 0011, slice 4c).
 
-The scalar formulas are those of the 0.7.1 ``count_pairs_streaming``; what is
-new is the typed result that says per code whether the value is exact,
-approximate, or clamped, and the one ``RuntimeWarning`` per clamped
-computation.
+The approximate codes still carry the frozen 0.7.1 scalar values, which
+``tests/data/parity_v0.7.1`` pins.  What is new is the typed result that says
+per code whether the value is exact, approximate, or clamped, the half-sib fold
+that makes the exact codes agree with ``relationship_counts``, and the one
+``RuntimeWarning`` per clamped computation.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from test_relationship_pairs import FIXTURE_NAMES, _columns, _graph
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelationshipCountResult
 from pedigree_graph._registry import estimate_exact_codes
-from pedigree_graph._threads import _reset_thread_state, configure_threads, thread_budget
+from pedigree_graph._threads import _reset_thread_state, configure_threads
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
 
@@ -51,13 +52,13 @@ def _requested(max_degree: int) -> frozenset[str]:
     return frozenset(code for code in CODES if RELATIONSHIPS[code].degree <= max_degree)
 
 
-def _as_legacy_dict(result: RelationshipCountResult) -> dict[str, int]:
-    return {code: 0 if value is None else value for code, value in result.items()}
+def _frozen_scalar_counts(name: str) -> dict[str, int]:
+    return BASELINE[name]["streaming_counts"]
 
 
 @pytest.fixture
 def small_graph(small_pedigree) -> PedigreeGraph:
-    return PedigreeGraph(small_pedigree)
+    return PedigreeGraph.from_frame(small_pedigree)
 
 
 def _estimate_quietly(graph: PedigreeGraph, max_degree: int) -> RelationshipCountResult:
@@ -114,32 +115,54 @@ class TestValues:
     def test_lineal_codes_are_raw_path_counts(self, name):
         graph = _graph(name)
         estimate = _estimate_quietly(graph, 5)
-        raw = graph.count_pairs_streaming(max_degree=5)
         exact = graph.relationship_counts(max_degree=5)
         for code in sorted(LINEAL_CODES):
-            assert estimate[code] == raw[code], code
+            assert estimate[code] == _frozen_scalar_counts(name)[code], code
             if code in FOLDED_LINEAL.get(name, frozenset()):
                 assert estimate[code] > exact[code], code
             else:
                 assert estimate[code] == exact[code], code
 
     @pytest.mark.parametrize("name", sorted(name for name in FIXTURE_NAMES if "streaming_counts" in BASELINE[name]))
-    def test_adapter_equals_the_frozen_streaming_counts(self, name):
-        """The 0.7.1 baseline holds the unfolded counts, which the adapter keeps returning."""
-        graph = _graph(name)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            legacy = graph.count_pairs_streaming(max_degree=MANIFEST["max_degree"])
-        assert legacy == BASELINE[name]["streaming_counts"]
-        estimate = graph.estimate_relationship_counts(max_degree=MANIFEST["max_degree"])
-        for code in estimate.approximate:
-            assert estimate[code] == legacy[code], code
+    def test_approximate_codes_equal_the_frozen_scalar_counts(self, name):
+        estimate = _estimate_quietly(_graph(name), MANIFEST["max_degree"])
+        frozen = _frozen_scalar_counts(name)
+        for code in sorted(estimate.approximate):
+            assert estimate[code] == frozen[code], code
 
-    def test_small_pedigree_adapter_equals_the_frozen_streaming_counts(self, small_graph):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            legacy = small_graph.count_pairs_streaming(max_degree=MANIFEST["max_degree"])
-        assert legacy == BASELINE[CLAMPING_FIXTURE]["streaming_counts"]
+    def test_small_pedigree_approximate_codes_equal_the_frozen_scalar_counts(self, small_graph):
+        estimate = _estimate_quietly(small_graph, MANIFEST["max_degree"])
+        frozen = _frozen_scalar_counts(CLAMPING_FIXTURE)
+        for code in sorted(estimate.approximate):
+            assert estimate[code] == frozen[code], code
+
+    def test_approximate_codes_stay_near_the_exact_counts(self, small_pedigree):
+        # Tolerance per code is the larger of an absolute floor and a fraction
+        # of the exact count.  H1C clamps to 0 on this shallow, high-founder
+        # fixture, so it is bounded from above only.
+        bounds = {"1C": (50, 50), "HAv": (50, 50), "Av": (20, 20)}
+        estimate = _estimate_quietly(PedigreeGraph.from_frame(small_pedigree), 5)
+        exact = PedigreeGraph.from_frame(small_pedigree).relationship_counts(max_degree=5)
+        for code, (floor, divisor) in bounds.items():
+            assert code in estimate.approximate, code
+            assert abs(estimate[code] - exact[code]) <= max(floor, exact[code] // divisor), code
+        assert 0 <= estimate["H1C"] <= exact["H1C"] + 1
+
+    def test_max_degree_zero_estimates_mz_exactly(self, small_pedigree):
+        estimate = _estimate_quietly(PedigreeGraph.from_frame(small_pedigree), 0)
+        exact = PedigreeGraph.from_frame(small_pedigree).relationship_counts(max_degree=0)
+        assert estimate.requested == frozenset({"MZ"})
+        assert estimate["MZ"] == exact["MZ"]
+
+    def test_single_founder_estimates_zero_pairs(self):
+        graph = PedigreeGraph.from_arrays(
+            ids=np.array([0]),
+            mother_ids=np.array([-1]),
+            father_ids=np.array([-1]),
+        )
+        estimate = _estimate_quietly(graph, 5)
+        assert estimate.requested == frozenset(CODES)
+        assert all(count == 0 for count in estimate.values()), dict(estimate)
 
 
 def _pedigree(*rows: tuple[int, int, int]) -> PedigreeGraph:
@@ -147,23 +170,22 @@ def _pedigree(*rows: tuple[int, int, int]) -> PedigreeGraph:
     ids = np.array([row[0] for row in rows])
     mother = np.array([row[1] if row[1] else -1 for row in rows])
     father = np.array([row[2] if row[2] else -1 for row in rows])
-    return PedigreeGraph({"id": ids, "mother": mother, "father": father})
+    return PedigreeGraph.from_frame({"id": ids, "mother": mother, "father": father})
 
 
 class TestHalfSibFold:
     def test_backcross_phs_claimed_by_mo_and_gp_stays_raw(self):
         # Father 1 mates with his daughter 3; 4 shares father 1 with its own
-        # mother 3 (PHS folded into MO) and 1 is both father and grandfather
-        # of 4 (GP stays the raw path count).
+        # mother 3, so the one raw PHS pair is folded into MO, while 1 is both
+        # father and grandfather of 4 and GP keeps both raw paths.
         graph = _pedigree((1, 0, 0), (2, 0, 0), (3, 2, 1), (4, 3, 1))
         estimate = _estimate_quietly(graph, 5)
-        raw = graph.count_pairs_streaming(max_degree=5)
         exact = graph.relationship_counts(max_degree=5)
         for code in sorted(estimate.exact):
             assert estimate[code] == exact[code], code
-        assert (raw["PHS"], estimate["PHS"], exact["PHS"]) == (1, 0, 0)
+        assert (estimate["PHS"], exact["PHS"]) == (0, 0)
         assert "GP" in estimate.approximate
-        assert (raw["GP"], estimate["GP"], exact["GP"]) == (2, 2, 1)
+        assert (estimate["GP"], exact["GP"]) == (2, 1)
 
 
 class TestWarningAndCache:
@@ -232,16 +254,6 @@ class TestWarningAndCache:
             for max_degree in range(6):
                 assert graph.estimate_relationship_counts(max_degree=max_degree).clamped == frozenset()
 
-    def test_adapter_shares_the_cache_so_a_later_estimate_is_silent(self, small_graph):
-        with pytest.warns(RuntimeWarning):
-            legacy = small_graph.count_pairs_streaming(max_degree=5)
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            estimate = small_graph.estimate_relationship_counts(max_degree=5)
-        for code in estimate.approximate:
-            assert estimate[code] == legacy[code], code
-        assert small_graph._pair_count_cache == {}
-
 
 class TestErrors:
     @pytest.mark.parametrize("bad", [-1, 6, 100])
@@ -286,13 +298,6 @@ class TestThreads:
         with pytest.raises(RuntimeError):
             configure_threads(3)
 
-    def test_adapter_leaves_the_budget_uncommitted(self, monkeypatch):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
-        graph = _graph(CLEAN_FIXTURE)
-        graph.count_pairs_streaming(max_degree=5)
-        configure_threads(4)
-        assert thread_budget() == 4
-
 
 def test_transient_matrices_are_released(small_graph):
     transient = ("_A", "_A2", "_A3", "_A4", "_A5")
@@ -302,14 +307,15 @@ def test_transient_matrices_are_released(small_graph):
 
 
 @pytest.mark.slow
-def test_random_30k_matches_the_frozen_streaming_counts():
+def test_random_30k_matches_the_frozen_scalar_counts():
     name = "random_30k"
     entry = BASELINE[name]
     fx = pedigrees.build_random(name, pedigrees.LARGE_FIXTURES[name])
     assert pedigrees.input_hash(fx) == entry["input_hash"]
-    graph = PedigreeGraph(_columns(fx))
+    graph = PedigreeGraph.from_frame(_columns(fx))
     estimate = _estimate_quietly(graph, MANIFEST["max_degree"])
-    assert graph.count_pairs_streaming(max_degree=MANIFEST["max_degree"]) == entry["streaming_counts"]
+    for code in sorted(estimate.approximate):
+        assert estimate[code] == entry["streaming_counts"][code], code
     exact = graph.relationship_counts(max_degree=MANIFEST["max_degree"])
     for code in sorted(estimate.exact):
         assert estimate[code] == exact[code], code

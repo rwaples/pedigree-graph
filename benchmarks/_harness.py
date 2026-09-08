@@ -552,7 +552,7 @@ def parity_fixture(name: str, *, label: str) -> Fixture:
 
         pedigrees = _parity_module()
         fx = pedigrees.build_random(name, _params())
-        return PedigreeGraph(
+        return PedigreeGraph.from_frame(
             {key: fx[key] for key in ("ids", "mother", "father", "twin", "sex") if key in fx} | {"id": fx["ids"]}
         )
 
@@ -582,7 +582,7 @@ def file_fixture(name: str, path: Path, *, label: str) -> Fixture:
         def column(*candidates: str) -> np.ndarray:
             return table[next(n for n in candidates if n in names)].to_numpy()
 
-        return PedigreeGraph(
+        return PedigreeGraph.from_frame(
             {
                 "id": column("individual_id", "id"),
                 "mother": column("mother_id", "mother"),
@@ -608,7 +608,7 @@ _WARM_UP_COLUMNS: Final[dict[str, list[int]]] = {
 def _warm_up_graph() -> Any:
     from pedigree_graph import PedigreeGraph
 
-    return PedigreeGraph({k: np.array(v, dtype=np.int64) for k, v in _WARM_UP_COLUMNS.items()})
+    return PedigreeGraph.from_frame({k: np.array(v, dtype=np.int64) for k, v in _WARM_UP_COLUMNS.items()})
 
 
 # ---------------------------------------------------------------------------

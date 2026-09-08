@@ -22,7 +22,7 @@ FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 
 
 def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph(parity_columns(FIXTURES[name]))
+    return PedigreeGraph.from_frame(parity_columns(FIXTURES[name]))
 
 
 def _upper(matrix: sp.csc_matrix) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -171,15 +171,6 @@ class TestApproximateSupportMatrix:
                 min_propagated_kinship=threshold  # type: ignore[arg-type]
             )
 
-    def test_legacy_positive_threshold_dispatches_to_the_explicit_method(self):
-        graph = _graph("double_first_cousins")
-        assert graph.kinship_matrix(min_kinship=0.001) is graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
-
-    def test_legacy_max_degree_preserves_propagated_support_semantics(self):
-        graph = _graph("double_first_cousins")
-        threshold = 0.5 ** (3 + 1) - 1e-9
-        assert graph.kinship_matrix(max_degree=3) is graph.approximate_kinship_matrix(min_propagated_kinship=threshold)
-
 
 class TestChunking:
     def test_chunk_boundaries_do_not_change_values(self):
@@ -207,7 +198,7 @@ class TestRowOrder:
     def test_all_matrix_families_match_pair_values_after_reordering(self):
         fixture = FIXTURES["deep_inbred_60g"]
         permutation = np.random.default_rng(22).permutation(len(fixture["ids"]))
-        graph = PedigreeGraph({key: value[permutation] for key, value in parity_columns(fixture).items()})
+        graph = PedigreeGraph.from_frame({key: value[permutation] for key, value in parity_columns(fixture).items()})
         matrices = (
             graph.kinship_matrix(),
             graph.relationship_kinship_matrix(max_degree=5),
@@ -242,7 +233,7 @@ class TestThreads:
 @pytest.mark.slow
 def test_random_30k_approximate_matrix_runs_full_exact_value_path():
     fixture = pedigrees.build_random("random_30k", pedigrees.LARGE_FIXTURES["random_30k"])
-    graph = PedigreeGraph(parity_columns(fixture))
+    graph = PedigreeGraph.from_frame(parity_columns(fixture))
 
     matrix = graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
 
@@ -250,28 +241,6 @@ def test_random_30k_approximate_matrix_runs_full_exact_value_path():
     assert matrix.nnz == 53_817_918
     assert np.isfinite(matrix.data).all()
     assert np.all(matrix.diagonal() >= np.float32(0.5))
-
-
-def test_negative_legacy_threshold_returns_the_complete_matrix():
-    graph = _graph("random_1k")
-    complete = graph.kinship_matrix()
-    for value in (-1e-9, -1.0):
-        matrix = graph.kinship_matrix(min_kinship=value)
-        assert matrix is complete
-
-
-def test_large_legacy_max_degree_returns_the_complete_matrix():
-    # 0.5 ** (max_degree + 1) - 1e-9 goes negative at max_degree 29, which
-    # 0.7.1 resolved to an unpruned matrix rather than an error.
-    graph = _graph("random_1k")
-    assert graph.kinship_matrix(max_degree=40) is graph.kinship_matrix()
-
-
-@pytest.mark.parametrize("value", [float("inf"), float("nan"), 1.5])
-def test_unusable_legacy_threshold_names_the_argument_the_caller_passed(value):
-    graph = _graph("random_1k")
-    with pytest.raises(ValueError, match="min_kinship"):
-        graph.kinship_matrix(min_kinship=value)
 
 
 def test_release_kinship_matrices_drops_every_family_and_is_idempotent():
@@ -289,7 +258,6 @@ def test_release_kinship_matrices_drops_every_family_and_is_idempotent():
     assert graph._complete_kinship_cache is None
     assert not graph._approximate_kinship_cache
     assert not graph._relationship_kinship_cache
-    assert not graph._kinship_cache
     rebuilt = graph.kinship_matrix()
     assert rebuilt is not complete
     assert np.array_equal(rebuilt.data, complete.data)

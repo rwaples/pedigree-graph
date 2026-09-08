@@ -26,7 +26,7 @@ _SEX = np.array([0, 1, 0, 1, 0, 1, 0, 1])
 
 
 def _graph(generation=None):
-    return PedigreeGraph.from_arrays(ids=_IDS, mothers=_MOTHER, fathers=_FATHER, sex=_SEX, generation=generation)
+    return PedigreeGraph.from_arrays(ids=_IDS, mother_ids=_MOTHER, father_ids=_FATHER, sex=_SEX, generation=generation)
 
 
 def _two_rows_per_cohort(k):

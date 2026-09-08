@@ -1,7 +1,6 @@
 """Package-wide thread budget.
 
-One process-global budget covers every parallel code path on a 0.8 API path;
-the 0.7.1 adapters keep their own thread arguments until they are deleted.  The
+One process-global budget covers every parallel code path.  The
 budget resolves as ``configure_threads(n)``
 > the ``PEDIGREE_GRAPH_THREADS`` environment variable > ``1``, and it is
 *committed* the first time :func:`thread_budget` resolves it.  Reconfiguring to a

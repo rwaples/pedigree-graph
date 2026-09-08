@@ -116,13 +116,7 @@ class PedigreeMatrixMethods:
     prevents the already-large graph class from becoming the matrix engine.
     """
 
-    def kinship_matrix(
-        self: PedigreeGraph,
-        # 0.8.0-DELETE: min_kinship and max_degree are the overloaded 0.7.1
-        # surface.  The final method takes no arguments.
-        min_kinship: float | None = None,
-        max_degree: int | None = None,
-    ) -> sp.csc_matrix:
+    def kinship_matrix(self: PedigreeGraph) -> sp.csc_matrix:
         """Return the cached complete pedigree-expected kinship matrix.
 
         The matrix contains every nonzero pedigree kinship plus the diagonal.
@@ -132,30 +126,7 @@ class PedigreeMatrixMethods:
 
         Returns:
             The complete ``n_individuals × n_individuals`` kinship matrix.
-
-        Note:
-            ``min_kinship`` and ``max_degree`` are 0.7.1 compatibility
-            arguments removed in 0.8.0.  A positive resolved threshold uses
-            :meth:`approximate_kinship_matrix`; no threshold denotes the
-            complete matrix.  New code uses the three explicitly named matrix
-            families instead.
         """
-        # 0.8.0-DELETE: overloaded threshold adapter.  ``max_degree`` had
-        # propagation-pruning semantics in 0.7.1, so preserve that candidate
-        # support rather than pretending it is exact relationship support.
-        threshold = 0.0 if min_kinship is None else float(min_kinship)
-        if max_degree is not None:
-            threshold = max(threshold, 0.5 ** (max_degree + 1) - 1e-9)
-        if not np.isfinite(threshold) or threshold > 1.0:
-            # Only an explicit min_kinship reaches here; every max_degree
-            # threshold is finite and at most 0.5.  Name the argument the
-            # caller actually passed.
-            raise ValueError(f"min_kinship must be finite and at most 1, got {min_kinship!r}")
-        if threshold > 0.0:
-            return self.approximate_kinship_matrix(min_propagated_kinship=threshold)
-        # 0.7.1 pruned with ``val <= threshold``, so a negative cutoff retained
-        # every value.  max_degree >= 29 resolves here too, because
-        # 0.5 ** 30 - 1e-9 is already negative.
         return complete_kinship_matrix(self)
 
     def relationship_kinship_matrix(
@@ -211,9 +182,8 @@ class PedigreeMatrixMethods:
         peak memory: retained values are captured during one complete
         retiring DP pass, so a raised threshold costs about what the complete
         matrix costs and can exhaust memory at the same pedigree size.  See
-        ``benchmarks/matrix_exactification.md``.  Callers who raised the
-        0.7.1 threshold to fit a large pedigree in RAM no longer gain
-        anything by doing so.
+        ``benchmarks/matrix_exactification.md``.  Raising the threshold to
+        fit a large pedigree in RAM gains nothing.
 
         Args:
             min_propagated_kinship: Finite propagation threshold in ``[0, 1]``.
@@ -454,8 +424,6 @@ def complete_kinship_matrix(graph: PedigreeGraph) -> sp.csc_matrix:
         ) from exc
     matrix = _freeze_csc(_as_csc(graph.n_individuals, indptr, indices, data, operation="kinship_matrix"))
     graph._complete_kinship_cache = matrix
-    # 0.8.0-DELETE: the generation-summary adapter consults this 0.7.1 cache.
-    graph._kinship_cache[0.0] = matrix
     logger.info(
         "kinship_matrix: n=%d, nnz=%d, %.2fs",
         graph.n_individuals,

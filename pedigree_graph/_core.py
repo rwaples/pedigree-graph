@@ -26,13 +26,6 @@ import numpy as np
 import scipy.sparse as sp
 
 from pedigree_graph._cohort_utils import generation_interval as _generation_interval
-from pedigree_graph._compat import from_subsample as _from_subsample
-from pedigree_graph._compat import legacy_count_pairs as _legacy_count_pairs
-from pedigree_graph._compat import legacy_count_pairs_streaming as _legacy_count_pairs_streaming
-from pedigree_graph._compat import legacy_extract_pairs as _legacy_extract_pairs
-from pedigree_graph._compat import legacy_n_ancestors as _legacy_n_ancestors
-from pedigree_graph._compat import legacy_n_descendants as _legacy_n_descendants
-from pedigree_graph._compat import legacy_per_gen_mean_kinship as _legacy_per_gen_mean_kinship
 from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._frames import FrameLike
 from pedigree_graph._input import (
@@ -43,7 +36,7 @@ from pedigree_graph._kinship_kernel import (
     _compute_F_meuwissen_luo,
 )
 from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
-from pedigree_graph._kinship_pairwise import _MEMO_RETAIN_LIMIT, graph_pair_kinship, view_pair_kinship
+from pedigree_graph._kinship_pairwise import _MEMO_RETAIN_LIMIT, graph_pair_kinship
 from pedigree_graph._lineage import connected_component_ids as _connected_component_ids
 from pedigree_graph._lineage import descendant_path_counts as _descendant_path_counts
 from pedigree_graph._lineage import distinct_ancestor_counts as _distinct_ancestor_counts
@@ -69,9 +62,6 @@ if TYPE_CHECKING:
     from pedigree_graph.summaries import GenerationKinshipSummary
 
 logger = logging.getLogger(__name__)
-
-# 0.8.0-DELETE: the 0.7.1 from_arrays positional order.
-_LEGACY_ARRAY_ORDER = ("ids", "mothers", "fathers", "twins", "generation", "birth_year", "sex")
 
 
 def _known_parent_edges(
@@ -119,47 +109,26 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     through :mod:`pedigree_graph._input` and hand the parsed result to
     :meth:`_from_input`, so every graph reaches the engine the same way.
     Neither invents a value: an absent optional column reads as absent.
-
-    Args:
-        data: 0.8.0-DELETE — the loose constructor's argument.  Either a
-            ``dict[str, np.ndarray]`` or any :class:`FrameLike` table; pandas
-            and polars DataFrames both satisfy the structural protocol, and
-            neither library is imported by this package.  ``id``, ``mother``,
-            and ``father`` are required; ``twin``, ``sex``, ``generation``,
-            and ``birth_year`` are optional and other keys are ignored.
     """
 
-    # 0.8.0-DELETE: the loose dict-or-frame constructor; 0.8 constructs through
-    # from_frame / from_arrays only.
-    def __init__(self, data: dict[str, np.ndarray] | FrameLike) -> None:
-        self._initialize(parse_pedigree_input(data), legacy_defaults=True)
-
     @classmethod
-    # 0.8.0-DELETE: the legacy_defaults keyword; 0.8 has no defaults to switch on.
-    def _from_input(cls, parsed: PedigreeInput, *, legacy_defaults: bool) -> PedigreeGraph:
+    def _from_input(cls, parsed: PedigreeInput) -> PedigreeGraph:
         """Build a graph over already-parsed input, the one path all constructors share.
 
         Args:
             parsed: Validated, owned input from :mod:`pedigree_graph._input`.
-            legacy_defaults: Whether absent metadata takes its 0.7.1 default
-                rather than reading as absent.  Only the compatibility entry
-                points set it.
 
         Returns:
             The constructed graph.
         """
         graph = cls.__new__(cls)
-        graph._initialize(parsed, legacy_defaults=legacy_defaults)
+        graph._initialize(parsed)
         return graph
 
-    # 0.8.0-DELETE: the legacy_defaults keyword.
-    def _initialize(self, parsed: PedigreeInput, *, legacy_defaults: bool) -> None:
+    def _initialize(self, parsed: PedigreeInput) -> None:
         """Populate the graph's storage, caches, and parent matrices from *parsed*."""
         self._input = parsed
-        self._legacy_defaults = legacy_defaults  # 0.8.0-DELETE
         self._coordinate_token = CoordinateToken()
-
-        self._legacy_view: PedigreeView | None = None  # 0.8.0-DELETE: set only by from_subsample.
 
         # Matrix caches are separated by operation and selector: complete,
         # closest-category, and propagation-pruned support are distinct
@@ -167,38 +136,21 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         self._complete_kinship_cache: sp.csc_matrix | None = None
         self._relationship_kinship_cache: dict[tuple[str, object], sp.csc_matrix] = {}
         self._approximate_kinship_cache: dict[float, sp.csc_matrix] = {}
-        # 0.8.0-DELETE: the generation-summary adapter consults the old
-        # threshold-keyed cache.  Only the complete matrix is entered here;
-        # corrected approximate-support values must not silently change the
-        # old per_gen_mean_kinship(min_kinship>0) calculation.
-        self._kinship_cache: dict[float, sp.csc_matrix] = {}
         # The pair-recurrence memo the last kernel call left behind, reused as
         # the next call's starting table by pair_kinship and the relationship
         # matrix (both through _kinship_pairwise.memoised_kinship).  Retained
         # only while its tables fit under the limit, in bytes.
         self._pair_memo: _PairMemo | None = None
         self._pair_memo_limit: int = _MEMO_RETAIN_LIMIT
-        # Lazy per-generation mean kinship cache — populated by
-        # per_gen_mean_kinship(); keyed by min_kinship so callers using a
-        # non-default threshold do not get a stale θ̄.
-        self._theta_per_gen_cache: dict[float, np.ndarray] = {}
         # mean_kinship_by_generation() is threshold-free: one summary per graph.
         self._generation_kinship_summary: GenerationKinshipSummary | None = None
-        # Matrix-engine counts written by extract_pairs(), keyed on
-        # ("matrix", max_degree, min_kinship).  Value is a (raw_counts,
-        # subsample_counts) pair so the scope='full' and scope='subsample'
-        # fast paths of count_pairs read the same entry.
-        self._pair_count_cache: dict[tuple[str, int, float], tuple[dict[str, int], dict[str, int]]] = {}
         # Keyed by max_degree; a hit is silent even if the entry clamped.
         self._estimate_cache: dict[int, CachedEstimate] = {}
         self._inbreeding: np.ndarray | None = None
-        # Lineage memos (_lineage.py); the two 0.8.0-DELETE adapters keep
-        # their own int32 copies.
+        # Lineage memos (_lineage.py).
         self._distinct_ancestor_counts: np.ndarray | None = None
         self._descendant_path_counts: np.ndarray | None = None
         self._connected_component_ids: np.ndarray | None = None
-        self._n_ancestors: np.ndarray | None = None
-        self._n_descendants: np.ndarray | None = None
         # Lazy cache of known-parent edge filters, keyed "mother"/"father"
         # (see _known_parent_edges_for); shared by the overlapping-generation
         # diagnostics so the full-pedigree edge scan runs once per side.
@@ -280,12 +232,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     def _ensure_parent_csr(self) -> None:
         """Idempotent (re)build of ``self._Am`` and ``self._Af``.
 
-        No-op when both matrices are already present.  Called by
-        ``__init__`` (initial build), by :meth:`extract_pairs` (rebuild
-        after a prior call dropped them), and by
-        :meth:`count_pairs_streaming` (same reason).  Single guarded
-        helper avoids duplicating the ``hasattr`` check at each
-        rebuild site.
+        No-op when both matrices are already present.  Called on the initial
+        build and again by the pair and count engines after an earlier call
+        released the matrices.  Single guarded helper avoids duplicating the
+        ``hasattr`` check at each rebuild site.
         """
         if hasattr(self, "_Am") and hasattr(self, "_Af"):
             return
@@ -294,10 +244,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     def _build_parent_csr(self) -> None:
         """Unconditionally (re)build ``self._Am`` and ``self._Af``.
 
-        Re-called by :meth:`count_pairs_streaming` after
-        :meth:`extract_pairs` drops the matrices to free memory.  Keeping
-        one canonical builder prevents the dtype/shape contract from
-        drifting between constructor and re-builder.
+        Re-called by the count engine after a pair extraction dropped the
+        matrices to free memory.  Keeping one canonical builder prevents the
+        dtype/shape contract from drifting between constructor and re-builder.
         """
         n = self.n_individuals
         m_idx = np.where(self.mother_rows >= 0)[0]
@@ -423,7 +372,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         if hasattr(self, "_full_sib_matrix"):
             return
         # Trigger sibling extraction which sets _full_sib_matrix
-        self.sibling_pairs()
+        self._sibling_pairs()
 
     def _build_half_sib_matrix(
         self,
@@ -476,8 +425,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             self.father_rows[f_children].astype(np.intp),
         )
 
-    # 0.8.0-DELETE: public name; callers request FS / MHS / PHS from relationship_pairs.
-    def sibling_pairs(
+    def _sibling_pairs(
         self,
     ) -> tuple[
         tuple[np.ndarray, np.ndarray],
@@ -561,42 +509,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
 
         return full_sib, mat_hs, pat_hs
 
-    # 0.8.0-DELETE: replaced by relationship_pairs (ADR 0006).
-    def extract_pairs(
-        self,
-        max_degree: int = 3,
-        min_kinship: float = 0.0,
-    ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-        """Extract all relationship categories with 0.7.1 semantics.
-
-        Returned indices are always in caller-input coordinates:
-
-        - ``__init__(df)``: indices into *df* rows.
-        - ``from_subsample(full_pedigree, df)``: indices into *df* rows;
-          pairs are filtered to those with both endpoints in *df*.
-        - ``from_arrays(ids, ...)``: positions in the input *ids* array.
-
-        Lineal and parent-offspring pairs are ``(descendant, ancestor)``;
-        every collateral pair is ``(min row, max row)``.  Use
-        :meth:`relationship_pairs` for role-oriented graph-space pairs.
-
-        Args:
-            max_degree: Maximum kinship degree to extract (0-5). Includes
-                relationship categories whose registry degree is <= this
-                cutoff: 0=MZ only, 1=parent-offspring/full-sib, 2 adds
-                half-sibs/grandparent/avuncular, 3 adds 1st cousins and
-                other degree-3 categories, and 5 reaches 2nd cousins.
-            min_kinship: Skip pair types with kinship coefficient below this
-                threshold. E.g., 0.125 skips 1st cousins (0.0625) and 2nd
-                cousins (0.016), avoiding their expensive sparse products.
-
-        Returns:
-            Dict mapping relationship code to (idx1, idx2) row-index arrays.
-
-        See :func:`pedigree_graph._compat.legacy_extract_pairs`.
-        """
-        return _legacy_extract_pairs(self, max_degree, min_kinship)
-
     def _release_pair_matrices(self) -> None:
         """Drop the transient adjacency / sibling matrices built for pair work.
 
@@ -617,7 +529,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         self._complete_kinship_cache = None
         self._relationship_kinship_cache.clear()
         self._approximate_kinship_cache.clear()
-        self._kinship_cache.clear()  # 0.8.0-DELETE: the 0.7.1 threshold cache.
         self._release_pair_memo()
 
     def _release_pair_memo(self) -> None:
@@ -629,26 +540,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         Idempotent.
         """
         self._pair_memo = None
-
-    # 0.8.0-DELETE: replaced by relationship_counts (ADR 0006).
-    def count_pairs(self, max_degree: int = 3, scope: Literal["subsample", "full"] = "subsample") -> dict[str, int]:
-        """Return the 0.7.1 matrix-engine counts, all 23 codes, ``0`` above the cutoff.
-
-        See :func:`pedigree_graph._compat.legacy_count_pairs`.
-        """
-        return _legacy_count_pairs(self, max_degree, scope)
-
-    # 0.8.0-DELETE: replaced by estimate_relationship_counts (ADR 0006).
-    def count_pairs_streaming(
-        self,
-        max_degree: int = 3,
-        scope: Literal["subsample", "full"] = "full",
-    ) -> dict[str, int]:
-        """Return the 0.7.1 scalar-estimate dict, all 23 codes, ``0`` above the cutoff.
-
-        See :func:`pedigree_graph._compat.legacy_count_pairs_streaming`.
-        """
-        return _legacy_count_pairs_streaming(self, max_degree, scope)
 
     # ------------------------------------------------------------------
     # Alternative constructors
@@ -682,60 +573,28 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 shared parent id, cyclic parent reference, or broken MZ pair.
             ResourceError: ``pedigree_too_large`` beyond the int32 row capacity.
         """
-        return cls._from_input(parse_pedigree_input(frame, sex_encoding=sex_encoding), legacy_defaults=False)
-
-    @classmethod
-    # 0.8.0-DELETE: renamed to from_frame in 0.8.
-    def from_dataframe(cls, df: FrameLike) -> PedigreeGraph:
-        """Construct from a DataFrame, the 0.7.1 name for :meth:`from_frame`."""
-        return cls(df)
-
-    @classmethod
-    # 0.8.0-DELETE: replaced by full.view(ids=...) (ADR 0006).
-    def from_subsample(
-        cls,
-        full_pedigree: dict[str, np.ndarray] | FrameLike,
-        df: dict[str, np.ndarray] | FrameLike,
-    ) -> PedigreeGraph:
-        """Construct a graph over *full_pedigree* whose pair output covers only *df*.
-
-        See :func:`pedigree_graph._compat.from_subsample`.
-        """
-        return _from_subsample(cls, full_pedigree, df)
+        return cls._from_input(parse_pedigree_input(frame, sex_encoding=sex_encoding))
 
     @classmethod
     def from_arrays(
         cls,
-        # 0.8.0-DELETE: *legacy, the mothers/fathers/twins keywords, and the None
-        # default on sex_encoding that detects it; 0.8 keeps the canonical form alone.
-        *legacy: object,
-        ids: object | None = None,
-        mother_ids: object | None = None,
-        father_ids: object | None = None,
+        *,
+        ids: object,
+        mother_ids: object,
+        father_ids: object,
         twin_ids: object | None = None,
         sex: object | None = None,
         generation: object | None = None,
         birth_year: object | None = None,
-        sex_encoding: str | None = None,
-        mothers: object | None = None,
-        fathers: object | None = None,
-        twins: object | None = None,
+        sex_encoding: str = "simace",
     ) -> PedigreeGraph:
         """Construct from separate columns, for callers with no table to hand.
 
-        The canonical form is keyword-only and applies no defaults::
+        Keyword-only, and applies no defaults::
 
             PedigreeGraph.from_arrays(ids=ids, mother_ids=m, father_ids=f)
 
-        The 0.7.1 form, recognised by ``mothers``/``fathers`` positionally or
-        by keyword, keeps its generation fallback and its all-female sex
-        default.  Naming both forms in one call, or neither, is a
-        :exc:`TypeError`.
-
         Args:
-            *legacy: The 0.7.1 positional columns, in the order ``ids``,
-                ``mothers``, ``fathers``, ``twins``, ``generation``,
-                ``birth_year``, ``sex``.
             ids: Row ids.
             mother_ids: Mother ids, ``-1`` or a host null when missing.
             father_ids: Father ids, as *mother_ids*.
@@ -744,74 +603,13 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             generation: Generation labels, ``-1`` when unknown.
             birth_year: Birth years, ``-1`` when unknown.
             sex_encoding: ``"simace"`` (the default) or ``"plink"``.
-                Canonical form only.
-            mothers: 0.7.1 name for *mother_ids*.
-            fathers: 0.7.1 name for *father_ids*.
-            twins: 0.7.1 name for *twin_ids*.
 
         Returns:
             The constructed graph.
 
         Raises:
-            TypeError: For a call that mixes the two forms, names neither, or
-                omits a required column.
             PedigreeValidationError: As :meth:`from_frame`.
         """
-        # 0.8.0-DELETE: everything from here to the end of the `if legacy_form`
-        # block is 0.7.1 call-form dispatch; 0.8 keeps only the two lines after it.
-        supplied: dict[str, object | None] = {
-            "ids": ids,
-            "mothers": mothers,
-            "fathers": fathers,
-            "twins": twins,
-            "generation": generation,
-            "birth_year": birth_year,
-            "sex": sex,
-        }
-        if len(legacy) > len(_LEGACY_ARRAY_ORDER):
-            raise TypeError(
-                f"from_arrays() takes at most {len(_LEGACY_ARRAY_ORDER)} positional arguments, got {len(legacy)}"
-            )
-        for name, value in zip(_LEGACY_ARRAY_ORDER, legacy, strict=False):
-            if supplied[name] is not None:
-                raise TypeError(f"from_arrays() got multiple values for argument {name!r}")
-            supplied[name] = value
-
-        canonical = mother_ids is not None or father_ids is not None
-        legacy_form = bool(legacy) or any(supplied[name] is not None for name in ("mothers", "fathers", "twins"))
-        if canonical and legacy_form:
-            raise TypeError(
-                "from_arrays() takes either the canonical mother_ids=/father_ids= keywords or the "
-                "0.7.1 mothers/fathers form, not both"
-            )
-        if not canonical and not legacy_form:
-            raise TypeError("from_arrays() requires ids=, mother_ids=, and father_ids=")
-
-        if legacy_form:
-            required = ("ids", "mothers", "fathers")
-            if any(supplied[name] is None for name in required):
-                raise TypeError(f"from_arrays() requires {', '.join(required)}")
-            if sex_encoding is not None or twin_ids is not None:
-                raise TypeError(
-                    "from_arrays() takes sex_encoding= and twin_ids= only with the canonical mother_ids= form; "
-                    "the 0.7.1 form spells co-twins twins="
-                )
-            ids_arr = np.asarray(supplied["ids"])
-            data: dict[str, np.ndarray] = {
-                "id": ids_arr,
-                "mother": np.asarray(supplied["mothers"]),
-                "father": np.asarray(supplied["fathers"]),
-                "twin": np.full(len(ids_arr), -1, dtype=np.int64)
-                if supplied["twins"] is None
-                else np.asarray(supplied["twins"]),
-            }
-            for name in ("sex", "generation", "birth_year"):
-                if supplied[name] is not None:
-                    data[name] = np.asarray(supplied[name])
-            return cls(data)
-
-        if ids is None or mother_ids is None or father_ids is None:
-            raise TypeError("from_arrays() requires ids=, mother_ids=, and father_ids=")
         return cls._from_input(
             parse_pedigree_arrays(
                 ids=ids,
@@ -821,9 +619,8 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 sex=sex,
                 generation=generation,
                 birth_year=birth_year,
-                sex_encoding="simace" if sex_encoding is None else sex_encoding,
-            ),
-            legacy_defaults=False,
+                sex_encoding=sex_encoding,
+            )
         )
 
     def view(self, *, ids: object | None = None, rows: object | None = None) -> PedigreeView:
@@ -926,8 +723,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         result is cached; a cached retrieval is silent, and a different
         cutoff computes and warns on its own.  Python's default warning
         filter shows one identical warning per call site; the ``clamped``
-        set is the reliable signal.  The 0.7.1 ``count_pairs_streaming``
-        adapter shares this cache and returns the raw counts.
+        set is the reliable signal.
 
         Threads: the call commits the package thread budget
         (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation,
@@ -983,17 +779,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         thread_budget()
         return _generation_kinship_summary(self)
 
-    def per_gen_mean_kinship(self, min_kinship: float = 0.0) -> np.ndarray:
-        """0.8.0-DELETE: per-generation mean kinship θ̄_g in the 0.7.1 array form.
-
-        Adapter over :meth:`mean_kinship_by_generation`, see
-        :func:`pedigree_graph._compat.legacy_per_gen_mean_kinship`: a float64
-        array of length ``max(label) + 1`` with NaN where a label is absent or
-        its cohort has fewer than 2 non-twin members, partial labels rejected
-        as in 0.7.1, and the result cached under ``min_kinship``.
-        """
-        return _legacy_per_gen_mean_kinship(self, min_kinship)
-
     def inbreeding(self) -> np.ndarray:
         """Return the inbreeding coefficient *F* of every individual, in graph rows.
 
@@ -1021,10 +806,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     def _inbreeding_values(self) -> np.ndarray:
         """Return the memoised *F* without committing the package thread budget.
 
-        The 0.7.1 surfaces read F through here.  They carry their own thread
-        arguments and predate the package budget, so committing it on their
-        behalf would change their execution behaviour before the slice that
-        retires them.  :meth:`inbreeding` is the 0.8 entry point that commits.
+        The effective-size estimators read F through here; their own entry
+        points commit the budget.  :meth:`inbreeding` is the public entry
+        point that commits.
         """
         if self._inbreeding is None:
             topo = self._topology
@@ -1032,18 +816,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             F = _compute_F_meuwissen_luo(m_idx, f_idx, tw_idx, topo.gather(topo.depth), self.n_individuals)
             self._inbreeding = readonly(topo.per_row_to_graph(F))
         return self._inbreeding
-
-    # 0.8.0-DELETE: replaced by inbreeding (ADR 0006, ADR 0008).
-    def compute_inbreeding(self) -> np.ndarray:
-        """Return the inbreeding coefficient *F* per individual (0.7.1 form).
-
-        The 0.7.1 name and its per-graph-row float64 array are preserved; the
-        values are those of :meth:`inbreeding`, MZ-aware from 0.8 onward rather
-        than the 0.7.1 MZ-naive walk, and like every 0.8 result the array is
-        read-only.  Like :meth:`compute_pair_kinship`, it leaves the package
-        thread budget uncommitted.
-        """
-        return self._inbreeding_values()
 
     def distinct_ancestor_counts(self) -> np.ndarray:
         """Return the number of distinct strict ancestors of every row.
@@ -1093,23 +865,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         """
         thread_budget()
         return _connected_component_ids(self)
-
-    def compute_n_descendants(self) -> np.ndarray:
-        """0.8.0-DELETE: :meth:`descendant_path_counts` as the 0.7.1 int32 array.
-
-        See :func:`pedigree_graph._compat.legacy_n_descendants`: the same path
-        counts, cast to int32 behind the ``arithmetic_overflow``
-        :class:`ResourceError`, cached on the graph as a writeable array.
-        """
-        return _legacy_n_descendants(self)
-
-    def compute_n_ancestors(self) -> np.ndarray:
-        """0.8.0-DELETE: :meth:`distinct_ancestor_counts` as the 0.7.1 array.
-
-        See :func:`pedigree_graph._compat.legacy_n_ancestors`: the same int32
-        counts, cached on the graph as a writeable array.
-        """
-        return _legacy_n_ancestors(self)
 
     @overload
     def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...
@@ -1169,43 +924,3 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 and deep for the direct recurrence.
         """
         return graph_pair_kinship(self, first, second)
-
-    # 0.8.0-DELETE: replaced by pair_kinship (ADR 0006, ADR 0009).
-    def compute_pair_kinship(
-        self,
-        pairs: dict[str, tuple[np.ndarray, np.ndarray]],
-    ) -> dict[str, np.ndarray]:
-        """Kinship for each requested pair, keyed like *pairs* (0.7.1 form).
-
-        Returns ``{code: float32 array}`` positionally aligned to the input
-        ``pairs[code]``.  The values are those of :meth:`pair_kinship`, an
-        explicit 0.8 change from the 0.7.1 float64 recurrence, and like every
-        0.8 result the arrays are read-only; the dict form and the caller-space
-        rows of a ``from_subsample`` graph are preserved.  Unlike
-        :meth:`pair_kinship`, this adapter does not keep the recurrence memo
-        on the graph afterwards, so a 0.7.1 caller's resident memory is
-        unchanged.
-        """
-        codes = [code for code, (idx1, _) in pairs.items() if len(idx1)]
-        empty = np.zeros(0, dtype=np.float32)
-        empty.setflags(write=False)
-        result: dict[str, np.ndarray] = dict.fromkeys(pairs, empty)
-        if not codes:
-            return result
-        first = np.concatenate([np.asarray(pairs[code][0]) for code in codes])
-        second = np.concatenate([np.asarray(pairs[code][1]) for code in codes])
-        # The adapter neither commits the thread budget nor retains the memo:
-        # its callers (pedsum, fitACE) hold the graph past this call and sized
-        # their memory for 0.7.1, so the retained closure would be a silent
-        # resident-memory increase until they migrate to pair_kinship.
-        if self._legacy_view is None:
-            flat = graph_pair_kinship(self, first, second, commit_threads=False, retain_memo=False)
-        else:
-            flat = view_pair_kinship(self._legacy_view, first, second, commit_threads=False, retain_memo=False)
-        assert isinstance(flat, np.ndarray)
-        offset = 0
-        for code in codes:
-            count = len(pairs[code][0])
-            result[code] = flat[offset : offset + count]
-            offset += count
-        return result

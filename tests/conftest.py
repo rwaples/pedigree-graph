@@ -108,7 +108,7 @@ def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False, complete=Fa
 def _arrays_to_graph(arrays):
     """Build a PedigreeGraph from a ``(ids, mother, father, sex)`` tuple."""
     ids, mother, father, sex = arrays
-    return PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
+    return PedigreeGraph.from_arrays(ids=ids, mother_ids=mother, father_ids=father, sex=sex)
 
 
 def random_pedigree(max_n=PEDIGREE_MAX_N):
@@ -141,7 +141,7 @@ def relabel_pedigree(arrays, data):
     new_ids = perm * mult + 3
     new_mother = np.where(mother == -1, -1, new_ids[mother])
     new_father = np.where(father == -1, -1, new_ids[father])
-    return PedigreeGraph.from_arrays(ids=new_ids, mothers=new_mother, fathers=new_father, sex=sex)
+    return PedigreeGraph.from_arrays(ids=new_ids, mother_ids=new_mother, father_ids=new_father, sex=sex)
 
 
 def parity_fixtures(*random_names: str) -> dict[str, dict[str, np.ndarray]]:

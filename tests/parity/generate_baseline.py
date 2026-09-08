@@ -6,7 +6,10 @@ Run this against a ``v0.7.1`` worktree, never against the 0.8 branch::
         --package-root ../pedigree-graph-v0.7.1 --out tests/data/parity_v0.7.1
 
 The script imports ``pedigree_graph`` from ``--package-root`` and refuses to
-continue if the import resolves anywhere else. It calls only the 0.7.1 API.
+continue if the import resolves anywhere else. It calls only the 0.7.1 API,
+frozen at base commit ``aa71c35``; the 0.8 branch deleted that API, so this
+module is never executed by the suite and imports nothing from the 0.8 surface
+at test time.  ``capture_v08.py`` reproduces its layout for the test.
 
 Small fixtures (motifs, ``random_1k``, ``deep_inbred_60g``, and the shipped
 ``small_pedigree.parquet``) get their full oriented arrays saved in one

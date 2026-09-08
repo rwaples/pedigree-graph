@@ -120,7 +120,7 @@ def test_pickle_round_trip(cls, registry, code):
 def test_isinstance_hierarchy():
     validation = PedigreeValidationError("missing_field", "prose", field="id")
     metadata = MissingMetadataError("missing_sex", "prose", operation="ne_sex_ratio", status="absent", missing_count=3)
-    resource = ResourceError("arithmetic_overflow", "prose", operation="compute_n_descendants", dtype="int32")
+    resource = ResourceError("arithmetic_overflow", "prose", operation="ne_long_term_contributions", dtype="float64")
     assert isinstance(validation, ValueError)
     assert isinstance(metadata, ValueError)
     assert isinstance(resource, RuntimeError)

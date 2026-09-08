@@ -10,12 +10,11 @@ Gutiérrez 2008 individual-ΔF estimator:
 Each public estimator resolves its prerequisites from the graph and hands
 them to a private evaluator (``_inbreeding_from`` and friends) that works
 on an :class:`~pedigree_graph._cohorts.ObservedCohorts` grouping.  The
-orchestrator and the 0.7.1 wrappers call the same evaluators, so a direct
-call and an orchestrated call cannot disagree.
+orchestrator calls the same evaluators, so a direct call and an
+orchestrated call cannot disagree.
 
 Also owns :func:`_summary_from_matrix`, the cached-matrix route to
-:meth:`PedigreeGraph.mean_kinship_by_generation`, and its 0.7.1 array
-adapter :func:`_per_gen_mean_kinship`.
+:meth:`PedigreeGraph.mean_kinship_by_generation`.
 """
 
 from __future__ import annotations
@@ -32,7 +31,6 @@ from pedigree_graph._kinship_kernel import (
     _compute_generation_kinship_summary,
     _densify_labels,
     _finalize_summary,
-    _scatter_summary,
 )
 from pedigree_graph._ne_common import (
     _harmonic_mean,
@@ -126,19 +124,6 @@ def _generation_kinship_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
         time.perf_counter() - t0,
     )
     return summary
-
-
-def _per_gen_mean_kinship(
-    K: sp.csc_matrix,
-    generation: np.ndarray,
-    twin_idx: np.ndarray,
-) -> np.ndarray:
-    """0.8.0-DELETE: :func:`_summary_from_matrix` in the 0.7.1 array form.
-
-    Float64 array of length ``max(generation) + 1``; NaN where a label is
-    absent or its cohort has no eligible pair.
-    """
-    return _scatter_summary(_summary_from_matrix(K, generation, twin_idx), generation)
 
 
 def _cohort_means(values: np.ndarray, cohorts: ObservedCohorts) -> np.ndarray:

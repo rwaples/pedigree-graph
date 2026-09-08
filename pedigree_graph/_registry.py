@@ -44,8 +44,6 @@ __all__ = [
     "categories_up_to_degree",
     "estimate_exact_codes",
     "select_categories",
-    "streaming_approximate_codes",
-    "streaming_exact_codes",
 ]
 
 
@@ -216,7 +214,7 @@ def select_categories(codes: Iterable[str]) -> tuple[RelationshipCategory, ...]:
 class EngineSupport(NamedTuple):
     """Per-code engine handling, beyond the structural :class:`RelationshipCategory`.
 
-    The matrix engine (``count_pairs`` / ``extract_pairs``) is the
+    The matrix engine (``relationship_counts`` / ``relationship_pairs``) is the
     reference: it counts *paths* through shared ancestors and is exact for
     every code on every input.  This record captures where the other two
     engines deviate, so the divergence lives in one place instead of being
@@ -229,50 +227,44 @@ class EngineSupport(NamedTuple):
     sibling codes.  ``False`` → the code is reported in the result's
     ``approximate`` set."""
 
-    # 0.8.0-DELETE: the 0.7.1 unfolded contract, read by the count_pairs_streaming tests.
-    streaming_exact: bool
-    """The unfolded ``count_pairs_streaming`` is bit-identical to the
-    unfolded ``count_pairs`` for this code.  ``False`` → the scalar formula
-    is approximate (it assumes a full complement of known ancestors and
-    diverges on shallow / inbred / twin-having pedigrees)."""
-
     bfs_diverges_under_inbreeding: bool
     """``count_pairs_bfs`` counts *distinct* shared ancestors while the
     matrix engine counts *paths*; the two differ for this code on inbred
-    input.  ``False`` → BFS matches the matrix engine on every input."""
+    input.  ``False`` → BFS matches the matrix engine's unfolded blocks on
+    every input."""
 
 
 # Keyed by relationship code; covers exactly the RELATIONSHIPS key set (asserted
 # below and in tests).  Matrix engine is the exact paths-counting reference.
 REL_PLAN: dict[str, EngineSupport] = {
     # --- degree 0 / 1: lineal + sibling, exact everywhere ---
-    "MZ": EngineSupport(estimate_exact=True, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "MO": EngineSupport(estimate_exact=True, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "FO": EngineSupport(estimate_exact=True, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "FS": EngineSupport(estimate_exact=True, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "MHS": EngineSupport(estimate_exact=True, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "PHS": EngineSupport(estimate_exact=True, streaming_exact=True, bfs_diverges_under_inbreeding=False),
+    "MZ": EngineSupport(estimate_exact=True, bfs_diverges_under_inbreeding=False),
+    "MO": EngineSupport(estimate_exact=True, bfs_diverges_under_inbreeding=False),
+    "FO": EngineSupport(estimate_exact=True, bfs_diverges_under_inbreeding=False),
+    "FS": EngineSupport(estimate_exact=True, bfs_diverges_under_inbreeding=False),
+    "MHS": EngineSupport(estimate_exact=True, bfs_diverges_under_inbreeding=False),
+    "PHS": EngineSupport(estimate_exact=True, bfs_diverges_under_inbreeding=False),
     # --- degree 2 ---
-    "GP": EngineSupport(estimate_exact=False, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "Av": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "GP": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "Av": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
     # --- degree 3 ---
-    "GGP": EngineSupport(estimate_exact=False, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "HAv": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
-    "GAv": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
-    "1C": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
+    "GGP": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "HAv": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "GAv": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "1C": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
     # --- degree 4 ---
-    "GGGP": EngineSupport(estimate_exact=False, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "HGAv": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
-    "GGAv": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
-    "H1C": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
-    "1C1R": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=True),
+    "GGGP": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "HGAv": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "GGAv": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "H1C": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "1C1R": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=True),
     # --- degree 5 ---
-    "G3GP": EngineSupport(estimate_exact=False, streaming_exact=True, bfs_diverges_under_inbreeding=False),
-    "HGGAv": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
-    "G3Av": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=False),
-    "H1C1R": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=True),
-    "1C2R": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=True),
-    "2C": EngineSupport(estimate_exact=False, streaming_exact=False, bfs_diverges_under_inbreeding=True),
+    "G3GP": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "HGGAv": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "G3Av": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=False),
+    "H1C1R": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=True),
+    "1C2R": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=True),
+    "2C": EngineSupport(estimate_exact=False, bfs_diverges_under_inbreeding=True),
 }
 
 assert REL_PLAN.keys() == _RELATIONSHIPS.keys(), "REL_PLAN and RELATIONSHIPS cover different codes"
@@ -281,18 +273,6 @@ assert REL_PLAN.keys() == _RELATIONSHIPS.keys(), "REL_PLAN and RELATIONSHIPS cov
 def estimate_exact_codes() -> frozenset[str]:
     """Codes for which ``estimate_relationship_counts`` equals ``relationship_counts``."""
     return frozenset(code for code, plan in REL_PLAN.items() if plan.estimate_exact)
-
-
-# 0.8.0-DELETE: the 0.7.1 unfolded contract helpers.
-def streaming_exact_codes() -> frozenset[str]:
-    """Codes for which the unfolded ``count_pairs_streaming`` matches ``count_pairs`` exactly."""
-    return frozenset(code for code, plan in REL_PLAN.items() if plan.streaming_exact)
-
-
-# 0.8.0-DELETE: the 0.7.1 unfolded contract helpers.
-def streaming_approximate_codes() -> frozenset[str]:
-    """Codes for which the unfolded ``count_pairs_streaming`` is an approximation."""
-    return frozenset(code for code, plan in REL_PLAN.items() if not plan.streaming_exact)
 
 
 def bfs_divergent_codes() -> frozenset[str]:

@@ -6,7 +6,7 @@ reads the graph's cached adjacency powers / sibling matrices, and returns
 graph-space relationship pairs in the semantic orientation of each
 :class:`~pedigree_graph._registry.RelationshipCategory`.  It never writes the
 graph's result cache and never releases the transient matrices; its callers
-(``relationship_pairs`` here, the 0.7.1 adapter in ``_compat``) own that.
+(``relationship_pairs`` here) own that.
 See ADR 0002 and ADR 0006.
 
 One extractor instance spans a single ``extract()`` call, so degree-gated
@@ -82,12 +82,10 @@ class MatrixPairExtractor:
 
     Args:
         pg: The graph to read.
-        max_workers: Thread cap for the per-degree parallel stage.  ``None``
-            keeps the 0.7.1 one-thread-per-task behaviour.
+        max_workers: Thread cap for the per-degree parallel stage.
     """
 
-    # 0.8.0-DELETE: the ``None`` value of max_workers.
-    def __init__(self, pg: PedigreeGraph, *, max_workers: int | None) -> None:
+    def __init__(self, pg: PedigreeGraph, *, max_workers: int) -> None:
         self.pg = pg
         self._max_workers = max_workers
         # Half-1C pairs (share exactly one grandparent) discovered while
@@ -276,7 +274,7 @@ class MatrixPairExtractor:
         """
         if not tasks:
             return {}
-        workers = len(tasks) if self._max_workers is None else min(self._max_workers, len(tasks))
+        workers = min(self._max_workers, len(tasks))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {code: pool.submit(fn) for code, fn in tasks.items()}
             return {code: fut.result() for code, fut in futures.items()}
@@ -346,7 +344,7 @@ class MatrixPairExtractor:
                 pairs["FO"] = fo
 
             t0 = time.perf_counter()
-            full_sib, mat_hs, pat_hs = pg.sibling_pairs()
+            full_sib, mat_hs, pat_hs = pg._sibling_pairs()
             if _needed("FS"):
                 pairs["FS"] = full_sib
             if _needed("MHS"):

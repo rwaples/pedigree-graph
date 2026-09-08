@@ -1,7 +1,7 @@
 """``PedigreeGraph.relationship_pairs`` and its result types (slice 4a, ADR 0006).
 
-Fixtures come from ``tests/parity/pedigrees.py``; the 0.7.1 adapter
-``extract_pairs`` is the parity-locked membership oracle, and
+Fixtures come from ``tests/parity/pedigrees.py``; the frozen 0.7.1 pair arrays
+in ``tests/data/parity_v0.7.1`` are the parity-locked membership oracle, and
 ``relationship_predicates.AncestorWalk`` checks orientation without the engine.
 """
 
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -35,6 +36,8 @@ if TYPE_CHECKING:
     from pedigree_graph import RelationshipPairBlock
 
 PARITY_DIR = Path(__file__).resolve().parent / "parity"
+BASELINE_DIR = Path(__file__).resolve().parent / "data" / "parity_v0.7.1"
+BASELINE = json.loads((BASELINE_DIR / "manifest.json").read_text())["fixtures"]
 CODES = tuple(RELATIONSHIPS)
 ASYMMETRIC = tuple(code for code, category in RELATIONSHIPS.items() if not category.symmetric)
 SYMMETRIC = tuple(code for code, category in RELATIONSHIPS.items() if category.symmetric)
@@ -61,7 +64,7 @@ def _columns(fixture: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
 
 
 def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph(_columns(FIXTURES[name]))
+    return PedigreeGraph.from_frame(_columns(FIXTURES[name]))
 
 
 def _unordered(first: np.ndarray, second: np.ndarray) -> set[tuple[int, int]]:
@@ -72,14 +75,22 @@ def _oriented(block: RelationshipPairBlock) -> list[tuple[int, int]]:
     return list(zip(block.first_rows.tolist(), block.second_rows.tolist(), strict=True))
 
 
-def _folded_oracle(graph: PedigreeGraph) -> tuple[dict[str, set[tuple[int, int]]], dict[str, int]]:
+def _frozen_pairs(name: str) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """The frozen 0.7.1 pair arrays for *name*, checked against the input hash they were taken from."""
+    entry = BASELINE[name]
+    assert pedigrees.input_hash(FIXTURES[name]) == entry["input_hash"], name
+    with np.load(BASELINE_DIR / entry["file"]) as npz:
+        return {code: (npz[f"pairs/{code}/first"], npz[f"pairs/{code}/second"]) for code in CODES}
+
+
+def _folded_oracle(name: str) -> tuple[dict[str, set[tuple[int, int]]], dict[str, int]]:
     """0.7.1 membership folded by registry precedence; also how many pairs each code lost."""
-    legacy = graph.extract_pairs(max_degree=5)
+    frozen = _frozen_pairs(name)
     seen: set[tuple[int, int]] = set()
     folded: dict[str, set[tuple[int, int]]] = {}
     removed: dict[str, int] = {}
     for code in CODES:
-        pairs = _unordered(*legacy[code])
+        pairs = _unordered(*frozen[code])
         folded[code] = pairs - seen
         removed[code] = len(pairs & seen)
         seen |= pairs
@@ -122,7 +133,7 @@ class TestResultShape:
         columns = {
             key: np.array(value, copy=True) for key, value in _columns(FIXTURES["avuncular_and_cousins"]).items()
         }
-        result = PedigreeGraph(columns).relationship_pairs(max_degree=5)
+        result = PedigreeGraph.from_frame(columns).relationship_pairs(max_degree=5)
         before = {code: _oriented(block) for code, block in result.items()}
         for value in columns.values():
             value[:] = 0
@@ -258,12 +269,12 @@ class TestDependencyClosure:
 class TestMembershipAndPrecedence:
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_matches_the_folded_0_7_1_oracle(self, full_results, name):
-        folded, _ = _folded_oracle(_graph(name))
+        folded, _ = _folded_oracle(name)
         for code, block in full_results[name].items():
             assert _unordered(block.first_rows, block.second_rows) == folded[code], code
 
     def test_the_fold_removes_pairs_on_the_backcross_fixture(self):
-        _, removed = _folded_oracle(_graph("backcross_and_selfing_like"))
+        _, removed = _folded_oracle("backcross_and_selfing_like")
         assert sum(removed.values()) > 0
         assert removed["GP"] > 0
 
@@ -314,7 +325,7 @@ class TestDualValid:
     def test_hand_built_dual_valid_half_avuncular_pair(self):
         # 4's mother 2 is a paternal half sib of 5 (father 0), and 5's mother 3
         # is a paternal half sib of 4 (father 1), so (4, 5) is HAv both ways.
-        graph = PedigreeGraph(
+        graph = PedigreeGraph.from_frame(
             {
                 "id": np.array([0, 1, 2, 3, 4, 5]),
                 "mother": np.array([-1, -1, -1, -1, 2, 3]),
@@ -334,7 +345,7 @@ class TestCheckExclusive:
         check_exclusive(full_results[name])
 
     def test_passes_on_the_shipped_parquet(self, small_pedigree: pl.DataFrame):
-        check_exclusive(PedigreeGraph(small_pedigree).relationship_pairs(max_degree=5))
+        check_exclusive(PedigreeGraph.from_frame(small_pedigree).relationship_pairs(max_degree=5))
 
     def test_fails_when_a_pair_is_in_two_blocks(self, full_results):
         result = full_results["avuncular_and_cousins"]
@@ -396,7 +407,7 @@ import pedigrees
 from pedigree_graph import PedigreeGraph, configure_threads
 configure_threads({threads})
 fx = pedigrees.build_random("random_1k", pedigrees.RANDOM_FIXTURES["random_1k"])
-graph = PedigreeGraph({{"id": fx["ids"], "mother": fx["mother"], "father": fx["father"], "twin": fx["twin"], "sex": fx["sex"]}})
+graph = PedigreeGraph.from_frame({{"id": fx["ids"], "mother": fx["mother"], "father": fx["father"], "twin": fx["twin"], "sex": fx["sex"]}})
 digest = hashlib.sha256()
 for code, block in graph.relationship_pairs(max_degree=5).items():
     digest.update(code.encode())

@@ -1,23 +1,22 @@
-"""Tests for ``PedigreeGraph.compute_n_descendants`` (path-count).
+"""Tests for ``PedigreeGraph.descendant_path_counts`` (path-count).
 
 The method's docstring explicitly states that path-count semantics are
-intentional: ``n_desc[v]`` counts (v, w) walks down the DAG, not unique
+intentional: ``counts[v]`` counts (v, w) walks down the DAG, not unique
 descendants.  The inbred-case test below pins that contract by
 asserting the over-count, so a future "fix" to distinct semantics
 will fail loudly.
 """
 
 import numpy as np
-import pytest
 
-from pedigree_graph import PedigreeGraph, ResourceError
+from pedigree_graph import PedigreeGraph
 
 
 def _pg(ids, mothers, fathers):
     return PedigreeGraph.from_arrays(
         ids=np.asarray(ids),
-        mothers=np.asarray(mothers),
-        fathers=np.asarray(fathers),
+        mother_ids=np.asarray(mothers),
+        father_ids=np.asarray(fathers),
     )
 
 
@@ -25,24 +24,23 @@ def test_terminals_have_zero_descendants():
     # 0, 1 are founders; 2 is their only child and a terminal.
     pg = _pg([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
     np.testing.assert_array_equal(
-        pg.compute_n_descendants(),
-        np.array([1, 1, 0], dtype=np.int32),
+        pg.descendant_path_counts(),
+        np.array([1, 1, 0], dtype=np.int64),
     )
 
 
 def test_deep_lineage_chain():
-    # Each individual has one child, in a chain 0 -> 2 -> 3 -> 4.
-    # 0 mother of 2; 1 father of 2 (founder); 2 mother of 3; 2's partner is 2
-    # itself? No — use distinct founders at each step.
+    # Each individual has one child, in a chain 0 -> 2 -> 3 -> 4, with
+    # distinct founders mating in at each step:
     #   0,1 founders -> 2
-    #   2,5 founders for next gen -> 3
-    #   3,6 founders -> 4
+    #   2,5 -> 3
+    #   3,6 -> 4
     pg = _pg(
         [0, 1, 2, 5, 3, 6, 4],
         [-1, -1, 0, -1, 2, -1, 3],
         [-1, -1, 1, -1, 5, -1, 6],
     )
-    n_desc = pg.compute_n_descendants()
+    n_desc = pg.descendant_path_counts()
     # 0's descendants: 2, 3, 4 -> path count 3
     # 1's descendants: 2, 3, 4 -> 3
     # 2: 3, 4 -> 2
@@ -62,8 +60,8 @@ def test_multi_component_pedigree():
     # across components.
     pg = _pg([0, 1, 2, 3, 4, 5], [-1, -1, 0, -1, -1, 3], [-1, -1, 1, -1, -1, 4])
     np.testing.assert_array_equal(
-        pg.compute_n_descendants(),
-        np.array([1, 1, 0, 1, 1, 0], dtype=np.int32),
+        pg.descendant_path_counts(),
+        np.array([1, 1, 0, 1, 1, 0], dtype=np.int64),
     )
 
 
@@ -72,7 +70,7 @@ def test_inbred_pedigree_overcounts_paths():
     # Distinct descendants of 0 are {2, 3, 4} = 3.
     # Path count: walks (0,2), (0,3), (0,2,4) via 2, (0,3,4) via 3 = 4.
     pg = _pg([0, 1, 2, 3, 4], [-1, -1, 0, 0, 2], [-1, -1, 1, 1, 3])
-    n_desc = pg.compute_n_descendants()
+    n_desc = pg.descendant_path_counts()
     assert n_desc[0] == 4, "path count 4 (not the 3 distinct descendants)"
     assert n_desc[1] == 4
     assert n_desc[2] == 1
@@ -80,53 +78,9 @@ def test_inbred_pedigree_overcounts_paths():
     assert n_desc[4] == 0
 
 
-def test_returns_int32_and_caches():
+def test_returns_int64_and_caches():
     pg = _pg([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
-    first = pg.compute_n_descendants()
-    assert first.dtype == np.int32
-    second = pg.compute_n_descendants()
+    first = pg.descendant_path_counts()
+    assert first.dtype == np.int64
+    second = pg.descendant_path_counts()
     assert first is second  # identity check on cache
-
-
-def test_overflow_raises(monkeypatch):
-    """A path count exceeding int32 max must raise ``OverflowError``,
-    not silently wrap on the downcast.
-
-    Real pedigrees would need billions of rows or pathological loops to
-    blow int32, so we inject an overflowing int64 array through the
-    kernel boundary.
-    """
-    pg = _pg([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
-    over = np.iinfo(np.int32).max + 1
-
-    def fake_kernel(m, f, n):
-        out = np.zeros(n, dtype=np.int64)
-        out[0] = over
-        return out
-
-    import pedigree_graph._lineage as lineage
-
-    monkeypatch.setattr(lineage, "_compute_n_descendants", fake_kernel)
-    with pytest.raises(ResourceError) as info:
-        pg.compute_n_descendants()
-    assert info.value.code == "arithmetic_overflow"
-    assert info.value.fields["operation"] == "compute_n_descendants"
-    assert info.value.fields["dtype"] == "int32"
-
-
-def test_no_overflow_at_int32_max(monkeypatch):
-    """Exactly ``int32_max`` is the boundary and must NOT raise."""
-    pg = _pg([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
-    boundary = np.iinfo(np.int32).max
-
-    def fake_kernel(m, f, n):
-        out = np.zeros(n, dtype=np.int64)
-        out[0] = boundary
-        return out
-
-    import pedigree_graph._lineage as lineage
-
-    monkeypatch.setattr(lineage, "_compute_n_descendants", fake_kernel)
-    result = pg.compute_n_descendants()
-    assert result.dtype == np.int32
-    assert int(result[0]) == boundary

@@ -4,10 +4,12 @@ The current contents:
 
 - :func:`count_pairs_bfs` — BFS / boolean-matmul / numba relationship pair
   counter (implemented in :mod:`pedigree_graph._bfs_engine`). Counts-only
-  API. Differs from the matrix engine (:meth:`PedigreeGraph.count_pairs`)
-  on inbred pedigrees: BFS counts *distinct* shared ancestors at depth ≥ 2
-  while the matrix engine counts *paths* (multiplicity). Identical on
-  non-inbred pedigrees; the codes that may diverge are exactly
+  API. Counts are unfolded (every category a pair satisfies), unlike
+  :meth:`PedigreeGraph.relationship_counts`, which keeps the closest.
+  Differs from the matrix engine's unfolded blocks on inbred pedigrees: BFS
+  counts *distinct* shared ancestors at depth ≥ 2 while the matrix engine
+  counts *paths* (multiplicity). Identical on non-inbred pedigrees; the
+  codes that may diverge are exactly
   :func:`pedigree_graph._registry.bfs_divergent_codes`.
 
 This submodule is **not** re-exported from the top-level package — callers

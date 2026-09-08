@@ -1,12 +1,14 @@
 """Differential parity against the frozen pedigree-graph 0.7.1 baseline.
 
-Replays ``tests/parity/generate_baseline.py::_capture`` against the installed
-package and compares every count and SHA-256 in
-``tests/data/parity_v0.7.1/manifest.json``.  The baseline is the oracle and is
-never regenerated to make a test pass; a mismatch is reported down to the first
-differing element of the stored array.
+Replays ``tests/parity/capture_v08.py::capture``, the 0.8-API reproduction of
+the frozen generator's layout, against the installed package and compares
+every count and SHA-256 in ``tests/data/parity_v0.7.1/manifest.json``.  The
+baseline is the oracle and is never regenerated to make a test pass; a
+mismatch is reported down to the first differing element of the stored array.
+The manifest's ``streaming_counts`` are the one section left uncompared:
+``capture_v08`` explains why the fold-aware 0.8 estimate cannot reproduce them.
 
-Two documented 0.8 divergences:
+Documented 0.8 divergences:
 
 * ADR 0008 made ``compute_inbreeding`` MZ-aware (genome-node Meuwissen-Luo
   walk), landed on ``main`` as ``638b4b4``, after the baseline was frozen.  On
@@ -34,13 +36,12 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-import pedigree_graph
 from pedigree_graph._kinship_dp import _build_kinship_csc
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
 
 import pedigrees
-from generate_baseline import APPROX_THRESHOLD, _build, _capture
+from capture_v08 import APPROX_THRESHOLD, build, capture
 
 DATA = Path(__file__).resolve().parent / "data" / "parity_v0.7.1"
 MANIFEST = json.loads((DATA / "manifest.json").read_text())
@@ -143,12 +144,11 @@ def test_small_fixture_matches_the_frozen_baseline(name):
     fx = _input_from_npz(entry)
     assert pedigrees.input_hash(fx) == entry["input_hash"]
 
-    captured, summary = _capture(pedigree_graph, fx, full_arrays=True)
+    captured, summary = capture(fx, full_arrays=True)
     stored = _stored_arrays(entry)
 
     assert summary["n"] == entry["n"]
     assert summary["counts"] == entry["counts"]
-    assert summary["streaming_counts"] == entry["streaming_counts"]
     assert summary.get("n_descendants_overflow") == entry.get("n_descendants_overflow")
     assert summary["subsample"]["counts"] == entry["subsample"]["counts"]
 
@@ -175,7 +175,7 @@ def test_small_fixture_matches_the_frozen_baseline(name):
     assert not problems, "0.7.1 parity broken:\n  " + "\n  ".join(problems)
 
     if has_twins:
-        unaffected = ~_mz_affected_rows(_build(pedigree_graph, fx))
+        unaffected = ~_mz_affected_rows(build(fx))
         np.testing.assert_array_equal(captured["inbreeding"][unaffected], stored["inbreeding"][unaffected])
     if name in FLOAT32_PAIR_KINSHIP:
         _assert_pair_kinship_within_envelope(stored, captured)
@@ -228,16 +228,10 @@ def test_random_30k_matches_the_frozen_baseline():
     fx = pedigrees.build_random(name, pedigrees.LARGE_FIXTURES[name])
     assert pedigrees.input_hash(fx) == entry["input_hash"]
 
-    _, summary = _capture(
-        pedigree_graph,
-        fx,
-        full_arrays=False,
-        approximate_matrix=_propagated_candidate_for_large_parity,
-    )
+    _, summary = capture(fx, full_arrays=False, approximate_matrix=_propagated_candidate_for_large_parity)
 
     assert summary["n"] == entry["n"]
     assert summary["counts"] == entry["counts"]
-    assert summary["streaming_counts"] == entry["streaming_counts"]
     assert summary["subsample"]["counts"] == entry["subsample"]["counts"]
     assert summary["subsample"]["hashes"] == entry["subsample"]["hashes"]
     exempt = {MZ_AWARE_F, CORRECTED_APPROXIMATE_MATRIX_VALUE}

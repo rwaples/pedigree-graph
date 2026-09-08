@@ -744,28 +744,22 @@ def memoised_kinship(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray
     return out
 
 
-def _evaluate(
-    graph: PedigreeGraph, first: np.ndarray, second: np.ndarray, *, commit_threads: bool, retain_memo: bool
-) -> np.ndarray:
-    if commit_threads:
-        thread_budget()
+def _evaluate(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> np.ndarray:
+    thread_budget()
     topology = graph._topology
-    return memoised_kinship(graph, topology.translate(first), topology.translate(second), retain=retain_memo)
+    return memoised_kinship(graph, topology.translate(first), topology.translate(second), retain=True)
 
 
 def graph_pair_kinship(
     graph: PedigreeGraph,
     first: object,
     second: object | None,
-    *,
-    commit_threads: bool = True,  # 0.8.0-DELETE: the 0.7.1 adapter leaves the budget open.
-    retain_memo: bool = True,  # 0.8.0-DELETE: the 0.7.1 adapter keeps its callers' memory profile.
 ) -> np.ndarray | Mapping[str, np.ndarray]:
     """Answer ``PedigreeGraph.pair_kinship`` in graph rows."""
     query = _resolve_query(
         first, second, token=graph._coordinate_token, n_individuals=graph.n_individuals, receiver_type="PedigreeGraph"
     )
-    values = _evaluate(graph, query.first, query.second, commit_threads=commit_threads, retain_memo=retain_memo)
+    values = _evaluate(graph, query.first, query.second)
     return _shape_result(query, values)
 
 
@@ -773,20 +767,11 @@ def view_pair_kinship(
     view: PedigreeView,
     first: object,
     second: object | None,
-    *,
-    commit_threads: bool = True,  # 0.8.0-DELETE: the 0.7.1 adapter leaves the budget open.
-    retain_memo: bool = True,  # 0.8.0-DELETE: the 0.7.1 adapter keeps its callers' memory profile.
 ) -> np.ndarray | Mapping[str, np.ndarray]:
     """Answer ``PedigreeView.pair_kinship``: validate in view rows, evaluate in graph rows."""
     query = _resolve_query(
         first, second, token=view._coordinate_token, n_individuals=view.n_individuals, receiver_type="PedigreeView"
     )
     rows = view.graph_rows
-    values = _evaluate(
-        view._graph,
-        readonly(rows[query.first]),
-        readonly(rows[query.second]),
-        commit_threads=commit_threads,
-        retain_memo=retain_memo,
-    )
+    values = _evaluate(view._graph, readonly(rows[query.first]), readonly(rows[query.second]))
     return _shape_result(query, values)

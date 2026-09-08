@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from pedigree_graph import PedigreeGraph, compute_all_ne
+from pedigree_graph import PedigreeGraph
 from pedigree_graph import effective_size as es
 from pedigree_graph._ne_common import _scalar_ne_from_log_regression
 
@@ -71,9 +71,14 @@ def test_generation_kinship_summaries_compare_and_do_not_hash():
         hash(a)
 
 
-def test_skipped_coancestry_sentinel_is_empty_on_an_empty_graph():
-    empty = PedigreeGraph.from_frame({"id": [], "mother": [], "father": []})
-    skipped = compute_all_ne(empty, skip_ne_coancestry=True)["ne_coancestry"]
-    assert skipped.ne_per_gen.shape == (0,)
-    assert skipped.mean_theta_per_gen.shape == (0,)
-    assert compute_all_ne(empty)["ne_coancestry"].ne_per_gen.shape == (0,)
+def test_coancestry_on_an_empty_graph_reports_zero_length_arrays():
+    empty = _empty()
+    for result in (es.ne_coancestry(empty), es.estimate_effective_sizes(empty)["ne_coancestry"]):
+        assert result.ne is None
+        assert result.ne_per_gen.shape == (0,)
+        assert result.mean_theta_per_gen.shape == (0,)
+
+
+def test_an_unselected_coancestry_key_carries_no_record():
+    unavailable = es.estimate_effective_sizes(_empty(), ["ne_inbreeding"])["ne_coancestry"]
+    assert unavailable == es.UnavailableEffectiveSize.not_requested()

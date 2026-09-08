@@ -7,11 +7,16 @@ label rewrite of slice 6c::
 
 Every fixture carries dense ``0..g_max`` generation labels, so slice 6c's gap
 formula must reduce to the one-step arithmetic bit for bit on each of them.
-``tests/test_ne_h1_parity.py`` replays the same fixtures through the
-``compute_all_ne`` adapter and asserts the serialized results are equal.
+``tests/test_ne_h1_parity.py`` replays the same fixtures through the current
+estimators and asserts the serialized results are equal.
 
-The fixtures are deterministic and import nothing from the test modules, so
-the golden can be regenerated from any checkout of the base commit.
+This module is a generator, not a test: it targets the API of its base commit
+``00a3667`` and is never migrated forward.  Only :func:`capture` reaches into
+``pedigree_graph``, and it imports there rather than at module scope, so the
+test module that reads the fixtures and the frozen output imports nothing from
+the package through this file.  The fixtures are deterministic and import
+nothing from the test modules, so the golden can be regenerated from any
+checkout of the base commit.
 """
 
 from __future__ import annotations

@@ -14,7 +14,7 @@ import pytest
 from conftest import parity_columns, parity_fixtures
 from scipy.sparse.csgraph import connected_components
 
-from pedigree_graph import PedigreeGraph, ResourceError
+from pedigree_graph import PedigreeGraph
 
 
 def _graph(ids, mother, father, twin=None) -> PedigreeGraph:
@@ -100,35 +100,6 @@ def test_results_are_read_only_typed_and_memoised(method, dtype):
     assert getattr(pg, method)() is first
 
 
-def test_adapters_return_the_same_values_as_writeable_int32():
-    pg = _graph(*_LOOP)
-    np.testing.assert_array_equal(pg.compute_n_ancestors(), pg.distinct_ancestor_counts())
-    np.testing.assert_array_equal(pg.compute_n_descendants(), pg.descendant_path_counts())
-    assert pg.compute_n_ancestors().dtype == np.int32
-    assert pg.compute_n_descendants().dtype == np.int32
-    assert pg.compute_n_ancestors().flags.writeable
-    assert pg.compute_n_descendants().flags.writeable
-    assert pg.compute_n_ancestors() is pg.compute_n_ancestors()
-
-
-def test_adapter_overflow_leaves_the_int64_surface_usable(monkeypatch):
-    import pedigree_graph._lineage as lineage
-
-    over = np.iinfo(np.int32).max + 1
-
-    def fake_kernel(m, f, n):
-        out = np.zeros(n, dtype=np.int64)
-        out[0] = over
-        return out
-
-    monkeypatch.setattr(lineage, "_compute_n_descendants", fake_kernel)
-    pg = _graph([0, 1, 2], [-1, -1, 0], [-1, -1, 1])
-    assert int(pg.descendant_path_counts()[0]) == over
-    with pytest.raises(ResourceError) as info:
-        pg.compute_n_descendants()
-    assert info.value.code == "arithmetic_overflow"
-
-
 FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 
 
@@ -146,17 +117,5 @@ def test_component_ids_match_the_fitace_construction(name):
     fixture = FIXTURES[name]
     if len(fixture["ids"]) == 0:
         pytest.skip("no components in an empty fixture")
-    pg = PedigreeGraph(parity_columns(fixture))
+    pg = PedigreeGraph.from_frame(parity_columns(fixture))
     np.testing.assert_array_equal(pg.connected_component_ids(), _fitace_founder_family_ids(pg))
-
-
-@pytest.mark.parametrize("name", sorted(FIXTURES))
-def test_lineage_surfaces_match_the_adapters_on_fixtures(name):
-    pg = PedigreeGraph(parity_columns(FIXTURES[name]))
-    np.testing.assert_array_equal(pg.distinct_ancestor_counts(), pg.compute_n_ancestors())
-    try:
-        old = pg.compute_n_descendants()
-    except ResourceError:
-        assert int(pg.descendant_path_counts().max()) > np.iinfo(np.int32).max
-    else:
-        np.testing.assert_array_equal(pg.descendant_path_counts(), old)

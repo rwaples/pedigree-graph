@@ -6,10 +6,8 @@ neither copy-cost its way through a loop nor mutate the graph by writing into
 what it read. Only :attr:`PedigreeProperties.depth` is derived, and it is
 computed on first access rather than at construction.
 
-The mixin reads two attributes the graph sets while building itself: the
-parsed :class:`~pedigree_graph._input.PedigreeInput` and the flag that says
-whether this graph was built through a 0.7.1 entry point, which is the only
-thing that turns absent sex into the all-female default.
+The mixin reads one attribute the graph sets while building itself: the
+parsed :class:`~pedigree_graph._input.PedigreeInput`.
 """
 
 from __future__ import annotations
@@ -19,12 +17,12 @@ __all__ = ["PedigreeProperties"]
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from pedigree_graph._input import IdIndex
-from pedigree_graph._topology import readonly, structural_depth
+from pedigree_graph._topology import structural_depth
 
 if TYPE_CHECKING:
+    import numpy as np
+
     from pedigree_graph._input import PedigreeInput
 
 
@@ -32,7 +30,6 @@ class PedigreeProperties:
     """Read-only views onto a graph's owned input arrays and its structural depth."""
 
     _input: PedigreeInput
-    _legacy_defaults: bool  # 0.8.0-DELETE
 
     @property
     def ids(self) -> np.ndarray:
@@ -80,10 +77,7 @@ class PedigreeProperties:
         ``0`` female, ``1`` male, ``-1`` unknown. A wholly unknown column
         reads as ``None``, exactly like an omitted one.
         """
-        parsed = self._input.sex
-        if parsed is None and self._legacy_defaults:  # 0.8.0-DELETE
-            return self._legacy_sex  # 0.8.0-DELETE
-        return parsed
+        return self._input.sex
 
     @cached_property
     def depth(self) -> np.ndarray:
@@ -121,17 +115,3 @@ class PedigreeProperties:
 
     def __len__(self) -> int:
         return self._input.n_individuals
-
-    # 0.8.0-DELETE: the 0.7.1 all-female default for a graph built without sex.
-    @cached_property
-    def _legacy_sex(self) -> np.ndarray:
-        """Read-only all-female int8 sex column."""
-        return readonly(np.zeros(self._input.n_individuals, dtype=np.int8))
-
-    # 0.8.0-DELETE: superseded by generation_labels plus depth; the 0.7.1
-    # estimators read one array and expect depth when no labels were supplied.
-    @property
-    def generation(self) -> np.ndarray:
-        """Supplied generation labels when present, else structural depth."""
-        labels = self._input.generation
-        return self.depth if labels is None else labels

@@ -21,9 +21,9 @@ def rss_mb() -> float:
 def build_graph(df: pl.DataFrame) -> PedigreeGraph:
     return PedigreeGraph.from_arrays(
         ids=df["id"].to_numpy(),
-        mothers=df["mother"].to_numpy(),
-        fathers=df["father"].to_numpy(),
-        twins=df["twin"].to_numpy() if "twin" in df.columns else None,
+        mother_ids=df["mother"].to_numpy(),
+        father_ids=df["father"].to_numpy(),
+        twin_ids=df["twin"].to_numpy() if "twin" in df.columns else None,
         generation=df["generation"].to_numpy() if "generation" in df.columns else None,
     )
 
@@ -44,16 +44,15 @@ def structure_keys(K: sp.csc_matrix) -> np.ndarray:
 def build_degree5(df: pl.DataFrame) -> tuple[sp.csc_matrix, dict[str, int], float]:
     started = time.perf_counter()
     pair_graph = build_graph(df)
-    pairs = pair_graph.extract_pairs(max_degree=5)
-    counts = {k: len(v[0]) for k, v in pairs.items()}
-    first = np.concatenate([v[0] for v in pairs.values()]).astype(np.int64, copy=False)
-    second = np.concatenate([v[1] for v in pairs.values()]).astype(np.int64, copy=False)
+    pairs = pair_graph.relationship_pairs(max_degree=5)
+    counts = {code: len(block) for code, block in pairs.items()}
+    first = np.concatenate([block.first_rows for block in pairs.values()]).astype(np.int64, copy=False)
+    second = np.concatenate([block.second_rows for block in pairs.values()]).astype(np.int64, copy=False)
     n = len(df)
     diag_rows = np.arange(n, dtype=np.int64)
     value_graph = build_graph(df)
-    values = value_graph.compute_pair_kinship({"off": (first, second), "diag": (diag_rows, diag_rows)})
-    off = values["off"].astype(np.float32, copy=False)
-    diag = values["diag"].astype(np.float32, copy=False)
+    off = value_graph.pair_kinship(first, second).astype(np.float32, copy=False)
+    diag = value_graph.pair_kinship(diag_rows, diag_rows).astype(np.float32, copy=False)
     K = sp.coo_matrix(
         (
             np.concatenate([off, off, diag]),
@@ -105,7 +104,7 @@ def main() -> None:
     report: dict = {"pedigree": args.pedigree, "phenotype": args.phenotype, "n_full": len(ped)}
 
     t0 = time.perf_counter()
-    K_thr = build_graph(ped).kinship_matrix(min_kinship=0.001)
+    K_thr = build_graph(ped).approximate_kinship_matrix(min_propagated_kinship=0.001)
     t_thr = time.perf_counter() - t0
     report["threshold_full"] = matrix_summary("threshold_full", K_thr, t_thr)
 
@@ -146,7 +145,7 @@ def main() -> None:
 
     if args.complete:
         t0 = time.perf_counter()
-        K_full = build_graph(ped).kinship_matrix(min_kinship=0.0)
+        K_full = build_graph(ped).kinship_matrix()
         t_full = time.perf_counter() - t0
         K_full_s = subset(K_full, ids, subset_ids)
         report["complete_full"] = matrix_summary("complete_full", K_full, t_full)

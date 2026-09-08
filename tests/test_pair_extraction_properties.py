@@ -23,7 +23,7 @@ def test_pair_keys_no_self_pairs_and_unique(pg):
     # Symmetric codes are stored canonical lo<hi; directed codes (parent-
     # offspring, grandparent, ...) keep a (descendant, ancestor) orientation.
     # The invariant common to both: no self-pairs and no duplicate unordered pair.
-    for code, (i1, i2) in pg.extract_pairs(max_degree=5).items():
+    for code, (i1, i2) in pg.relationship_pairs(max_degree=5).items():
         assert np.all(i1 != i2), code  # no self-pairs
         unordered = [(min(x, y), max(x, y)) for x, y in zip(i1.tolist(), i2.tolist(), strict=True)]
         assert len(unordered) == len(set(unordered)), code  # no duplicate unordered pairs
@@ -32,7 +32,7 @@ def test_pair_keys_no_self_pairs_and_unique(pg):
 @_SETTINGS
 @given(pg=random_pedigree())
 def test_full_vs_half_sib_classification(pg):
-    pairs = pg.extract_pairs(max_degree=5)
+    pairs = pg.relationship_pairs(max_degree=5)
     mo, fa = pg.mother_rows, pg.father_rows
 
     for i, j in zip(*pairs["FS"], strict=True):
@@ -56,6 +56,6 @@ def test_full_vs_half_sib_classification(pg):
 @given(arrays=pedigree_arrays(), data=st.data())
 def test_pair_counts_id_relabel_invariant(arrays, data):
     ids, mo, fa, sex = arrays
-    pg1 = PedigreeGraph.from_arrays(ids=ids, mothers=mo, fathers=fa, sex=sex)
+    pg1 = PedigreeGraph.from_arrays(ids=ids, mother_ids=mo, father_ids=fa, sex=sex)
     pg2 = relabel_pedigree(arrays, data)
-    assert pg1.count_pairs(max_degree=5, scope="full") == pg2.count_pairs(max_degree=5, scope="full")
+    assert dict(pg1.relationship_counts(max_degree=5)) == dict(pg2.relationship_counts(max_degree=5))

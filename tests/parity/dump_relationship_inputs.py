@@ -12,6 +12,10 @@ and any ``--parquet`` files named on the command line (columns ``id``,
 ``mother``, ``father``, optional ``twin``)::
 
     pixi run python tests/parity/dump_relationship_inputs.py --out crates/core/tests/fixtures
+
+Frozen at base commit ``aa71c35``: it calls the 0.7.1 API the 0.8 branch
+deleted, runs only against a pre-slice-7 checkout, and imports nothing from
+the 0.8 surface at test time.
 """
 
 from __future__ import annotations

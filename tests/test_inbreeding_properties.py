@@ -28,7 +28,7 @@ _FULL_SIB_MATING = (
 def test_inbreeding_nonneg_and_matches_matrix_diagonal(pg):
     F = pg.inbreeding()
     assert np.all(F >= -1e-12)
-    K = pg.kinship_matrix(0.0)
+    K = pg.kinship_matrix()
     assert np.allclose(F, 2.0 * np.asarray(K.diagonal()) - 1.0, atol=1e-9)
 
 
@@ -37,7 +37,7 @@ def test_inbreeding_nonneg_and_matches_matrix_diagonal(pg):
 @given(arrays=pedigree_arrays())
 def test_inbreeding_equals_parent_kinship(arrays):
     ids, mother, father, sex = arrays
-    pg = PedigreeGraph.from_arrays(ids=ids, mothers=mother, fathers=father, sex=sex)
+    pg = PedigreeGraph.from_arrays(ids=ids, mother_ids=mother, father_ids=father, sex=sex)
     F = pg.inbreeding()
 
     both = (mother != -1) & (father != -1)
@@ -45,5 +45,5 @@ def test_inbreeding_equals_parent_kinship(arrays):
     assert np.all(F[~both] == 0.0)
     if both.any():
         idx = np.where(both)[0]
-        phi = pg.compute_pair_kinship({"p": (mother[idx].astype(np.int64), father[idx].astype(np.int64))})["p"]
+        phi = pg.pair_kinship(mother[idx], father[idx])
         assert np.allclose(F[idx], phi, atol=1e-9)
