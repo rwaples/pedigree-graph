@@ -60,11 +60,16 @@ class NeCoancestryResult(_SerializableResult):
 
     @classmethod
     def empty(cls, g_max: int) -> NeCoancestryResult:
-        """All-NaN result of the right shape; used when Ne_C is skipped."""
+        """All-NaN result over ``0 .. g_max``; used when Ne_C is skipped."""
+        return cls.empty_dense(g_max + 1)
+
+    @classmethod
+    def empty_dense(cls, length: int) -> NeCoancestryResult:
+        """All-NaN result with ``length`` dense slots (``0`` on an empty graph)."""
         return cls(
             ne=None,
-            ne_per_gen=np.full(g_max + 1, np.nan, dtype=np.float64),
-            mean_theta_per_gen=np.full(g_max + 1, np.nan, dtype=np.float64),
+            ne_per_gen=np.full(length, np.nan, dtype=np.float64),
+            mean_theta_per_gen=np.full(length, np.nan, dtype=np.float64),
             slope=float("nan"),
             n_generations_used=0,
         )
@@ -226,3 +231,37 @@ def legacy_caballero_toro(res: _FinalCaballeroToro) -> NeCaballeroToroResult:
         ),
         slope=res.slope,
     )
+
+
+def legacy_dense_length(pg) -> int:
+    """The 0.7.1 dense array length ``max(label) + 1``, ``0`` on an empty graph."""
+    return int(np.asarray(pg.generation).max()) + 1 if pg.n_individuals else 0
+
+
+def legacy_no_estimate(name: str, length: int) -> _SerializableResult:
+    """The 0.7.1 record reporting no estimate, for an estimator the pedigree refused.
+
+    ``compute_all_ne`` substitutes this so one row that disables the
+    founder-based or sex-dependent estimators does not refuse the other seven,
+    which is what 0.7.1 did (it had no metadata refusals at all).
+    """
+    nan = np.full(length, np.nan, dtype=np.float64)
+    zeros = np.zeros(length, dtype=np.int64)
+    if name == "ne_inbreeding":
+        return NeInbreedingResult(None, nan, np.zeros(length, dtype=np.float64), float("nan"), 0)
+    if name == "ne_coancestry":
+        return NeCoancestryResult.empty_dense(length)
+    if name == "ne_variance_family_size":
+        parents = max(length - 1, 0)
+        return NeVarianceResult(None, *(np.full(parents, np.nan, dtype=np.float64) for _ in range(7)))
+    if name == "ne_sex_ratio":
+        return NeSexRatioResult(None, nan, zeros, zeros.copy())
+    if name == "ne_individual_delta_f":
+        return NeIndividualDeltaFResult(None, nan, nan.copy(), zeros)
+    if name == "ne_long_term_contributions":
+        return NeLTCResult(None, False, 0, float("nan"), 0.0)
+    if name == "ne_hill_overlapping":
+        return NeHillResult(ne=None, generation_interval=1.0, collapses_to_ne_v=True)
+    if name == "ne_caballero_toro":
+        return NeCaballeroToroResult(None, nan, nan.copy(), zeros, float("nan"))
+    raise KeyError(name)

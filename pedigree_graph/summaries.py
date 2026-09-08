@@ -7,16 +7,17 @@ It is data only; the DP that fills it lives in ``pedigree_graph._kinship_dp``.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
 import numpy as np
 
+from pedigree_graph._ne_results import _same
 from pedigree_graph._topology import owned_readonly
 
 __all__ = ["GenerationKinshipSummary"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class GenerationKinshipSummary:
     """Mean pedigree-expected kinship within each observed generation.
 
@@ -55,3 +56,11 @@ class GenerationKinshipSummary:
     def __len__(self) -> int:
         """Number of observed generations."""
         return int(self.generations.shape[0])
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __eq__(self, other: object) -> bool:
+        """Field-wise equality, arrays element-wise with NaN equal to NaN."""
+        if type(other) is not type(self):
+            return NotImplemented
+        return all(_same(getattr(self, f.name), getattr(other, f.name)) for f in fields(self))

@@ -183,7 +183,25 @@ def test_empty_graph_bypasses_every_guard(estimator):
         assert estimator(pg).ne is None
 
 
-def test_compute_all_ne_re_raises_a_selected_metadata_failure():
+def test_compute_all_ne_disables_only_the_refused_estimators():
+    results = compute_all_ne(_graph(father=np.array([-1, -1, 1, 1, 3, -1, 5, 5])))
+    assert len(results) == 8
+    assert results["ne_long_term_contributions"].ne is None
+    assert results["ne_caballero_toro"].ne is None
+    assert np.isnan(results["ne_caballero_toro"].mean_self_coancestry_per_gen).all()
+    assert results["ne_inbreeding"].ne is not None
+    assert results["ne_sex_ratio"].ne is not None
+
+
+def test_compute_all_ne_collapses_hill_when_a_parent_role_has_no_known_ages():
+    birth_year = np.array([1900, -1, 1920, 1920, 1940, -1, 1960, 1960])
+    pg = _graph(birth_year=birth_year, father=np.array([-1, -1, 1, 1, 1, 1, 5, 5]))
+    hill = compute_all_ne(pg)["ne_hill_overlapping"]
+    assert hill.collapses_to_ne_v
+    assert hill.ne is None
+
+
+def test_compute_all_ne_still_rejects_partial_generation_labels():
     with pytest.raises(MissingMetadataError) as info:
-        compute_all_ne(_graph(father=np.array([-1, -1, 1, 1, 3, -1, 5, 5])))
-    assert info.value.code == "incomplete_parentage"
+        compute_all_ne(_graph(generation=np.array([0, 0, 1, 1, 2, 2, -1, -1])))
+    assert info.value.code == "missing_generation_labels"

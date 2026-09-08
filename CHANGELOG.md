@@ -6,6 +6,18 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Fixed after review of slice 6c.**  A flat mean series (a non-inbred
+  pedigree's coancestry or self-coancestry) no longer regresses to an Ne of
+  order 1e15 from least-squares noise: the scalar regression reports no
+  estimate unless the slope is below `-1e-12`.  `NeHillResult.vk_scaled`
+  records the requested `vk_scale` on the collapsed and empty-graph branches
+  too.  `GenerationKinshipSummary` compares field-wise (NaN equal to NaN)
+  and is unhashable, like the effective-size records, instead of raising on
+  `==`.  The `compute_all_ne` adapter's skipped-coancestry sentinel is
+  length zero on an empty graph, aligned with every other array, and the
+  adapter no longer refuses all eight estimators when one row disables the
+  founder-based or sex-dependent ones.
+
 - **Added: `estimate_effective_sizes()`** (ADR 0006, ADR 0007, slice 6c-3).
   `pedigree_graph.effective_size.estimate_effective_sizes(pg, estimators=ALL_EFFECTIVE_SIZE_ESTIMATORS, *, hill_vk_scale=False)`
   runs the selected estimators over one per-call memo of lazily built
@@ -61,8 +73,11 @@ live on the corresponding GitHub release pages.
   and `insufficient_parent_age_data` with both roles instead of plain
   `ValueError`; one role with known ages is enough for its percentile.
   Hill's birth-year branch ignores generation labels.  Empty graphs bypass
-  every guard.  `compute_all_ne` re-raises a selected estimator's failure
-  as before.
+  every guard.  The `compute_all_ne` adapter still rejects partly known
+  generation labels up front; every other refusal disables only the
+  estimator that raised it, which reports `ne=None` in its 0.7.1 record
+  (0.7.1 had no metadata refusals, so one such row never blocked the other
+  seven estimators there either).
 
 - **Added: `pedigree_graph.effective_size`** (ADR 0006, slice 6c-1).  The
   final effective-size surface: the eight `ne_*` estimators with frozen

@@ -276,6 +276,8 @@ class _Prerequisites:
     def _compute(self, name: str) -> EffectiveSizeResult:
         pg = self.pg
         if pg.n_individuals == 0:
+            if name == "ne_hill_overlapping":
+                return ne_hill_overlapping(pg, vk_scale=self.hill_vk_scale)
             return _DIRECT[name](pg)
         if name == "ne_hill_overlapping" and pg.birth_year is not None:
             _require_complete_sex(pg, name)
@@ -306,7 +308,7 @@ class _Prerequisites:
                 warnings.simplefilter("ignore", RuntimeWarning)
                 variance = self.result("ne_variance_family_size")
             assert isinstance(variance, NeVarianceResult)
-            return _hill_from_variance(variance)
+            return _hill_from_variance(variance, self.hill_vk_scale)
         if name == "ne_caballero_toro":
             return _caballero_toro_from(cohorts, self.ct_accumulators())
         raise KeyError(name)

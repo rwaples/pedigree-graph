@@ -39,6 +39,7 @@ import numpy as np
 # ``_core`` and the test suite import several of these from this module
 # (PGQ-006).  The ``as`` aliases mark them as intentional re-exports.
 from pedigree_graph._cohorts import ObservedCohorts
+from pedigree_graph._errors import MissingMetadataError
 from pedigree_graph._kinship_kernel import _compute_eqg
 from pedigree_graph._ne_caballero_toro import CTAccumulators as CTAccumulators  # noqa: TC001
 from pedigree_graph._ne_caballero_toro import (
@@ -76,9 +77,11 @@ from pedigree_graph._ne_legacy import (
     NeVarianceResult,
     legacy_caballero_toro,
     legacy_coancestry,
+    legacy_dense_length,
     legacy_inbreeding,
     legacy_individual_delta_f,
     legacy_ltc,
+    legacy_no_estimate,
     legacy_sex_ratio,
     legacy_variance,
 )
@@ -276,21 +279,23 @@ def compute_all_ne(
             Ne_H.
 
     Returns a dict keyed on estimator name; each value is the matching
-    0.7.1 frozen result record.
+    0.7.1 frozen result record.  Partly known generation labels are
+    rejected up front; any other metadata refusal (``missing_sex``,
+    ``incomplete_parentage``, ``insufficient_parent_age_data``) disables only
+    the estimator that raised it, which reports ``ne=None``.
     """
     if n_threads < 1:
         raise ValueError("n_threads must be >= 1")
 
     F = pg._inbreeding_values()
     cohorts = ObservedCohorts.for_graph(pg, "compute_all_ne")
-    _require_closed_parentage(pg, "ne_long_term_contributions")
     founder_idx = _founder_idx(pg)
     ltc_means = _per_gen_founder_means(pg, founder_idx=founder_idx, cohorts=cohorts)
     ct_acc = _caballero_toro_accumulators(pg, founder_idx, F, cohorts=cohorts)
 
+    length = legacy_dense_length(pg)
     if skip_ne_coancestry:
-        g_max = int(np.asarray(pg.generation).max()) if pg.n > 0 else 0
-        ne_coancestry_result = NeCoancestryResult.empty(g_max)
+        ne_coancestry_result = NeCoancestryResult.empty_dense(length)
         theta_per_gen = None
     else:
         # Stream θ̄_g without materializing K.  pg caches the result so a
@@ -317,12 +322,21 @@ def compute_all_ne(
     if not skip_ne_coancestry:
         tasks["ne_coancestry"] = (ne_coancestry, {"theta_per_gen": theta_per_gen})
 
+    # A metadata refusal disables that estimator alone: 0.7.1 had no such
+    # refusals, so the adapter reports no estimate there and keeps the rest.
+    def run(name: str) -> NeResult:
+        func, kwargs = tasks[name]
+        try:
+            return func(pg, **kwargs)  # ty: ignore[invalid-argument-type]
+        except MissingMetadataError:
+            return legacy_no_estimate(name, length)  # ty: ignore[invalid-return-type]
+
     if n_threads == 1:
-        results: dict[str, NeResult] = {name: func(pg, **kwargs) for name, (func, kwargs) in tasks.items()}  # ty: ignore[invalid-argument-type]
+        results: dict[str, NeResult] = {name: run(name) for name in tasks}
     else:
         results = {}
         with ThreadPoolExecutor(max_workers=min(n_threads, len(tasks))) as executor:
-            futures = {name: executor.submit(func, pg, **kwargs) for name, (func, kwargs) in tasks.items()}  # ty: ignore[invalid-argument-type]
+            futures = {name: executor.submit(run, name) for name in tasks}
             for name, future in futures.items():
                 results[name] = future.result()
 

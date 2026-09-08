@@ -102,17 +102,18 @@ def test_compute_all_ne_none_or_positive(pg):
 @_UNIFORM_SEX_OK
 @_SETTINGS
 @given(pg=random_pedigree())
-def test_compute_all_ne_refuses_only_one_parent_rows(pg):
-    # The founder-based estimators need closed represented parentage; every
-    # other pedigree the strategy draws runs end to end.
+def test_compute_all_ne_disables_only_the_founder_estimators_on_one_parent_rows(pg):
+    # The founder-based estimators need closed represented parentage; the
+    # adapter reports no estimate for them and keeps the other six.
     one_parent = (np.asarray(pg.mother) < 0) != (np.asarray(pg.father) < 0)
+    results = compute_all_ne(pg)
+    assert len(results) == 8
     if one_parent.any():
+        assert results["ne_long_term_contributions"].ne is None
+        assert results["ne_caballero_toro"].ne is None
         with pytest.raises(MissingMetadataError) as info:
-            compute_all_ne(pg)
-        assert info.value.code == "incomplete_parentage"
+            ne_long_term_contributions(pg)
         assert info.value.fields["affected_count"] == int(one_parent.sum())
-    else:
-        assert len(compute_all_ne(pg)) == 8
 
 
 def _ne_close(a, b):

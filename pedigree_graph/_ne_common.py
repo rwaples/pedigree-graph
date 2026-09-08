@@ -16,6 +16,10 @@ import numpy as np
 from pedigree_graph._errors import ResourceError
 from pedigree_graph._ne_metadata import _require_complete_generation_labels as _require_complete_generation_labels
 
+# Slopes this close to zero are least-squares noise on a flat series (about
+# 1e-16 on a constant ln(1 - x)), not a rate; a true Ne of 5e11 has slope -1e-12.
+_SLOPE_NOISE = 1e-12
+
 
 def _harmonic_mean(values: np.ndarray) -> float:
     """Harmonic mean over finite, strictly positive entries; ``nan`` if none."""
@@ -86,9 +90,10 @@ def _scalar_ne_from_log_regression(series: np.ndarray, generations: np.ndarray) 
     (inbreeding), θ̄ (coancestry), or self-coancestry f̄_s (Caballero-Toro) —
     to a scalar Ne the same way: drop the first observed cohort (the
     baseline), regress ``ln(1 − series)`` on ``generations − generations[0]``,
-    and report ``Ne = −1 / (2·slope)`` when the slope is finite and negative
-    (a rising series ⇒ negative slope ⇒ positive Ne).  Adding a constant to
-    every label changes nothing.
+    and report ``Ne = −1 / (2·slope)`` when the slope is finite and below
+    ``-1e-12`` (a rising series ⇒ negative slope ⇒ positive Ne; a flat series
+    fits a slope of least-squares noise, which is no rate).  Adding a
+    constant to every label changes nothing.
 
     Args:
         series: per-cohort mean series aligned with ``generations``.
@@ -103,7 +108,7 @@ def _scalar_ne_from_log_regression(series: np.ndarray, generations: np.ndarray) 
     post_baseline = series[1:]
     t = (generations[1:] - generations[:1]).astype(np.float64) if series.shape[0] else np.empty(0, dtype=np.float64)
     slope, _ = _regress_log_one_minus(post_baseline, t)
-    ne = -1.0 / (2.0 * slope) if np.isfinite(slope) and slope < 0 else None
+    ne = -1.0 / (2.0 * slope) if np.isfinite(slope) and slope < -_SLOPE_NOISE else None
     n_used = int(np.isfinite(np.log1p(-post_baseline)).sum())
     return ne, slope, n_used
 

@@ -14,6 +14,12 @@ may drop by at most the number of parentless MZ pairs in the fixture, and
 the long-term-contribution sum of squares runs over fewer columns, so its
 floating summation order moves in the last bit.  The shipped
 ``small_pedigree`` carries three such pairs; every other fixture is exact.
+
+The second migration is a fix: 6b accepted any negative regression slope, so
+a flat series regressed to an Ne of order 1e16 from least-squares noise (the
+``skip_gen`` inbreeding scalar in the golden, slope ``-6e-18``).  6c reports
+no estimate for a slope above ``-1e-12``; the golden's noise Ne must become
+``None`` and nothing else may change.
 """
 
 from __future__ import annotations
@@ -59,7 +65,11 @@ def test_compute_all_ne_matches_slice_6b(name: str) -> None:
             want = expected["ne_long_term_contributions"].pop(key)
             assert got == pytest.approx(want, rel=1e-12, abs=0.0) if want is not None else got is None
     for estimator in expected:
-        assert actual[estimator] == expected[estimator], estimator
+        want, got = expected[estimator], actual[estimator]
+        if want.get("ne") is not None and -1e-12 < (want.get("slope") or -1.0) < 0:
+            assert got["ne"] is None, f"{estimator}: noise slope {want['slope']} must give no estimate"
+            want, got = {**want, "ne": None}, {**got}
+        assert got == want, estimator
 
 
 def test_small_pedigree_exercises_the_founder_genome_migration() -> None:

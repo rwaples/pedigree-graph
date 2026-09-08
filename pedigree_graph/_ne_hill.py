@@ -68,16 +68,20 @@ def _birth_year_family_table(pg: PedigreeGraph) -> FamilySizeTable:
     return _sex_specific_family_table(np.asarray(pg.mother), np.asarray(pg.father), np.asarray(pg.sex), cohorts)
 
 
-def _hill_from_variance(variance: NeVarianceResult) -> NeHillResult:
-    """The sentinel branch: Hill at ``L = 1`` is the Ne_V passthrough."""
-    return NeHillResult(ne=variance.ne, generation_interval=1.0, collapses_to_ne_v=True)
+def _hill_from_variance(variance: NeVarianceResult, vk_scale: bool) -> NeHillResult:
+    """The sentinel branch: Hill at ``L = 1`` is the Ne_V passthrough.
+
+    ``vk_scaled`` still records what was asked, so the result describes the
+    request whatever branch answered it.
+    """
+    return NeHillResult(ne=variance.ne, generation_interval=1.0, collapses_to_ne_v=True, vk_scaled=vk_scale)
 
 
-def _hill_collapsed(pg: PedigreeGraph) -> NeHillResult:
+def _hill_collapsed(pg: PedigreeGraph, vk_scale: bool) -> NeHillResult:
     cohorts = ObservedCohorts.for_graph(pg, "ne_hill_overlapping")
     _require_complete_sex(pg, "ne_hill_overlapping")
     _warn_if_uniform_sex(pg, "ne_hill_overlapping")
-    return _hill_from_variance(_variance_from(cohorts, _generation_family_table(pg, cohorts)))
+    return _hill_from_variance(_variance_from(cohorts, _generation_family_table(pg, cohorts)), vk_scale)
 
 
 def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillResult:
@@ -131,9 +135,9 @@ def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillR
             variances).
     """
     if pg.n == 0:
-        return NeHillResult(ne=None, generation_interval=1.0, collapses_to_ne_v=True)
+        return NeHillResult(ne=None, generation_interval=1.0, collapses_to_ne_v=True, vk_scaled=vk_scale)
     if pg.birth_year is None:
-        return _hill_collapsed(pg)
+        return _hill_collapsed(pg, vk_scale)
     _require_complete_sex(pg, "ne_hill_overlapping")
     gi = pg.generation_interval
     assert gi is not None  # birth years are present, so the property returns or raises
