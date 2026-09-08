@@ -16,8 +16,8 @@ import pytest
 
 import pedigree_graph
 import pedigree_graph.relationships
-from pedigree_graph import PAIR_KINSHIP, RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelType
-from pedigree_graph._registry import REL_PLAN, REL_REGISTRY, categories_up_to_degree, select_categories
+from pedigree_graph import RELATIONSHIPS, PedigreeValidationError
+from pedigree_graph._registry import REL_PLAN, categories_up_to_degree, select_categories
 from pedigree_graph.relationships import RelationshipRole
 
 REGISTRY_ORDER = (
@@ -213,48 +213,3 @@ class TestSelectors:
 
 def test_engine_plan_covers_exactly_the_registry():
     assert set(REL_PLAN) == set(RELATIONSHIPS)
-
-
-class TestCompatibilitySnapshotsAreDetached:
-    @pytest.fixture(autouse=True)
-    def _rebuild_snapshots(self):
-        # monkeypatch undoes a delitem by re-inserting, which moves the key to
-        # the end; the snapshots are order-sensitive, so rebuild them in place.
-        registry, kinship = dict(REL_REGISTRY), dict(PAIR_KINSHIP)
-        yield
-        REL_REGISTRY.clear()
-        REL_REGISTRY.update(registry)
-        PAIR_KINSHIP.clear()
-        PAIR_KINSHIP.update(kinship)
-
-    def test_mutating_pair_kinship_leaves_the_registry_alone(self, monkeypatch):
-        monkeypatch.setitem(PAIR_KINSHIP, "FS", 0.0)
-        assert RELATIONSHIPS["FS"].nominal_kinship == 0.25
-
-    def test_deleting_from_rel_registry_leaves_the_registry_alone(self, monkeypatch):
-        monkeypatch.delitem(REL_REGISTRY, "MZ")
-        assert "MZ" in RELATIONSHIPS
-
-    def test_engines_ignore_the_mutated_snapshots(self, monkeypatch):
-        monkeypatch.setitem(PAIR_KINSHIP, "FS", 0.0)
-        monkeypatch.delitem(REL_REGISTRY, "MZ")
-        counts = PedigreeGraph.from_frame(small_pedigree()).relationship_counts(max_degree=5)
-        assert set(counts) == set(RELATIONSHIPS)
-
-
-class TestCompatibilitySnapshotContents:
-    def test_avuncular_keeps_the_0_7_1_orientation(self):
-        assert REL_REGISTRY["Av"] == RelType(1, 2, 2, "Av", "Avuncular")
-
-    def test_lineal_orientation_is_unchanged(self):
-        assert REL_REGISTRY["MO"] == RelType(1, 0, 1, "MO", "Mother-offspring")
-
-    def test_pair_kinship_mirrors_the_nominal_values(self):
-        assert {code: c.nominal_kinship for code, c in RELATIONSHIPS.items()} == PAIR_KINSHIP
-
-    def test_snapshot_order_matches_the_registry(self):
-        assert list(REL_REGISTRY) == list(RELATIONSHIPS)
-
-    def test_snapshots_are_plain_mutable_dicts(self):
-        assert type(REL_REGISTRY) is dict
-        assert type(PAIR_KINSHIP) is dict

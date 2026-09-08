@@ -11,7 +11,8 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from pedigree_graph import FrameLike, PedigreeGraph, PedigreeValidationError
+from pedigree_graph import PedigreeGraph, PedigreeValidationError
+from pedigree_graph.typing import FrameLike
 
 # Two founder couples, two children each, one grandchild generation.
 _DATA = {

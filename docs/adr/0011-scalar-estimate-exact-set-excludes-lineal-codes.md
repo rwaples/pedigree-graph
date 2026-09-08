@@ -106,9 +106,9 @@ the same untruth the slice set out to remove.
   the correction counts exactly.
 * The registry is the single source of truth. `EngineSupport.estimate_exact`
   names the six codes and `estimate_exact_codes()` derives the set. The
-  0.7.1 `streaming_exact` flag keeps its original meaning (the unfolded
-  `count_pairs_streaming` equals the unfolded `count_pairs`) for the tests
-  and adapter that still use it, and is marked `# 0.8.0-DELETE` with them.
+  0.7.1 `streaming_exact` flag kept its original meaning (the unfolded
+  `count_pairs_streaming` equals the unfolded `count_pairs`) until slice 7
+  deleted it with the adapter and tests that read it.
 * Exact lineal counts are what `relationship_counts` is for. A caller who
   needs them on a pedigree too large for the matrix engine waits for the
   row-streaming engine of ADR 0010, which classifies each pair once by

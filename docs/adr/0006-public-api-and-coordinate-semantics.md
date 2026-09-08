@@ -181,9 +181,12 @@ eventual source.
 ### Namespace
 
 Root exports: `PedigreeGraph`, `PedigreeView`, `RelationshipCategory`,
-`RelationshipPairs`, `RelationshipPairBlock`, `RELATIONSHIPS`,
-`PedigreeValidationError`, `MissingMetadataError`, `ResourceError`,
-`configure_threads`. `FrameLike` moves to `pedigree_graph.typing`.
+`RelationshipPairs`, `RelationshipPairBlock`, `RelationshipCountResult`,
+`RELATIONSHIPS`, `PedigreeValidationError`, `MissingMetadataError`,
+`ResourceError`, `configure_threads`. (`RelationshipCountResult` was added to
+this list when slice 7 froze the namespace: it is the return type of a root
+class's method, like `RelationshipPairs`.) `FrameLike` moves to
+`pedigree_graph.typing`.
 Effective-size functions, cohort utilities, and result classes move to public
 `pedigree_graph.effective_size`; `compute_all_ne` becomes
 `estimate_effective_sizes`. Estimator formulas do not change.

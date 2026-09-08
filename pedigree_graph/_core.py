@@ -12,10 +12,7 @@ Each relationship type is parameterised by (up, down, n_ancestors):
 
 from __future__ import annotations
 
-__all__ = [
-    "FrameLike",
-    "PedigreeGraph",
-]
+__all__ = ["PedigreeGraph"]
 
 import logging
 import time
@@ -27,7 +24,6 @@ import scipy.sparse as sp
 
 from pedigree_graph._cohort_utils import generation_interval as _generation_interval
 from pedigree_graph._errors import PedigreeValidationError
-from pedigree_graph._frames import FrameLike
 from pedigree_graph._input import (
     parse_pedigree_arrays,
     parse_pedigree_input,
@@ -53,6 +49,7 @@ from pedigree_graph.relationships import RelationshipCountResult
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+    from pedigree_graph._frames import FrameLike
     from pedigree_graph._input import PedigreeInput
     from pedigree_graph._kinship_pairwise import _PairMemo
     from pedigree_graph._streaming_counter import CachedEstimate

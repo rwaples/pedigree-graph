@@ -24,20 +24,15 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
-import numpy as np  # 0.8.0-DELETE
-
 from pedigree_graph._errors import PedigreeValidationError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
 __all__ = [
-    "PAIR_KINSHIP",
     "RELATIONSHIPS",
     "REL_PLAN",
-    "REL_REGISTRY",
     "EngineSupport",
-    "RelType",
     "RelationshipCategory",
     "RelationshipRole",
     "bfs_divergent_codes",
@@ -282,43 +277,3 @@ def bfs_divergent_codes() -> frozenset[str]:
     these codes differ on inbred input.
     """
     return frozenset(code for code, plan in REL_PLAN.items() if plan.bfs_diverges_under_inbreeding)
-
-
-# ---------------------------------------------------------------------------
-# 0.7.1 compatibility: detached snapshots, built once from RELATIONSHIPS
-# ---------------------------------------------------------------------------
-
-
-class RelType(NamedTuple):  # 0.8.0-DELETE
-    """Relationship category defined by path through pedigree."""
-
-    up: int  # meioses A → common ancestor(s)
-    down: int  # meioses common ancestor(s) → B
-    n_anc: int  # 1 = half/lineal, 2 = full (mated-pair ancestors)
-    code: str  # short dict key
-    label: str  # human-readable display label
-
-    @property
-    def kinship(self) -> float:
-        """Kinship coefficient derived from path length and ancestor count."""
-        if self.code == "MZ":
-            return 0.5
-        return self.n_anc * 0.5 ** (self.up + self.down + 1)
-
-    @property
-    def degree(self) -> int:
-        """Kinship degree (0 for MZ, 1 for parent-offspring/full-sib, etc.)."""
-        if self.code == "MZ":
-            return 0
-        return round(-1 - np.log2(self.kinship))
-
-
-def _as_rel_type(category: RelationshipCategory) -> RelType:  # 0.8.0-DELETE
-    """Restore the 0.7.1 orientation, which stored collateral categories up ≤ down."""
-    up, down = (category.up, 0) if category.down == 0 else (category.down, category.up)
-    return RelType(up, down, category.ancestor_count, category.code, category.label)
-
-
-REL_REGISTRY: dict[str, RelType] = {code: _as_rel_type(c) for code, c in _RELATIONSHIPS.items()}  # 0.8.0-DELETE
-
-PAIR_KINSHIP: dict[str, float] = {code: c.nominal_kinship for code, c in _RELATIONSHIPS.items()}  # 0.8.0-DELETE

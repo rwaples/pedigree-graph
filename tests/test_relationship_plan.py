@@ -13,7 +13,6 @@ import pytest
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._registry import (
-    PAIR_KINSHIP,
     REL_PLAN,
     RELATIONSHIPS,
     bfs_divergent_codes,
@@ -69,6 +68,3 @@ class TestAllEnginesReturnRegistryKeySet:
     def test_bfs_engine(self):
         pg = PedigreeGraph.from_frame(self._pedigree())
         assert set(count_pairs_bfs(pg, max_degree=5)) == set(RELATIONSHIPS)
-
-    def test_registry_and_kinship_keys_agree(self):
-        assert set(PAIR_KINSHIP) == set(RELATIONSHIPS)

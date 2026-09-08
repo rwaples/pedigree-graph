@@ -27,12 +27,6 @@ Public API:
         graph_rows, n_individuals, len, relationship_pairs /
         relationship_counts, and pair_kinship in view rows
 
-0.7.1 compatibility (removed in 0.8.0) — detached snapshots of the registry,
-so mutating them changes nothing the engines read:
-    REL_REGISTRY      — ordered registry of relationship types
-    PAIR_KINSHIP      — kinship coefficient by code
-    RelType           — NamedTuple describing a single relationship class
-
 Errors (ADR 0006 — each carries a stable ``.code`` and immutable ``.fields``):
     PedigreeValidationError, MissingMetadataError (both ValueError),
     ResourceError (RuntimeError)
@@ -43,24 +37,19 @@ Threads:
         PEDIGREE_GRAPH_THREADS > 1.  Repeating the committed value is fine;
         changing it after the budget is committed is a RuntimeError.
 
-Effective population size (Ne):
+Public non-root modules:
+    pedigree_graph.relationships — the registry and the pair / count result types
+    pedigree_graph.summaries     — GenerationKinshipSummary
     pedigree_graph.effective_size — estimators, result classes,
         estimate_effective_sizes, and the cohort utilities
+    pedigree_graph.typing        — FrameLike, the structural table protocol
 """
 
-from pedigree_graph._core import (
-    FrameLike,
-    PedigreeGraph,
-)
+from pedigree_graph._core import PedigreeGraph
 from pedigree_graph._errors import (
     MissingMetadataError,
     PedigreeValidationError,
     ResourceError,
-)
-from pedigree_graph._registry import (  # 0.8.0-DELETE
-    PAIR_KINSHIP,
-    REL_REGISTRY,
-    RelType,
 )
 from pedigree_graph._threads import configure_threads
 from pedigree_graph._view import PedigreeView
@@ -73,15 +62,11 @@ from pedigree_graph.relationships import (
 )
 
 __all__ = [
-    "PAIR_KINSHIP",  # 0.8.0-DELETE
     "RELATIONSHIPS",
-    "REL_REGISTRY",  # 0.8.0-DELETE
-    "FrameLike",
     "MissingMetadataError",
     "PedigreeGraph",
     "PedigreeValidationError",
     "PedigreeView",
-    "RelType",  # 0.8.0-DELETE
     "RelationshipCategory",
     "RelationshipCountResult",
     "RelationshipPairBlock",
