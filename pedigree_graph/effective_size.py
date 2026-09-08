@@ -21,6 +21,11 @@ Estimator coverage:
 * :func:`ne_hill_overlapping`        — Hill 1979 (collapses to Ne_V at L=1).
 * :func:`ne_caballero_toro`          — Caballero & Toro 2002 self-coancestry regression.
 
+:func:`estimate_effective_sizes` runs a selection of them over one lazily
+built prerequisite memo, serially in canonical order, and returns an
+:class:`EffectiveSizeResults` with all eight keys; an unselected or refused
+estimator maps to an :class:`UnavailableEffectiveSize`.
+
 Metadata dependency matrix.  Every guard raises
 :class:`~pedigree_graph.MissingMetadataError` naming the estimator in
 ``operation``; guards run in the order listed, before any work, and an
@@ -46,6 +51,12 @@ from __future__ import annotations
 
 from pedigree_graph._cohort_utils import CohortWindow, eligible_cohort_range
 from pedigree_graph._ne_caballero_toro import ne_caballero_toro
+from pedigree_graph._ne_estimate import (
+    ALL_EFFECTIVE_SIZE_ESTIMATORS,
+    EffectiveSizeResults,
+    UnavailableEffectiveSize,
+    estimate_effective_sizes,
+)
 from pedigree_graph._ne_family_size import ne_sex_ratio, ne_variance_family_size
 from pedigree_graph._ne_founders import ne_long_term_contributions
 from pedigree_graph._ne_hill import ne_hill_overlapping
@@ -63,7 +74,9 @@ from pedigree_graph._ne_results import (
 )
 
 __all__ = [
+    "ALL_EFFECTIVE_SIZE_ESTIMATORS",
     "CohortWindow",
+    "EffectiveSizeResults",
     "GenerationInterval",
     "NeCaballeroToroResult",
     "NeCoancestryResult",
@@ -73,7 +86,9 @@ __all__ = [
     "NeLTCResult",
     "NeSexRatioResult",
     "NeVarianceResult",
+    "UnavailableEffectiveSize",
     "eligible_cohort_range",
+    "estimate_effective_sizes",
     "ne_caballero_toro",
     "ne_coancestry",
     "ne_hill_overlapping",

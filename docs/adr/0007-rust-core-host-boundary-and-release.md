@@ -111,14 +111,20 @@ separate Python worker pool is removed.
 
 Before the Rust core exists, the pure-Python 0.8.0 package already exposes
 `configure_threads` with the same precedence and reconfiguration rule. In
-0.8.0 it is a package-level budget that every Python-level worker pool on a
-new-API path reads (`ThreadPoolExecutor` sites in the pair extractor and the
-effective-size prerequisites). It never calls `numba.set_num_threads`: that
-global is process-wide, consumers such as simACE pin it themselves, and no
-production kernel in the package runs `parallel=True` (the one that does is
-the experimental BFS engine, which issue #7 removes). Adapters marked for
-deletion keep 0.7.1 execution behaviour and their own thread arguments until
-slice 7. When the Rayon pool lands, the same function configures it.
+0.8.0 it is a package-level budget read by Python-level worker pools on
+new-API paths, currently the pair extractor. Effective-size orchestration and
+its lazy prerequisites run serially: the old pool dispatched formulas only
+after eagerly building the expensive prerequisites, while concurrent kinship,
+founder, and Caballero-Toro prerequisites would multiply peak memory. The
+entry point still resolves `thread_budget()` once so package configuration is
+committed consistently, and kernels it calls may honor that budget. It never
+calls `numba.set_num_threads`: that global is process-wide, consumers such as
+simACE pin it themselves, and no production kernel in the package runs
+`parallel=True` (the one that does is the experimental BFS engine, which issue
+#7 removes). Adapters marked for deletion keep 0.7.1 execution behaviour and
+their own thread arguments until slice 7. When the Rayon pool lands, the same
+function configures it and may prepare independent effective-size prerequisites
+without changing the serial Python formulas.
 
 Acceptance criterion, recommended pending final sign-off: integer outputs are
 bit-identical across thread counts; floating reductions use fixed partitions

@@ -28,8 +28,10 @@ from pedigree_graph._ne_metadata import _require_complete_sex
 from pedigree_graph._ne_results import NeHillResult
 
 if TYPE_CHECKING:
+    from pedigree_graph._cohort_utils import CohortWindow
     from pedigree_graph._core import PedigreeGraph
     from pedigree_graph._ne_family_size import FamilySizeTable
+    from pedigree_graph._ne_results import GenerationInterval, NeVarianceResult
 
 
 def _hill_age_table(pg: PedigreeGraph) -> dict[str, np.ndarray]:
@@ -66,13 +68,16 @@ def _birth_year_family_table(pg: PedigreeGraph) -> FamilySizeTable:
     return _sex_specific_family_table(np.asarray(pg.mother), np.asarray(pg.father), np.asarray(pg.sex), cohorts)
 
 
-def _hill_collapsed(pg: PedigreeGraph) -> NeHillResult:
+def _hill_from_variance(variance: NeVarianceResult) -> NeHillResult:
     """The sentinel branch: Hill at ``L = 1`` is the Ne_V passthrough."""
+    return NeHillResult(ne=variance.ne, generation_interval=1.0, collapses_to_ne_v=True)
+
+
+def _hill_collapsed(pg: PedigreeGraph) -> NeHillResult:
     cohorts = ObservedCohorts.for_graph(pg, "ne_hill_overlapping")
     _require_complete_sex(pg, "ne_hill_overlapping")
     _warn_if_uniform_sex(pg, "ne_hill_overlapping")
-    v = _variance_from(cohorts, _generation_family_table(pg, cohorts))
-    return NeHillResult(ne=v.ne, generation_interval=1.0, collapses_to_ne_v=True)
+    return _hill_from_variance(_variance_from(cohorts, _generation_family_table(pg, cohorts)))
 
 
 def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillResult:
@@ -132,10 +137,17 @@ def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillR
     _require_complete_sex(pg, "ne_hill_overlapping")
     gi = pg.generation_interval
     assert gi is not None  # birth years are present, so the property returns or raises
+    return _hill_from(pg, gi, eligible_cohort_range(pg), _birth_year_family_table(pg), vk_scale)
 
-    window = eligible_cohort_range(pg)
-    table = _birth_year_family_table(pg)
 
+def _hill_from(
+    pg: PedigreeGraph,
+    gi: GenerationInterval,
+    window: CohortWindow,
+    table: FamilySizeTable,
+    vk_scale: bool,
+) -> NeHillResult:
+    """The birth-year branch over resolved prerequisites."""
     ne_per_c: list[float] = []
     Ne_m_per_c: list[float] = []
     Ne_f_per_c: list[float] = []

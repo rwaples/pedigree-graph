@@ -126,6 +126,22 @@ def _meta(dtype: type, axis: str, *, optional: bool = False, labels: bool = Fals
     return {"dtype": dtype, "axis": axis, "optional": optional, "labels": labels}
 
 
+def _same(a: object, b: object) -> bool:
+    """Field equality where NaN equals NaN, for arrays, mappings, and scalars."""
+    if isinstance(a, np.ndarray) or isinstance(b, np.ndarray):
+        return (
+            isinstance(a, np.ndarray)
+            and isinstance(b, np.ndarray)
+            and a.dtype == b.dtype
+            and np.array_equal(a, b, equal_nan=True)
+        )
+    if isinstance(a, Mapping) and isinstance(b, Mapping):
+        return a.keys() == b.keys() and all(_same(a[k], b[k]) for k in a)
+    if isinstance(a, float) and isinstance(b, float) and np.isnan(a) and np.isnan(b):
+        return True
+    return bool(a == b)
+
+
 class _FrozenResult(_SerializableResult):
     """Base for the final records: own every array and check the axes.
 
@@ -133,10 +149,17 @@ class _FrozenResult(_SerializableResult):
     read-only array of its declared dtype, then checks that every series
     has one entry per label of the axis it declares, that label arrays are
     strictly ascending, and that ``transition_from`` / ``transition_to``
-    are exactly the adjacent pairs of ``generations``.
+    are exactly the adjacent pairs of ``generations``.  Two records are
+    equal when every field is, arrays element-wise with NaN equal to NaN.
     """
 
     __slots__ = ()
+    __hash__ = None  # type: ignore[assignment]
+
+    def __eq__(self, other: object) -> bool:
+        if type(other) is not type(self):
+            return NotImplemented
+        return all(_same(getattr(self, f.name), getattr(other, f.name)) for f in fields(self))  # ty: ignore[invalid-argument-type]
 
     def __post_init__(self) -> None:
         for f in fields(self):  # ty: ignore[invalid-argument-type]
@@ -202,7 +225,7 @@ class GenerationInterval(_SerializableResult):
     n_edges: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class NeInbreedingResult(_FrozenResult):
     """Inbreeding-rate (Ne_I) result.
 
@@ -229,7 +252,7 @@ class NeInbreedingResult(_FrozenResult):
     n_generations_used: int = 0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class NeCoancestryResult(_FrozenResult):
     """Coancestry-rate (Ne_C) result.
 
@@ -255,7 +278,7 @@ class NeCoancestryResult(_FrozenResult):
     n_generations_used: int = 0
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class NeVarianceResult(_FrozenResult):
     """Variance-of-family-size (Ne_V) result.
 
@@ -285,7 +308,7 @@ class NeVarianceResult(_FrozenResult):
     cov_f: np.ndarray = field(metadata=_meta(np.float64, "parent"))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class NeSexRatioResult(_FrozenResult):
     """Wright sex-ratio (Ne_sr) result.
 
@@ -300,7 +323,7 @@ class NeSexRatioResult(_FrozenResult):
     n_female_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class NeIndividualDeltaFResult(_FrozenResult):
     """Gutiérrez 2008/2009 individual ΔF (Ne_iΔF) result.
 
@@ -318,7 +341,7 @@ class NeIndividualDeltaFResult(_FrozenResult):
     n_used_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class NeLTCResult(_FrozenResult):
     """Wray & Thompson 1990 long-term contribution (Ne_LTC) result.
 
@@ -346,7 +369,7 @@ class NeLTCResult(_FrozenResult):
     final_generation: int | None
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class NeHillResult(_FrozenResult):
     """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
 
@@ -426,7 +449,7 @@ class NeHillResult(_FrozenResult):
             object.__setattr__(self, "age_table", MappingProxyType(frozen))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class NeCaballeroToroResult(_FrozenResult):
     """Caballero & Toro 2002 self-coancestry rate (Ne_CT) result.
 

@@ -6,6 +6,38 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `estimate_effective_sizes()`** (ADR 0006, ADR 0007, slice 6c-3).
+  `pedigree_graph.effective_size.estimate_effective_sizes(pg, estimators=ALL_EFFECTIVE_SIZE_ESTIMATORS, *, hill_vk_scale=False)`
+  runs the selected estimators over one per-call memo of lazily built
+  prerequisites (observed cohorts, F, the generation kinship summary, the
+  represented founders, the generation and birth-year family tables, the
+  founder means, the Caballero-Toro accumulators, the generation interval,
+  the cohort window) and returns an `EffectiveSizeResults`: a deeply
+  immutable, tuple-backed `Mapping` with all eight keys in canonical order.
+  An unselected estimator maps to `UnavailableEffectiveSize(reason="not_requested")`;
+  a selected estimator that refused the pedigree with
+  `MissingMetadataError` maps to `reason="missing_metadata"` with that
+  error's code and fields, each estimator naming itself; any other
+  exception propagates.  Every prerequisite is built at most once and
+  only when a selected estimator needs it, so Hill's absent-birth-year
+  collapse reuses a selected Ne_V result or computes one privately while
+  the public key stays `not_requested`.  The selector is any finite
+  iterable of names, materialized and validated before any work (`None`
+  or a bare string is a `TypeError`, an unknown name a `ValueError`);
+  `hill_vk_scale` must be a `bool`.  Direct and orchestrated calls share
+  the evaluators, so their records compare equal; the final records define
+  NaN-aware equality.  `to_dict()` serializes every nested result.
+
+- **Changed: no worker pool on the final effective-size path** (ADR 0007
+  amended).  `estimate_effective_sizes` has no `n_threads`: the estimators
+  and prerequisites run serially, the package thread budget is committed
+  once after selection is validated, and kernels honor it.  The old pool
+  dispatched formulas only after eagerly building the expensive
+  prerequisites, and running the kinship, founder, and Caballero-Toro
+  prerequisites concurrently would multiply peak memory.
+  `benchmarks/bench_effective_size.py` gates the serial path against the
+  pooled `compute_all_ne` adapter, which keeps its pool until slice 7.
+
 - **Added: the effective-size metadata matrix** (ADR 0006, slice 6c-2).
   Every estimator in `pedigree_graph.effective_size` validates the metadata
   it needs, in a fixed order, before any work, and raises
