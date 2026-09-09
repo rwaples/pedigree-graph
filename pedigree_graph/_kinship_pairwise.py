@@ -74,9 +74,9 @@ from typing import TYPE_CHECKING
 import numba
 import numpy as np
 
+from pedigree_graph import _native
 from pedigree_graph._errors import PedigreeValidationError, ResourceError
 from pedigree_graph._input import _INT32_MAX, _coerce_row_selection, _FieldSpec
-from pedigree_graph._kinship_depth import _check_topological
 from pedigree_graph._threads import thread_budget
 from pedigree_graph._topology import owned_readonly, readonly
 from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
@@ -444,7 +444,7 @@ def _prepare_inputs(
     n = mother.shape[0]
     if not (father.shape[0] == twin.shape[0] == n):
         raise ValueError("pairwise_kinship: mother, father, and twin must have one entry per row")
-    if not _check_topological(mother, father, n):
+    if not _native.is_topological(mother.astype(np.int32), father.astype(np.int32)):
         raise ValueError(
             "pairwise_kinship: every parent row must precede its child; pass the depth-major arrays from "
             "PedigreeGraph._topological_parents"

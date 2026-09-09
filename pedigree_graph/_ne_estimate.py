@@ -299,7 +299,9 @@ class _Prerequisites:
         if name == "ne_sex_ratio":
             return _sex_ratio_from(cohorts, _sex_column(pg))
         if name == "ne_individual_delta_f":
-            eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), pg.n_individuals)
+            eqg = _compute_eqg(
+                np.asarray(pg.mother_rows), np.asarray(pg.father_rows), np.asarray(pg.depth), pg.n_individuals
+            )
             return _individual_delta_f_from(cohorts, self.inbreeding(), eqg)
         if name == "ne_long_term_contributions":
             return _ltc_from(cohorts, self.founder_means(), 1e-6)

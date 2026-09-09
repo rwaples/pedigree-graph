@@ -22,16 +22,15 @@ __all__ = [
     "validate_id_field",
 ]
 
-from collections import deque
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from pedigree_graph import _native
 from pedigree_graph._errors import PedigreeValidationError, ResourceError
 from pedigree_graph._frames import _coerce_to_array_dict
-from pedigree_graph._kinship_depth import _check_topological
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -474,59 +473,6 @@ def _map_ids_to_rows(
     return IdIndex.build(target_ids).resolve(query_ids, dtype)
 
 
-def _remaining_after_kahn(mother_rows: np.ndarray, father_rows: np.ndarray, n: int) -> np.ndarray:
-    """Return the mask of rows Kahn's algorithm could not peel, i.e. the cyclic core."""
-    children = np.concatenate([np.arange(n, dtype=np.int64), np.arange(n, dtype=np.int64)])
-    parents = np.concatenate([mother_rows, father_rows]).astype(np.int64)
-    represented = parents >= 0
-    parents = parents[represented]
-    children = children[represented]
-    indegree = np.bincount(children, minlength=n)
-    order = np.argsort(parents, kind="stable")
-    parents = parents[order]
-    children = children[order]
-    starts = np.searchsorted(parents, np.arange(n), side="left")
-    ends = np.searchsorted(parents, np.arange(n), side="right")
-    peeled = np.zeros(n, dtype=bool)
-    queue = deque(int(row) for row in np.flatnonzero(indegree == 0))
-    while queue:
-        row = queue.popleft()
-        peeled[row] = True
-        for child in children[starts[row] : ends[row]]:
-            indegree[child] -= 1
-            if indegree[child] == 0:
-                queue.append(int(child))
-    return ~peeled
-
-
-def _check_cycle(ids: np.ndarray, mother_rows: np.ndarray, father_rows: np.ndarray, n: int) -> None:
-    """Raise ``cycle`` with one deterministic witness when the parent edges are cyclic.
-
-    The witness is chosen by id, not by row, so the same graph reports the
-    same cycle whatever order its rows arrive in.
-    """
-    remaining = _remaining_after_kahn(mother_rows, father_rows, n)
-    if not remaining.any():
-        return
-    candidates = np.flatnonzero(remaining)
-    row = int(candidates[np.argmin(ids[candidates])])
-    walk: list[int] = []
-    visited: dict[int, int] = {}
-    while row not in visited:
-        visited[row] = len(walk)
-        walk.append(row)
-        parents = [int(p) for p in (mother_rows[row], father_rows[row]) if p >= 0 and remaining[p]]
-        row = min(parents, key=lambda p: int(ids[p]))
-    cycle = walk[visited[row] :]
-    start = int(np.argmin([ids[r] for r in cycle]))
-    witness = tuple(int(ids[r]) for r in cycle[start:] + cycle[:start])
-    raise PedigreeValidationError(
-        "cycle",
-        f"parent references form a cycle through ids {witness}",
-        ids=witness,
-    )
-
-
 def _check_mz_pairs(
     ids: np.ndarray,
     mother_ids: np.ndarray,
@@ -743,9 +689,9 @@ def parse_pedigree_input(
     mother_rows = _map_ids_to_rows(ids, values["mother"], np.int32)
     father_rows = _map_ids_to_rows(ids, values["father"], np.int32)
     twin_rows = _map_ids_to_rows(ids, twin_ids, np.int32)
-    rows_topological = bool(_check_topological(mother_rows, father_rows, n))
+    rows_topological = _native.is_topological(mother_rows, father_rows)
     if not rows_topological:
-        _check_cycle(ids, mother_rows, father_rows, n)
+        _native.validate_acyclic(ids, mother_rows, father_rows)
     _check_mz_pairs(ids, values["mother"], values["father"], twin_rows, values.get("sex"))
 
     return PedigreeInput(

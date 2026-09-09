@@ -154,7 +154,7 @@ def test_toy1_full_sib_mating_F_theta_eqg():
 
     # EqG: founders 0; gen-1 with both founder parents → 1; gen-2 with two
     # gen-1 parents (each with EqG=1) → 1 + 0.5*(1+1) = 2.
-    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), pg.n_individuals)
+    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), np.asarray(pg.depth), pg.n_individuals)
     assert eqg[0] == 0.0
     assert eqg[1] == 0.0
     assert eqg[2] == pytest.approx(1.0, abs=1e-12)

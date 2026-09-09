@@ -235,5 +235,5 @@ def ne_individual_delta_f(pg: PedigreeGraph) -> NeIndividualDeltaFResult:
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_individual_delta_f")
     F = pg._inbreeding_values()
-    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), pg.n_individuals)
+    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), np.asarray(pg.depth), pg.n_individuals)
     return _individual_delta_f_from(cohorts, F, eqg)

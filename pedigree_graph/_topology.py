@@ -33,7 +33,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from pedigree_graph._kinship_depth import _compute_depth
+from pedigree_graph import _native
 
 
 def readonly(values: np.ndarray) -> np.ndarray:
@@ -116,18 +116,20 @@ class Topology:
         return out
 
 
-def structural_depth(mother_rows: np.ndarray, father_rows: np.ndarray, n: int) -> np.ndarray:
+def structural_depth(mother_rows: np.ndarray, father_rows: np.ndarray) -> np.ndarray:
     """Depth from the parent edges alone: founders 0, child ``max(parents) + 1``.
 
+    Computed by the Rust core; the parent edges must already have passed the
+    construction-time cycle check.
+
     Args:
-        mother_rows: int32 mother row per graph row, ``-1`` when absent.
-        father_rows: int32 father row per graph row, ``-1`` when absent.
-        n: number of rows.
+        mother_rows: contiguous int32 mother row per graph row, ``-1`` when absent.
+        father_rows: contiguous int32 father row per graph row, ``-1`` when absent.
 
     Returns:
         Read-only int32 depth per graph row.
     """
-    return readonly(_compute_depth(mother_rows, father_rows, n))
+    return readonly(_native.structural_depth(mother_rows, father_rows))
 
 
 def build_topology(depth: np.ndarray) -> Topology:
@@ -140,11 +142,8 @@ def build_topology(depth: np.ndarray) -> Topology:
         The :class:`Topology`; ``order``/``inverse`` are ``None`` when the
         graph rows are already depth-major.
     """
-    n = depth.shape[0]
-    order = np.argsort(depth, kind="stable").astype(np.intp)
-    identity = np.arange(n, dtype=np.intp)
-    if np.array_equal(order, identity):
+    permutation = _native.depth_major_order(np.ascontiguousarray(depth, dtype=np.int32))
+    if permutation is None:
         return Topology(depth=depth, order=None, inverse=None)
-    inverse = np.empty(n, dtype=np.intp)
-    inverse[order] = identity
-    return Topology(depth=depth, order=order, inverse=inverse)
+    order, inverse = permutation
+    return Topology(depth=depth, order=order.astype(np.intp, copy=False), inverse=inverse.astype(np.intp, copy=False))

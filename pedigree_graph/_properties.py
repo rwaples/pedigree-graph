@@ -87,7 +87,7 @@ class PedigreeProperties:
         never move it. Computed on first access: graphs that only extract
         pairs in graph order never pay for it.
         """
-        return structural_depth(self._input.mother_rows, self._input.father_rows, self._input.n_individuals)
+        return structural_depth(self._input.mother_rows, self._input.father_rows)
 
     @property
     def generation_labels(self) -> np.ndarray | None:

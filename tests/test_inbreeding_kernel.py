@@ -19,10 +19,10 @@ import scipy.sparse as sp
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
-    _compute_depth,
     _compute_F_meuwissen_luo,
 )
 from pedigree_graph._kinship_pairwise import pairwise_kinship
+from pedigree_graph._topology import structural_depth
 
 
 def _F(m, f, n=None, tw=None):
@@ -31,7 +31,7 @@ def _F(m, f, n=None, tw=None):
     if n is None:
         n = len(m)
     tw = np.full(n, -1, dtype=np.int32) if tw is None else np.asarray(tw, dtype=np.int32)
-    depth = _compute_depth(m, f, n)
+    depth = structural_depth(m, f)
     return _compute_F_meuwissen_luo(m, f, tw, depth, n)
 
 
@@ -150,7 +150,7 @@ def _mz_frame(ids, mother, father, twin):
             "father": father,
             "twin": twin,
             "sex": [0] * len(ids),
-            "generation": _compute_depth(m, f, len(ids)).tolist(),
+            "generation": structural_depth(np.asarray(m, dtype=np.int32), np.asarray(f, dtype=np.int32)).tolist(),
         }
     )
 
@@ -214,7 +214,7 @@ def test_mz_aware_fixtures(name, m, f, tw, expected):
     n = len(m)
     F_ml = _F(m, f, n, tw)
     F_pw = _F_via_pairwise(m, f, tw)
-    F_mat = _F_via_matrix(m, f, tw, _compute_depth(np.asarray(m, dtype=np.int32), np.asarray(f, dtype=np.int32), n), n)
+    F_mat = _F_via_matrix(m, f, tw, structural_depth(np.asarray(m, dtype=np.int32), np.asarray(f, dtype=np.int32)), n)
     for row, value in expected.items():
         assert F_ml[row] == pytest.approx(value), name
     np.testing.assert_allclose(F_ml, F_pw, atol=1e-12)

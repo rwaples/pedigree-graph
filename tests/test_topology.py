@@ -25,7 +25,7 @@ def _permute(mother, father, perm):
 
 class TestBuildTopology:
     def test_depth_major_input_stores_identity_as_none(self):
-        topo = build_topology(structural_depth(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER, 5))
+        topo = build_topology(structural_depth(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER))
         assert topo.order is None
         assert topo.inverse is None
         assert topo.depth.tolist() == [0, 0, 0, 1, 2]
@@ -34,7 +34,7 @@ class TestBuildTopology:
     def test_permuted_input_yields_a_topological_order(self):
         perm = np.array([3, 0, 4, 2, 1])
         mother, father = _permute(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER, perm)
-        topo = build_topology(structural_depth(mother, father, 5))
+        topo = build_topology(structural_depth(mother, father))
         assert topo.order is not None
         assert topo.inverse is not None
         m_topo = topo.to_topological(mother)
@@ -48,18 +48,18 @@ class TestBuildTopology:
         # rows that share a depth.
         mother = np.array([-1, -1, -1, 0, 1], dtype=np.int32)
         father = np.array([-1, -1, -1, 2, 2], dtype=np.int32)
-        topo = build_topology(structural_depth(mother, father, 5))
+        topo = build_topology(structural_depth(mother, father))
         assert topo.order is None
 
     def test_children_first_input_is_reversed_stably(self):
         perm = np.array([4, 3, 0, 1, 2])
         mother, father = _permute(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER, perm)
-        topo = build_topology(structural_depth(mother, father, 5))
+        topo = build_topology(structural_depth(mother, father))
         assert topo.order is not None
         assert topo.depth[topo.order].tolist() == sorted(topo.depth.tolist())
 
     def test_empty_graph_is_the_identity(self):
-        topo = build_topology(structural_depth(np.zeros(0, np.int32), np.zeros(0, np.int32), 0))
+        topo = build_topology(structural_depth(np.zeros(0, np.int32), np.zeros(0, np.int32)))
         assert topo.order is None
         assert topo.depth.shape == (0,)
 
@@ -67,7 +67,7 @@ class TestBuildTopology:
 class TestIdentityHelpers:
     @pytest.fixture
     def topo(self):
-        return build_topology(structural_depth(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER, 5))
+        return build_topology(structural_depth(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER))
 
     def test_to_topological_returns_the_input_object(self, topo):
         assert topo.to_topological(DEPTH_MAJOR_MOTHER) is DEPTH_MAJOR_MOTHER
@@ -90,7 +90,7 @@ class TestPermutedHelpers:
     def topo(self):
         perm = np.array([3, 0, 4, 2, 1])
         mother, father = _permute(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER, perm)
-        return build_topology(structural_depth(mother, father, 5)), mother, father
+        return build_topology(structural_depth(mother, father)), mother, father
 
     def test_to_topological_reorders_and_translates(self, topo):
         t, mother, _ = topo
@@ -132,12 +132,12 @@ class TestPermutedHelpers:
 def test_remap_rows_is_what_to_topological_uses():
     perm = np.array([3, 0, 4, 2, 1])
     mother, father = _permute(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER, perm)
-    t = build_topology(structural_depth(mother, father, 5))
+    t = build_topology(structural_depth(mother, father))
     assert remap_rows(mother, t.order, t.inverse).tolist() == t.to_topological(mother).tolist()
 
 
 def test_topology_is_frozen():
-    topo = build_topology(structural_depth(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER, 5))
+    topo = build_topology(structural_depth(DEPTH_MAJOR_MOTHER, DEPTH_MAJOR_FATHER))
     with pytest.raises(AttributeError):
         topo.depth = np.zeros(5, np.int32)
     assert isinstance(topo, Topology)

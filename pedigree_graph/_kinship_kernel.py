@@ -6,7 +6,7 @@ modules and the symbols are re-exported here so existing import paths
 
 Module map:
 
-* ``_kinship_depth``     — depth / EqG / last-direct-child / topology checks.
+* ``_kinship_depth``     — EqG / last-direct-child depth.
 * ``_kinship_allocator`` — slab arena, free list, row append/retire/sort.
 * ``_kinship_csc``       — int32 indptr builder + full-symmetric CSC assembly.
 * ``_kinship_dp``        — the DP recursion, its driver, and theta streaming.
@@ -19,10 +19,8 @@ from __future__ import annotations
 __all__ = [
     "_assemble_csc",
     "_build_kinship_csc",
-    "_check_topological",
     "_checked_int32_indptr_from_counts",
     "_compute_F_meuwissen_luo",
-    "_compute_depth",
     "_compute_eqg",
     "_compute_generation_kinship_summary",
     "_compute_last_direct_child_depth",
@@ -44,8 +42,6 @@ from pedigree_graph._kinship_allocator import _FreelistBuffers as _FreelistBuffe
 from pedigree_graph._kinship_allocator import _retire_rows_at_depth as _retire_rows_at_depth
 from pedigree_graph._kinship_csc import _assemble_csc, _checked_int32_indptr_from_counts
 from pedigree_graph._kinship_depth import (
-    _check_topological,
-    _compute_depth,
     _compute_eqg,
     _compute_last_direct_child_depth,
 )
