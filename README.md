@@ -7,7 +7,7 @@ categories using sparse matrix algebra (`A @ A.T` for siblings,
 `A² @ A²ᵀ` for cousins, etc.).  Each relationship type is parameterised
 by `(up, down, n_ancestors)`:
 
-- `up`: meioses from individual A up to common ancestor(s) (canonicalised `up ≤ down`)
+- `up`: meioses from the first member (the junior role: offspring, descendant, niece_nephew, junior_cousin) up to the common ancestor(s); collateral categories are stored `up ≥ down`
 - `down`: meioses from common ancestor(s) down to individual B
 - `n_ancestors`: 1 (half/lineal) or 2 (full, i.e. mated pair)
 - `kinship = n_ancestors × (1/2)^(up + down + 1)`
@@ -100,7 +100,7 @@ Codes follow the convention `up_down_n_anc`:
 | `MHS`  | Maternal half sib             | 1  | 1    | 1     | 0.125   | 2      |
 | `PHS`  | Paternal half sib             | 1  | 1    | 1     | 0.125   | 2      |
 | `GP`   | Grandparent                   | 2  | 0    | 1     | 0.125   | 2      |
-| `Av`   | Avuncular                     | 1  | 2    | 2     | 0.125   | 2      |
+| `Av`   | Avuncular                     | 2  | 1    | 2     | 0.125   | 2      |
 | `1C`   | 1st cousin                    | 2  | 2    | 2     | 0.0625  | 3      |
 | ...    | (full registry up to 2nd cousin / kinship 1/64) | | | | | |
 
