@@ -4,6 +4,30 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.8.2
+
+- **Changed: pedigree construction runs in the Rust core.**  `from_frame` and
+  `from_arrays` still coerce host input in Python (`_input.py`: presence,
+  shape, length, and the lossless int64 form of numpy dtypes, pandas nullable
+  columns, and host nulls), then hand int64 columns to
+  `pedigree_graph._native.build_pedigree`, which applies every pedigree rule of
+  ADR 0006 in the 0.8.1 order (per-field range, sex encoding, `duplicate_id`,
+  `same_parent_id`, id→row resolution, the topological check and `cycle`
+  witness, the four MZ codes, wholly-unknown optional columns collapsing to
+  `None`, and `birth_year_topology`) and returns owned numpy columns.  The
+  Python `PedigreeInput`, `parse_pedigree_input`, `parse_pedigree_arrays`,
+  `validate_id_field`, `IdIndex`, and `PedigreeGraph._validate_birth_year_topology`
+  are deleted, not kept as fallbacks; the 0.8.1 rules live on as the readable
+  oracle in `tests/oracle/construction.py`, and `tests/test_native_construction.py`
+  compares the native builder against it under Hypothesis on structured
+  pedigrees with planted defects and on chaos input where defects coexist, down
+  to the error message.  Every structured error keeps its code, fields, and
+  prose; an unknown `sex_encoding` is still a plain `ValueError`.  Nothing in
+  the public API changed.
+
+- **Changed: the private topology kernels reject an out-of-range parent row
+  with `ValueError`** instead of indexing past the pedigree.
+
 ## v0.8.1
 
 - **Changed: the package is a maturin-built mixed Python/Rust distribution.**

@@ -43,7 +43,7 @@ N=2000 effective-size scaling tests in `tests/test_effective_size_scaling.py`,
 which touch neither `random_30k` nor the pair-kinship kernel.
 
 Requires Python ≥ 3.13.  Runtime deps: `numpy`, `scipy`, `numba`; the
-relationship, topology, and error kernels are compiled Rust
+construction, relationship, topology, and error kernels are compiled Rust
 (`pedigree_graph._native`, sources under `crates/`).
 Pandas is optional and only needed if you pass DataFrames to the
 constructors.
