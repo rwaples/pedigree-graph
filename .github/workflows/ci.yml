@@ -166,6 +166,10 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -c "import pedigree_graph, pedigree_graph._native; print(getattr(pedigree_graph, '__version__', 'ok'))"
 
       - name: Run the repository tests against the installed wheel
+        # From outside the checkout, so neither pytest nor the fresh child
+        # processes the thread tests spawn can import the source package over
+        # the wheel; the default import mode puts tests/ on sys.path for the
+        # bare conftest and helper imports, as it does locally.
         run: |
           cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/venv/bin/python" -m pytest "$GITHUB_WORKSPACE/tests" --import-mode=importlib -m "not slow"
+          "$RUNNER_TEMP/venv/bin/python" -m pytest --rootdir "$GITHUB_WORKSPACE" -c "$GITHUB_WORKSPACE/pyproject.toml" "$GITHUB_WORKSPACE/tests" -m "not slow"

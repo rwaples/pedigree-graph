@@ -5,7 +5,11 @@ labels, so each gap is ``h = 1`` and the gap formula must evaluate exactly
 the one-step arithmetic the 6b estimators used.  The golden was written by
 ``tests/parity/generate_ne_baseline.py`` at ``00a3667``; this test replays
 the same fixtures through ``estimate_effective_sizes`` and compares the
-serialized records field by field, with float equality.
+serialized records field by field.  Integers, labels, and ``None`` must be
+equal; floats must agree to one part in 1e12, because the regression slope
+behind every scalar Ne comes from ``np.polyfit`` (LAPACK least squares) and
+its last bits move with the BLAS kernel the host CPU selects, which is what
+separates a GitHub runner from the machine that wrote the golden.
 
 The golden's records predate the observed-cohort reshape, so each 0.8 record
 is projected onto their dense layout first: the label vectors it does not
@@ -102,7 +106,18 @@ def test_the_estimators_match_slice_6b(name: str) -> None:
         if want.get("ne") is not None and -1e-12 < (want.get("slope") or -1.0) < 0:
             assert got["ne"] is None, f"{estimator}: noise slope {want['slope']} must give no estimate"
             want, got = {**want, "ne": None}, {**got}
-        assert got == want, estimator
+        assert _floats_approx(got) == _floats_approx(want), estimator
+
+
+def _floats_approx(record):
+    """Wrap every float in *record* in ``pytest.approx(rel=1e-12)``; leave other values exact."""
+    if isinstance(record, dict):
+        return {key: _floats_approx(value) for key, value in record.items()}
+    if isinstance(record, list):
+        return [_floats_approx(value) for value in record]
+    if isinstance(record, float):
+        return pytest.approx(record, rel=1e-12, abs=0.0)
+    return record
 
 
 def test_small_pedigree_exercises_the_founder_genome_migration() -> None:
