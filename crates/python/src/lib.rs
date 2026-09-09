@@ -9,6 +9,7 @@
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
+use pedigree_graph_core::relationships::{self, Category, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -38,17 +39,29 @@ fn check_parent_lengths(mother: &[i32], father: &[i32]) -> PyResult<()> {
 /// by it without a bounds failure reaching the user.
 fn check_parent_rows(mother: &[i32], father: &[i32]) -> PyResult<()> {
     check_parent_lengths(mother, father)?;
-    let n = mother.len() as i64;
-    for (name, rows) in [("mother_rows", mother), ("father_rows", father)] {
-        if let Some(position) = rows
-            .iter()
-            .position(|&row| i64::from(row) < -1 || i64::from(row) >= n)
-        {
-            return Err(PyValueError::new_err(format!(
-                "{name}[{position}] = {} is not -1 or a row below {n}",
-                rows[position]
-            )));
-        }
+    check_rows("mother_rows", mother, mother.len())?;
+    check_rows("father_rows", father, mother.len())
+}
+
+fn check_rows(name: &str, rows: &[i32], n: usize) -> PyResult<()> {
+    let n = n as i64;
+    if let Some(position) = rows
+        .iter()
+        .position(|&row| i64::from(row) < -1 || i64::from(row) >= n)
+    {
+        return Err(PyValueError::new_err(format!(
+            "{name}[{position}] = {} is not -1 or a row below {n}",
+            rows[position]
+        )));
+    }
+    Ok(())
+}
+
+fn check_same_length(name: &str, len: usize, n: usize) -> PyResult<()> {
+    if len != n {
+        return Err(PyValueError::new_err(format!(
+            "{name} must have the same length as mother_rows, got {len} and {n}"
+        )));
     }
     Ok(())
 }
@@ -224,6 +237,67 @@ fn build_pedigree<'py>(
     })
 }
 
+/// Exact closest-category pair counts, one int64 per registry category.
+///
+/// The five arrays are the graph's own columns.  With `selected`, a bool per
+/// row, only pairs whose two rows are both selected are counted (the view
+/// contract).  `threads` sizes a Rayon pool for this call; the counts are
+/// the same for every value.  The GIL is released while counting.
+#[pyfunction]
+#[pyo3(signature = (mother_rows, father_rows, twin_rows, mother_ids, father_ids, *, max_degree, threads, selected=None))]
+#[allow(clippy::too_many_arguments)]
+fn relationship_counts<'py>(
+    py: Python<'py>,
+    mother_rows: PyReadonlyArray1<'py, i32>,
+    father_rows: PyReadonlyArray1<'py, i32>,
+    twin_rows: PyReadonlyArray1<'py, i32>,
+    mother_ids: PyReadonlyArray1<'py, i64>,
+    father_ids: PyReadonlyArray1<'py, i64>,
+    max_degree: u8,
+    threads: usize,
+    selected: Option<PyReadonlyArray1<'py, bool>>,
+) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let mother = mother_rows.as_slice()?;
+    let father = father_rows.as_slice()?;
+    let twin = twin_rows.as_slice()?;
+    let n = mother.len();
+    check_parent_rows(mother, father)?;
+    check_same_length("twin_rows", twin.len(), n)?;
+    check_rows("twin_rows", twin, n)?;
+    check_same_length("mother_ids", mother_ids.len()?, n)?;
+    check_same_length("father_ids", father_ids.len()?, n)?;
+    let mask = match &selected {
+        Some(array) => {
+            let mask = array.as_slice()?;
+            check_same_length("selected", mask.len(), n)?;
+            Some(mask)
+        }
+        None => None,
+    };
+    if threads == 0 {
+        return Err(PyValueError::new_err("threads must be at least 1"));
+    }
+    let ped = Pedigree {
+        mother,
+        father,
+        twin,
+        orig_mother: mother_ids.as_slice()?,
+        orig_father: father_ids.as_slice()?,
+    };
+    let counts = py.detach(|| {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .map_err(|e| PyValueError::new_err(format!("thread pool: {e}")))?;
+        Ok::<_, PyErr>(pool.install(|| relationships::count_pairs(&ped, max_degree, mask)))
+    })?;
+    let values: Vec<i64> = Category::ALL
+        .iter()
+        .map(|&cat| counts.get(cat) as i64)
+        .collect();
+    Ok(values.into_pyarray(py))
+}
+
 /// Sorted-id lookup over a graph's unique ids, for repeated id selections.
 #[pyclass(frozen, name = "IdIndex", module = "pedigree_graph._native")]
 struct PyIdIndex {
@@ -264,6 +338,7 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(depth_major_order, m)?)?;
     m.add_function(wrap_pyfunction!(validate_acyclic, m)?)?;
     m.add_function(wrap_pyfunction!(build_pedigree, m)?)?;
+    m.add_function(wrap_pyfunction!(relationship_counts, m)?)?;
     m.add_class::<BuiltPedigree>()?;
     m.add_class::<PyIdIndex>()?;
     Ok(())
