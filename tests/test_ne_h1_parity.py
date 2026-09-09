@@ -6,10 +6,13 @@ the one-step arithmetic the 6b estimators used.  The golden was written by
 ``tests/parity/generate_ne_baseline.py`` at ``00a3667``; this test replays
 the same fixtures through ``estimate_effective_sizes`` and compares the
 serialized records field by field.  Integers, labels, and ``None`` must be
-equal; floats must agree to one part in 1e12, because the regression slope
-behind every scalar Ne comes from ``np.polyfit`` (LAPACK least squares) and
-its last bits move with the BLAS kernel the host CPU selects, which is what
-separates a GitHub runner from the machine that wrote the golden.
+equal; floats must agree to one part in 1e9, or to 1e-14 absolutely for a
+slope that is itself least-squares noise, because the regression slope behind
+every scalar Ne comes from ``np.polyfit`` (LAPACK least squares) and its low
+bits move with the BLAS build and kernel the host selects: the PyPI numpy on a
+GitHub runner has reproduced relative differences of 3e-12 in a slope and the
+Ne derived from it, and a flat series regresses to a slope of order 1e-16 whose
+digits are entirely noise.
 
 The golden's records predate the observed-cohort reshape, so each 0.8 record
 is projected onto their dense layout first: the label vectors it does not
@@ -100,7 +103,7 @@ def test_the_estimators_match_slice_6b(name: str) -> None:
         for key in ("sum_c_squared", "max_delta_final", "ne"):
             got = actual["ne_long_term_contributions"].pop(key)
             want = expected["ne_long_term_contributions"].pop(key)
-            assert got == pytest.approx(want, rel=1e-12, abs=0.0) if want is not None else got is None
+            assert got == pytest.approx(want, rel=1e-9, abs=1e-14) if want is not None else got is None
     for estimator in expected:
         want, got = expected[estimator], actual[estimator]
         if want.get("ne") is not None and -1e-12 < (want.get("slope") or -1.0) < 0:
@@ -110,13 +113,13 @@ def test_the_estimators_match_slice_6b(name: str) -> None:
 
 
 def _floats_approx(record):
-    """Wrap every float in *record* in ``pytest.approx(rel=1e-12)``; leave other values exact."""
+    """Wrap every float in *record* in ``pytest.approx(rel=1e-9, abs=1e-14)``; leave other values exact."""
     if isinstance(record, dict):
         return {key: _floats_approx(value) for key, value in record.items()}
     if isinstance(record, list):
         return [_floats_approx(value) for value in record]
     if isinstance(record, float):
-        return pytest.approx(record, rel=1e-12, abs=0.0)
+        return pytest.approx(record, rel=1e-9, abs=1e-14)
     return record
 
 
