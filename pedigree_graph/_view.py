@@ -32,13 +32,13 @@ from pedigree_graph._input import (
 )
 from pedigree_graph._kinship_pairwise import view_pair_kinship
 from pedigree_graph._pair_extractor import view_relationship_pairs
-from pedigree_graph.relationships import RelationshipCountResult
+from pedigree_graph._relationship_counts import view_relationship_counts
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from pedigree_graph._core import PedigreeGraph
-    from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
+    from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
 
 # Named for the keyword each one validates, so a shape or coercion failure names
 # the argument the caller wrote.
@@ -259,14 +259,16 @@ class PedigreeView:
     ) -> RelationshipCountResult:
         """Return the exact number of view-space pairs in each selected category.
 
-        Same selectors as :meth:`relationship_pairs`; each count is the length
-        of that call's block.
+        Same selectors as :meth:`relationship_pairs`; each count equals the
+        length of that call's block.  Pairs are classified through the full
+        graph and counted when both members are selected; no pair list is
+        built, as for :meth:`pedigree_graph.PedigreeGraph.relationship_counts`.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipCountResult`
             over all 23 codes, ``None`` for unselected categories.
         """
-        return RelationshipCountResult.from_pairs(self.relationship_pairs(max_degree=max_degree, categories=categories))
+        return view_relationship_counts(self, max_degree=max_degree, categories=categories)
 
     @overload
     def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...

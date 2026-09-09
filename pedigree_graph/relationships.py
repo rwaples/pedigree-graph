@@ -28,7 +28,7 @@ __all__ = [
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
 
 from pedigree_graph._registry import RELATIONSHIPS, RelationshipCategory, RelationshipRole
 
@@ -128,8 +128,7 @@ class RelationshipCountResult(Mapping[str, int | None]):
     """Immutable mapping from every registry code to its pair count, or ``None``.
 
     Iteration follows :data:`RELATIONSHIPS` order and always yields all 23
-    codes; a category the selector did not name maps to ``None``.  Build one
-    with :meth:`from_pairs`.
+    codes; a category the selector did not name maps to ``None``.
 
     Attributes:
         requested: Codes the selector named.
@@ -147,13 +146,6 @@ class RelationshipCountResult(Mapping[str, int | None]):
 
     def __post_init__(self) -> None:
         assert tuple(self._counts) == tuple(RELATIONSHIPS), "RelationshipCountResult needs every code in registry order"
-
-    @classmethod
-    def from_pairs(cls, pairs: RelationshipPairs) -> Self:
-        """Return the exact counts of *pairs*: block lengths, ``None`` where unrequested."""
-        requested = frozenset(code for code, block in pairs.items() if block.requested)
-        counts = {code: len(block) if block.requested else None for code, block in pairs.items()}
-        return cls(counts, requested, requested, frozenset(), frozenset())
 
     def __getitem__(self, code: str) -> int | None:
         return self._counts[code]

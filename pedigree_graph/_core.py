@@ -37,11 +37,11 @@ from pedigree_graph._ne_rates import _generation_kinship_summary
 from pedigree_graph._pair_extractor import relationship_pairs as _relationship_pairs
 from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
 from pedigree_graph._properties import PedigreeProperties
+from pedigree_graph._relationship_counts import relationship_counts as _relationship_counts
 from pedigree_graph._streaming_counter import estimate_relationship_counts as _estimate_relationship_counts
 from pedigree_graph._threads import thread_budget
 from pedigree_graph._topology import build_topology, readonly
 from pedigree_graph._view import CoordinateToken, _build_view
-from pedigree_graph.relationships import RelationshipCountResult
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from pedigree_graph._streaming_counter import CachedEstimate
     from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
-    from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
+    from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
     from pedigree_graph.summaries import GenerationKinshipSummary
 
 logger = logging.getLogger(__name__)
@@ -655,21 +655,32 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     ) -> RelationshipCountResult:
         """Return the exact number of pairs in each selected category.
 
-        Same selectors as :meth:`relationship_pairs`; each count is the length
-        of that call's block.
+        Same selectors and closest-category precedence as
+        :meth:`relationship_pairs`; each count equals the length of that
+        call's block.  The Rust row-streaming engine classifies every pair
+        one row at a time and never builds a pair list, so peak memory is
+        O(N) and the call fits pedigrees where :meth:`relationship_pairs`
+        would not (ADR 0010).  The counts are the same under every thread
+        budget.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipCountResult`
-            over all 23 codes, ``None`` for unselected categories.
+            over all 23 codes, ``None`` for unselected categories, every
+            requested code in ``exact``.
+
+        Raises:
+            TypeError: As :meth:`relationship_pairs`.
+            PedigreeValidationError: As :meth:`relationship_pairs`.
         """
-        return RelationshipCountResult.from_pairs(self.relationship_pairs(max_degree=max_degree, categories=categories))
+        return _relationship_counts(self, max_degree=max_degree, categories=categories)
 
     def estimate_relationship_counts(self, *, max_degree: int) -> RelationshipCountResult:
         """Estimate the number of pairs in every category up to *max_degree*.
 
         Memory-bounded scalar arithmetic (per-anchor ``C(k, 2)`` sums and
         lineal-edge ``.nnz`` reads): no pair arrays are built, so peak memory
-        is O(N) on pedigrees where :meth:`relationship_counts` would not fit.
+        is O(N).  Since 0.8.3 :meth:`relationship_counts` is exact in O(N)
+        memory too; prefer it unless its wall time is the constraint.
         Full-graph only; a view has no estimate.
 
         Precision (source of truth: ``REL_PLAN.estimate_exact`` in
