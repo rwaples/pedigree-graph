@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=77", "setuptools-scm>=8"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
 
 [project]
 name = "pedigree-graph"
@@ -42,10 +42,13 @@ test = [
 ]
 typecheck = ["ty==0.0.70"]
 
-[tool.setuptools.packages.find]
-include = ["pedigree_graph*"]
-
-[tool.setuptools_scm]
+[tool.maturin]
+manifest-path = "crates/python/Cargo.toml"
+module-name = "pedigree_graph._native"
+python-source = "."
+python-packages = ["pedigree_graph"]
+features = ["pyo3/extension-module"]
+strip = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

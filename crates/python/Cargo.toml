@@ -1,0 +1,17 @@
+[package]
+name = "pedigree-graph-python"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "PyO3 host binding for pedigree-graph-core (ADR 0007)"
+
+[lib]
+name = "pedigree_graph_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+pedigree-graph-core = { path = "../core" }
+pyo3 = { version = "0.29", features = ["abi3-py313"] }
+numpy = "0.29"
