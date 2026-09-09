@@ -4,17 +4,17 @@ Current scaling and correctness limitations of the relationship-pair
 engines.  Read before reaching for `extract_pairs` / `count_pairs` on
 pair-dense pedigrees.
 
-## Pair counting is O(answer size) for the matrix and BFS engines
+## Pair *lists* are O(answer size); pair *counts* are O(N)
 
-The matrix and BFS engines both materialise every pair as an
-``(idx1, idx2)`` array before counting it:
-
-- ``extract_pairs()`` returns ``dict[code, (np.ndarray, np.ndarray)]``.
-- ``count_pairs()`` is a thin facade — it runs ``extract_pairs()`` and
-  returns ``{code: len(idx_array)}``.
-
-Memory is therefore proportional to the total relationship-pair count,
-**not** the pedigree size.
+Since 0.8.3 ``PedigreeGraph.relationship_counts`` and
+``PedigreeView.relationship_counts`` run in the Rust row-streaming engine
+(ADR 0010): every pair is classified in its own row and counted, no pair
+list exists, and peak memory is linear in the pedigree size (2.9 GiB for
+2.1 billion pairs on a 20M-row pedigree).  The rest of this section is
+about ``relationship_pairs`` and the experimental BFS counter, which
+materialise every pair as an ``(idx1, idx2)`` array.  Their memory is
+proportional to the total relationship-pair count, **not** the pedigree
+size.
 
 ### Worst case: prolific-stallion livestock pedigrees
 

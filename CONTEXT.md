@@ -89,6 +89,12 @@ The kinship distance of a relationship category — `0` for MZ twins, `1` for
 parent-offspring and full sibs, and so on. A degree cutoff includes relationship
 categories whose degree is less than or equal to the cutoff.
 
+**Closest category**:
+The one relationship category a pair is reported under when it satisfies
+several: the lowest degree, then the earliest in registry order. Category
+definitions decide membership; closest-category precedence decides reporting.
+_Avoid_: fold (as a noun for the rule), exclusivity, dedup, "the exclusions"
+
 **Nominal kinship**:
 The kinship coefficient implied by a relationship category's `(up, down,
 n_ancestors)` formula, assuming a single relationship path and no inbreeding
@@ -113,6 +119,7 @@ _Avoid_: using it for what `pair_kinship` returns
 - Every **represented founder** belongs to one **represented founder genome**; two MZ represented founders share the same one.
 - **Closed represented parentage** permits represented founders but no individual with exactly one represented parent.
 - A **relationship pair** holds two individuals and belongs to one **relationship category**; asymmetric categories define the roles of its two positions, while canonical key ordering remains only a storage/encoding choice.
+- When a pair satisfies several **relationship categories**, it belongs to its **closest category**; exact counts and pair lists agree on that assignment.
 - Every public row index is expressed in either **graph-space** or **view-space**; the same individual generally has a different index in each.
 - A graph query returns graph-space rows, while a view query returns view-space rows. Coordinate space follows the query receiver.
 

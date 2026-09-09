@@ -4,6 +4,32 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.8.3
+
+- **Changed: `relationship_counts` runs in the Rust row-streaming engine
+  (ADR 0010, as amended).**  `PedigreeGraph.relationship_counts` and
+  `PedigreeView.relationship_counts` no longer build the pair lists of
+  `relationship_pairs` and take their lengths.  The engine classifies every
+  pair one row at a time, folds closest-category precedence in the row, and
+  counts, so peak memory is O(N) whatever the pair density and the call fits
+  pedigrees where `relationship_pairs` would not.  The counts are unchanged:
+  bit-identical to the block lengths of `relationship_pairs` on every parity
+  fixture, every selector, every row order, and every view
+  (`tests/test_native_relationship_counts.py`, a live differential against
+  the matrix engine, plus `crates/core/tests/parity.rs` against
+  `relationship_counts(max_degree=5)` on the 26 dumped fixtures).  A view
+  crosses the boundary as a row mask; classification still runs through the
+  full graph.  The package thread budget sizes a per-call Rayon pool; the
+  integer counts are the same under any budget.
+  `RelationshipCountResult.from_pairs` is deleted (it had no caller left).
+  `estimate_relationship_counts` is unchanged.
+
+- **Changed: the Rust engine's own semantics are the published ones.**
+  `pgr-count` and `crates/core::relationships::count_pairs` return
+  closest-category counts; the pre-fold 0.7.1 counts the engine reproduced
+  before are no longer a mode.  `tests/parity/dump_relationship_counts.py`
+  (0.8 API) writes the fixture oracles from a graph rebuilt from each TSV.
+
 ## v0.8.2
 
 - **Changed: pedigree construction runs in the Rust core.**  `from_frame` and

@@ -122,3 +122,18 @@ and the scalar counter reached 12.3 GiB for approximate cousin counts.
   with no global state.
 * **Checked `u32`/`u64` multiplicity** — correct but adds an error path and
   four to eight bytes per entry for information the predicates never use.
+
+## Amended 2026-09-09 (slice 11, `relationship_counts` wiring)
+
+The engine's category definitions and `EXCLUSIONS` are the 0.7.1 ones above
+and stay so. The ADR 0006 closest-category rule is **not** a change to that
+table: it is a separate per-row precedence fold applied to the final category
+sets after classification, subtracting every earlier registry category from
+each later one, exactly the operation the Python `_fold_precedence` performs
+on whole blocks. Definitions decide membership; the fold decides reporting
+(`CONTEXT.md`, "Closest category"). The fold is always on, so `count_pairs`
+returns the counts `PedigreeGraph.relationship_counts` publishes, and the
+parity fixtures under `crates/core/tests/fixtures` hold those 0.8 counts. The
+0.7.1 raw counts this ADR's evidence section cites remain historical evidence
+of the per-category sets; the engine no longer has a mode that returns them.
+The "unchanged until slice 4c" consequence above is superseded by slice 11.

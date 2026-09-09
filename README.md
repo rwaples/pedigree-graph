@@ -85,7 +85,7 @@ print(RELATIONSHIPS["FS"].nominal_kinship)  # 0.25
 kin = pg.pair_kinship(pairs)  # {code: float32 array}
 kin_fs = pg.pair_kinship(first, second)
 
-# Counts without materialising pairs, and the three kinship-matrix families
+# Exact counts in O(N) memory (no pair lists), and the three kinship-matrix families
 counts = pg.relationship_counts(max_degree=3)
 K = pg.kinship_matrix()  # complete, CSC float32
 ```
