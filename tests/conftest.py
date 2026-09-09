@@ -17,7 +17,11 @@ from pedigree_graph import PedigreeGraph
 
 _DATA_DIR = Path(__file__).parent / "data"
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
+_TESTS_DIR = Path(__file__).resolve().parent
+# The repository root, so ``tests.oracle`` imports whether the package comes
+# from the editable install (whose .pth already adds it) or a wheel.
+sys.path.insert(0, str(_TESTS_DIR.parent))
+sys.path.insert(0, str(_TESTS_DIR / "parity"))
 
 import pedigrees  # noqa: E402
 

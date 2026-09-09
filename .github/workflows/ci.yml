@@ -166,8 +166,6 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -c "import pedigree_graph, pedigree_graph._native; print(getattr(pedigree_graph, '__version__', 'ok'))"
 
       - name: Run the repository tests against the installed wheel
-        env:
-          PYTHONPATH: ${{ github.workspace }}/tests
         run: |
           cd "$RUNNER_TEMP"
           "$RUNNER_TEMP/venv/bin/python" -m pytest "$GITHUB_WORKSPACE/tests" --import-mode=importlib -m "not slow"
