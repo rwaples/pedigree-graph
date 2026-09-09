@@ -5,12 +5,14 @@
 //! fifth degree one individual at a time so that peak memory is linear in the
 //! pedigree size (issue #11).
 //!
-//! Alongside it live the stable depth-major topological order every
-//! order-dependent kernel sweeps in ([`topology`]) and the structured error
-//! enum each host maps onto its own exception classes ([`error`]).
+//! Alongside it live native construction ([`graph`]), the stable depth-major
+//! topological order every order-dependent kernel sweeps in ([`topology`]),
+//! and the structured error enum each host maps onto its own exception
+//! classes ([`error`]).
 
 #![forbid(unsafe_code)]
 
 pub mod error;
+pub mod graph;
 pub mod relationships;
 pub mod topology;

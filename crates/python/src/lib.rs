@@ -1,11 +1,14 @@
 //! `pedigree_graph._native`: the PyO3 host binding of pedigree-graph-core (ADR 0007).
 //!
-//! Every function takes and returns host arrays; nothing here retains core
-//! state between calls.  Core errors cross the boundary as the structured
-//! exception classes of `pedigree_graph._errors`, keyed by their `.code`.
+//! Every function takes host arrays and returns host arrays or a small value
+//! object built from them; nothing here retains core state between calls.
+//! Core errors cross the boundary as the structured exception classes of
+//! `pedigree_graph._errors`, keyed by their `.code`, with the keyword fields
+//! rebuilt from `Error::fields`.  A usage error crosses as a plain `ValueError`.
 
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
-use pedigree_graph_core::error::{Error, ErrorClass};
+use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
+use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -31,26 +34,46 @@ fn check_parent_lengths(mother: &[i32], father: &[i32]) -> PyResult<()> {
     Ok(())
 }
 
+/// Every parent row is `-1` or a row of the pedigree, so the core can index
+/// by it without a bounds failure reaching the user.
+fn check_parent_rows(mother: &[i32], father: &[i32]) -> PyResult<()> {
+    check_parent_lengths(mother, father)?;
+    let n = mother.len() as i64;
+    for (name, rows) in [("mother_rows", mother), ("father_rows", father)] {
+        if let Some(position) = rows
+            .iter()
+            .position(|&row| i64::from(row) < -1 || i64::from(row) >= n)
+        {
+            return Err(PyValueError::new_err(format!(
+                "{name}[{position}] = {} is not -1 or a row below {n}",
+                rows[position]
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn field_object<'py>(py: Python<'py>, value: FieldValue) -> PyResult<Bound<'py, PyAny>> {
+    Ok(match value {
+        FieldValue::Int(n) => n.into_pyobject(py)?.into_any(),
+        FieldValue::Str(s) => s.into_pyobject(py)?.into_any(),
+        FieldValue::Ints(v) => v.into_pyobject(py)?.into_any(),
+        FieldValue::Strs(v) => v.into_pyobject(py)?.into_any(),
+    })
+}
+
 fn to_pyerr(py: Python<'_>, err: Error) -> PyErr {
     let class_name = match err.class() {
         ErrorClass::Validation => "PedigreeValidationError",
         ErrorClass::Metadata => "MissingMetadataError",
         ErrorClass::Resource => "ResourceError",
+        ErrorClass::Usage => return PyValueError::new_err(err.to_string()),
     };
-    let fields = PyDict::new(py);
-    let populate = match &err {
-        Error::Cycle { ids } => fields.set_item("ids", ids.clone()),
-        Error::PedigreeTooLarge {
-            n_individuals,
-            maximum,
-        } => fields
-            .set_item("n_individuals", *n_individuals)
-            .and_then(|()| fields.set_item("maximum", *maximum)),
-    };
-    if let Err(e) = populate {
-        return e;
-    }
     let raise = || -> PyResult<PyErr> {
+        let fields = PyDict::new(py);
+        for (name, value) in err.fields() {
+            fields.set_item(name, field_object(py, value)?)?;
+        }
         let module = py.import("pedigree_graph._errors")?;
         let class = module.getattr(class_name)?;
         let instance = class.call((err.code(), err.to_string()), Some(&fields))?;
@@ -67,7 +90,7 @@ fn is_topological(
 ) -> PyResult<bool> {
     let mother = mother_rows.as_slice()?;
     let father = father_rows.as_slice()?;
-    check_parent_lengths(mother, father)?;
+    check_parent_rows(mother, father)?;
     Ok(topology::is_topological(mother, father))
 }
 
@@ -82,7 +105,7 @@ fn structural_depth<'py>(
 ) -> PyResult<Bound<'py, PyArray1<i32>>> {
     let mother = mother_rows.as_slice()?;
     let father = father_rows.as_slice()?;
-    check_parent_lengths(mother, father)?;
+    check_parent_rows(mother, father)?;
     Ok(topology::structural_depth(mother, father).into_pyarray(py))
 }
 
@@ -113,7 +136,7 @@ fn validate_acyclic(
     let ids = ids.as_slice()?;
     let mother = mother_rows.as_slice()?;
     let father = father_rows.as_slice()?;
-    check_parent_lengths(mother, father)?;
+    check_parent_rows(mother, father)?;
     if ids.len() != mother.len() {
         return Err(PyValueError::new_err(format!(
             "ids and parent rows must have the same length, got {} and {}",
@@ -124,6 +147,115 @@ fn validate_acyclic(
     topology::validate_acyclic(ids, mother, father).map_err(|e| to_pyerr(py, e))
 }
 
+/// The validated columns of one pedigree, each an owned numpy array.
+///
+/// `sex`, `generation` and `birth_year` are `None` when the host had no such
+/// column or every entry was unknown.
+#[pyclass(frozen, get_all, module = "pedigree_graph._native")]
+struct BuiltPedigree {
+    ids: Py<PyArray1<i64>>,
+    mother_ids: Py<PyArray1<i64>>,
+    father_ids: Py<PyArray1<i64>>,
+    twin_ids: Py<PyArray1<i64>>,
+    mother_rows: Py<PyArray1<i32>>,
+    father_rows: Py<PyArray1<i32>>,
+    twin_rows: Py<PyArray1<i32>>,
+    sex: Option<Py<PyArray1<i8>>>,
+    generation: Option<Py<PyArray1<i32>>>,
+    birth_year: Option<Py<PyArray1<i32>>>,
+    rows_topological: bool,
+}
+
+fn optional_slice<'a>(
+    column: &'a Option<PyReadonlyArray1<'_, i64>>,
+) -> PyResult<Option<&'a [i64]>> {
+    match column {
+        Some(array) => Ok(Some(array.as_slice()?)),
+        None => Ok(None),
+    }
+}
+
+/// Validate host-coerced int64 columns and build the pedigree (ADR 0006).
+///
+/// Raises the structured construction errors in the core's order of
+/// precedence, or `ValueError` for an unknown `sex_encoding`.  `max_rows`
+/// lowers the row capacity for tests; the default is the int32 row limit.
+#[pyfunction]
+#[pyo3(signature = (ids, mother, father, twin=None, sex=None, generation=None, birth_year=None, *, sex_encoding, max_rows=None))]
+#[allow(clippy::too_many_arguments)]
+fn build_pedigree<'py>(
+    py: Python<'py>,
+    ids: PyReadonlyArray1<'py, i64>,
+    mother: PyReadonlyArray1<'py, i64>,
+    father: PyReadonlyArray1<'py, i64>,
+    twin: Option<PyReadonlyArray1<'py, i64>>,
+    sex: Option<PyReadonlyArray1<'py, i64>>,
+    generation: Option<PyReadonlyArray1<'py, i64>>,
+    birth_year: Option<PyReadonlyArray1<'py, i64>>,
+    sex_encoding: &str,
+    max_rows: Option<usize>,
+) -> PyResult<BuiltPedigree> {
+    let encoding = SexEncoding::parse(sex_encoding).map_err(|e| to_pyerr(py, e))?;
+    let columns = Columns {
+        ids: ids.as_slice()?,
+        mother: mother.as_slice()?,
+        father: father.as_slice()?,
+        twin: optional_slice(&twin)?,
+        sex: optional_slice(&sex)?,
+        generation: optional_slice(&generation)?,
+        birth_year: optional_slice(&birth_year)?,
+    };
+    let limits = Limits {
+        max_rows: max_rows.unwrap_or(MAX_ROWS),
+    };
+    let graph = graph::build(columns, encoding, limits).map_err(|e| to_pyerr(py, e))?;
+    Ok(BuiltPedigree {
+        ids: graph.ids.into_pyarray(py).unbind(),
+        mother_ids: graph.mother_ids.into_pyarray(py).unbind(),
+        father_ids: graph.father_ids.into_pyarray(py).unbind(),
+        twin_ids: graph.twin_ids.into_pyarray(py).unbind(),
+        mother_rows: graph.mother_rows.into_pyarray(py).unbind(),
+        father_rows: graph.father_rows.into_pyarray(py).unbind(),
+        twin_rows: graph.twin_rows.into_pyarray(py).unbind(),
+        sex: graph.sex.map(|v| v.into_pyarray(py).unbind()),
+        generation: graph.generation.map(|v| v.into_pyarray(py).unbind()),
+        birth_year: graph.birth_year.map(|v| v.into_pyarray(py).unbind()),
+        rows_topological: graph.rows_topological,
+    })
+}
+
+/// Sorted-id lookup over a graph's unique ids, for repeated id selections.
+#[pyclass(frozen, name = "IdIndex", module = "pedigree_graph._native")]
+struct PyIdIndex {
+    index: IdIndex,
+}
+
+#[pymethods]
+impl PyIdIndex {
+    #[new]
+    fn new(ids: PyReadonlyArray1<'_, i64>) -> PyResult<PyIdIndex> {
+        let ids = ids.as_slice()?;
+        if ids.len() > MAX_ROWS {
+            return Err(PyValueError::new_err(format!(
+                "an id index holds at most {MAX_ROWS} ids, got {}",
+                ids.len()
+            )));
+        }
+        Ok(PyIdIndex {
+            index: IdIndex::build(ids),
+        })
+    }
+
+    /// The int32 row per query id, `-1` for a negative id or one not indexed.
+    fn resolve<'py>(
+        &self,
+        py: Python<'py>,
+        query: PyReadonlyArray1<'py, i64>,
+    ) -> PyResult<Bound<'py, PyArray1<i32>>> {
+        Ok(self.index.resolve(query.as_slice()?).into_pyarray(py))
+    }
+}
+
 #[pymodule(name = "_native")]
 fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(core_version, m)?)?;
@@ -131,5 +263,8 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(structural_depth, m)?)?;
     m.add_function(wrap_pyfunction!(depth_major_order, m)?)?;
     m.add_function(wrap_pyfunction!(validate_acyclic, m)?)?;
+    m.add_function(wrap_pyfunction!(build_pedigree, m)?)?;
+    m.add_class::<BuiltPedigree>()?;
+    m.add_class::<PyIdIndex>()?;
     Ok(())
 }
