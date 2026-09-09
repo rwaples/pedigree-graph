@@ -114,7 +114,7 @@ def _rows_from_ids(graph: PedigreeGraph, selection: object) -> np.ndarray:
         position = err.fields["position"]
         assert isinstance(position, int)
         raise _unknown_id(err.fields["value"], position, 1) from None
-    rows = graph._id_index.resolve(ids, np.int32)
+    rows = graph._id_index.resolve(np.ascontiguousarray(ids))
     unresolved = rows < 0
     if unresolved.any():
         position = int(np.argmax(unresolved))

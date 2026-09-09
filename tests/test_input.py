@@ -1,4 +1,8 @@
-"""Boundary tests for the validated, owned input model (ADR 0006, slice 1a)."""
+"""Boundary tests for pedigree input: host coercion and native construction (ADR 0006).
+
+Every case constructs through the public entry points, so the assertions pin
+what a caller observes whichever side of the boundary a rule lives on.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +13,8 @@ import pytest
 from conftest import pedigree_arrays
 from hypothesis import given, settings
 
-from pedigree_graph import PedigreeGraph, PedigreeValidationError, ResourceError
-from pedigree_graph._input import parse_pedigree_arrays, parse_pedigree_input, validate_id_field
+from pedigree_graph import PedigreeGraph, PedigreeValidationError, ResourceError, _native
+from pedigree_graph._input import host_columns
 
 _INT64_MAX = int(np.iinfo(np.int64).max)
 _INT32_MAX = int(np.iinfo(np.int32).max)
@@ -27,9 +31,18 @@ def _data(**overrides):
     return base
 
 
+def _parse(data, **kwargs):
+    return PedigreeGraph.from_frame(data, **kwargs)
+
+
+def _metadata(graph, field):
+    """The optional metadata column *field* names, as the graph exposes it."""
+    return graph.generation_labels if field == "generation" else getattr(graph, field)
+
+
 def _raises(data, code, **kwargs):
     with pytest.raises(PedigreeValidationError) as info:
-        parse_pedigree_input(data, **kwargs)
+        _parse(data, **kwargs)
     assert info.value.code == code
     return info.value
 
@@ -40,27 +53,27 @@ class TestDtypeAcceptance:
         [np.int8, np.int16, np.int32, np.int64, np.uint8, np.uint16, np.uint32, np.uint64, np.float32, np.float64],
     )
     def test_id_dtypes_coerce_losslessly(self, dtype):
-        parsed = parse_pedigree_input(_data(id=np.array([0, 1, 2], dtype=dtype)))
+        parsed = _parse(_data(id=np.array([0, 1, 2], dtype=dtype)))
         assert parsed.ids.dtype == np.int64
         assert parsed.ids.tolist() == [0, 1, 2]
 
     @pytest.mark.parametrize("dtype", [np.int8, np.int16, np.int32, np.int64, np.float32, np.float64])
     def test_parent_dtypes_coerce_losslessly(self, dtype):
-        parsed = parse_pedigree_input(_data(mother=np.array([-1, -1, 0], dtype=dtype)))
+        parsed = _parse(_data(mother=np.array([-1, -1, 0], dtype=dtype)))
         assert parsed.mother_ids.dtype == np.int64
         assert parsed.mother_ids.tolist() == [-1, -1, 0]
         assert parsed.mother_rows.tolist() == [-1, -1, 0]
 
     def test_object_dtype_integers_are_accepted(self):
-        parsed = parse_pedigree_input(_data(mother=np.array([-1, -1, 0], dtype=object)))
+        parsed = _parse(_data(mother=np.array([-1, -1, 0], dtype=object)))
         assert parsed.mother_ids.tolist() == [-1, -1, 0]
 
     def test_object_dtype_integral_floats_are_accepted(self):
-        parsed = parse_pedigree_input(_data(mother=np.array([-1.0, -1.0, 0.0], dtype=object)))
+        parsed = _parse(_data(mother=np.array([-1.0, -1.0, 0.0], dtype=object)))
         assert parsed.mother_ids.tolist() == [-1, -1, 0]
 
     def test_python_lists_are_accepted(self):
-        parsed = parse_pedigree_input({"id": [0, 1, 2], "mother": [-1, -1, 0], "father": [-1, -1, 1]})
+        parsed = _parse({"id": [0, 1, 2], "mother": [-1, -1, 0], "father": [-1, -1, 1]})
         assert parsed.mother_rows.tolist() == [-1, -1, 0]
 
     def test_uint64_above_int64_max_is_out_of_range(self):
@@ -71,20 +84,20 @@ class TestDtypeAcceptance:
         assert error.fields["maximum"] == _INT64_MAX
 
     def test_unknown_dict_keys_are_ignored(self):
-        parsed = parse_pedigree_input(_data(household=np.array(["a", "b", "c"])))
+        parsed = _parse(_data(household=np.array(["a", "b", "c"])))
         assert parsed.n_individuals == 3
 
 
 class TestFrameInput:
     def test_polars_int32_columns(self):
         frame = pl.DataFrame(_data()).with_columns(pl.col(c).cast(pl.Int32) for c in ("id", "mother", "father"))
-        parsed = parse_pedigree_input(frame)
+        parsed = _parse(frame)
         assert parsed.ids.tolist() == [0, 1, 2]
         assert parsed.mother_rows.tolist() == [-1, -1, 0]
 
     def test_pandas_nullable_int64_columns(self):
         frame = pd.DataFrame({k: pd.array(v, dtype="Int64") for k, v in _data().items()})
-        parsed = parse_pedigree_input(frame)
+        parsed = _parse(frame)
         assert parsed.ids.tolist() == [0, 1, 2]
         assert parsed.mother_rows.tolist() == [-1, -1, 0]
 
@@ -93,13 +106,13 @@ class TestFrameInput:
         columns = {**_data(), "twin": [-1, -1, -1], "sex": [0, 1, 0], "generation": [0, 0, 1]}
         columns["birth_year"] = [1990, 1990, 2020]
         columns[field] = [None, None, None]
-        parsed = parse_pedigree_input(pl.DataFrame(columns))
+        parsed = _parse(pl.DataFrame(columns))
         stored = {
             "mother": parsed.mother_ids,
             "father": parsed.father_ids,
             "twin": parsed.twin_ids,
             "sex": parsed.sex,
-            "generation": parsed.generation,
+            "generation": parsed.generation_labels,
             "birth_year": parsed.birth_year,
         }[field]
         if field in ("sex", "generation", "birth_year"):
@@ -116,7 +129,7 @@ class TestFrameInput:
                 "birth_year": pd.array([1990, pd.NA, 2020], dtype="Int64"),
             }
         )
-        parsed = parse_pedigree_input(frame)
+        parsed = _parse(frame)
         assert parsed.mother_ids.tolist() == [-1, -1, 0]
         assert parsed.birth_year.tolist() == [1990, -1, 2020]
 
@@ -134,12 +147,13 @@ class TestFrameInput:
         assert error.fields["value"] == "null"
 
     def test_extra_frame_columns_are_ignored(self):
-        parsed = parse_pedigree_input(pl.DataFrame({**_data(), "household": [1, 1, 2]}))
+        parsed = _parse(pl.DataFrame({**_data(), "household": [1, 1, 2]}))
         assert parsed.n_individuals == 3
 
 
 class TestStructuralFailures:
     def test_missing_field_order(self):
+        """Presence is checked in field order, before anything else."""
         assert _raises({}, "missing_field").fields["field"] == "id"
         assert _raises({"id": [0]}, "missing_field").fields["field"] == "mother"
         assert _raises({"id": [0], "mother": [-1]}, "missing_field").fields["field"] == "father"
@@ -175,10 +189,9 @@ class TestStructuralFailures:
         assert error.fields["child_id"] == 1
         assert error.fields["parent_id"] == 99
 
-    def test_pedigree_too_large(self, monkeypatch):
-        monkeypatch.setattr("pedigree_graph._input._MAX_ROWS", 2)
+    def test_pedigree_too_large(self):
         with pytest.raises(ResourceError) as info:
-            parse_pedigree_input(_data())
+            _native.build_pedigree(*host_columns(_data()).as_args(), sex_encoding="simace", max_rows=2)
         assert info.value.code == "pedigree_too_large"
         assert info.value.fields["n_individuals"] == 3
         assert info.value.fields["maximum"] == 2
@@ -242,7 +255,7 @@ class TestNumericFailures:
 class TestSexEncoding:
     @pytest.mark.parametrize(("raw", "stored"), [(0, -1), (1, 1), (2, 0), (-1, -1)])
     def test_plink_mapping_table(self, raw, stored):
-        parsed = parse_pedigree_input(_data(sex=np.array([raw, 1, 1])), sex_encoding="plink")
+        parsed = _parse(_data(sex=np.array([raw, 1, 1])), sex_encoding="plink")
         assert parsed.sex[0] == stored
 
     def test_plink_rejects_three(self):
@@ -255,40 +268,40 @@ class TestSexEncoding:
         assert (error.fields["minimum"], error.fields["maximum"]) == (-1, 1)
 
     def test_simace_stores_values_unchanged(self):
-        parsed = parse_pedigree_input(_data(sex=np.array([0, 1, -1])))
+        parsed = _parse(_data(sex=np.array([0, 1, -1])))
         assert parsed.sex.tolist() == [0, 1, -1]
         assert parsed.sex.dtype == np.int8
 
     def test_unknown_encoding_is_plain_api_misuse(self):
         with pytest.raises(ValueError, match="sex_encoding") as info:
-            parse_pedigree_input(_data(), sex_encoding="foo")
+            _parse(_data(), sex_encoding="foo")
         assert not isinstance(info.value, PedigreeValidationError)
 
 
 class TestNormalization:
     def test_omitted_metadata_is_none(self):
-        parsed = parse_pedigree_input(_data())
+        parsed = _parse(_data())
         assert parsed.sex is None
-        assert parsed.generation is None
+        assert parsed.generation_labels is None
         assert parsed.birth_year is None
 
     @pytest.mark.parametrize("field", ["sex", "generation", "birth_year"])
     def test_wholly_missing_metadata_normalizes_to_none(self, field):
-        parsed = parse_pedigree_input(_data(**{field: np.full(3, -1)}))
-        assert getattr(parsed, field) is None
+        parsed = _parse(_data(**{field: np.full(3, -1)}))
+        assert _metadata(parsed, field) is None
 
     @pytest.mark.parametrize(("field", "column"), [("sex", [0, -1, -1]), ("generation", [-1, -1, 2])])
     def test_partial_metadata_keeps_the_sentinel(self, field, column):
-        parsed = parse_pedigree_input(_data(**{field: np.array(column)}))
-        assert getattr(parsed, field).tolist() == column
+        parsed = _parse(_data(**{field: np.array(column)}))
+        assert _metadata(parsed, field).tolist() == column
 
     def test_birth_year_partial_keeps_the_sentinel(self):
-        parsed = parse_pedigree_input(_data(birth_year=np.array([1990, -1, 2020])))
+        parsed = _parse(_data(birth_year=np.array([1990, -1, 2020])))
         assert parsed.birth_year.tolist() == [1990, -1, 2020]
         assert parsed.birth_year.dtype == np.int32
 
     def test_twin_is_always_an_array(self):
-        parsed = parse_pedigree_input(_data())
+        parsed = _parse(_data())
         assert parsed.twin_ids.tolist() == [-1, -1, -1]
         assert parsed.twin_ids.dtype == np.int64
         assert parsed.twin_rows.tolist() == [-1, -1, -1]
@@ -296,13 +309,13 @@ class TestNormalization:
 
     def test_empty_pedigree_parses(self):
         empty = np.array([], dtype=np.int64)
-        parsed = parse_pedigree_input({"id": empty, "mother": empty, "father": empty})
+        parsed = _parse({"id": empty, "mother": empty, "father": empty})
         assert parsed.n_individuals == 0
         assert parsed.twin_rows.dtype == np.int32
         assert parsed.sex is None
 
     def test_row_dtypes_are_int32(self):
-        parsed = parse_pedigree_input(_data())
+        parsed = _parse(_data())
         assert parsed.mother_rows.dtype == np.int32
         assert parsed.father_rows.dtype == np.int32
 
@@ -315,7 +328,7 @@ class TestExternalReferences:
             "father": np.array([-1, -1]),
             "twin": np.array([77, -1]),
         }
-        parsed = parse_pedigree_input(data)
+        parsed = _parse(data)
         assert parsed.mother_ids.tolist() == [99, -1]
         assert parsed.mother_rows.tolist() == [-1, -1]
         assert parsed.twin_ids.tolist() == [77, -1]
@@ -324,7 +337,8 @@ class TestExternalReferences:
 
 class TestOwnership:
     def test_arrays_are_read_only(self):
-        parsed = parse_pedigree_input(_data(sex=np.array([0, 1, 0]), birth_year=np.array([1, 2, 3])))
+        """Every array the native builder hands over is frozen before a caller sees it."""
+        parsed = _parse(_data(sex=np.array([0, 1, 0]), birth_year=np.array([1, 2, 3])))
         for array in (
             parsed.ids,
             parsed.mother_ids,
@@ -342,7 +356,7 @@ class TestOwnership:
 
     def test_mutating_the_caller_arrays_changes_nothing(self):
         data = _data()
-        parsed = parse_pedigree_input(data)
+        parsed = _parse(data)
         data["mother"][2] = 1
         data["id"][0] = 7
         assert parsed.mother_ids.tolist() == [-1, -1, 0]
@@ -351,7 +365,7 @@ class TestOwnership:
     def test_strided_and_fortran_views_are_copied(self):
         strided = np.arange(6, dtype=np.int64)[::2]
         fortran = np.asfortranarray(np.array([[-1, 9], [-1, 9], [0, 9]], dtype=np.int64))[:, 0]
-        parsed = parse_pedigree_input({"id": strided, "mother": fortran, "father": np.full(3, -1)})
+        parsed = _parse({"id": strided, "mother": fortran, "father": np.full(3, -1)})
         assert parsed.ids.flags.c_contiguous
         assert parsed.mother_ids.flags.c_contiguous
         assert parsed.ids.tolist() == [0, 2, 4]
@@ -394,7 +408,7 @@ class TestCycles:
 
     def test_acyclic_reordered_rows_pass_the_parser(self):
         data = {"id": np.array([0, 1]), "mother": np.array([1, -1]), "father": np.array([-1, -1])}
-        parsed = parse_pedigree_input(data)
+        parsed = _parse(data)
         assert parsed.mother_rows.tolist() == [1, -1]
 
     def test_acyclic_reordered_rows_construct_with_structural_depth(self):
@@ -403,27 +417,9 @@ class TestCycles:
         assert pg.depth.tolist() == [1, 0]
 
 
-class TestIdFieldValidation:
-    def test_returns_an_owned_int64_array(self):
-        validated = validate_id_field(np.array([3, 1, 2], dtype=np.int32))
-        assert validated.dtype == np.int64
-        assert not validated.flags.writeable
-        assert validated.tolist() == [3, 1, 2]
-
-    def test_rejects_duplicates(self):
-        with pytest.raises(PedigreeValidationError) as info:
-            validate_id_field(np.array([1, 1]))
-        assert info.value.code == "duplicate_id"
-
-    def test_rejects_negatives(self):
-        with pytest.raises(PedigreeValidationError) as info:
-            validate_id_field(np.array([-1, 0]))
-        assert info.value.code == "value_out_of_range"
-
-
-class TestParseArraysEntryPoint:
+class TestFromArraysEntryPoint:
     def test_matches_the_dict_path(self):
-        parsed = parse_pedigree_arrays(
+        parsed = PedigreeGraph.from_arrays(
             ids=np.array([0, 1, 2]),
             mother_ids=np.array([-1, -1, 0]),
             father_ids=np.array([-1, -1, 1]),
@@ -434,13 +430,13 @@ class TestParseArraysEntryPoint:
         assert parsed.twin_ids.tolist() == [-1, -1, -1]
 
     def test_omitted_optionals_are_none(self):
-        parsed = parse_pedigree_arrays(
+        parsed = PedigreeGraph.from_arrays(
             ids=np.array([0]),
             mother_ids=np.array([-1]),
             father_ids=np.array([-1]),
         )
         assert parsed.sex is None
-        assert parsed.generation is None
+        assert parsed.generation_labels is None
         assert parsed.birth_year is None
 
 
@@ -449,9 +445,9 @@ _SETTINGS = settings(deadline=None, max_examples=50)
 
 @_SETTINGS
 @given(arrays=pedigree_arrays())
-def test_parse_round_trips_ids_and_rows(arrays):
+def test_construction_round_trips_ids_and_rows(arrays):
     ids, mother, father, sex = arrays
-    parsed = parse_pedigree_input({"id": ids, "mother": mother, "father": father, "sex": sex})
+    parsed = _parse({"id": ids, "mother": mother, "father": father, "sex": sex})
     assert parsed.ids.tolist() == ids.tolist()
     assert parsed.mother_ids.tolist() == mother.tolist()
     assert parsed.father_ids.tolist() == father.tolist()

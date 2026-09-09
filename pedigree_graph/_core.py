@@ -22,12 +22,9 @@ from typing import TYPE_CHECKING, Literal, overload
 import numpy as np
 import scipy.sparse as sp
 
+from pedigree_graph import _native
 from pedigree_graph._cohort_utils import generation_interval as _generation_interval
-from pedigree_graph._errors import PedigreeValidationError
-from pedigree_graph._input import (
-    parse_pedigree_arrays,
-    parse_pedigree_input,
-)
+from pedigree_graph._input import host_columns, host_columns_from_arrays
 from pedigree_graph._kinship_kernel import (
     _compute_F_meuwissen_luo,
 )
@@ -50,7 +47,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from pedigree_graph._frames import FrameLike
-    from pedigree_graph._input import PedigreeInput
     from pedigree_graph._kinship_pairwise import _PairMemo
     from pedigree_graph._streaming_counter import CachedEstimate
     from pedigree_graph._topology import Topology
@@ -102,29 +98,44 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     input.  Sparse CSR matrices encode parent-child edges for O(nnz)
     relationship extraction via matrix products.
 
-    Build one with :meth:`from_frame` or :meth:`from_arrays`.  Both validate
-    through :mod:`pedigree_graph._input` and hand the parsed result to
-    :meth:`_from_input`, so every graph reaches the engine the same way.
+    Build one with :meth:`from_frame` or :meth:`from_arrays`.  Both coerce
+    through :mod:`pedigree_graph._input`, validate and build natively through
+    ``pedigree_graph._native.build_pedigree``, and hand the built columns to
+    :meth:`_from_built`, so every graph reaches the engine the same way.
     Neither invents a value: an absent optional column reads as absent.
     """
 
     @classmethod
-    def _from_input(cls, parsed: PedigreeInput) -> PedigreeGraph:
-        """Build a graph over already-parsed input, the one path all constructors share.
+    def _from_built(cls, built: _native.BuiltPedigree) -> PedigreeGraph:
+        """Build a graph over natively validated columns, the one path all constructors share.
 
         Args:
-            parsed: Validated, owned input from :mod:`pedigree_graph._input`.
+            built: The validated columns from ``build_pedigree``.
 
         Returns:
             The constructed graph.
         """
         graph = cls.__new__(cls)
-        graph._initialize(parsed)
+        graph._initialize(built)
         return graph
 
-    def _initialize(self, parsed: PedigreeInput) -> None:
-        """Populate the graph's storage, caches, and parent matrices from *parsed*."""
-        self._input = parsed
+    def _initialize(self, built: _native.BuiltPedigree) -> None:
+        """Populate the graph's storage, caches, and parent matrices from *built*."""
+        self._built = built
+        for column in (
+            built.ids,
+            built.mother_ids,
+            built.father_ids,
+            built.twin_ids,
+            built.mother_rows,
+            built.father_rows,
+            built.twin_rows,
+            built.sex,
+            built.generation,
+            built.birth_year,
+        ):
+            if column is not None:
+                column.setflags(write=False)
         self._coordinate_token = CoordinateToken()
 
         # Matrix caches are separated by operation and selector: complete,
@@ -153,47 +164,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         # diagnostics so the full-pedigree edge scan runs once per side.
         self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
-        self._validate_birth_year_topology()
-
         # Build parent→child matrices using ALL available edges.
         # Each matrix is built independently so partial-pedigree data
         # (e.g. after subsampling) still contributes edges.
         self._build_parent_csr()
-
-    def _validate_birth_year_topology(self) -> None:
-        """Reject parent-child edges with child.birth_year < parent.birth_year.
-
-        Only checks edges where both endpoints have known birth_year
-        (sentinel ``-1`` skipped). Unknown-parent and unknown-child rows
-        contribute no constraints.  The first violating edge in row order,
-        for the first violating parent role, is reported.
-        """
-        if self.birth_year is None:
-            return
-        for parent_role in ("mother", "father"):
-            edge_rows, diffs = self._known_parent_edges_for(parent_role)
-            if diffs.size == 0:
-                continue
-            violations = diffs < 0
-            if not violations.any():
-                continue
-            first = int(np.argmax(violations))
-            child_row = int(edge_rows[first])
-            parent_arr = self.mother_rows if parent_role == "mother" else self.father_rows
-            parent_row = int(parent_arr[child_row])
-            raise PedigreeValidationError(
-                "birth_year_topology",
-                f"birth_year topology violation: {parent_role}-child edge at row {child_row} "
-                f"has child.birth_year below {parent_role}.birth_year",
-                parent_role=parent_role,
-                child_row=child_row,
-                parent_row=parent_row,
-                child_id=int(self.ids[child_row]),
-                parent_id=int(self.ids[parent_row]),
-                child_birth_year=int(self.birth_year[child_row]),
-                parent_birth_year=int(self.birth_year[parent_row]),
-                violation_count=int(violations.sum()),
-            )
 
     @cached_property
     def _topology(self) -> Topology:
@@ -214,7 +188,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         scatter back.  The depth-major order is still used wherever pair and
         matrix kinship must peel in the same coordinates.
         """
-        return self._input.rows_topological
+        return self._built.rows_topological
 
     @cached_property
     def _topological_parents(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -263,12 +237,11 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
     ) -> tuple[np.ndarray, np.ndarray]:
         """Cached :func:`_known_parent_edges` lookup by parent label.
 
-        ``_validate_birth_year_topology`` (in __init__),
         ``generation_interval``, ``_cohort_utils.eligible_cohort_range``,
         and ``_hill_age_table`` all call the same edge-filter and
         age-diff computation against the same arrays — at scale that's
-        eight passes over the full pedigree.  Cached per-graph keyed on
-        ``"mother"``/``"father"`` (cache initialised in ``__init__``).
+        six passes over the full pedigree.  Cached per-graph keyed on
+        ``"mother"``/``"father"`` (cache initialised in ``_initialize``).
         Bypassed when ``birth_year is None`` (the underlying helper still
         runs but the result is small).
         """
@@ -566,11 +539,15 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             default, no generation fallback.
 
         Raises:
+            ValueError: For an unknown *sex_encoding*, which is API misuse
+                rather than a pedigree-data failure.
             PedigreeValidationError: For any invalid field, duplicate id,
-                shared parent id, cyclic parent reference, or broken MZ pair.
+                shared parent id, cyclic parent reference, broken MZ pair, or
+                child born before a parent.
             ResourceError: ``pedigree_too_large`` beyond the int32 row capacity.
         """
-        return cls._from_input(parse_pedigree_input(frame, sex_encoding=sex_encoding))
+        columns = host_columns(frame)
+        return cls._from_built(_native.build_pedigree(*columns.as_args(), sex_encoding=sex_encoding))
 
     @classmethod
     def from_arrays(
@@ -607,18 +584,16 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         Raises:
             PedigreeValidationError: As :meth:`from_frame`.
         """
-        return cls._from_input(
-            parse_pedigree_arrays(
-                ids=ids,
-                mother_ids=mother_ids,
-                father_ids=father_ids,
-                twin_ids=twin_ids,
-                sex=sex,
-                generation=generation,
-                birth_year=birth_year,
-                sex_encoding=sex_encoding,
-            )
+        columns = host_columns_from_arrays(
+            ids=ids,
+            mother_ids=mother_ids,
+            father_ids=father_ids,
+            twin_ids=twin_ids,
+            sex=sex,
+            generation=generation,
+            birth_year=birth_year,
         )
+        return cls._from_built(_native.build_pedigree(*columns.as_args(), sex_encoding=sex_encoding))
 
     def view(self, *, ids: object | None = None, rows: object | None = None) -> PedigreeView:
         """Return an ordered :class:`~pedigree_graph._view.PedigreeView` of these rows.

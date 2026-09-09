@@ -1,8 +1,9 @@
 """Construction: the two entry points, their absent defaults, and MZ validation.
 
 ``from_frame`` and the keyword-only ``from_arrays`` apply no defaults: an absent
-optional column reads as absent.  Both parse through :mod:`pedigree_graph._input`,
-so they raise the same structured errors and enforce the same MZ pair contract.
+optional column reads as absent.  Both coerce through :mod:`pedigree_graph._input`
+and build through ``pedigree_graph._native.build_pedigree``, so they raise the
+same structured errors and enforce the same MZ pair contract.
 """
 
 import numpy as np
