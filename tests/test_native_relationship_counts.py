@@ -16,6 +16,7 @@ from hypothesis import strategies as st
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, _native
 from pedigree_graph._threads import _reset_thread_state, configure_threads
+from pedigree_graph.relationships import RelationshipCountResult
 
 FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 FIXTURE_NAMES = sorted(FIXTURES)
@@ -76,6 +77,13 @@ def test_view_counts_equal_view_pair_block_lengths(name, seed):
     view = graph.view(rows=rows)
     for selector in SELECTORS:
         _assert_counts_match(view, **selector)
+
+
+def test_from_pairs_agrees_with_the_engine(small_pedigree):
+    graph = PedigreeGraph.from_frame(small_pedigree)
+    assert RelationshipCountResult.from_pairs(graph.relationship_pairs(max_degree=3)) == graph.relationship_counts(
+        max_degree=3
+    )
 
 
 def test_a_view_of_one_row_counts_nothing(small_pedigree):

@@ -21,7 +21,8 @@ live on the corresponding GitHub release pages.
   crosses the boundary as a row mask; classification still runs through the
   full graph.  The package thread budget sizes a per-call Rayon pool; the
   integer counts are the same under any budget.
-  `RelationshipCountResult.from_pairs` is deleted (it had no caller left).
+  `RelationshipCountResult.from_pairs` stays, for counting a
+  `RelationshipPairs` a caller already holds (simACE's stats runner does);
   `estimate_relationship_counts` is unchanged.
 
 - **Changed: the Rust engine's own semantics are the published ones.**
