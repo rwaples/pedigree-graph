@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.8.0
 
 - **Removed: the 0.7.1 compatibility surface** (ADR 0006, slice 7).  Every
   `0.8.0-DELETE` adapter described in the entries below is gone, the package
