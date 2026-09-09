@@ -1,0 +1,173 @@
+# Continuous integration for the ADR 0007 host-neutral Rust core and maturin packaging.
+name: CI
+
+on:
+  push:
+    branches: ["v0.8", "main"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      slow_tests:
+        description: "Also run the slow-marked Python tests"
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust core boundary, lint, and tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Assert the core crate declares no host bindings
+        run: |
+          test -f crates/core/Cargo.toml || { echo "::error::crates/core/Cargo.toml is missing"; exit 1; }
+          if grep -Eqi 'pyo3|extendr' crates/core/Cargo.toml; then
+            echo "::error file=crates/core/Cargo.toml::the host-neutral core must not depend on pyo3 or extendr (ADR 0007)"
+            exit 1
+          fi
+          echo "crates/core/Cargo.toml declares no host bindings"
+
+      - name: Assert the core crate forbids unsafe code
+        run: |
+          test -f crates/core/src/lib.rs || { echo "::error::crates/core/src/lib.rs is missing"; exit 1; }
+          if ! grep -qF '#![forbid(unsafe_code)]' crates/core/src/lib.rs; then
+            echo "::error file=crates/core/src/lib.rs::missing #![forbid(unsafe_code)] required by ADR 0007"
+            exit 1
+          fi
+          echo "crates/core/src/lib.rs forbids unsafe code"
+
+      - name: Set up pixi
+        uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          pixi-version: v0.76.2
+          locked: true
+
+      - name: Check Rust formatting
+        run: pixi run cargo fmt --check
+
+      - name: Lint with Clippy
+        run: pixi run cargo clippy --all-targets -- -D warnings
+
+      - name: Run the Rust test suite
+        run: pixi run cargo test --release
+
+  python:
+    name: Python lint, types, and fast tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up pixi and install the package editable
+        uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          pixi-version: v0.76.2
+          locked: true
+
+      - name: Lint with Ruff
+        run: pixi run ruff check
+
+      - name: Check Python formatting
+        run: pixi run ruff format --check
+
+      - name: Type check with ty
+        run: pixi run ty check
+
+      - name: Run the fast test suite
+        run: pixi run pytest -m "not slow"
+
+  python-slow:
+    name: Python slow tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.slow_tests) }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up pixi and install the package editable
+        uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          pixi-version: v0.76.2
+          locked: true
+
+      - name: Run the slow test suite
+        run: pixi run pytest -m slow
+
+  wheel-install:
+    name: Wheel build and out-of-tree install
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Build the wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist
+          manylinux: auto
+          sccache: "true"
+
+      - name: Assert the wheel carries the abi3 tag
+        run: ls dist/*cp313-abi3*.whl
+
+      - name: Assert the wheel ships the type-stub markers
+        run: |
+          shopt -s nullglob; wheels=(dist/*.whl)
+          [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one built wheel in dist/, found ${#wheels[@]}"; exit 1; }
+          wheel="${wheels[0]}"
+          listing="$(unzip -l "$wheel")"
+          status=0
+          for marker in pedigree_graph/py.typed pedigree_graph/_native.pyi; do
+            if ! printf '%s\n' "$listing" | grep -qF "$marker"; then
+              echo "::error::${wheel} does not ship ${marker}"
+              status=1
+            fi
+          done
+          exit "$status"
+
+      - name: Create a virtual environment outside the checkout
+        run: python -m venv "$RUNNER_TEMP/venv"
+
+      - name: Install the built wheel with its test extra
+        run: |
+          shopt -s nullglob; wheels=(dist/*.whl)
+          [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one built wheel in dist/, found ${#wheels[@]}"; exit 1; }
+          "$RUNNER_TEMP/venv/bin/pip" install "./${wheels[0]}[test]"
+
+      - name: Import the installed package
+        run: |
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/venv/bin/python" -c "import pedigree_graph, pedigree_graph._native; print(getattr(pedigree_graph, '__version__', 'ok'))"
+
+      - name: Run the repository tests against the installed wheel
+        env:
+          PYTHONPATH: ${{ github.workspace }}/tests
+        run: |
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/venv/bin/python" -m pytest "$GITHUB_WORKSPACE/tests" --import-mode=importlib -m "not slow"

@@ -1,3 +1,4 @@
+# Release pipeline for the ADR 0007 maturin wheels and sdist, gated on the Cargo workspace version.
 name: Publish
 
 on:
@@ -7,58 +8,194 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: "publish-${{ github.ref }}"
+  cancel-in-progress: false
+
 jobs:
-  build:
-    name: Build distributions
+  check-version:
+    name: Check the tag against the workspace version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.workspace.outputs.version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # setuptools-scm derives the version from the tag history
 
+      - name: Read the workspace version
+        id: workspace
+        run: |
+          version="$(sed -n '/^\[workspace\.package\]/,/^\[/{s/^version = "\(.*\)"$/\1/p}' Cargo.toml)"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ -z "$version" ]; then
+            echo "::error file=Cargo.toml::could not read version from the [workspace.package] table"
+            exit 1
+          fi
+          if [ "$version" != "$tag" ]; then
+            echo "::error file=Cargo.toml::tag ${GITHUB_REF_NAME} implies version ${tag}, but [workspace.package].version is ${version}"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Workspace version ${version} matches tag ${GITHUB_REF_NAME}"
+
+  wheels:
+    name: Build ${{ matrix.artifact }}
+    needs: check-version
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            manylinux: auto
+            artifact: dist-wheel-linux-x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            manylinux: auto
+            artifact: dist-wheel-linux-aarch64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            artifact: dist-wheel-macos-x86_64
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            artifact: dist-wheel-macos-arm64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: dist-wheel-windows-x86_64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build the wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          sccache: "true"
+
+      - name: Upload the wheel
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          if-no-files-found: error
+
+  sdist:
+    name: Build the sdist
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build the sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      - name: Upload the sdist
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist-sdist
+          path: dist/*
+          if-no-files-found: error
+
+  verify:
+    name: Verify the built distributions
+    needs: [check-version, wheels, sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-          cache: pip
 
-      - name: Install the build frontend
-        run: python -m pip install build
+      - name: Download every distribution
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist/
 
-      - name: Build sdist and wheel
-        run: python -m build
-
-      - name: Verify the built version matches the tag
+      - name: Assert every distribution carries the release version
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          built="$(ls dist/pedigree_graph-*.tar.gz | sed -E 's|.*/pedigree_graph-(.+)\.tar\.gz$|\1|')"
-          if [ "$tag" != "$built" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} implies version ${tag}, but setuptools-scm built ${built}"
+          shopt -s nullglob
+          status=0
+          for wheel in dist/*.whl; do
+            case "$(basename "$wheel")" in
+              *-"$VERSION"-*) ;;
+              *) echo "::error::${wheel} does not carry version ${VERSION}"; status=1 ;;
+            esac
+          done
+          for sdist in dist/*.tar.gz; do
+            case "$(basename "$sdist")" in
+              *-"$VERSION".tar.gz) ;;
+              *) echo "::error::${sdist} does not carry version ${VERSION}"; status=1 ;;
+            esac
+          done
+          exit "$status"
+
+      - name: Assert every wheel is an abi3 wheel
+        run: |
+          shopt -s nullglob
+          status=0
+          for wheel in dist/*.whl; do
+            case "$(basename "$wheel")" in
+              *cp313-abi3*) ;;
+              *) echo "::error::${wheel} is not a cp313-abi3 wheel"; status=1 ;;
+            esac
+          done
+          exit "$status"
+
+      - name: Assert every matrix leg produced a distribution
+        run: |
+          wheels="$(ls dist/*.whl 2>/dev/null | wc -l)"
+          sdists="$(ls dist/*.tar.gz 2>/dev/null | wc -l)"
+          if [ "$wheels" -ne 5 ] || [ "$sdists" -ne 1 ]; then
+            echo "::error::expected 5 wheels and 1 sdist, found ${wheels} wheels and ${sdists} sdists"
             exit 1
           fi
-          echo "Built version ${built} matches tag ${GITHUB_REF_NAME}"
+          echo "Found ${wheels} wheels and ${sdists} sdist"
 
-      - name: Upload distributions
-        uses: actions/upload-artifact@v7
-        with:
-          name: dist
-          path: dist/
+      - name: Smoke install the linux x86_64 wheel
+        run: |
+          shopt -s nullglob; wheels=(dist/*cp313-abi3-manylinux*_x86_64.whl)
+          [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one linux x86_64 wheel, found ${#wheels[@]}"; exit 1; }
+          wheel="${wheels[0]}"
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install "./${wheel}"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/venv/bin/python" -c "import pedigree_graph, pedigree_graph._native"
 
   publish:
     name: Publish to PyPI
-    needs: build
+    needs: verify
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/pedigree-graph
     permissions:
-      id-token: write # trusted publishing (OIDC) — no API token stored
+      id-token: write
     steps:
-      - name: Download distributions
+      - name: Download every distribution
         uses: actions/download-artifact@v8
         with:
-          name: dist
+          pattern: dist-*
+          merge-multiple: true
           path: dist/
 
       - name: Publish to PyPI
