@@ -4,6 +4,31 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.8.1
+
+- **Changed: the package is a maturin-built mixed Python/Rust distribution.**
+  `pedigree_graph._native` is a PyO3 extension module (`abi3-py313`, so one
+  wheel per platform serves every CPython >= 3.13) over the host-neutral
+  `crates/core`.  The version is `[workspace.package].version` in the root
+  `Cargo.toml`; setuptools-scm is gone.  Binary wheels are published for
+  manylinux x86-64 and AArch64, macOS x86-64 and Apple Silicon, and Windows
+  x86-64; the sdist needs a Rust toolchain (`rust >= 1.85`).  Nothing in the
+  public API changed.
+
+- **Changed: structural depth, the topological-order check, the cycle
+  witness, and the depth-major permutation are computed by the Rust core.**
+  The numba `_compute_depth` / `_check_topological` kernels and the NumPy
+  Kahn peel are deleted, not kept as fallbacks (ADR 0007); readable oracles
+  live in `tests/oracle/topology.py` and `tests/test_native_topology.py`
+  compares the native kernels against them under Hypothesis, including the
+  exact `cycle` witness tuple.  `PedigreeValidationError("cycle")` is now
+  raised across the host boundary from a Rust `Error` enum with the same
+  code, fields, and prose.  Private `structural_depth(mother_rows,
+  father_rows)` dropped its row-count argument and
+  `_compute_eqg(m, f, depth, n)` takes the graph's depth instead of
+  recomputing it.  At 300k rows the depth kernel is 2.3x faster and the
+  permutation 5x faster than the warmed numba path.
+
 ## v0.8.0
 
 - **Removed: the 0.7.1 compatibility surface** (ADR 0006, slice 7).  Every

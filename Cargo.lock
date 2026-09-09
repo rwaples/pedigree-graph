@@ -127,14 +127,14 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "pedigree-graph-core"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "rayon",
 ]
 
 [[package]]
 name = "pedigree-graph-python"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "numpy",
  "pedigree-graph-core",

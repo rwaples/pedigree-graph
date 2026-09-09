@@ -18,14 +18,21 @@ by `(up, down, n_ancestors)`:
 pip install pedigree-graph
 ```
 
-For development:
+Binary wheels cover manylinux x86-64 and AArch64, macOS x86-64 and Apple
+Silicon, and Windows x86-64 (one `abi3` wheel per platform for CPython >= 3.13).
+Elsewhere pip builds the sdist, which needs a Rust toolchain (`rustc >= 1.85`).
+
+For development the locked pixi environment carries Python, Rust, and maturin
+and installs the package editable (the extension module is rebuilt with
+`pixi run maturin develop --release` after a Rust change):
 
 ```bash
 git clone https://github.com/rwaples/pedigree-graph.git
 cd pedigree-graph
-pip install -e ".[test]"
-pytest -m "not slow"   # inner loop, about 2.5 minutes
-pytest                 # before a commit, about 13 minutes
+pixi install --locked
+pixi run pytest -m "not slow"   # inner loop, about 2.5 minutes
+pixi run pytest                 # before a commit, about 13 minutes
+pixi run cargo test --release   # the Rust core
 ```
 
 Five of the nine `slow` tests are the `random_30k` integration gates.  Each runs
@@ -35,7 +42,9 @@ so the full suite is dominated by a handful of tests.  The other four are the
 N=2000 effective-size scaling tests in `tests/test_effective_size_scaling.py`,
 which touch neither `random_30k` nor the pair-kinship kernel.
 
-Requires Python ≥ 3.13.  Runtime deps: `numpy`, `scipy`, `numba`.
+Requires Python ≥ 3.13.  Runtime deps: `numpy`, `scipy`, `numba`; the
+relationship, topology, and error kernels are compiled Rust
+(`pedigree_graph._native`, sources under `crates/`).
 Pandas is optional and only needed if you pass DataFrames to the
 constructors.
 
