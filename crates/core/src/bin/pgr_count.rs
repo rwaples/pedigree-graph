@@ -1,4 +1,4 @@
-//! Count relationship pairs from a TSV dump of engine inputs.
+//! Count closest-category relationship pairs from a TSV dump of engine inputs.
 //!
 //! Usage: `pgr-count <inputs.tsv> [--max-degree D] [--threads T]`
 //!
@@ -7,13 +7,13 @@
 //! default to `PEDIGREE_GRAPH_THREADS`, then 1.  Prints one JSON object with
 //! `n`, `threads`, `seconds`, and per-code `counts` to stdout.
 
-use pedigree_graph_core::relationships::{count_pairs, Category, Pedigree};
+use pedigree_graph_core::relationships::{count_pairs, Category, PedigreeColumns};
 use std::io::{BufRead, BufReader};
 use std::time::Instant;
 
-fn read_tsv(path: &str) -> Pedigree {
+fn read_tsv(path: &str) -> PedigreeColumns {
     let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
-    let mut ped = Pedigree::default();
+    let mut ped = PedigreeColumns::default();
     for (line_no, line) in BufReader::new(file).lines().enumerate() {
         let line = line.expect("read line");
         if line_no == 0 {
@@ -70,7 +70,7 @@ fn main() {
     let ped = read_tsv(&path);
     eprintln!(
         "read {} rows in {:.3}s",
-        ped.len(),
+        ped.mother.len(),
         t_read.elapsed().as_secs_f64()
     );
 
@@ -79,7 +79,7 @@ fn main() {
         .build()
         .expect("thread pool");
     let t0 = Instant::now();
-    let counts = pool.install(|| count_pairs(&ped, max_degree));
+    let counts = pool.install(|| count_pairs(&ped.borrow(), max_degree, None));
     let seconds = t0.elapsed().as_secs_f64();
     eprintln!("counted in {seconds:.3}s on {threads} thread(s)");
 
@@ -89,7 +89,7 @@ fn main() {
         .collect();
     println!(
         "{{\"n\": {}, \"threads\": {}, \"max_degree\": {}, \"seconds\": {:.3}, \"counts\": {{{}}}}}",
-        ped.len(),
+        ped.mother.len(),
         threads,
         max_degree,
         seconds,

@@ -15,13 +15,20 @@
 //! here reduces to expansions upward through `A` and downward through `A^T`.
 //! Each unordered pair is then counted once, at its lower row.
 //!
-//! The category definitions below reproduce pedigree-graph 0.7.1's matrix
-//! engine (`pedigree_graph/_pair_extractor.py`) bit for bit, including its
-//! two idiosyncrasies: first cousins count *distinct* shared grandparents
-//! while the once/twice-removed cousins and second cousins count *paths*, and
-//! the cousin sibling exclusion is "shares a known parent id", which is wider
-//! than the twin-filtered sibling lists the collateral categories subtract.
-//! [`EXCLUSIONS`] is the reference engine's per-category subtraction table.
+//! The category definitions below reproduce the matrix engine of
+//! `pedigree_graph/_pair_extractor.py` bit for bit, including its two
+//! idiosyncrasies: first cousins count *distinct* shared grandparents while
+//! the once/twice-removed cousins and second cousins count *paths*, and the
+//! cousin sibling exclusion is "shares a known parent id", which is wider than
+//! the twin-filtered sibling lists the collateral categories subtract.
+//! [`EXCLUSIONS`] is the reference engine's per-category subtraction table;
+//! it is part of each category's definition.
+//!
+//! Reporting is a separate step (ADR 0010 as amended, `CONTEXT.md` "Closest
+//! category"): after every set of a row is final, each category loses the
+//! members an earlier registry category already claims, so a pair is counted
+//! under its closest category only, exactly as the Python `_fold_precedence`
+//! does on whole blocks.
 
 use super::category::{Category, Counts};
 use super::csr::Csr;
@@ -33,43 +40,44 @@ use super::Pedigree;
 const MAX_DEGREE: u8 = 5;
 
 /// Closer categories subtracted from each category's raw candidates
-/// (`_pair_extractor.py` subtract lists).  The `MO` slot of a row's sets
-/// holds every parent-child pair by row in both orientations (`PO` in the
-/// reference engine); `FO` is never used as a set.
+/// (`_pair_extractor.py` subtract lists).  `MO, FO` together are the
+/// reference engine's parent-child-by-row set (`PO`).
 pub const EXCLUSIONS: [&[Category]; super::category::N_CATEGORIES] = {
     use Category::*;
     [
-        &[],                                                          // MZ
-        &[],                                                          // MO
-        &[],                                                          // FO
-        &[],                                                          // FS
-        &[FS],                                                        // MHS
-        &[FS],                                                        // PHS
-        &[],                                                          // GP
-        &[MO],                                                        // Av: parent-child by row
-        &[],                                                          // GGP
-        &[MO, GP],                                                    // HAv
-        &[MO, GP, Av],                                                // GAv
-        &[],                                       // 1C: shares-a-parent-id rule, see `cousins`
-        &[],                                       // GGGP
-        &[MO, GP, GGP, HAv],                       // HGAv
-        &[MO, GP, GGP, Av, GAv],                   // GGAv
-        &[],                                       // H1C: as 1C
-        &[MO, GP, GGP, Av, GAv, FS, MHS, PHS, C1], // 1C1R
-        &[],                                       // G3GP
-        &[MO, GP, GGP, GGGP, HAv, HGAv],           // HGGAv
-        &[MO, GP, GGP, GGGP, Av, GAv, GGAv],       // G3Av
-        &[MO, GP, GGP, GGGP, HAv, HGAv, FS, MHS, PHS, C1, H1C, C1R1], // H1C1R
+        &[],                                           // MZ
+        &[],                                           // MO
+        &[],                                           // FO
+        &[],                                           // FS
+        &[FS],                                         // MHS
+        &[FS],                                         // PHS
+        &[],                                           // GP
+        &[MO, FO],                                     // Av
+        &[],                                           // GGP
+        &[MO, FO, GP],                                 // HAv
+        &[MO, FO, GP, Av],                             // GAv
+        &[],                                           // 1C: shares-a-parent-id rule, see `cousins`
+        &[],                                           // GGGP
+        &[MO, FO, GP, GGP, HAv],                       // HGAv
+        &[MO, FO, GP, GGP, Av, GAv],                   // GGAv
+        &[],                                           // H1C: as 1C
+        &[MO, FO, GP, GGP, Av, GAv, FS, MHS, PHS, C1], // 1C1R
+        &[],                                           // G3GP
+        &[MO, FO, GP, GGP, GGGP, HAv, HGAv],           // HGGAv
+        &[MO, FO, GP, GGP, GGGP, Av, GAv, GGAv],       // G3Av
         &[
-            MO, GP, GGP, GGGP, Av, GAv, GGAv, FS, MHS, PHS, C1, H1C, C1R1,
+            MO, FO, GP, GGP, GGGP, HAv, HGAv, FS, MHS, PHS, C1, H1C, C1R1,
+        ], // H1C1R
+        &[
+            MO, FO, GP, GGP, GGGP, Av, GAv, GGAv, FS, MHS, PHS, C1, H1C, C1R1,
         ], // 1C2R
-        &[],                                       // 2C: shares-a-grandparent rule, see `cousins`
+        &[], // 2C: shares-a-grandparent rule, see `cousins`
     ]
 };
 
 /// Immutable engine state shared by every row.
 pub struct Engine<'p> {
-    ped: &'p Pedigree,
+    ped: Pedigree<'p>,
     up: Csr,
     down: Csr,
     sibs: SiblingIndex,
@@ -109,7 +117,7 @@ impl Workspace {
 }
 
 impl<'p> Engine<'p> {
-    pub fn new(ped: &'p Pedigree, max_degree: u8) -> Engine<'p> {
+    pub fn new(ped: &Pedigree<'p>, max_degree: u8) -> Engine<'p> {
         let n = ped.len();
         let edges: Vec<(u32, u32)> = (0..n)
             .flat_map(|i| {
@@ -121,9 +129,9 @@ impl<'p> Engine<'p> {
             .collect();
         let up = Csr::from_edges(n, edges);
         let down = up.transpose();
-        let sibs = SiblingIndex::build(&ped.twin, &ped.orig_mother, &ped.orig_father);
+        let sibs = SiblingIndex::build(ped.twin, ped.orig_mother, ped.orig_father);
         Engine {
-            ped,
+            ped: *ped,
             up,
             down,
             sibs,
@@ -139,30 +147,46 @@ impl<'p> Engine<'p> {
         self.ped.len() == 0
     }
 
-    /// Classify every pair involving `row`, then add the pairs `row` owns to `counts`.
+    /// Classify every pair involving `row`, fold precedence, then add the
+    /// pairs `row` owns to `counts`.
     ///
-    /// Lineal pairs are oriented descendant → ancestor and belong to the
-    /// descendant's row; every other category is unordered and belongs to
-    /// the lower row.
-    pub fn count_row(&self, row: usize, ws: &mut Workspace, counts: &mut Counts) {
-        use Category::*;
+    /// Every category is unordered here and a pair belongs to its lower row.
+    /// With `selected`, only members that are themselves selected count.
+    pub fn count_row(
+        &self,
+        row: usize,
+        selected: Option<&[bool]>,
+        ws: &mut Workspace,
+        counts: &mut Counts,
+    ) {
         self.classify_row(row, ws);
+        self.fold_row(ws);
         for cat in Category::ALL {
             if cat.degree() > self.max_degree {
-                continue;
+                break;
             }
-            let owned = match cat {
-                MZ => (self.ped.twin[row] > row as i32) as u64,
-                MO => (self.ped.mother[row] >= 0) as u64,
-                FO => (self.ped.father[row] >= 0) as u64,
-                GP => ws.up[2].len() as u64,
-                GGP => ws.up[3].len() as u64,
-                GGGP => ws.up[4].len() as u64,
-                G3GP => ws.up[5].len() as u64,
-                _ => sets::count_above(&ws.sets[cat.index()], row),
+            let set = &ws.sets[cat.index()];
+            let owned = match selected {
+                None => sets::count_above(set, row),
+                Some(mask) => set
+                    .iter()
+                    .filter(|&&j| j as usize > row && mask[j as usize])
+                    .count() as u64,
             };
             counts.add(cat, owned);
         }
+    }
+
+    /// Keep each member of `ws.sets` only in its closest category.
+    ///
+    /// Categories are visited in registry order (degree ascending, then
+    /// precedence); each loses the members every earlier category claims.
+    pub fn fold_row(&self, ws: &mut Workspace) {
+        let computed = Category::ALL
+            .iter()
+            .take_while(|cat| cat.degree() <= self.max_degree)
+            .count();
+        ws.acc.claim_in_order(ws.sets[..computed].iter_mut());
     }
 
     /// Fill `ws.sets` with the final symmetric relative set of `row` for every category.
@@ -186,11 +210,17 @@ impl<'p> Engine<'p> {
             ws.acc.hop_support(&self.down, &below[k - 1], &mut level[0]);
         }
 
-        // Degree 1: parent-offspring by row, sibs by original parent id.
-        ws.sets[MO.index()] = both_ways(&ws.up[1], &ws.down[1]);
+        // Degree 0 and 1: the co-twin, each parent role by row in both
+        // orientations, sibs by original parent id.
+        if self.ped.twin[row] >= 0 {
+            ws.sets[MZ.index()].push(self.ped.twin[row] as u32);
+        }
         if deg < 1 {
             return;
         }
+        let ped = &self.ped;
+        ws.sets[MO.index()] = parent_role(row, ped.mother, &ws.down[1]);
+        ws.sets[FO.index()] = parent_role(row, ped.father, &ws.down[1]);
         self.sibs.full_sibs(row, &mut ws.sets[FS.index()]);
         self.sibs.maternal_half_sibs(row, &mut ws.sets[MHS.index()]);
         self.sibs.paternal_half_sibs(row, &mut ws.sets[PHS.index()]);
@@ -224,6 +254,7 @@ impl<'p> Engine<'p> {
         }
 
         // Degree 5.
+        ws.sets[G3GP.index()] = both_ways(&ws.up[5], &ws.down[5]);
         self.collateral(row, ws, HGGAv, SibKind::Half, 4);
         self.collateral(row, ws, G3Av, SibKind::Full, 5);
         self.removed_cousins(row, ws, 2, 3, H1C1R, |m| m.is_one());
@@ -260,7 +291,7 @@ impl<'p> Engine<'p> {
     /// 1C, H1C, and the shared-grandparent support used by 2C.
     fn cousins(&self, row: usize, ws: &mut Workspace) {
         use Category::*;
-        let ped = self.ped;
+        let ped = &self.ped;
         let [children, ..] = &mut ws.scratch;
         let [counted, ..] = &mut ws.weighted;
         let grandparents = ws.up[2].len();
@@ -368,4 +399,103 @@ fn both_ways(up: &Weighted, down: &[u32]) -> Vec<u32> {
     let mut set = sets::support(up);
     sets::union_into(&mut set, down);
     set
+}
+
+/// One parent role in both orientations: `row`'s parent of that role, and
+/// the children (`down1`, sorted) for whom `row` fills that role.
+fn parent_role(row: usize, parent: &[i32], down1: &[u32]) -> Vec<u32> {
+    let mut set: Vec<u32> = down1
+        .iter()
+        .copied()
+        .filter(|&j| parent[j as usize] == row as i32)
+        .collect();
+    if parent[row] >= 0 {
+        sets::union_into(&mut set, &[parent[row] as u32]);
+    }
+    set
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{count_pairs, Category, Counts, PedigreeColumns};
+
+    /// Rows with parent rows; original ids equal rows, `-1` missing.
+    fn pedigree(parents: &[(i32, i32)], twins: &[(usize, usize)]) -> PedigreeColumns {
+        let n = parents.len();
+        let mut twin = vec![-1i32; n];
+        for &(a, b) in twins {
+            twin[a] = b as i32;
+            twin[b] = a as i32;
+        }
+        PedigreeColumns {
+            mother: parents.iter().map(|p| p.0).collect(),
+            father: parents.iter().map(|p| p.1).collect(),
+            twin,
+            orig_mother: parents.iter().map(|p| p.0 as i64).collect(),
+            orig_father: parents.iter().map(|p| p.1 as i64).collect(),
+        }
+    }
+
+    fn expect(pairs: &[(Category, u64)]) -> Counts {
+        let mut counts = Counts::default();
+        for &(cat, n) in pairs {
+            counts.add(cat, n);
+        }
+        counts
+    }
+
+    #[test]
+    fn nuclear_family_splits_parent_roles() {
+        let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[]);
+        let got = count_pairs(&ped.borrow(), 5, None);
+        assert_eq!(
+            got,
+            expect(&[(Category::MO, 2), (Category::FO, 2), (Category::FS, 1)])
+        );
+    }
+
+    #[test]
+    fn a_mother_who_is_also_a_grandmother_counts_once_as_mother() {
+        // g(0) and h(1) have p(2); g and p have i(3).  Pair (g, i) is MO and
+        // GP; pair (p, i) is FO and MHS through g.  The closest category wins.
+        let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 2)], &[]);
+        let got = count_pairs(&ped.borrow(), 5, None);
+        assert_eq!(
+            got,
+            expect(&[(Category::MO, 2), (Category::FO, 2), (Category::GP, 1)])
+        );
+    }
+
+    #[test]
+    fn mz_co_twins_are_twins_not_sibs() {
+        let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[(2, 3)]);
+        let got = count_pairs(&ped.borrow(), 5, None);
+        assert_eq!(
+            got,
+            expect(&[(Category::MZ, 1), (Category::MO, 2), (Category::FO, 2)])
+        );
+    }
+
+    #[test]
+    fn degree_cutoff_stops_the_fold_and_the_count() {
+        let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 2)], &[]);
+        let got = count_pairs(&ped.borrow(), 1, None);
+        assert_eq!(got, expect(&[(Category::MO, 2), (Category::FO, 2)]));
+        assert_eq!(count_pairs(&ped.borrow(), 0, None), Counts::default());
+    }
+
+    #[test]
+    fn a_selection_counts_only_pairs_inside_it_but_classifies_through_everyone() {
+        // Grandmother g(0), her child p(2) with h(1), and p's child c(3) with
+        // k(4).  Selecting g and c keeps their GP pair although p is unselected.
+        let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (2, 4), (-1, -1)], &[]);
+        let selected = [true, false, false, true, false];
+        let got = count_pairs(&ped.borrow(), 5, Some(&selected));
+        assert_eq!(got, expect(&[(Category::GP, 1)]));
+        let all = count_pairs(&ped.borrow(), 5, None);
+        assert_eq!(
+            all,
+            expect(&[(Category::MO, 2), (Category::FO, 2), (Category::GP, 2)])
+        );
+    }
 }

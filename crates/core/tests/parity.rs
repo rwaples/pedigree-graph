@@ -1,19 +1,21 @@
-//! Bit-for-bit parity with the Python matrix engine on the dumped fixtures.
+//! Bit-for-bit parity with `PedigreeGraph.relationship_counts` on the dumped fixtures.
 //!
-//! `tests/fixtures/<name>.tsv` and `<name>.counts.json` are written by
-//! `tests/parity/dump_relationship_inputs.py` from `count_pairs(max_degree=5)`.
+//! `tests/fixtures/<name>.tsv` is written by
+//! `tests/parity/dump_relationship_inputs.py` (frozen, 0.7.1 API) and
+//! `<name>.counts.json` by `tests/parity/dump_relationship_counts.py` from
+//! `relationship_counts(max_degree=5)` on a graph rebuilt from that TSV.
 //! Every fixture must match on all 23 categories, at one thread and at four.
 
-use pedigree_graph_core::relationships::{count_pairs, Category, Counts, Pedigree};
+use pedigree_graph_core::relationships::{count_pairs, Category, Counts, PedigreeColumns};
 use std::path::{Path, PathBuf};
 
 fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
-fn read_tsv(path: &Path) -> Pedigree {
+fn read_tsv(path: &Path) -> PedigreeColumns {
     let text = std::fs::read_to_string(path).unwrap();
-    let mut ped = Pedigree::default();
+    let mut ped = PedigreeColumns::default();
     for line in text.lines().skip(1) {
         let v: Vec<i64> = line.split('\t').map(|s| s.parse().unwrap()).collect();
         ped.mother.push(v[0] as i32);
@@ -62,7 +64,7 @@ fn run_all(threads: usize) {
         let name = tsv.file_stem().unwrap().to_string_lossy().to_string();
         let expected = read_counts(&tsv.with_extension("counts.json"));
         let ped = read_tsv(tsv);
-        let got = pool.install(|| count_pairs(&ped, 5));
+        let got = pool.install(|| count_pairs(&ped.borrow(), 5, None));
         for cat in Category::ALL {
             if got.get(cat) != expected.get(cat) {
                 failures.push(format!(
@@ -83,11 +85,11 @@ fn run_all(threads: usize) {
 }
 
 #[test]
-fn counts_match_python_matrix_engine_single_thread() {
+fn counts_match_relationship_counts_single_thread() {
     run_all(1);
 }
 
 #[test]
-fn counts_match_python_matrix_engine_four_threads() {
+fn counts_match_relationship_counts_four_threads() {
     run_all(4);
 }

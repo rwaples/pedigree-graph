@@ -134,6 +134,21 @@ impl Accumulator {
         out.extend_from_slice(&self.touched);
     }
 
+    /// Keep each member of `sets` only in the first set that holds it.
+    ///
+    /// Visits the sets in order; a member an earlier set claimed is dropped
+    /// from every later one.  Uses the marker array, so nothing is allocated.
+    pub fn claim_in_order<'a>(&mut self, sets: impl Iterator<Item = &'a mut Vec<u32>>) {
+        self.begin();
+        let stamp = self.stamp;
+        for set in sets {
+            set.retain(|&j| self.marker[j as usize] != stamp);
+            for &j in set.iter() {
+                self.marker[j as usize] = stamp;
+            }
+        }
+    }
+
     /// Count, per row, how many of the given sorted sets contain it.
     pub fn count_memberships<'a>(
         &mut self,
