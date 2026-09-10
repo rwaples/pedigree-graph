@@ -110,11 +110,30 @@ class TestResultShape:
         assert isinstance(result, RelationshipPairs)
 
     def test_mapping_is_immutable(self, full_results):
-        result = full_results["avuncular_and_cousins"]
+        result = RelationshipPairs(dict(full_results["avuncular_and_cousins"]))
         with pytest.raises(TypeError):
             result["MZ"] = result["FS"]  # ty: ignore[invalid-assignment]
         with pytest.raises(TypeError):
             del result["MZ"]  # ty: ignore[invalid-argument-type]
+        with pytest.raises(TypeError):
+            result._blocks["MZ"] = result["FS"]  # ty: ignore[invalid-assignment]
+
+    def test_constructor_copies_its_mapping(self, full_results):
+        original = full_results["avuncular_and_cousins"]
+        blocks = dict(original)
+        result = RelationshipPairs(blocks)
+        blocks["MZ"] = blocks["FS"]
+        assert result["MZ"] is original["MZ"]
+
+    @pytest.mark.parametrize("malformed", ["missing", "reordered"])
+    def test_constructor_rejects_invalid_registry_shape(self, full_results, malformed):
+        blocks = dict(full_results["avuncular_and_cousins"])
+        if malformed == "missing":
+            blocks.pop("MZ")
+        else:
+            blocks = dict(reversed(tuple(blocks.items())))
+        with pytest.raises(ValueError, match="registry code in registry order"):
+            RelationshipPairs(blocks)
 
     def test_block_is_frozen(self, full_results):
         block = full_results["avuncular_and_cousins"]["FS"]

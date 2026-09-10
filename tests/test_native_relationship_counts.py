@@ -86,6 +86,41 @@ def test_from_pairs_agrees_with_the_engine(small_pedigree):
     )
 
 
+def test_count_result_copies_and_freezes_its_mapping(small_pedigree):
+    graph = PedigreeGraph.from_frame(small_pedigree)
+    original = graph.relationship_counts(max_degree=3)
+    counts = dict(original)
+    result = RelationshipCountResult(
+        counts,
+        original.requested,
+        original.exact,
+        original.approximate,
+        original.clamped,
+    )
+    counts["MZ"] = 999
+    assert result["MZ"] == original["MZ"]
+    with pytest.raises(TypeError):
+        result._counts["MZ"] = 999  # ty: ignore[invalid-assignment]
+
+
+@pytest.mark.parametrize("malformed", ["missing", "reordered"])
+def test_count_result_rejects_invalid_registry_shape(small_pedigree, malformed):
+    original = PedigreeGraph.from_frame(small_pedigree).relationship_counts(max_degree=3)
+    counts = dict(original)
+    if malformed == "missing":
+        counts.pop("MZ")
+    else:
+        counts = dict(reversed(tuple(counts.items())))
+    with pytest.raises(ValueError, match="registry code in registry order"):
+        RelationshipCountResult(
+            counts,
+            original.requested,
+            original.exact,
+            original.approximate,
+            original.clamped,
+        )
+
+
 def test_a_view_of_one_row_counts_nothing(small_pedigree):
     graph = PedigreeGraph.from_frame(small_pedigree)
     counts = graph.view(rows=np.array([3])).relationship_counts(max_degree=5)

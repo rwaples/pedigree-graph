@@ -28,6 +28,7 @@ __all__ = [
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Self
 
 from pedigree_graph._registry import RELATIONSHIPS, RelationshipCategory, RelationshipRole
@@ -38,6 +39,12 @@ if TYPE_CHECKING:
     import numpy as np
 
     from pedigree_graph._view import CoordinateToken
+
+
+def _frozen_registry_mapping[V](values: Mapping[str, V], result_name: str) -> Mapping[str, V]:
+    if tuple(values) != tuple(RELATIONSHIPS):
+        raise ValueError(f"{result_name} needs every registry code in registry order")
+    return MappingProxyType(dict(values))
 
 
 # eq=False: the numpy fields have no scalar equality, and two blocks are the
@@ -103,9 +110,10 @@ class RelationshipPairs(Mapping[str, RelationshipPairBlock]):
 
     __slots__ = ("_blocks",)
 
+    _blocks: Mapping[str, RelationshipPairBlock]
+
     def __init__(self, blocks: Mapping[str, RelationshipPairBlock]) -> None:
-        assert tuple(blocks) == tuple(RELATIONSHIPS), "RelationshipPairs needs every registry code in registry order"
-        self._blocks = dict(blocks)
+        self._blocks = _frozen_registry_mapping(blocks, type(self).__name__)
 
     def __getitem__(self, code: str) -> RelationshipPairBlock:
         return self._blocks[code]
@@ -140,14 +148,14 @@ class RelationshipCountResult(Mapping[str, int | None]):
             and was floored at 0; that 0 is not a true absence.
     """
 
-    _counts: dict[str, int | None]
+    _counts: Mapping[str, int | None]
     requested: frozenset[str]
     exact: frozenset[str]
     approximate: frozenset[str]
     clamped: frozenset[str]
 
     def __post_init__(self) -> None:
-        assert tuple(self._counts) == tuple(RELATIONSHIPS), "RelationshipCountResult needs every code in registry order"
+        object.__setattr__(self, "_counts", _frozen_registry_mapping(self._counts, type(self).__name__))
 
     @classmethod
     def from_pairs(cls, pairs: RelationshipPairs) -> Self:

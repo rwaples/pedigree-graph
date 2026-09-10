@@ -12,6 +12,11 @@ live on the corresponding GitHub release pages.
   being silently coerced.  Integer values outside `[0, 5]` still raise
   `PedigreeValidationError` with code `max_degree_out_of_range`.
 
+- **Changed: relationship result mappings enforce immutability at construction.**
+  `RelationshipPairs` and `RelationshipCountResult` now copy their input mapping
+  into a read-only proxy.  A mapping missing a registry code or using the wrong
+  order raises `ValueError`; these checks no longer disappear under `python -O`.
+
 - **Changed: `relationship_kinship_matrix` caches by the codes selected, not by
   the selector written.**  `max_degree=2` and the explicit list of the codes it
   names are one selection, so they now share one cache entry and return the same
