@@ -20,6 +20,7 @@ and degree range have a single source of truth.
 
 from __future__ import annotations
 
+import operator
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, NamedTuple
@@ -140,8 +141,10 @@ _MAX_DEGREE_MAX = 5
 
 
 def _validate_max_degree(max_degree: int) -> int:
-    """Coerce *max_degree* to int and reject values outside ``[0, 5]``."""
-    md = int(max_degree)
+    """Return the integer value of *max_degree*, rejecting coercion and bools."""
+    if isinstance(max_degree, bool):
+        raise TypeError("max_degree must be an integer, not bool")
+    md = operator.index(max_degree)
     if md < _MAX_DEGREE_MIN or md > _MAX_DEGREE_MAX:
         raise PedigreeValidationError(
             "max_degree_out_of_range",
@@ -163,6 +166,7 @@ def categories_up_to_degree(max_degree: int) -> tuple[RelationshipCategory, ...]
         The matching categories in registry order.
 
     Raises:
+        TypeError: *max_degree* is not an integer or is a boolean.
         PedigreeValidationError: *max_degree* is outside ``[0, 5]``
             (code ``max_degree_out_of_range``).
     """

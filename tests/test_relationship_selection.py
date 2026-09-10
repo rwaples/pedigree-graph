@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 
+import numpy as np
 import pytest
 from conftest import parity_columns, parity_fixtures
 
@@ -46,7 +47,10 @@ class TestParsing:
         with pytest.raises(PedigreeValidationError, match="max_degree"):
             RelationshipSelection.parse(6, None)
 
-    @pytest.mark.parametrize("value", [2.9, "3", True])
+    def test_an_integer_like_cutoff_is_accepted(self):
+        assert RelationshipSelection.parse(np.int64(1), None).top_degree == 1
+
+    @pytest.mark.parametrize("value", [2.9, "3", True, np.bool_(True)])
     def test_a_non_integer_cutoff_is_rejected(self, value):
         with pytest.raises(TypeError):
             RelationshipSelection.parse(value, None)
