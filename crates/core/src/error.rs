@@ -184,6 +184,15 @@ pub enum Error {
         /// The capacity that was exceeded, normally [`MAX_ROWS`].
         maximum: usize,
     },
+    /// The caller asked for a relationship degree outside the supported range.
+    MaxDegreeOutOfRange {
+        /// The degree as given.
+        value: i64,
+        /// The lowest supported degree.
+        minimum: i64,
+        /// The highest supported degree.
+        maximum: i64,
+    },
     /// The caller named a sex encoding the API does not define.
     UnknownSexEncoding {
         /// The name as given.
@@ -204,7 +213,8 @@ impl Error {
             | Error::MzNonreciprocal { .. }
             | Error::MzParentMismatch { .. }
             | Error::MzSexMismatch { .. }
-            | Error::BirthYearTopology { .. } => ErrorClass::Validation,
+            | Error::BirthYearTopology { .. }
+            | Error::MaxDegreeOutOfRange { .. } => ErrorClass::Validation,
             Error::PedigreeTooLarge { .. } => ErrorClass::Resource,
             Error::UnknownSexEncoding { .. } => ErrorClass::Usage,
         }
@@ -226,6 +236,7 @@ impl Error {
             Error::MzSexMismatch { .. } => "mz_sex_mismatch",
             Error::BirthYearTopology { .. } => "birth_year_topology",
             Error::PedigreeTooLarge { .. } => "pedigree_too_large",
+            Error::MaxDegreeOutOfRange { .. } => "max_degree_out_of_range",
             Error::UnknownSexEncoding { .. } => "",
         }
     }
@@ -338,6 +349,15 @@ impl Error {
             } => vec![
                 ("n_individuals", int(*n_individuals)),
                 ("maximum", int(*maximum)),
+            ],
+            Error::MaxDegreeOutOfRange {
+                value,
+                minimum,
+                maximum,
+            } => vec![
+                ("value", Int(*value)),
+                ("minimum", Int(*minimum)),
+                ("maximum", Int(*maximum)),
             ],
             Error::UnknownSexEncoding { .. } => Vec::new(),
         }
@@ -471,6 +491,14 @@ impl std::fmt::Display for Error {
                 f,
                 "pedigree has {} rows, exceeding the int32 row-coordinate capacity",
                 grouped(*n_individuals)
+            ),
+            Error::MaxDegreeOutOfRange {
+                value,
+                minimum,
+                maximum,
+            } => write!(
+                f,
+                "max_degree must be in [{minimum}, {maximum}], got {value}"
             ),
             Error::UnknownSexEncoding { name } => write!(
                 f,

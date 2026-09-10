@@ -15,6 +15,44 @@ use crate::error::Error;
 use rayon::prelude::*;
 use std::sync::Mutex;
 
+/// A relationship degree the engine counts, checked once where it enters.
+///
+/// The field is private for the same reason [`Pedigree`]'s are.
+/// `Engine::classify_row` walks `2..=degree` over per-degree buffers that
+/// [`Workspace`] sizes to [`MaxDegree::MAX`], so a larger degree would index
+/// past them.  Clamping instead of rejecting hid that, and reported
+/// fifth-degree counts under a ninth-degree label (issue #20).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MaxDegree(u8);
+
+impl MaxDegree {
+    /// The deepest degree the registry defines, second cousins at five meioses.
+    pub const MAX: MaxDegree = MaxDegree(5);
+
+    /// Check that `degree` is one the engine counts.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::MaxDegreeOutOfRange`] for a degree above [`MaxDegree::MAX`].
+    /// There is no lower bound to check: zero is a valid request for no
+    /// categories, and `u8` cannot be negative.
+    pub fn try_new(degree: u8) -> Result<MaxDegree, Error> {
+        if degree > Self::MAX.0 {
+            return Err(Error::MaxDegreeOutOfRange {
+                value: i64::from(degree),
+                minimum: 0,
+                maximum: i64::from(Self::MAX.0),
+            });
+        }
+        Ok(MaxDegree(degree))
+    }
+
+    /// The degree as a plain integer, to compare against a category's.
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 /// Engine input in graph-space rows, borrowed from the host for one call.
 ///
 /// `mother`, `father`, `twin` are row indices, `-1` when absent (missing or
@@ -142,6 +180,9 @@ const ROWS_PER_TASK: usize = 2048;
 
 /// Exact closest-category pair counts up to `max_degree`, using the current Rayon pool.
 ///
+/// Infallible by construction: [`Pedigree`] and [`MaxDegree`] are both checked
+/// where they are built, so there is nothing left here to report.
+///
 /// With `selected`, only pairs whose two rows are both selected are counted;
 /// classification still runs through every row, so unselected relatives keep
 /// connecting the selected ones (the view contract of ADR 0006).
@@ -150,7 +191,7 @@ const ROWS_PER_TASK: usize = 2048;
 /// borrows a [`Workspace`] from a pool that never holds more workspaces than
 /// there are threads.  Counts are integers summed in any order, so the result
 /// is bit-identical for every thread count.
-pub fn count_pairs(ped: &Pedigree, max_degree: u8, selected: Option<&[bool]>) -> Counts {
+pub fn count_pairs(ped: &Pedigree, max_degree: MaxDegree, selected: Option<&[bool]>) -> Counts {
     let engine = Engine::new(ped, max_degree);
     let n = engine.len();
     let pool: Mutex<Vec<Workspace>> = Mutex::new(Vec::new());
@@ -181,7 +222,7 @@ pub fn count_pairs(ped: &Pedigree, max_degree: u8, selected: Option<&[bool]>) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{Pedigree, PedigreeColumns};
+    use super::{MaxDegree, Pedigree, PedigreeColumns};
     use crate::error::Error;
 
     /// A mutation that breaks one invariant of [`columns`].
@@ -286,6 +327,25 @@ mod tests {
     fn empty_columns_borrow() {
         let empty = PedigreeColumns::default();
         assert!(empty.try_borrow().unwrap().is_empty());
+    }
+
+    /// The engine clamped an out-of-range degree, so `9` counted as `5` and
+    /// reported fifth-degree results under a ninth-degree label (issue #20).
+    #[test]
+    fn max_degree_rejects_a_degree_the_engine_cannot_count() {
+        assert_eq!(MaxDegree::try_new(0).unwrap().get(), 0);
+        assert_eq!(MaxDegree::try_new(5).unwrap(), MaxDegree::MAX);
+        for degree in [6u8, 9, u8::MAX] {
+            assert_eq!(
+                MaxDegree::try_new(degree).unwrap_err(),
+                Error::MaxDegreeOutOfRange {
+                    value: i64::from(degree),
+                    minimum: 0,
+                    maximum: 5,
+                },
+                "degree {degree} was accepted"
+            );
+        }
     }
 
     /// The entry point the PyO3 host uses, which borrows numpy buffers and so

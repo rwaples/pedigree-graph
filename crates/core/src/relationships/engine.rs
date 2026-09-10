@@ -35,9 +35,7 @@ use super::csr::Csr;
 use super::multiplicity::Mult;
 use super::sets::{self, Accumulator, Weighted};
 use super::sibling_index::SiblingIndex;
-use super::Pedigree;
-
-const MAX_DEGREE: u8 = 5;
+use super::{MaxDegree, Pedigree};
 
 /// Closer categories subtracted from each category's raw candidates
 /// (`_pair_extractor.py` subtract lists).  `MO, FO` together are the
@@ -81,7 +79,7 @@ pub struct Engine<'p> {
     up: Csr,
     down: Csr,
     sibs: SiblingIndex,
-    max_degree: u8,
+    max_degree: MaxDegree,
 }
 
 /// Per-thread scratch: the accumulator plus every per-row set, reused across rows.
@@ -105,8 +103,8 @@ impl Workspace {
     pub fn new(n: usize) -> Workspace {
         Workspace {
             acc: Accumulator::new(n),
-            up: vec![Vec::new(); MAX_DEGREE as usize + 1],
-            down: vec![Vec::new(); MAX_DEGREE as usize + 1],
+            up: vec![Vec::new(); MaxDegree::MAX.get() as usize + 1],
+            down: vec![Vec::new(); MaxDegree::MAX.get() as usize + 1],
             sets: vec![Vec::new(); super::category::N_CATEGORIES],
             shares_grandparent: Vec::new(),
             grandchildren: Vec::new(),
@@ -117,7 +115,7 @@ impl Workspace {
 }
 
 impl<'p> Engine<'p> {
-    pub fn new(ped: &Pedigree<'p>, max_degree: u8) -> Engine<'p> {
+    pub fn new(ped: &Pedigree<'p>, max_degree: MaxDegree) -> Engine<'p> {
         let n = ped.len();
         let edges: Vec<(u32, u32)> = (0..n)
             .flat_map(|i| {
@@ -135,7 +133,7 @@ impl<'p> Engine<'p> {
             up,
             down,
             sibs,
-            max_degree: max_degree.min(MAX_DEGREE),
+            max_degree,
         }
     }
 
@@ -162,7 +160,7 @@ impl<'p> Engine<'p> {
         self.classify_row(row, ws);
         self.fold_row(ws);
         for cat in Category::ALL {
-            if cat.degree() > self.max_degree {
+            if cat.degree() > self.max_degree.get() {
                 break;
             }
             let set = &ws.sets[cat.index()];
@@ -184,7 +182,7 @@ impl<'p> Engine<'p> {
     pub fn fold_row(&self, ws: &mut Workspace) {
         let computed = Category::ALL
             .iter()
-            .take_while(|cat| cat.degree() <= self.max_degree)
+            .take_while(|cat| cat.degree() <= self.max_degree.get())
             .count();
         ws.acc.claim_in_order(ws.sets[..computed].iter_mut());
     }
@@ -192,7 +190,7 @@ impl<'p> Engine<'p> {
     /// Fill `ws.sets` with the final symmetric relative set of `row` for every category.
     pub fn classify_row(&self, row: usize, ws: &mut Workspace) {
         use Category::*;
-        let deg = self.max_degree;
+        let deg = self.max_degree.get();
         for s in &mut ws.sets {
             s.clear();
         }
@@ -417,7 +415,7 @@ fn parent_role(row: usize, parent: &[i32], down1: &[u32]) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{count_pairs, Category, Counts, PedigreeColumns};
+    use super::super::{count_pairs, Category, Counts, MaxDegree, PedigreeColumns};
 
     /// Rows with parent rows; original ids equal rows, `-1` missing.
     fn pedigree(parents: &[(i32, i32)], twins: &[(usize, usize)]) -> PedigreeColumns {
@@ -447,7 +445,7 @@ mod tests {
     #[test]
     fn nuclear_family_splits_parent_roles() {
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[]);
-        let got = count_pairs(&ped.try_borrow().unwrap(), 5, None);
+        let got = count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None);
         assert_eq!(
             got,
             expect(&[(Category::MO, 2), (Category::FO, 2), (Category::FS, 1)])
@@ -459,7 +457,7 @@ mod tests {
         // g(0) and h(1) have p(2); g and p have i(3).  Pair (g, i) is MO and
         // GP; pair (p, i) is FO and MHS through g.  The closest category wins.
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 2)], &[]);
-        let got = count_pairs(&ped.try_borrow().unwrap(), 5, None);
+        let got = count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None);
         assert_eq!(
             got,
             expect(&[(Category::MO, 2), (Category::FO, 2), (Category::GP, 1)])
@@ -469,7 +467,7 @@ mod tests {
     #[test]
     fn mz_co_twins_are_twins_not_sibs() {
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[(2, 3)]);
-        let got = count_pairs(&ped.try_borrow().unwrap(), 5, None);
+        let got = count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None);
         assert_eq!(
             got,
             expect(&[(Category::MZ, 1), (Category::MO, 2), (Category::FO, 2)])
@@ -479,10 +477,18 @@ mod tests {
     #[test]
     fn degree_cutoff_stops_the_fold_and_the_count() {
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 2)], &[]);
-        let got = count_pairs(&ped.try_borrow().unwrap(), 1, None);
+        let got = count_pairs(
+            &ped.try_borrow().unwrap(),
+            MaxDegree::try_new(1).unwrap(),
+            None,
+        );
         assert_eq!(got, expect(&[(Category::MO, 2), (Category::FO, 2)]));
         assert_eq!(
-            count_pairs(&ped.try_borrow().unwrap(), 0, None),
+            count_pairs(
+                &ped.try_borrow().unwrap(),
+                MaxDegree::try_new(0).unwrap(),
+                None
+            ),
             Counts::default()
         );
     }
@@ -493,9 +499,9 @@ mod tests {
         // k(4).  Selecting g and c keeps their GP pair although p is unselected.
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (2, 4), (-1, -1)], &[]);
         let selected = [true, false, false, true, false];
-        let got = count_pairs(&ped.try_borrow().unwrap(), 5, Some(&selected));
+        let got = count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, Some(&selected));
         assert_eq!(got, expect(&[(Category::GP, 1)]));
-        let all = count_pairs(&ped.try_borrow().unwrap(), 5, None);
+        let all = count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None);
         assert_eq!(
             all,
             expect(&[(Category::MO, 2), (Category::FO, 2), (Category::GP, 2)])

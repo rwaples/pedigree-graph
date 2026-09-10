@@ -4,6 +4,21 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Fixed: `_native.relationship_counts` rejects an out-of-range `max_degree`
+  instead of clamping it** (issue #20).  The Rust engine applied
+  `max_degree.min(5)`, so the native binding accepted `6`, `9` or `255` and
+  returned fifth-degree counts, and `pgr-count --max-degree 9` printed those
+  counts under a `"max_degree": 9` label.  The degree is now a checked
+  `MaxDegree` newtype built only through `MaxDegree::try_new`, so an
+  out-of-range value cannot reach `Engine::new` at all, and `count_pairs` stays
+  infallible because its precondition is a type invariant.  The native surface
+  now raises the same `PedigreeValidationError` with code
+  `max_degree_out_of_range` that the pure-Python selector already raised.
+  `PedigreeGraph.relationship_counts` is unchanged, having validated the
+  selector all along.
+
 ## v0.8.4
 
 - **Fixed: the transient adjacency matrices are released on the failure path.**

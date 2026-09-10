@@ -15,7 +15,7 @@ GitHub issues rather than as files here.
 | finding | status |
 |---|---|
 | 1, relationship semantics have two independent implementations | open, [#21](https://github.com/rwaples/pedigree-graph/issues/21) |
-| 2, the Rust core exposes unchecked pedigree state | mostly landed in `70bae7a`; residual open, [#20](https://github.com/rwaples/pedigree-graph/issues/20) |
+| 2, the Rust core exposes unchecked pedigree state | landed in `70bae7a`, and the residual degree clamp in the `MaxDegree` newtype ([#20](https://github.com/rwaples/pedigree-graph/issues/20)) |
 | 3, relationship selector parsing belongs in a shared typed boundary | landed in `2cbb27b` and `a53f57c` |
 | 4, sparse-matrix ownership is stateful and not exception-safe | exception safety landed in `eb2df82`; residual open, [#18](https://github.com/rwaples/pedigree-graph/issues/18) |
 | 5, effective-size orchestration is string-dispatched | warning scope landed in `eb2df82`; structural half open, [#19](https://github.com/rwaples/pedigree-graph/issues/19) |

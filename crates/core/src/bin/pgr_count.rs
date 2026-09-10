@@ -7,7 +7,7 @@
 //! default to `PEDIGREE_GRAPH_THREADS`, then 1.  Prints one JSON object with
 //! `n`, `threads`, `seconds`, and per-code `counts` to stdout.
 
-use pedigree_graph_core::relationships::{count_pairs, Category, PedigreeColumns};
+use pedigree_graph_core::relationships::{count_pairs, Category, MaxDegree, PedigreeColumns};
 use std::io::{BufRead, BufReader};
 use std::time::Instant;
 
@@ -40,7 +40,7 @@ fn read_tsv(path: &str) -> PedigreeColumns {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut path = None;
-    let mut max_degree = 5u8;
+    let mut max_degree = MaxDegree::MAX;
     let mut threads: usize = std::env::var("PEDIGREE_GRAPH_THREADS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -53,7 +53,10 @@ fn main() {
                     .get(i + 1)
                     .unwrap_or_else(|| panic!("{flag} needs a value"));
                 match flag {
-                    "--max-degree" => max_degree = value.parse().expect("--max-degree"),
+                    "--max-degree" => {
+                        max_degree = MaxDegree::try_new(value.parse().expect("--max-degree"))
+                            .unwrap_or_else(|e| panic!("{e}"))
+                    }
                     _ => threads = value.parse().expect("--threads"),
                 }
                 i += 2;
@@ -97,7 +100,7 @@ fn main() {
         "{{\"n\": {}, \"threads\": {}, \"max_degree\": {}, \"seconds\": {:.3}, \"counts\": {{{}}}}}",
         ped.mother.len(),
         threads,
-        max_degree,
+        max_degree.get(),
         seconds,
         body.join(", ")
     );

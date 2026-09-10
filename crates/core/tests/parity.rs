@@ -6,7 +6,9 @@
 //! `relationship_counts(max_degree=5)` on a graph rebuilt from that TSV.
 //! Every fixture must match on all 23 categories, at one thread and at four.
 
-use pedigree_graph_core::relationships::{count_pairs, Category, Counts, PedigreeColumns};
+use pedigree_graph_core::relationships::{
+    count_pairs, Category, Counts, MaxDegree, PedigreeColumns,
+};
 use std::path::{Path, PathBuf};
 
 fn fixtures_dir() -> PathBuf {
@@ -64,7 +66,7 @@ fn run_all(threads: usize) {
         let name = tsv.file_stem().unwrap().to_string_lossy().to_string();
         let expected = read_counts(&tsv.with_extension("counts.json"));
         let ped = read_tsv(tsv);
-        let got = pool.install(|| count_pairs(&ped.try_borrow().unwrap(), 5, None));
+        let got = pool.install(|| count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None));
         for cat in Category::ALL {
             if got.get(cat) != expected.get(cat) {
                 failures.push(format!(

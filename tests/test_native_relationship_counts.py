@@ -240,6 +240,19 @@ class TestSelectorsAndErrors:
         with pytest.raises(ValueError, match="threads"):
             _native.relationship_counts(graph._built, max_degree=5, threads=0)
 
+    @pytest.mark.parametrize("max_degree", [6, 9, 255])
+    def test_the_binding_rejects_an_out_of_range_max_degree(self, small_pedigree, max_degree):
+        """The core clamped instead of rejecting, so degree 9 returned degree-5 counts (issue #20).
+
+        The pure-Python path already raises this exact error from
+        ``_validate_max_degree``, so both surfaces report one code.
+        """
+        graph = PedigreeGraph.from_frame(small_pedigree)
+        with pytest.raises(PedigreeValidationError) as info:
+            _native.relationship_counts(graph._built, max_degree=max_degree, threads=1)
+        assert info.value.code == "max_degree_out_of_range"
+        assert info.value.fields == {"value": max_degree, "minimum": 0, "maximum": 5}
+
     def test_a_mutated_built_pedigree_raises_rather_than_panicking(self, small_pedigree):
         """The core rechecks its preconditions, so the one remaining way to forge bad columns is safe.
 

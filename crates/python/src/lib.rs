@@ -267,6 +267,7 @@ fn relationship_counts<'py>(
         father_ids.as_slice()?,
     )
     .map_err(|e| to_pyerr(py, e))?;
+    let max_degree = relationships::MaxDegree::try_new(max_degree).map_err(|e| to_pyerr(py, e))?;
     let mask = match &selected {
         Some(array) => {
             let mask = array.as_slice()?;
