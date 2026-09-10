@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
+import scipy.sparse as sp
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError
 
@@ -236,6 +237,42 @@ class TestEntryPointEquivalence:
         from_arrays = PedigreeGraph.from_arrays(ids=IDS, mother_ids=MOTHERS, father_ids=FATHERS)
         _assert_same_graph(PedigreeGraph.from_frame(_trio()), from_arrays)
         assert from_arrays.sex is None
+
+
+class TestParentAdjacencyIsLazy:
+    """Construction builds no adjacency, and ``_A`` rebuilds itself on demand (issue #18)."""
+
+    def test_construction_caches_no_adjacency(self):
+        graph = PedigreeGraph.from_frame(_trio())
+        assert "_A" not in graph.__dict__
+
+    def test_reading_the_adjacency_matches_a_matrix_per_parent(self):
+        data = _trio(id=[0, 1, 2, 3], mother=[-1, -1, 0, 0], father=[-1, -1, 1, -1])
+        graph = PedigreeGraph.from_frame(data)
+        n = graph.n_individuals
+        mother_csr = sp.csr_matrix(
+            (np.ones(2, dtype=np.int32), ([2, 3], graph.mother_rows[[2, 3]])),
+            shape=(n, n),
+        )
+        father_csr = sp.csr_matrix(
+            (np.ones(1, dtype=np.int32), ([2], graph.father_rows[[2]])),
+            shape=(n, n),
+        )
+        np.testing.assert_array_equal(graph._A.toarray(), (mother_csr + father_csr).toarray())
+
+    def test_every_stored_value_is_one(self):
+        """``check_same_parent`` forbids one id in both roles, so no entry is written twice."""
+        graph = PedigreeGraph.from_frame(_trio())
+        assert set(graph._A.data.tolist()) == {1}
+        assert graph._A.has_canonical_format
+
+    def test_the_adjacency_rebuilds_after_a_release(self):
+        """``_streaming_counter`` reads ``_A`` after a pair extraction has released it."""
+        graph = PedigreeGraph.from_frame(_trio())
+        before = graph._A.toarray()
+        graph._release_pair_matrices()
+        assert "_A" not in graph.__dict__
+        np.testing.assert_array_equal(graph._A.toarray(), before)
 
 
 class TestStructuredErrorsReachEveryEntryPoint:

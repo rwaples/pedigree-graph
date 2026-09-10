@@ -6,6 +6,22 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: the parent adjacency is built once, lazily, from the edge lists**
+  (issue #18).  Construction eagerly built a CSR per parent, `_Am` and `_Af`,
+  whose only production reader was their sum in `_A`.  Every graph paid for
+  both halves whether or not it ever reached a relationship path.  `_A` now
+  assembles itself from one COO over both edge lists on first read, and `_Am`,
+  `_Af`, `_build_parent_csr` and `_ensure_parent_csr` are gone, along with the
+  `__dict__.pop` calls in `_pair_extractor` and the rebuild in
+  `_streaming_counter` that existed to manage them.  The matrix is unchanged
+  byte for byte; `check_same_parent` forbids one id in both parent roles, so no
+  entry can be written twice.  On `random_300k`, construction drops from 183.6
+  to 162.6 MiB peak RSS and reaching `_A` from 183.7 to 172.4 MiB, both with
+  disjoint ranges over five interleaved repetitions
+  (`benchmarks/bench_parent_adjacency.md`).  No public API changes; ADR 0006
+  recorded fitACE reaching into `_Am`/`_Af`, and a sweep of the five family
+  repositories found no reader left.
+
 - **Fixed: `_native.relationship_counts` rejects an out-of-range `max_degree`
   instead of clamping it** (issue #20).  The Rust engine applied
   `max_degree.min(5)`, so the native binding accepted `6`, `9` or `255` and

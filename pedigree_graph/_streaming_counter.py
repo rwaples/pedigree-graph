@@ -210,9 +210,8 @@ class StreamingPairCounter:
         overlaps["MHS"] = _half_sibs_that_are_parent_offspring(pg.father_rows, sm, nontwin)
         overlaps["PHS"] = _half_sibs_that_are_parent_offspring(pg.mother_rows, sf, nontwin)
 
-        # Lazily rebuild _Am / _Af if a pair extraction released them; needed for
-        # adjacency powers from degree 2 onward.
-        pg._ensure_parent_csr()
+        # _A rebuilds itself from the edge lists if a pair extraction released
+        # it; needed for adjacency powers from degree 2 onward.
         children_count = np.diff(pg._A.tocsc().indptr).astype(np.int64)
         counts["GP"] = int(pg._A2.nnz)
 

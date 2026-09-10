@@ -2,9 +2,8 @@
 
 Each hand-computed case says in its name which semantic it pins: distinct
 ancestors, descendant *paths*, and parent-edge components labelled by the
-smallest original ID.  The fixture sweep at the end replicates fitACE's
-current ``founder_family_ids`` construction inline and checks the public
-call gives the same labels.
+smallest original ID.  The fixture sweep at the end checks the public call
+against an independent scipy labelling of the same edges.
 """
 
 from __future__ import annotations
@@ -103,19 +102,24 @@ def test_results_are_read_only_typed_and_memoised(method, dtype):
 FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 
 
-def _fitace_founder_family_ids(pg: PedigreeGraph) -> np.ndarray:
-    """fitACE's current construction (grm_io.founder_family_ids), inline."""
-    pg._ensure_parent_csr()
-    _, labels = connected_components(pg._Am + pg._Af, directed=False)
+def _scipy_founder_family_ids(pg: PedigreeGraph) -> np.ndarray:
+    """A scipy oracle for ``connected_component_ids``: smallest id per component.
+
+    This was fitACE's own construction, reaching into ``_Am`` and ``_Af``, until
+    ``grm_io.founder_family_ids`` became a call to ``connected_component_ids``.
+    It is kept because an independent implementation is what makes the
+    comparison worth running, not because anyone still writes it this way.
+    """
+    _, labels = connected_components(pg._A, directed=False)
     comp_min = np.full(int(labels.max()) + 1, np.iinfo(np.int64).max, dtype=np.int64)
     np.minimum.at(comp_min, labels, pg.ids)
     return comp_min[labels].astype(np.int64)
 
 
 @pytest.mark.parametrize("name", sorted(FIXTURES))
-def test_component_ids_match_the_fitace_construction(name):
+def test_component_ids_match_a_scipy_oracle(name):
     fixture = FIXTURES[name]
     if len(fixture["ids"]) == 0:
         pytest.skip("no components in an empty fixture")
     pg = PedigreeGraph.from_frame(parity_columns(fixture))
-    np.testing.assert_array_equal(pg.connected_component_ids(), _fitace_founder_family_ids(pg))
+    np.testing.assert_array_equal(pg.connected_component_ids(), _scipy_founder_family_ids(pg))

@@ -165,11 +165,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         # diagnostics so the full-pedigree edge scan runs once per side.
         self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
-        # Build parent→child matrices using ALL available edges.
-        # Each matrix is built independently so partial-pedigree data
-        # (e.g. after subsampling) still contributes edges.
-        self._build_parent_csr()
-
     @cached_property
     def _topology(self) -> Topology:
         """Structural depth plus the private stable depth-major row order.
@@ -199,37 +194,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             topo.to_topological(self.mother_rows),
             topo.to_topological(self.father_rows),
             topo.to_topological(self.twin_rows),
-        )
-
-    def _ensure_parent_csr(self) -> None:
-        """Idempotent (re)build of ``self._Am`` and ``self._Af``.
-
-        No-op when both matrices are already present.  Called on the initial
-        build and again by the pair and count engines after an earlier call
-        released the matrices.  Single guarded helper avoids duplicating the
-        ``hasattr`` check at each rebuild site.
-        """
-        if hasattr(self, "_Am") and hasattr(self, "_Af"):
-            return
-        self._build_parent_csr()
-
-    def _build_parent_csr(self) -> None:
-        """Unconditionally (re)build ``self._Am`` and ``self._Af``.
-
-        Re-called by the count engine after a pair extraction dropped the
-        matrices to free memory.  Keeping one canonical builder prevents the
-        dtype/shape contract from drifting between constructor and re-builder.
-        """
-        n = self.n_individuals
-        m_idx = np.where(self.mother_rows >= 0)[0]
-        f_idx = np.where(self.father_rows >= 0)[0]
-        self._Am = sp.csr_matrix(
-            (np.ones(len(m_idx), dtype=np.int32), (m_idx, self.mother_rows[m_idx])),
-            shape=(n, n),
-        )
-        self._Af = sp.csr_matrix(
-            (np.ones(len(f_idx), dtype=np.int32), (f_idx, self.father_rows[f_idx])),
-            shape=(n, n),
         )
 
     def _known_parent_edges_for(
@@ -281,10 +245,34 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
 
     @cached_property
     def _A(self):
-        """Child → both parents adjacency matrix."""
+        """Child → both parents adjacency matrix, from one pass over both edge lists.
+
+        Assembled as a single COO rather than as a CSR per parent that are then
+        summed.  The two agree entry for entry: ``check_same_parent``
+        (``crates/core/src/graph.rs:244``) rejects a row naming one id in both
+        roles, so no ``(child, parent)`` pair can appear twice and every stored
+        value is ``1``.  Building the halves eagerly cost every graph two
+        matrices no other production reader consumed (issue #18).
+
+        Every edge is used, so a partial pedigree still contributes whichever
+        side it knows.
+        """
         t0 = time.perf_counter()
-        result = self._Am + self._Af
-        logger.debug("_A (Am + Af) computed in %.3fs", time.perf_counter() - t0)
+        n = self.n_individuals
+        has_mother = self.mother_rows >= 0
+        has_father = self.father_rows >= 0
+        # Index the children in the dtype the parent rows already use.  A
+        # ``np.where`` index is ``intp``, and scipy widens the whole COO to
+        # match its widest input, which cost more transient memory than the
+        # eager two-matrix build it replaces.
+        rows = np.arange(n, dtype=self.mother_rows.dtype)
+        children = np.concatenate((rows[has_mother], rows[has_father]))
+        parents = np.concatenate((self.mother_rows[has_mother], self.father_rows[has_father]))
+        result = sp.csr_matrix(
+            (np.ones(len(children), dtype=np.int32), (children, parents)),
+            shape=(n, n),
+        )
+        logger.debug("_A built from %d parent edges in %.3fs", len(children), time.perf_counter() - t0)
         return result
 
     @cached_property

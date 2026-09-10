@@ -322,12 +322,8 @@ class MatrixPairExtractor:
         needs_degree5 = any(RELATIONSHIPS[code].degree >= 5 for code in codes)
 
         # Pre-trigger cached properties needed by degree-2+ extractions.
-        # _Am/_Af are only needed to build _A; delete after to free memory.
         if needs_degree2_plus:
-            pg._ensure_parent_csr()
-            _ = pg._A2  # chains: _Am, _Af → _A → _A2
-        pg.__dict__.pop("_Am", None)
-        pg.__dict__.pop("_Af", None)
+            _ = pg._A2  # chains: _A → _A2
 
         if _needed("MZ"):
             pairs["MZ"] = pg._mz_twin_pairs()
