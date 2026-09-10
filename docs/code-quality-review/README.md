@@ -2,6 +2,30 @@
 
 This document turns the thermo-nuclear code-quality audit into a set of independently addressable issues. The goal is to improve correctness, maintainability, and architectural clarity without changing intended behavior.
 
+## Two review rounds
+
+**Round 1, May 2026, the PGQ series.** PGQ-001 through PGQ-010 below, each an
+independently addressable document in this directory.
+
+**Round 2, September 2026, the v0.8 review.** One document,
+[`v0.8-thermo-nuclear-code-quality-review.md`](v0.8-thermo-nuclear-code-quality-review.md),
+covering the `v0.8` branch at `ce698ec`. Its eight findings are tracked as
+GitHub issues rather than as files here.
+
+| finding | status |
+|---|---|
+| 1, relationship semantics have two independent implementations | open, [#21](https://github.com/rwaples/pedigree-graph/issues/21) |
+| 2, the Rust core exposes unchecked pedigree state | mostly landed in `70bae7a`; residual open, [#20](https://github.com/rwaples/pedigree-graph/issues/20) |
+| 3, relationship selector parsing belongs in a shared typed boundary | landed in `2cbb27b` and `a53f57c` |
+| 4, sparse-matrix ownership is stateful and not exception-safe | exception safety landed in `eb2df82`; residual open, [#18](https://github.com/rwaples/pedigree-graph/issues/18) |
+| 5, effective-size orchestration is string-dispatched | warning scope landed in `eb2df82`; structural half open, [#19](https://github.com/rwaples/pedigree-graph/issues/19) |
+| 6, `NeHillResult` encodes two states as a nullable field blob | landed in `74f0818` |
+| 7, the benchmark harness is oversized and brittle | both reliability fixes landed in `eb2df82`, reports publish through `os.replace` and child output goes to temporary files; the suggested module split did not, `_harness.py` is still one 1,056-line file |
+| 8, public result mappings rely on assertions | landed in `f37e2b7` |
+
+The v0.8 review is a point-in-time record and is not rewritten as findings are
+resolved, so this table is where its status lives.
+
 ## Suggested order
 
 1. **PGQ-001**: Fix pair coordinate-space mismatch. This is a correctness bug.
