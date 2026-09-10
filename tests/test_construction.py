@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
-import scipy.sparse as sp
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError
 
@@ -246,22 +245,25 @@ class TestParentAdjacencyIsLazy:
         graph = PedigreeGraph.from_frame(_trio())
         assert "_A" not in graph.__dict__
 
-    def test_reading_the_adjacency_matches_a_matrix_per_parent(self):
-        data = _trio(id=[0, 1, 2, 3], mother=[-1, -1, 0, 0], father=[-1, -1, 1, -1])
-        graph = PedigreeGraph.from_frame(data)
-        n = graph.n_individuals
-        mother_csr = sp.csr_matrix(
-            (np.ones(2, dtype=np.int32), ([2, 3], graph.mother_rows[[2, 3]])),
-            shape=(n, n),
+    def test_the_adjacency_marks_every_known_parent(self):
+        # Row 2 has both parents, row 3 only a mother; rows 0 and 1 are founders.
+        graph = PedigreeGraph.from_frame(_trio(id=[0, 1, 2, 3], mother=[-1, -1, 0, 0], father=[-1, -1, 1, -1]))
+        np.testing.assert_array_equal(
+            graph._A.toarray(),
+            [
+                [0, 0, 0, 0],
+                [0, 0, 0, 0],
+                [1, 1, 0, 0],
+                [1, 0, 0, 0],
+            ],
         )
-        father_csr = sp.csr_matrix(
-            (np.ones(1, dtype=np.int32), ([2], graph.father_rows[[2]])),
-            shape=(n, n),
-        )
-        np.testing.assert_array_equal(graph._A.toarray(), (mother_csr + father_csr).toarray())
 
-    def test_every_stored_value_is_one(self):
-        """``check_same_parent`` forbids one id in both roles, so no entry is written twice."""
+    def test_no_entry_is_written_twice(self):
+        """``check_same_parent`` forbids one id in both roles, so the COO never sums a duplicate.
+
+        The validator itself is covered by ``test_input.py``; this is the
+        consequence the one-COO assembly relies on.
+        """
         graph = PedigreeGraph.from_frame(_trio())
         assert set(graph._A.data.tolist()) == {1}
         assert graph._A.has_canonical_format

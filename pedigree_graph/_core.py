@@ -261,10 +261,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         n = self.n_individuals
         has_mother = self.mother_rows >= 0
         has_father = self.father_rows >= 0
-        # Index the children in the dtype the parent rows already use.  A
-        # ``np.where`` index is ``intp``, and scipy widens the whole COO to
-        # match its widest input, which cost more transient memory than the
-        # eager two-matrix build it replaces.
+        # Not ``np.where``, whose index is ``intp``: scipy widens the whole COO
+        # to its widest input, which cost more transient memory than the eager
+        # two-matrix build this replaces.
         rows = np.arange(n, dtype=self.mother_rows.dtype)
         children = np.concatenate((rows[has_mother], rows[has_father]))
         parents = np.concatenate((self.mother_rows[has_mother], self.father_rows[has_father]))

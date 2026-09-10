@@ -76,9 +76,10 @@ wall overlaps, so its 0.807x is a direction, not a confident figure.
 
 At 300k rows that is 20.9 MiB off construction. The two matrices themselves are
 only 6.6 MiB of it; the rest is the transient the two separate COO-to-CSR
-conversions allocate and then free. The arm's `holds_parent_csr` fact flips from
-`true` to `false` across the two sweeps, which is the structural half of the
-same claim.
+conversions allocate and then free. The arm's `caches_adjacency` fact reads
+`false`, which is the structural half of the same claim: a future change that
+made construction eager again would flip it and the arm would stop measuring
+what its label says.
 
 ## Reaching `_A`
 
@@ -112,6 +113,14 @@ the construction saving above.
 
 `lazy` against `eager` on `random_300k` is 0.974x peak RSS with disjoint ranges
 and 1.012x wall with overlapping ranges. No cell blocks.
+
+Five repetitions is not always enough to settle the wall column here. A later
+sweep put `random_300k/lazy` at 1.095x wall on a visibly bimodal sample,
+`[0.075, 0.078, 0.095, 0.095, 0.105]`, which the harness correctly reported as
+inconclusive rather than a block. Nine repetitions resolved it to 0.998x with
+overlapping ranges, against 0.977x peak RSS with disjoint ranges on the same
+sweep. Peak RSS is the stable column at this size; if the wall column reads
+inconclusive, re-run with `--repeat 9` before drawing any conclusion from it.
 
 The first version of the change did not read this way. It indexed the children
 with `np.where`, which returns `intp`, and scipy widens a COO to its widest

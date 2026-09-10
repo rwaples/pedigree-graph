@@ -33,6 +33,7 @@ from _harness import Arm, Gate, Measurement, Prepared, Suite, checksum_ints, mai
 
 
 def _columns(graph) -> Prepared:
+    """The fixture's columns, so each arm can build its own graph inside the timed region."""
     columns = {
         "id": np.asarray(graph.ids),
         "mother": np.asarray(graph.mother_ids),
@@ -41,7 +42,14 @@ def _columns(graph) -> Prepared:
     }
     if graph.sex is not None:
         columns["sex"] = np.asarray(graph.sex)
-    return Prepared(payload=columns, facts={"n_rows": int(graph.n_individuals)})
+    return Prepared(payload=columns)
+
+
+def _fresh_graph(columns):
+    """Import inside the arm, as the harness's own fixtures do, so the parent never loads the package."""
+    from pedigree_graph import PedigreeGraph
+
+    return PedigreeGraph.from_frame(columns)
 
 
 def _matrix_mib(matrix) -> float:
@@ -85,45 +93,31 @@ def _build_parent_csr(graph) -> tuple[sp.csr_matrix, sp.csr_matrix]:
     )
 
 
-def _eager(_graph, columns) -> Measurement:
-    from pedigree_graph import PedigreeGraph
+def _facts(adjacency, *, halves_mib: float) -> dict[str, float | bool]:
+    """What each arm is left holding, and whether the matrix is in canonical form."""
+    return {
+        "adjacency_mib": _matrix_mib(adjacency),
+        "halves_mib": halves_mib,
+        "canonical": bool(adjacency.has_canonical_format),
+    }
 
-    graph = PedigreeGraph.from_frame(columns)
+
+def _eager(_graph, columns) -> Measurement:
+    graph = _fresh_graph(columns)
     mother_csr, father_csr = _build_parent_csr(graph)
     adjacency = mother_csr + father_csr
-    return Measurement(
-        _checksum_adjacency(adjacency),
-        {
-            "adjacency_mib": _matrix_mib(adjacency),
-            "halves_mib": _matrix_mib(mother_csr) + _matrix_mib(father_csr),
-            "resident_mib": _matrix_mib(adjacency) + _matrix_mib(mother_csr) + _matrix_mib(father_csr),
-            "canonical": bool(adjacency.has_canonical_format),
-            "data_dtype": str(adjacency.data.dtype),
-        },
-    )
+    halves_mib = _matrix_mib(mother_csr) + _matrix_mib(father_csr)
+    return Measurement(_checksum_adjacency(adjacency), _facts(adjacency, halves_mib=halves_mib))
 
 
 def _lazy(_graph, columns) -> Measurement:
-    from pedigree_graph import PedigreeGraph
-
-    graph = PedigreeGraph.from_frame(columns)
+    graph = _fresh_graph(columns)
     adjacency = graph._A
-    return Measurement(
-        _checksum_adjacency(adjacency),
-        {
-            "adjacency_mib": _matrix_mib(adjacency),
-            "halves_mib": 0.0,
-            "resident_mib": _matrix_mib(adjacency),
-            "canonical": bool(adjacency.has_canonical_format),
-            "data_dtype": str(adjacency.data.dtype),
-        },
-    )
+    return Measurement(_checksum_adjacency(adjacency), _facts(adjacency, halves_mib=0.0))
 
 
 def _construct(_graph, columns) -> Measurement:
-    from pedigree_graph import PedigreeGraph
-
-    graph = PedigreeGraph.from_frame(columns)
+    graph = _fresh_graph(columns)
     return Measurement(
         checksum_ints(
             {
@@ -132,7 +126,8 @@ def _construct(_graph, columns) -> Measurement:
                 "father_edges": int((graph.father_rows >= 0).sum()),
             }
         ),
-        {"holds_parent_csr": hasattr(graph, "_Am") or hasattr(graph, "_Af")},
+        # False, and the arm stops measuring what it claims if it ever reads true.
+        {"caches_adjacency": "_A" in graph.__dict__},
     )
 
 
