@@ -11,10 +11,9 @@ Since 0.8.3 ``PedigreeGraph.relationship_counts`` and
 (ADR 0010): every pair is classified in its own row and counted, no pair
 list exists, and peak memory is linear in the pedigree size (2.9 GiB for
 2.1 billion pairs on a 20M-row pedigree).  The rest of this section is
-about ``relationship_pairs`` and the experimental BFS counter, which
-materialise every pair as an ``(idx1, idx2)`` array.  Their memory is
-proportional to the total relationship-pair count, **not** the pedigree
-size.
+about ``relationship_pairs``, which materialises every pair as an
+``(idx1, idx2)`` array.  Its memory is proportional to the total
+relationship-pair count, **not** the pedigree size.
 
 ### Worst case: prolific-stallion livestock pedigrees
 
@@ -32,9 +31,8 @@ siring 2,500 horses, top-sire grand-offspring set ~50K):
   great-grandchildren spread); chunk sizes blow up at default
   ``chunk_rows``
 
-Both engines OOM on this pedigree well before producing a count, even
-on 30 GB hosts.  Matrix OOMs in ``A_f @ A_f.T`` (PHS sparse product);
-BFS OOMs in the numba cousin enumeration kernel.
+``relationship_pairs`` OOMs on this pedigree well before producing a
+list, even on 30 GB hosts, in ``A_f @ A_f.T`` (the PHS sparse product).
 
 ### Operational workarounds
 
@@ -80,42 +78,6 @@ Use ``count_pairs`` for subsample-restricted counts.
 
 The horse-pedigree benchmark (N=783K, mean F=0.007) completes in
 ~5 seconds with peak RSS ~730 MB.
-
-## Cousin-code matrix/BFS divergence on inbred input
-
-Independent of scaling, the ``matrix`` and ``bfs`` engines give
-**different counts** on inbred pedigrees for the four
-cousin-multiplicity codes: ``1C1R``, ``H1C1R``, ``1C2R``, ``2C``.
-
-- **Matrix engine** uses path multiplicity: ``M.data >= 2`` (full) or
-  ``M.data == 1`` (half) thresholds on ``_A2 @ _A3.T`` / ``_A2 @ _A4.T``
-  / ``_A3 @ _A3.T``.  A pair sharing an ancestor via two distinct
-  paths is counted twice in the matrix entry; the threshold
-  classifies based on this multiplicity.
-- **BFS engine** uses distinct-shared-ancestor semantics: a pair
-  sharing N distinct ancestors at the relevant depth is counted once
-  regardless of paths.
-
-The divergence is documented in
-``tests/test_experimental.py:171`` (the ``inbred_with_cousins_pedigree``
-fixture) and asserted in ``test_inbred_with_cousins_cousin_codes_diverge``.
-
-``extract_pairs(scope="full")`` returns matrix-engine values by
-default.  Callers needing BFS-distinct semantics on inbred input must
-use ``pedigree_graph.experimental.count_pairs_bfs`` and accept the
-matrix-vs-BFS difference for those four codes.
-
-## ``int8`` overflow risk in BFS ``P_k`` boolean matmul
-
-The BFS engine (`pedigree_graph.experimental.count_pairs_bfs`) uses
-``np.int8`` for ``P_k.data`` during the boolean matmul stages.
-Theoretically vulnerable to silent path-count overflow under extreme
-consanguinity: more than 127 distinct paths to a single ``(i, X)`` pair
-before the ``M.data[:] = 1`` clamp will wrap.
-
-Empirically not seen on any tested pedigree. Switch to ``int32`` if it
-ever bites — the change is a one-line dtype swap at the matmul site;
-memory cost is 4× on the intermediate matrices.
 
 ## ``compute_n_ancestors`` memory scales with ``sum_i n_ancestors[i]``
 
@@ -166,17 +128,15 @@ OOM-prone because the full-pedigree intermediate doesn't shrink.
 - Effective size estimator scaling — covered by
   ``pedigree_graph._effective_size`` and the ``skip_ne_coancestry``
   knob.
-- BFS engine internal limitations — see the ``int8`` overflow section
-  above for the path-count overflow case, and GitHub issues
-  [#2 (numba kernel parallelisation)](https://github.com/rwaples/pedigree-graph/issues/2)
-  and [#3 (10M+ scaling test)](https://github.com/rwaples/pedigree-graph/issues/3)
-  for open performance / scalability questions.
 
 ## Last updated
 
-2026-05-20 — ``int8`` overflow risk and ``compute_n_ancestors``
-scalability sections added; BFS internal follow-ups re-homed from
-retired ``external/pedsum/STATUS.md`` to GitHub issues #2 and #3.
+2026-09-10 — the experimental Python relationship counter is gone
+(issue #7), and with it the cousin-code divergence and ``int8``
+overflow sections; the Rust engine of 0.8.3 is the one
+relationship-counting implementation.
+
+2026-05-20 — ``compute_n_ancestors`` scalability section added.
 
 2026-05-19 — ``count_pairs_streaming`` precision contract
 reconciled; ``Av`` documented as approximate; stale

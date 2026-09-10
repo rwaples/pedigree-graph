@@ -1,8 +1,9 @@
 """Property-based tests for the pure pair-array utilities in _pair_utils.
 
 These operate on plain index arrays (no pedigree), so they are fast and exercise
-canonicalisation, deduplication, within-group enumeration, the int64 pair-key
-encoding (incl. large indices), and the graph-to-view projection.
+within-group enumeration, the oriented read of an asymmetric product matrix
+(canonicalisation and dual-valid deduplication included), and the graph-to-view
+projection.
 """
 
 from __future__ import annotations
@@ -15,47 +16,12 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from pedigree_graph._pair_utils import (
-    dedup_pairs,
     oriented_pairs_from_sparse,
     pairs_from_groups,
     project_pairs,
 )
 
 _SETTINGS = settings(deadline=None, max_examples=100)
-
-
-@_SETTINGS
-@given(data=st.data())
-def test_dedup_pairs_canonical_dedup_idempotent(data):
-    m = data.draw(st.integers(min_value=0, max_value=30))
-    a_i = np.array(data.draw(st.lists(st.integers(0, 1000), min_size=m, max_size=m)), dtype=np.intp)
-    a_j = np.array(data.draw(st.lists(st.integers(0, 1000), min_size=m, max_size=m)), dtype=np.intp)
-    lo, hi = dedup_pairs(a_i, a_j)
-    assert np.all(lo <= hi)
-    got = set(zip(lo.tolist(), hi.tolist(), strict=True))
-    want = {(min(i, j), max(i, j)) for i, j in zip(a_i.tolist(), a_j.tolist(), strict=True)}
-    assert got == want
-    # Idempotent: re-deduping canonical pairs is a no-op.
-    lo2, hi2 = dedup_pairs(lo, hi)
-    assert set(zip(lo2.tolist(), hi2.tolist(), strict=True)) == got
-
-
-@_SETTINGS
-@given(data=st.data())
-def test_dedup_pairs_large_indices(data):
-    # Stress the lo*max_id+hi int64 key with large (but in-range, < ~3e9) indices;
-    # the encoding must stay collision-free below the documented overflow limit.
-    n = data.draw(st.integers(min_value=1, max_value=20))
-    base = data.draw(st.sampled_from([10**6, 10**8, 2**30]))
-    vals = np.array(
-        data.draw(st.lists(st.integers(0, base), min_size=2 * n, max_size=2 * n, unique=True)),
-        dtype=np.intp,
-    )
-    a_i, a_j = vals[:n], vals[n:]
-    lo, hi = dedup_pairs(a_i, a_j)
-    got = set(zip(lo.tolist(), hi.tolist(), strict=True))
-    want = {(min(int(i), int(j)), max(int(i), int(j))) for i, j in zip(a_i, a_j, strict=True)}
-    assert got == want
 
 
 @_SETTINGS

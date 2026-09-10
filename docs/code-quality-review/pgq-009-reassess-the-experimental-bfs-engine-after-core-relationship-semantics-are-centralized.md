@@ -28,3 +28,5 @@ After PGQ-003/PGQ-004, move BFS into a dedicated experimental engine module that
 - Relationship code set remains synchronized with `REL_REGISTRY` / relationship plan.
 
 ---
+
+**Resolved:** the engine was deleted per issue #7; `count_pairs_bfs`, `_bfs_engine`, `_bfs_kernel`, `experimental.py`, and `tests/test_experimental.py` are gone, and the Rust row-streaming engine of 0.8.3 is the one relationship-counting implementation.

@@ -380,9 +380,8 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         """Mother-offspring and Father-offspring pairs.
 
         Each parent link is reported independently, so a child with only
-        one parent in the sample still contributes a PO pair.  Shared
-        graph-data accessor: read by both the matrix extractor and the
-        experimental BFS counter.
+        one parent in the sample still contributes a PO pair.  Graph-data
+        accessor read by the matrix pair extractor.
         """
         m_mask = self.mother_rows >= 0
         m_children = np.where(m_mask)[0]

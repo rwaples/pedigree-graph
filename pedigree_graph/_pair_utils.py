@@ -1,10 +1,10 @@
 """Stateless pair-array utilities shared by the relationship engines.
 
 Pure functions over index arrays and sparse matrices — no ``PedigreeGraph``
-state.  The matrix pair extractor and the BFS engine both build on these, so
-the canonical unordered key ``min * n + max`` (ADR 0006 pair contracts 3 and
-6), the oriented read of an asymmetric product matrix, and the graph-space →
-view-space projection live in one place.
+state.  ``PedigreeGraph`` and the matrix pair extractor both build on these,
+so the canonical unordered key ``min * n + max`` (ADR 0006 pair contracts 3
+and 6), the oriented read of an asymmetric product matrix, and the
+graph-space → view-space projection live in one place.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "canonical_keys",
-    "dedup_pairs",
     "oriented_pairs_from_sparse",
     "pairs_from_groups",
     "project_pairs",
@@ -81,18 +80,6 @@ def subtract_pairs(keep: _PairArrays, remove: list[_PairArrays]) -> _PairArrays:
     hit = pos < rm_keys.size
     hit[hit] = rm_keys[pos[hit]] == keys[hit]
     return a[~hit], b[~hit]
-
-
-def dedup_pairs(a_i: np.ndarray, a_j: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Canonicalize (lo, hi) and deduplicate pair arrays via int64 keys."""
-    if len(a_i) == 0:
-        return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
-    lo = np.minimum(a_i, a_j).astype(np.intp)
-    hi = np.maximum(a_i, a_j).astype(np.intp)
-    max_id = int(hi.max()) + 1
-    keys = lo.astype(np.int64) * max_id + hi.astype(np.int64)
-    _, unique_idx = np.unique(keys, return_index=True)
-    return lo[unique_idx], hi[unique_idx]
 
 
 def oriented_pairs_from_sparse(

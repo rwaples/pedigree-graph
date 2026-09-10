@@ -26,7 +26,7 @@ sys.path.insert(0, str(_TESTS_DIR / "parity"))
 import pedigrees  # noqa: E402
 
 # Pedigree builders are capped small: degree-5 pair extraction is ~quadratic
-# and the DP / BFS kernels JIT on first use, so large random pedigrees make the
+# and the DP kernels JIT on first use, so large random pedigrees make the
 # property suite slow and flaky.
 PEDIGREE_MAX_N = 25
 

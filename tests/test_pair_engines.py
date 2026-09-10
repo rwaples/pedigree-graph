@@ -13,7 +13,6 @@ import scipy.sparse as sp
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 from pedigree_graph._pair_extractor import MatrixPairExtractor
 from pedigree_graph._pair_utils import (
-    dedup_pairs,
     oriented_pairs_from_sparse,
     pairs_from_groups,
     subtract_pairs,
@@ -22,19 +21,6 @@ from pedigree_graph._streaming_counter import StreamingPairCounter
 
 
 class TestPairUtils:
-    def test_dedup_pairs_canonicalizes_and_dedupes(self):
-        # (5,1) and (1,5) are the same unordered pair → one canonical (1,5).
-        a_i = np.array([5, 1, 3])
-        a_j = np.array([1, 5, 7])
-        lo, hi = dedup_pairs(a_i, a_j)
-        assert np.all(lo <= hi)
-        assert set(zip(lo.tolist(), hi.tolist(), strict=True)) == {(1, 5), (3, 7)}
-
-    def test_dedup_pairs_empty(self):
-        lo, hi = dedup_pairs(np.array([], dtype=np.intp), np.array([], dtype=np.intp))
-        assert lo.size == 0
-        assert hi.size == 0
-
     def test_pairs_from_groups_enumerates_within_groups(self):
         # rows 0,1 share group 10; rows 2,3 share group 20.
         lo, hi = pairs_from_groups(np.array([0, 1, 2, 3]), np.array([10, 10, 20, 20]))

@@ -4,6 +4,20 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Removed: the experimental Python BFS relationship counter** (issue #7).
+  `pedigree_graph.experimental.count_pairs_bfs`, the `_bfs_engine` and
+  `_bfs_kernel` modules behind it, the `experimental` module that exposed it,
+  and the plan fields that described its divergence
+  (`REL_PLAN[...].bfs_diverges_under_inbreeding`, `bfs_divergent_codes()`) are
+  gone.  The Rust row-streaming engine of 0.8.3 is the one
+  relationship-counting implementation; `relationship_counts`,
+  `relationship_pairs`, and `estimate_relationship_counts` are unchanged.
+  The counter warned `FutureWarning` on every call and was never re-exported
+  at the package root, so no deprecation cycle was owed.  It has no
+  replacement; use `relationship_counts` for closest-category counts.
+
 ## v0.8.3
 
 - **Changed: `relationship_counts` runs in the Rust row-streaming engine

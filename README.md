@@ -117,72 +117,12 @@ See `RELATIONSHIPS` for the complete list; each `RelationshipCategory`
 carries `code`, `label`, `degree`, `nominal_kinship`, `up`, `down`,
 `ancestor_count`, and the two positional roles.
 
-## Experimental engines
-
-The package ships an alternate relationship-counting engine in
-`pedigree_graph.experimental` for exploring large-pedigree scaling:
-
-```python
-from pedigree_graph import PedigreeGraph
-from pedigree_graph.experimental import count_pairs_bfs
-
-pg = PedigreeGraph.from_frame(df)
-counts = count_pairs_bfs(pg)  # dict[str, int] over 23 codes
-```
-
-`count_pairs_bfs` uses boolean sparse matmul (set-union semantics) plus
-a parallel numba kernel for cousin-style codes.  It is **counts-only**;
-there is no pair-array equivalent of `relationship_pairs`.
-
-The submodule is **not** re-exported at the top level — callers must
-import explicitly via `pedigree_graph.experimental`.  First call emits
-a `FutureWarning`.
-
-### Caveats — read before using
-
-1. **Experimental contract.**  API, signature, and semantics may
-   change or the function may be removed in any minor release.  No
-   deprecation cycle is owed.
-
-2. **Counts are unfolded, and inbred-pedigree counting differs from the
-   matrix engine.**  BFS counts a pair under every category it satisfies,
-   where `PedigreeGraph.relationship_counts` keeps only the closest.  On
-   non-inbred pedigrees the BFS counts equal the matrix engine's unfolded
-   blocks exactly.  On inbred pedigrees, BFS counts *distinct shared
-   ancestors* at depth ≥ 2 while the matrix engine counts *paths*
-   (multiplicity); the four cousin-style codes
-   (`1C1R`, `H1C1R`, `1C2R`, `2C`) may diverge.  See
-   `tests/test_experimental.py::test_inbred_with_cousins_cousin_codes_diverge`
-   for a hand-built fixture pinning the exact divergence.
-
-3. **`max_degree=5` only.**  Lower values raise `NotImplementedError` —
-   use `PedigreeGraph.relationship_counts(max_degree=k)` for partial
-   extractions.
-
-4. **No view support.**  Pass a full graph; `PedigreeView` has no BFS
-   counterpart.
-
-5. **Threading.**  The numba kernel uses `prange` for cousin-style
-   enumeration.  Numba reads `NUMBA_NUM_THREADS` at first JIT
-   compilation; the optional `n_threads` kwarg only takes effect on
-   the first call in a process.  Set `NUMBA_NUM_THREADS=N` in the
-   environment to control threading on all calls.
-
-6. **Performance.**  Scaling claims (BFS faster than matrix above
-   ~5M individuals, where the matrix engine OOMs) are unverified at
-   the time of v0.2.0.  The matrix engine is faster at n=2M in the
-   only head-to-head we have run.  See open issues
-   [#2 (numba kernel parallelisation)](https://github.com/rwaples/pedigree-graph/issues/2)
-   and [#3 (10M+ scaling)](https://github.com/rwaples/pedigree-graph/issues/3).
-   Treat this engine as an experimental scalability spike, not a
-   tuned alternative.
-
 ## Architecture
 
 For contributors: [`docs/architecture.md`](docs/architecture.md) maps the
 module layout and the hidden contracts (coordinate space, exact vs
-approximate counts, path-count vs distinct-ancestor semantics, sparse-ID
-handling, default sex), each with its source of truth and regression test.
+approximate counts, sparse-ID handling, default sex), each with its source
+of truth and regression test.
 The relationship/coordinate vocabulary is in [`CONTEXT.md`](CONTEXT.md);
 design decisions are in [`docs/adr/`](docs/adr/).
 

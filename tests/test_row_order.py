@@ -23,7 +23,6 @@ from relationship_predicates import AncestorWalk
 
 from pedigree_graph import RELATIONSHIPS, MissingMetadataError, PedigreeGraph
 from pedigree_graph.effective_size import eligible_cohort_range, estimate_effective_sizes
-from pedigree_graph.experimental import count_pairs_bfs
 
 if TYPE_CHECKING:
     from pedigree_graph import PedigreeView
@@ -347,7 +346,6 @@ class _Snapshot:
 
         self.relationship_counts = dict(graph.relationship_counts(max_degree=MAX_DEGREE))
         self.estimated_counts = dict(graph.estimate_relationship_counts(max_degree=MAX_DEGREE))
-        self.count_pairs_bfs = count_pairs_bfs(graph, max_degree=MAX_DEGREE)
 
         self.complete_kinship = _matrix_by_id(graph.kinship_matrix(), ids)
         self.approx_kinship = _matrix_by_id(
@@ -393,7 +391,6 @@ def test_every_operation_is_invariant_under_row_order(name, constructor, capsys)
 
         assert actual.relationship_counts == reference.relationship_counts, f"{where}: relationship_counts changed"
         assert actual.estimated_counts == reference.estimated_counts, f"{where}: estimated counts changed"
-        assert actual.count_pairs_bfs == reference.count_pairs_bfs, f"{where}: count_pairs_bfs changed"
 
         depths = reference.depth_by_id
         worst["ulp_matrix_0.0"] = max(
