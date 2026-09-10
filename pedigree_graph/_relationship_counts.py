@@ -3,10 +3,11 @@
 ``PedigreeGraph.relationship_counts`` and ``PedigreeView.relationship_counts``
 end here.  The engine (ADR 0010, as amended) classifies every pair one row at
 a time, folds precedence, and counts; no pair list is ever built, so peak
-memory is O(N).  The graph's own columns cross the boundary borrowed, and
-nothing native persists between calls.  A view is a boolean mask over graph
-rows: classification still runs through the full graph, and a pair counts
-when both its rows are selected (ADR 0006).
+memory is O(N).  The graph crosses the boundary as the ``BuiltPedigree`` its
+constructor produced, whose columns the core borrows; nothing native persists
+between calls.  A view is a boolean mask over graph rows: classification still
+runs through the full graph, and a pair counts when both its rows are selected
+(ADR 0006).
 """
 
 from __future__ import annotations
@@ -51,16 +52,10 @@ def _count(
     top = selection.top_degree
     if top is not None:
         counted = _native.relationship_counts(
-            graph.mother_rows,
-            graph.father_rows,
-            graph.twin_rows,
-            graph.mother_ids,
-            graph.father_ids,
+            graph._built,
             max_degree=top,
             threads=thread_budget(),
             selected=selected,
         )
-        values.update(
-            {code: count for code, count in zip(RELATIONSHIPS, counted.tolist(), strict=True) if code in requested}
-        )
+        values.update({code: counted[code] for code in requested})
     return RelationshipCountResult(values, requested, requested, frozenset(), frozenset())

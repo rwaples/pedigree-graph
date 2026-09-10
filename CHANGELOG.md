@@ -39,6 +39,18 @@ live on the corresponding GitHub release pages.
   and is now safe at every endpoint.  The public signatures are unchanged and
   the type is private.
 
+- **Changed: the relationship-counting invariants live in the Rust core, not
+  the PyO3 binding.**  `_native.relationship_counts` now takes the graph's own
+  validated `BuiltPedigree` in place of five loose column arrays, and returns a
+  `dict` keyed by registry code instead of one positional int64 array, so a
+  reordering of the Rust categories can no longer permute the counts unnoticed.
+  The column-length and row-range checks the binding duplicated moved into
+  `Pedigree::try_new` / `PedigreeColumns::try_borrow`, the only ways to build
+  the core's borrowed engine input now that its slices are private; every Rust
+  caller gets them, and columns are checked twice instead of three times.  All
+  of this is behind the private `_native` boundary: `PedigreeGraph`,
+  `PedigreeView`, and `RelationshipCountResult` are unchanged.
+
 - **Removed: the experimental Python BFS relationship counter** (issue #7).
   `pedigree_graph.experimental.count_pairs_bfs`, the `_bfs_engine` and
   `_bfs_kernel` modules behind it, the `experimental` module that exposed it,

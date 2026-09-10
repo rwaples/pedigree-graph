@@ -64,7 +64,7 @@ fn run_all(threads: usize) {
         let name = tsv.file_stem().unwrap().to_string_lossy().to_string();
         let expected = read_counts(&tsv.with_extension("counts.json"));
         let ped = read_tsv(tsv);
-        let got = pool.install(|| count_pairs(&ped.borrow(), 5, None));
+        let got = pool.install(|| count_pairs(&ped.try_borrow().unwrap(), 5, None));
         for cat in Category::ALL {
             if got.get(cat) != expected.get(cat) {
                 failures.push(format!(

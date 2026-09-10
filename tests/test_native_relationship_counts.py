@@ -204,29 +204,55 @@ class TestSelectorsAndErrors:
 
     def test_counts_are_the_same_under_every_thread_budget(self, small_pedigree):
         graph = PedigreeGraph.from_frame(small_pedigree)
-        args = (graph.mother_rows, graph.father_rows, graph.twin_rows, graph.mother_ids, graph.father_ids)
-        one = _native.relationship_counts(*args, max_degree=5, threads=1)
-        four = _native.relationship_counts(*args, max_degree=5, threads=4)
-        assert one.tolist() == four.tolist()
+        one = _native.relationship_counts(graph._built, max_degree=5, threads=1)
+        four = _native.relationship_counts(graph._built, max_degree=5, threads=4)
+        assert one == four
         _reset_thread_state()
         try:
             configure_threads(3)
-            assert dict(graph.relationship_counts(max_degree=5)) == dict(zip(RELATIONSHIPS, one.tolist(), strict=True))
+            assert dict(graph.relationship_counts(max_degree=5)) == one
         finally:
             _reset_thread_state()
 
-    def test_the_binding_rejects_malformed_rows_with_value_error(self):
-        rows = np.array([-1, 0], dtype=np.int32)
-        ids = np.array([-1, 7], dtype=np.int64)
-        good = (rows, rows.copy(), np.full(2, -1, dtype=np.int32), ids, ids)
-        assert _native.relationship_counts(*good, max_degree=5, threads=1).tolist() == [0, 1] + [0] * 21
-        with pytest.raises(ValueError, match="twin_rows"):
-            _native.relationship_counts(
-                *good[:2], np.array([-1, 5], dtype=np.int32), *good[3:], max_degree=5, threads=1
-            )
-        with pytest.raises(ValueError, match="mother_ids"):
-            _native.relationship_counts(*good[:3], ids[:1], ids, max_degree=5, threads=1)
+    def test_the_binding_keys_its_counts_by_code_in_registry_order(self, small_pedigree):
+        """A reordering of the Rust ``Category::ALL`` must not silently repermute the counts.
+
+        The positional return this replaced could only be checked for length.
+        """
+        graph = PedigreeGraph.from_frame(small_pedigree)
+        counted = _native.relationship_counts(graph._built, max_degree=5, threads=1)
+        assert tuple(counted) == tuple(RELATIONSHIPS)
+
+    def test_a_built_pedigree_cannot_be_constructed_from_python(self):
+        """``build_pedigree`` is the only source, which is why the binding no longer revalidates."""
+        with pytest.raises(TypeError):
+            _native.BuiltPedigree()
+
+    def test_the_binding_rejects_a_malformed_mask_or_thread_count(self, small_pedigree):
+        """The loose arguments are the only ones a caller can still malform.
+
+        The column invariants moved into the core's checked constructor and are
+        covered by the Rust unit tests of ``Pedigree::try_new``.
+        """
+        graph = PedigreeGraph.from_frame(small_pedigree)
         with pytest.raises(ValueError, match="selected"):
-            _native.relationship_counts(*good, max_degree=5, threads=1, selected=np.array([True]))
+            _native.relationship_counts(graph._built, max_degree=5, threads=1, selected=np.array([True]))
         with pytest.raises(ValueError, match="threads"):
-            _native.relationship_counts(*good, max_degree=5, threads=0)
+            _native.relationship_counts(graph._built, max_degree=5, threads=0)
+
+    def test_a_mutated_built_pedigree_raises_rather_than_panicking(self, small_pedigree):
+        """The core rechecks its preconditions, so the one remaining way to forge bad columns is safe.
+
+        A graph's columns are read-only (``_initialize``), but a caller holding
+        a raw ``build_pedigree`` result can still write to them.
+        """
+        graph = PedigreeGraph.from_frame(small_pedigree)
+        built = _native.build_pedigree(
+            np.asarray(graph.ids),
+            np.asarray(graph.mother_ids),
+            np.asarray(graph.father_ids),
+            sex_encoding="simace",
+        )
+        built.mother_rows[0] = graph.n_individuals
+        with pytest.raises(PedigreeValidationError):
+            _native.relationship_counts(built, max_degree=5, threads=1)

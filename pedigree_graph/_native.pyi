@@ -38,17 +38,13 @@ def build_pedigree(
     max_rows: int | None = None,
 ) -> BuiltPedigree: ...
 def relationship_counts(
-    mother_rows: NDArray[np.int32],
-    father_rows: NDArray[np.int32],
-    twin_rows: NDArray[np.int32],
-    mother_ids: NDArray[np.int64],
-    father_ids: NDArray[np.int64],
+    pedigree: BuiltPedigree,
     /,
     *,
     max_degree: int,
     threads: int,
     selected: NDArray[np.bool_] | None = None,
-) -> NDArray[np.int64]: ...
+) -> dict[str, int]: ...
 
 class IdIndex:
     def __init__(self, ids: NDArray[np.int64], /) -> None: ...

@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn nuclear_family_splits_parent_roles() {
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[]);
-        let got = count_pairs(&ped.borrow(), 5, None);
+        let got = count_pairs(&ped.try_borrow().unwrap(), 5, None);
         assert_eq!(
             got,
             expect(&[(Category::MO, 2), (Category::FO, 2), (Category::FS, 1)])
@@ -459,7 +459,7 @@ mod tests {
         // g(0) and h(1) have p(2); g and p have i(3).  Pair (g, i) is MO and
         // GP; pair (p, i) is FO and MHS through g.  The closest category wins.
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 2)], &[]);
-        let got = count_pairs(&ped.borrow(), 5, None);
+        let got = count_pairs(&ped.try_borrow().unwrap(), 5, None);
         assert_eq!(
             got,
             expect(&[(Category::MO, 2), (Category::FO, 2), (Category::GP, 1)])
@@ -469,7 +469,7 @@ mod tests {
     #[test]
     fn mz_co_twins_are_twins_not_sibs() {
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[(2, 3)]);
-        let got = count_pairs(&ped.borrow(), 5, None);
+        let got = count_pairs(&ped.try_borrow().unwrap(), 5, None);
         assert_eq!(
             got,
             expect(&[(Category::MZ, 1), (Category::MO, 2), (Category::FO, 2)])
@@ -479,9 +479,12 @@ mod tests {
     #[test]
     fn degree_cutoff_stops_the_fold_and_the_count() {
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 2)], &[]);
-        let got = count_pairs(&ped.borrow(), 1, None);
+        let got = count_pairs(&ped.try_borrow().unwrap(), 1, None);
         assert_eq!(got, expect(&[(Category::MO, 2), (Category::FO, 2)]));
-        assert_eq!(count_pairs(&ped.borrow(), 0, None), Counts::default());
+        assert_eq!(
+            count_pairs(&ped.try_borrow().unwrap(), 0, None),
+            Counts::default()
+        );
     }
 
     #[test]
@@ -490,9 +493,9 @@ mod tests {
         // k(4).  Selecting g and c keeps their GP pair although p is unselected.
         let ped = pedigree(&[(-1, -1), (-1, -1), (0, 1), (2, 4), (-1, -1)], &[]);
         let selected = [true, false, false, true, false];
-        let got = count_pairs(&ped.borrow(), 5, Some(&selected));
+        let got = count_pairs(&ped.try_borrow().unwrap(), 5, Some(&selected));
         assert_eq!(got, expect(&[(Category::GP, 1)]));
-        let all = count_pairs(&ped.borrow(), 5, None);
+        let all = count_pairs(&ped.try_borrow().unwrap(), 5, None);
         assert_eq!(
             all,
             expect(&[(Category::MO, 2), (Category::FO, 2), (Category::GP, 2)])
