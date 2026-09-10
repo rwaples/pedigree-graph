@@ -35,8 +35,8 @@ import scipy.sparse as sp
 from pedigree_graph._errors import ResourceError
 from pedigree_graph._kinship_dp import _build_kinship_csc, _fill_candidate_kinship_values
 from pedigree_graph._kinship_pairwise import memoised_kinship
-from pedigree_graph._pair_extractor import _requested_codes
-from pedigree_graph._registry import RELATIONSHIPS
+from pedigree_graph._pair_extractor import relationship_pairs
+from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._threads import thread_budget
 
 if TYPE_CHECKING:
@@ -157,7 +157,7 @@ class PedigreeMatrixMethods:
             PedigreeValidationError: As :meth:`relationship_pairs`.
             ResourceError: If CSC or allocation capacity is exceeded.
         """
-        return relationship_kinship_matrix(self, max_degree=max_degree, categories=categories)
+        return relationship_kinship_matrix(self, RelationshipSelection.parse(max_degree, categories))
 
     def approximate_kinship_matrix(
         self: PedigreeGraph,
@@ -433,29 +433,19 @@ def complete_kinship_matrix(graph: PedigreeGraph) -> sp.csc_matrix:
     return matrix
 
 
-def relationship_kinship_matrix(
-    graph: PedigreeGraph,
-    *,
-    max_degree: int | None,
-    categories: Iterable[str] | None,
-) -> sp.csc_matrix:
-    """Return the cached matrix on selected closest-category support."""
-    # Materialise a one-shot iterable once: validation and pair extraction both
-    # need to see the same selector.
-    category_arg: Iterable[str] | None = categories
-    if categories is not None and not isinstance(categories, str):
-        category_arg = tuple(categories)
-    requested = _requested_codes(max_degree, category_arg)
-    if max_degree is not None:
-        key: tuple[str, object] = ("max_degree", int(max_degree))
-    else:
-        key = ("categories", tuple(code for code in RELATIONSHIPS if code in requested))
+def relationship_kinship_matrix(graph: PedigreeGraph, selection: RelationshipSelection) -> sp.csc_matrix:
+    """Return the cached matrix on selected closest-category support.
+
+    The cache is keyed by the selection's canonical code order, so a cutoff
+    and the explicit code list it names are one entry, not two.
+    """
+    key = selection.ordered
     cached = graph._relationship_kinship_cache.get(key)
     if cached is not None:
         return cached
 
     started = time.perf_counter()
-    pairs = graph.relationship_pairs(max_degree=max_degree, categories=category_arg)
+    pairs = relationship_pairs(graph, selection)
     matrix = _support_from_relationships(graph, pairs)
     _exactify_support(graph, matrix)
     matrix = _freeze_csc(matrix)
@@ -464,7 +454,7 @@ def relationship_kinship_matrix(
         "relationship_kinship_matrix: n=%d, nnz=%d, requested=%s, %.2fs",
         graph.n_individuals,
         matrix.nnz,
-        ",".join(code for code in RELATIONSHIPS if code in requested),
+        ",".join(key),
         time.perf_counter() - started,
     )
     return matrix

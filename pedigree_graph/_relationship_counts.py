@@ -16,50 +16,40 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from pedigree_graph import _native
-from pedigree_graph._pair_extractor import _requested_codes
 from pedigree_graph._registry import RELATIONSHIPS
 from pedigree_graph._threads import thread_budget
 from pedigree_graph.relationships import RelationshipCountResult
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._selection import RelationshipSelection
     from pedigree_graph._view import PedigreeView
 
 
-def relationship_counts(
-    graph: PedigreeGraph,
-    *,
-    max_degree: int | None = None,
-    categories: Iterable[str] | None = None,
-) -> RelationshipCountResult:
+def relationship_counts(graph: PedigreeGraph, selection: RelationshipSelection) -> RelationshipCountResult:
     """Count the pairs of every requested category over the whole graph."""
-    return _count(graph, None, _requested_codes(max_degree, categories))
+    return _count(graph, None, selection)
 
 
-def view_relationship_counts(
-    view: PedigreeView,
-    *,
-    max_degree: int | None = None,
-    categories: Iterable[str] | None = None,
-) -> RelationshipCountResult:
+def view_relationship_counts(view: PedigreeView, selection: RelationshipSelection) -> RelationshipCountResult:
     """Count the pairs of every requested category with both rows in *view*."""
-    requested = _requested_codes(max_degree, categories)
     selected = np.zeros(view._graph.n_individuals, dtype=np.bool_)
     selected[view._graph_rows] = True
-    return _count(view._graph, selected, requested)
+    return _count(view._graph, selected, selection)
 
 
-def _count(graph: PedigreeGraph, selected: np.ndarray | None, requested: frozenset[str]) -> RelationshipCountResult:
+def _count(
+    graph: PedigreeGraph, selected: np.ndarray | None, selection: RelationshipSelection
+) -> RelationshipCountResult:
     """Run the engine at the degree of the highest requested code and keep the requested codes.
 
     A code's closest-category count depends only on the codes before it in
     registry order, so computing the rest of that degree changes nothing.
     """
+    requested = selection.codes
     values: dict[str, int | None] = dict.fromkeys(RELATIONSHIPS, None)
-    if requested:
-        top = max(RELATIONSHIPS[code].degree for code in requested)
+    top = selection.top_degree
+    if top is not None:
         counted = _native.relationship_counts(
             graph.mother_rows,
             graph.father_rows,

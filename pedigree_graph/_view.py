@@ -33,6 +33,7 @@ from pedigree_graph._input import (
 from pedigree_graph._kinship_pairwise import view_pair_kinship
 from pedigree_graph._pair_extractor import view_relationship_pairs
 from pedigree_graph._relationship_counts import view_relationship_counts
+from pedigree_graph._selection import RelationshipSelection
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -249,7 +250,7 @@ class PedigreeView:
             PedigreeValidationError: ``max_degree_out_of_range`` or
                 ``unknown_relationship_category``.
         """
-        return view_relationship_pairs(self, max_degree=max_degree, categories=categories)
+        return view_relationship_pairs(self, RelationshipSelection.parse(max_degree, categories))
 
     def relationship_counts(
         self,
@@ -268,7 +269,7 @@ class PedigreeView:
             A :class:`~pedigree_graph.relationships.RelationshipCountResult`
             over all 23 codes, ``None`` for unselected categories.
         """
-        return view_relationship_counts(self, max_degree=max_degree, categories=categories)
+        return view_relationship_counts(self, RelationshipSelection.parse(max_degree, categories))
 
     @overload
     def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...

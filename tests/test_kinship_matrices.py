@@ -10,7 +10,7 @@ import pytest
 import scipy.sparse as sp
 from conftest import parity_columns, parity_fixtures
 
-from pedigree_graph import PedigreeGraph
+from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 from pedigree_graph._kinship_matrix import _exactify_support
 from pedigree_graph._threads import _reset_thread_state, configure_threads
 
@@ -95,14 +95,22 @@ class TestRelationshipMatrix:
         np.testing.assert_array_equal(matrix.indices, np.arange(graph.n_individuals, dtype=np.int32))
         assert matrix.nnz == graph.n_individuals
 
-    def test_selector_specific_caches_do_not_alias(self):
+    def test_the_cache_is_per_selection_and_never_aliases_another_family(self):
+        """Repeat calls hit the cache; the relationship family stays its own contract.
+
+        ``max_degree=0`` and ``categories=["MZ"]`` name the same code, so since
+        the cache became selection-keyed they are one entry — covered by
+        :func:`test_equivalent_selectors_share_one_relationship_cache_entry`.
+        What must not alias is a *different* family: complete, closest-category,
+        and propagation-pruned support are distinct contracts even when a
+        pedigree makes them structurally identical.
+        """
         graph = _graph("single_individual")
         by_degree = graph.relationship_kinship_matrix(max_degree=0)
-        by_categories = graph.relationship_kinship_matrix(categories=["MZ"])
         assert by_degree is graph.relationship_kinship_matrix(max_degree=0)
-        assert by_categories is graph.relationship_kinship_matrix(categories=["MZ"])
-        assert by_degree is not by_categories
+        assert graph.relationship_kinship_matrix(categories=["FS"]) is not by_degree
         assert by_degree is not graph.kinship_matrix()
+        assert by_degree is not graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
 
     def test_one_shot_category_iterable_is_consumed_once(self):
         graph = _graph("double_first_cousins")
@@ -241,6 +249,26 @@ def test_random_30k_approximate_matrix_runs_full_exact_value_path():
     assert matrix.nnz == 53_817_918
     assert np.isfinite(matrix.data).all()
     assert np.all(matrix.diagonal() >= np.float32(0.5))
+
+
+def test_equivalent_selectors_share_one_relationship_cache_entry():
+    """``max_degree=2`` and the codes it names are one selection, so one entry.
+
+    Both selectors resolve to the same code set, hence the same support and the
+    same matrix.  Keying the cache by the resolved codes rather than by the
+    selector the caller happened to write collapses them; keying by selector
+    shape recomputes a matrix the graph already holds.
+    """
+    graph = _graph("random_1k")
+    codes = tuple(code for code, category in RELATIONSHIPS.items() if category.degree <= 2)
+
+    by_degree = graph.relationship_kinship_matrix(max_degree=2)
+    by_codes = graph.relationship_kinship_matrix(categories=codes)
+    shuffled = graph.relationship_kinship_matrix(categories=tuple(reversed(codes)))
+
+    assert len(graph._relationship_kinship_cache) == 1
+    assert by_codes is by_degree
+    assert shuffled is by_degree
 
 
 def test_release_kinship_matrices_drops_every_family_and_is_idempotent():

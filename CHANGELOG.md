@@ -6,6 +6,22 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: `relationship_kinship_matrix` caches by the codes selected, not by
+  the selector written.**  `max_degree=2` and the explicit list of the codes it
+  names are one selection, so they now share one cache entry and return the same
+  matrix object; previously each selector shape got its own entry and the second
+  call recomputed a matrix the graph already held.  Cache entries are keyed by
+  the selected codes in registry order, so code order and duplicates in
+  `categories=` no longer matter.  Counts and pairs are unchanged.
+
+  Internally the one-of-two `max_degree=` / `categories=` selector is now parsed
+  once at the public boundary into a frozen `RelationshipSelection`
+  (`_selection.py`) that the pair, count, and matrix engines share, replacing a
+  private helper of `_pair_extractor` that the other two modules imported.  A
+  one-shot `categories` iterable — a generator, say — is consumed exactly once
+  and is now safe at every endpoint.  The public signatures are unchanged and
+  the type is private.
+
 - **Removed: the experimental Python BFS relationship counter** (issue #7).
   `pedigree_graph.experimental.count_pairs_bfs`, the `_bfs_engine` and
   `_bfs_kernel` modules behind it, the `experimental` module that exposed it,

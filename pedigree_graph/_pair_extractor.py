@@ -35,14 +35,13 @@ from pedigree_graph._pair_utils import (
     project_pairs,
     sort_by_canonical_key,
 )
-from pedigree_graph._registry import RELATIONSHIPS, categories_up_to_degree, select_categories
+from pedigree_graph._registry import RELATIONSHIPS
 from pedigree_graph._threads import thread_budget
 from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._selection import RelationshipSelection
     from pedigree_graph._view import CoordinateToken, PedigreeView
 
 logger = logging.getLogger(__name__)
@@ -549,27 +548,6 @@ _DEBUG_EXCLUSIVITY_ENV = "PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY"
 _PairArrays = tuple[np.ndarray, np.ndarray]
 
 
-def _requested_codes(max_degree: int | None, categories: Iterable[str] | None) -> frozenset[str]:
-    """Validate the one-of-two selector and return the codes it names.
-
-    Raises:
-        TypeError: Both selectors, neither, a bare ``str`` for *categories*,
-            or a non-``str`` code.
-        PedigreeValidationError: ``max_degree_out_of_range`` or
-            ``unknown_relationship_category``.
-    """
-    if (max_degree is None) == (categories is None):
-        raise TypeError("exactly one of max_degree= or categories= is required")
-    if max_degree is not None:
-        selected = categories_up_to_degree(max_degree)
-    else:
-        if isinstance(categories, str):
-            raise TypeError("categories must be an iterable of codes, not a single str")
-        assert categories is not None
-        selected = select_categories(categories)
-    return frozenset(category.code for category in selected)
-
-
 def _classify(graph: PedigreeGraph, requested: frozenset[str]) -> dict[str, _PairArrays]:
     """Return the closest-category graph-row pairs of every code *requested* depends on."""
     computed = dependency_closure(requested)
@@ -602,39 +580,22 @@ def _build_result(
     return result
 
 
-def relationship_pairs(
-    graph: PedigreeGraph,
-    *,
-    max_degree: int | None = None,
-    categories: Iterable[str] | None = None,
-) -> RelationshipPairs:
-    """Build the :class:`RelationshipPairs` of *graph* for one selector.
+def relationship_pairs(graph: PedigreeGraph, selection: RelationshipSelection) -> RelationshipPairs:
+    """Build the :class:`RelationshipPairs` of *graph* for a parsed *selection*.
 
     Args:
         graph: The receiver; results are in its graph rows.
-        max_degree: Select every category at or below this degree.
-        categories: Select these registry codes.
+        selection: The resolved selector, parsed at the public boundary.
 
     Returns:
         All 23 blocks; the unselected ones are empty and unrequested.
-
-    Raises:
-        TypeError: Both selectors, neither, a bare ``str`` for *categories*,
-            or a non-``str`` code.
-        PedigreeValidationError: ``max_degree_out_of_range`` or
-            ``unknown_relationship_category``.
     """
-    requested = _requested_codes(max_degree, categories)
+    requested = selection.codes
     return _build_result(_classify(graph, requested), requested, graph._coordinate_token)
 
 
-def view_relationship_pairs(
-    view: PedigreeView,
-    *,
-    max_degree: int | None = None,
-    categories: Iterable[str] | None = None,
-) -> RelationshipPairs:
-    """Build the :class:`RelationshipPairs` of *view* for one selector.
+def view_relationship_pairs(view: PedigreeView, selection: RelationshipSelection) -> RelationshipPairs:
+    """Build the :class:`RelationshipPairs` of *view* for a parsed *selection*.
 
     Classification runs over the full graph; a pair is kept when both
     endpoints are selected and is relabelled into view rows.  Asymmetric
@@ -644,18 +605,13 @@ def view_relationship_pairs(
 
     Args:
         view: The receiver; results are in its view rows.
-        max_degree: Select every category at or below this degree.
-        categories: Select these registry codes.
+        selection: The resolved selector, parsed at the public boundary.
 
     Returns:
         All 23 blocks carrying the view's token; the unselected ones are
         empty and unrequested.
-
-    Raises:
-        TypeError: As :func:`relationship_pairs`.
-        PedigreeValidationError: As :func:`relationship_pairs`.
     """
-    requested = _requested_codes(max_degree, categories)
+    requested = selection.codes
     n = len(view)
     empty = np.array([], dtype=np.intp)
     pairs: dict[str, _PairArrays] = dict.fromkeys(requested, (empty, empty))

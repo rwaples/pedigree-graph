@@ -38,6 +38,7 @@ from pedigree_graph._pair_extractor import relationship_pairs as _relationship_p
 from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
 from pedigree_graph._properties import PedigreeProperties
 from pedigree_graph._relationship_counts import relationship_counts as _relationship_counts
+from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._streaming_counter import estimate_relationship_counts as _estimate_relationship_counts
 from pedigree_graph._threads import thread_budget
 from pedigree_graph._topology import build_topology, readonly
@@ -142,7 +143,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         # closest-category, and propagation-pruned support are distinct
         # contracts even when two calls happen to produce the same structure.
         self._complete_kinship_cache: sp.csc_matrix | None = None
-        self._relationship_kinship_cache: dict[tuple[str, object], sp.csc_matrix] = {}
+        self._relationship_kinship_cache: dict[tuple[str, ...], sp.csc_matrix] = {}
         self._approximate_kinship_cache: dict[float, sp.csc_matrix] = {}
         # The pair-recurrence memo the last kernel call left behind, reused as
         # the next call's starting table by pair_kinship and the relationship
@@ -644,7 +645,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             PedigreeValidationError: ``max_degree_out_of_range`` or
                 ``unknown_relationship_category``.
         """
-        return _relationship_pairs(self, max_degree=max_degree, categories=categories)
+        return _relationship_pairs(self, RelationshipSelection.parse(max_degree, categories))
 
     def relationship_counts(
         self,
@@ -671,7 +672,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             TypeError: As :meth:`relationship_pairs`.
             PedigreeValidationError: As :meth:`relationship_pairs`.
         """
-        return _relationship_counts(self, max_degree=max_degree, categories=categories)
+        return _relationship_counts(self, RelationshipSelection.parse(max_degree, categories))
 
     def estimate_relationship_counts(self, *, max_degree: int) -> RelationshipCountResult:
         """Estimate the number of pairs in every category up to *max_degree*.
