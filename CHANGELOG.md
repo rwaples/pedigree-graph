@@ -17,6 +17,12 @@ live on the corresponding GitHub release pages.
   into a read-only proxy.  A mapping missing a registry code or using the wrong
   order raises `ValueError`; these checks no longer disappear under `python -O`.
 
+- **Changed: `NeHillResult` enforces its three producer states.**  Sentinel,
+  birth-year-empty, and birth-year-populated results are distinguished by
+  `collapses_to_ne_v` and `n_eligible_cohorts`.  Direct construction of a record
+  whose diagnostics contradict its state now raises `ValueError`.  Estimator
+  output is unchanged.
+
 - **Changed: `relationship_kinship_matrix` caches by the codes selected, not by
   the selector written.**  `max_degree=2` and the explicit list of the codes it
   names are one selection, so they now share one cache entry and return the same

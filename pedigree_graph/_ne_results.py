@@ -373,15 +373,20 @@ class NeLTCResult(_FrozenResult):
 class NeHillResult(_FrozenResult):
     """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
 
-    Two operating modes:
+    The result has three states, identified by ``collapses_to_ne_v`` and
+    ``n_eligible_cohorts``:
 
-    * **Sentinel branch** (``collapses_to_ne_v=True``): used when
+    * **Sentinel** (``collapses_to_ne_v=True``): used when
       ``pg.birth_year is None``.  Hill 1979 with ``L = 1`` reduces
       algebraically to Ne_V (Caballero 1994 eq. 6 / Hill 1979 eq. 8 with
-      equal sexes), so ``ne`` is the Ne_V passthrough.  New diagnostic
-      fields are all ``None`` / ``0`` defaults.
-    * **Birth-year branch** (``collapses_to_ne_v=False``): used when
-      ``pg.birth_year`` is set.  Ne is computed per eligible birth-year
+      equal sexes), so ``ne`` is the Ne_V passthrough.  Birth-year diagnostic
+      fields retain their ``None`` / ``0`` defaults.
+    * **Birth-year empty** (``collapses_to_ne_v=False`` and
+      ``n_eligible_cohorts == 0``): birth-year context is present, but no
+      cohort has enough observations for an estimate.  ``ne``, cohort
+      summary diagnostics, and per-cohort arrays are ``None``.
+    * **Birth-year populated** (``collapses_to_ne_v=False`` and
+      ``n_eligible_cohorts > 0``): Ne is computed per eligible birth-year
       cohort via Hill 1979 eq. (10)::
 
           Ne(c) = 8·N1(c)·T / (σ²_m(c) + σ²_f(c) + 4)
@@ -447,6 +452,58 @@ class NeHillResult(_FrozenResult):
         if self.age_table is not None:
             frozen = {str(key): _owned_copy(value, np.asarray(value).dtype) for key, value in self.age_table.items()}
             object.__setattr__(self, "age_table", MappingProxyType(frozen))
+        self._validate_state()
+
+    def _validate_state(self) -> None:
+        context = ("T_m", "T_f", "cohort_window", "age_table")
+        summaries = ("N1_m", "N1_f", "Vk_m", "Vk_f", "kbar_m", "kbar_f", "Ne_m", "Ne_f")
+        series = (
+            "cohort_years",
+            "ne_per_cohort",
+            "Ne_m_per_cohort",
+            "Ne_f_per_cohort",
+            "Vk_m_per_cohort",
+            "Vk_f_per_cohort",
+            "N1_m_per_cohort",
+            "N1_f_per_cohort",
+        )
+        if self.n_eligible_cohorts < 0:
+            raise ValueError("NeHillResult.n_eligible_cohorts must be non-negative")
+        if self.collapses_to_ne_v:
+            nonzero_counts = any(
+                getattr(self, name) != 0
+                for name in (
+                    "n_eligible_cohorts",
+                    "n_excluded_right_censored",
+                    "n_excluded_left_censored",
+                    "n_unknown_birth_year",
+                    "n_offspring_pairs",
+                )
+            )
+            if (
+                self.generation_interval != 1.0
+                or nonzero_counts
+                or any(getattr(self, name) is not None for name in context + summaries + series)
+            ):
+                raise ValueError("NeHillResult sentinel state requires L=1 and no birth-year diagnostics")
+            return
+        if self.n_eligible_cohorts == 0:
+            if (
+                any(getattr(self, name) is None for name in context)
+                or self.ne is not None
+                or any(getattr(self, name) is not None for name in summaries + series)
+            ):
+                raise ValueError(
+                    "NeHillResult birth-year-empty state requires birth-year context and no cohort estimates"
+                )
+            return
+        required = ("ne", *context, *summaries, *series)
+        message = "NeHillResult birth-year-populated state requires complete diagnostics for every eligible cohort"
+        if any(getattr(self, name) is None for name in required):
+            raise ValueError(message)
+        cohort_years = self.cohort_years
+        if cohort_years is None or len(cohort_years) != self.n_eligible_cohorts:
+            raise ValueError(message)
 
 
 @dataclass(frozen=True, slots=True, eq=False)

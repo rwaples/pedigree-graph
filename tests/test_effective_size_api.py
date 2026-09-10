@@ -165,6 +165,15 @@ def _birth_year_pedigree() -> PedigreeGraph:
     return PedigreeGraph.from_frame(_df(rows).with_columns(pl.Series("birth_year", [r["birth_year"] for r in rows])))
 
 
+def _birth_year_pedigree_without_an_eligible_cohort() -> PedigreeGraph:
+    rows = [
+        {"id": 0, "sex": 1, "generation": 0, "birth_year": 1900},
+        {"id": 1, "sex": 0, "generation": 0, "birth_year": 1900},
+        {"id": 2, "sex": 1, "generation": 1, "birth_year": 1910, "father": 0, "mother": 1},
+    ]
+    return PedigreeGraph.from_frame(_df(rows).with_columns(pl.Series("birth_year", [r["birth_year"] for r in rows])))
+
+
 @dataclass(frozen=True)
 class _Estimator:
     name: str
@@ -385,6 +394,39 @@ def test_hill_age_table_is_an_immutable_mapping_of_read_only_arrays():
         result.age_table["ages_m"] = np.array([0])
     assert type(result.to_dict()["age_table"]) is dict
     _assert_owned_read_only(result)
+
+
+def test_hill_result_producers_cover_all_three_states(empty_graph):
+    sentinel = effective_size.ne_hill_overlapping(empty_graph)
+    birth_year_empty = effective_size.ne_hill_overlapping(_birth_year_pedigree_without_an_eligible_cohort())
+    birth_year_populated = effective_size.ne_hill_overlapping(_birth_year_pedigree())
+
+    assert (sentinel.collapses_to_ne_v, sentinel.n_eligible_cohorts) == (True, 0)
+    assert (birth_year_empty.collapses_to_ne_v, birth_year_empty.n_eligible_cohorts) == (False, 0)
+    assert birth_year_empty.ne is None
+    assert birth_year_empty.cohort_years is None
+    assert (birth_year_populated.collapses_to_ne_v, birth_year_populated.n_eligible_cohorts) == (False, 1)
+
+
+@pytest.mark.parametrize("changes", [{"generation_interval": 2.0}, {"T_m": 1.0}, {"n_eligible_cohorts": 1}])
+def test_hill_result_rejects_an_invalid_sentinel_state(empty_graph, changes):
+    result = effective_size.ne_hill_overlapping(empty_graph)
+    with pytest.raises(ValueError, match="sentinel state"):
+        replace(result, **changes)
+
+
+@pytest.mark.parametrize("changes", [{"ne": 10.0}, {"cohort_years": np.array([], dtype=np.int32)}])
+def test_hill_result_rejects_an_invalid_birth_year_empty_state(changes):
+    result = effective_size.ne_hill_overlapping(_birth_year_pedigree_without_an_eligible_cohort())
+    with pytest.raises(ValueError, match="birth-year-empty state"):
+        replace(result, **changes)
+
+
+@pytest.mark.parametrize("changes", [{"Vk_m": None}, {"n_eligible_cohorts": 2}])
+def test_hill_result_rejects_an_invalid_birth_year_populated_state(changes):
+    result = effective_size.ne_hill_overlapping(_birth_year_pedigree())
+    with pytest.raises(ValueError, match="birth-year-populated state"):
+        replace(result, **changes)
 
 
 @_over(ESTIMATORS)
