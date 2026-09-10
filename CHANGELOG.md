@@ -4,7 +4,23 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.8.4
+
+- **Fixed: the transient adjacency matrices are released on the failure path.**
+  `relationship_pairs` and `estimate_relationship_counts` released `_A` through
+  `_A5` only on success, so an exception left them resident for the graph's
+  lifetime.  `estimate_relationship_counts` reached that path through its own
+  clamping `RuntimeWarning` under an `error` filter.  Both releases now run in a
+  `finally`.
+
+- **Fixed: `estimate_effective_sizes` no longer hides unrelated warnings.**  The
+  Hill fallback suppressed every `RuntimeWarning` raised while computing the
+  variance estimator.  It now hides only the duplicate uniform-sex notice, which
+  the caller already received under the Hill estimator's own name.
+
+- **Fixed: the one-of-two selector error no longer names `relationship_pairs()`.**
+  `relationship_counts` and `relationship_kinship_matrix` share the selector, so
+  a caller of either was told a function it had not called was at fault.
 
 - **Changed: relationship `max_degree=` selectors require an integer.**  Values
   implementing the integer index protocol, including NumPy integer scalars,
