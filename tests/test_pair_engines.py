@@ -7,7 +7,10 @@ return results but never write the graph's estimate cache — the public
 wrappers do.
 """
 
+import warnings
+
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
@@ -89,3 +92,40 @@ class TestEngineReadOnlyContract:
         assert 2 in pg2._estimate_cache
         for code in estimate.requested:
             assert estimate[code] == raw[code] - overlaps[code], code
+
+
+RESIDENT_MATRICES = ("_A", "_A2", "_A3", "_A4", "_A5", "_A2_shared", "_full_sib_matrix", "_half_sib_matrix")
+
+
+def _resident(pg) -> list[str]:
+    return sorted(name for name in RESIDENT_MATRICES if name in pg.__dict__)
+
+
+class TestMatrixReleaseIsExceptionSafe:
+    """Both wrappers release the adjacency powers on the failure path too (issue #4)."""
+
+    def test_relationship_pairs_releases_when_extraction_raises(self, small_pedigree, monkeypatch):
+        pg = PedigreeGraph.from_frame(small_pedigree)
+
+        def boom(self):
+            raise MemoryError("simulated failure inside extract()")
+
+        monkeypatch.setattr(PedigreeGraph, "_mz_twin_pairs", boom)
+        with pytest.raises(MemoryError):
+            pg.relationship_pairs(max_degree=3)
+        assert _resident(pg) == []
+
+    def test_estimate_releases_when_its_own_warning_is_an_error(self, small_pedigree, monkeypatch):
+        pg = PedigreeGraph.from_frame(small_pedigree)
+        real = StreamingPairCounter.count
+
+        def always_clamped(self, max_degree):
+            raw, overlaps, _ = real(self, max_degree)
+            return raw, overlaps, frozenset({"H1C"})
+
+        monkeypatch.setattr(StreamingPairCounter, "count", always_clamped)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            with pytest.raises(RuntimeWarning):
+                pg.estimate_relationship_counts(max_degree=3)
+        assert _resident(pg) == []

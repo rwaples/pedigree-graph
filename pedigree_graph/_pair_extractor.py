@@ -559,7 +559,7 @@ def _requested_codes(max_degree: int | None, categories: Iterable[str] | None) -
             ``unknown_relationship_category``.
     """
     if (max_degree is None) == (categories is None):
-        raise TypeError("relationship_pairs() takes exactly one of max_degree= or categories=")
+        raise TypeError("exactly one of max_degree= or categories= is required")
     if max_degree is not None:
         selected = categories_up_to_degree(max_degree)
     else:
@@ -573,8 +573,10 @@ def _requested_codes(max_degree: int | None, categories: Iterable[str] | None) -
 def _classify(graph: PedigreeGraph, requested: frozenset[str]) -> dict[str, _PairArrays]:
     """Return the closest-category graph-row pairs of every code *requested* depends on."""
     computed = dependency_closure(requested)
-    pairs = MatrixPairExtractor(graph, max_workers=thread_budget()).extract(computed)
-    graph._release_pair_matrices()
+    try:
+        pairs = MatrixPairExtractor(graph, max_workers=thread_budget()).extract(computed)
+    finally:
+        graph._release_pair_matrices()
     _fold_precedence(pairs, [code for code in RELATIONSHIPS if code in computed], graph.n_individuals)
     return pairs
 

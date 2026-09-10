@@ -9,6 +9,7 @@ with the eight direct estimators, and serialization.
 from __future__ import annotations
 
 import json
+import warnings
 from collections.abc import Mapping
 from types import MappingProxyType
 
@@ -392,3 +393,38 @@ class TestThreadBudget:
 def test_injected_keywords_are_rejected(kwargs):
     with pytest.raises(TypeError):
         estimate_effective_sizes(_graph(), **kwargs)
+
+
+class TestHillFallbackWarningScope:
+    """The Hill fallback hides only the duplicate uniform-sex notice."""
+
+    _UNIFORM = {
+        "id": _IDS,
+        "mother": _MOTHER,
+        "father": _FATHER,
+        "sex": np.zeros(len(_IDS), dtype=np.int64),
+        "generation": _GEN,
+    }
+
+    def _run(self, monkeypatch, *, noisy):
+        pg = PedigreeGraph.from_frame(self._UNIFORM)
+        if noisy:
+            real = ne_estimate._variance_from
+
+            def unrelated(cohorts, table):
+                warnings.warn("nan encountered in the variance table", RuntimeWarning, stacklevel=2)
+                return real(cohorts, table)
+
+            monkeypatch.setattr(ne_estimate, "_variance_from", unrelated)
+        with warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("always")
+            estimate_effective_sizes(pg, ["ne_hill_overlapping"])
+        return [str(record.message) for record in seen]
+
+    def test_an_unrelated_runtime_warning_still_reaches_the_caller(self, monkeypatch):
+        assert any("nan encountered" in message for message in self._run(monkeypatch, noisy=True))
+
+    def test_the_duplicate_uniform_sex_notice_stays_hidden(self, monkeypatch):
+        messages = self._run(monkeypatch, noisy=False)
+        assert any(message.startswith("ne_hill_overlapping: pg.sex is uniform") for message in messages)
+        assert not any(message.startswith("ne_variance_family_size: pg.sex is uniform") for message in messages)

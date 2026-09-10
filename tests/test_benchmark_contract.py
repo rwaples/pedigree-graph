@@ -24,7 +24,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "benchmarks"))
 
-from _harness import GATE, ContractError, Environment, verify_report  # noqa: E402
+import _harness  # noqa: E402
+from _harness import GATE, Cell, ContractError, Environment, _spawn, verify_report  # noqa: E402
 
 # A cited /tmp path is only a violation when it is the *method* behind a number.
 # A scratch output directory is not, so the pattern requires a script suffix and
@@ -157,3 +158,41 @@ def test_local_result_files_satisfy_the_contract(path):
     if not isinstance(payload, dict) or "schema" not in payload:
         pytest.skip(f"{path.name} predates the contract; regenerate it with the current harness")
     verify_report(path)
+
+
+class TestChildAndReportHandling:
+    """A noisy child and an interrupted write are both survivable."""
+
+    def test_spawn_does_not_time_out_on_a_child_that_floods_stderr(self, tmp_path):
+        script = tmp_path / "noisy.py"
+        script.write_text("import json, sys\nsys.stderr.write('x' * 200_000)\nprint(json.dumps({'seconds': 0.5}))\n")
+        outcome = _spawn(script, Cell("fixture", "arm"), timeout_s=60.0)
+        assert not outcome.timed_out
+        assert outcome.record == {"seconds": 0.5}
+
+    def test_spawn_names_a_child_that_wrote_no_record(self, tmp_path):
+        script = tmp_path / "silent.py"
+        script.write_text("pass\n")
+        with pytest.raises(ContractError, match="no record"):
+            _spawn(script, Cell("fixture", "arm"), timeout_s=60.0)
+
+    def test_write_keeps_the_previous_report_when_the_new_one_fails(self, tmp_path, monkeypatch):
+        target = tmp_path / "report.json"
+        target.write_text(json.dumps({"valid": "previous report"}))
+        monkeypatch.setattr(_harness, "_report", lambda *a, **k: _FakeReport())
+        real_write_text = Path.write_text
+
+        def fails_halfway(self, data, *args, **kwargs):
+            real_write_text(self, data[: len(data) // 2])
+            raise OSError("disk full")
+
+        monkeypatch.setattr(Path, "write_text", fails_halfway)
+        with pytest.raises(OSError, match="disk full"):
+            _harness._write(None, target, {}, {}, {}, 1.0)
+        monkeypatch.undo()
+        assert json.loads(target.read_text()) == {"valid": "previous report"}
+
+
+class _FakeReport:
+    def as_dict(self) -> dict[str, str]:
+        return {"new": "x" * 200}

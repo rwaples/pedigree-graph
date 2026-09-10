@@ -94,26 +94,29 @@ def _estimate(graph: PedigreeGraph, max_degree: int) -> CachedEstimate:
     if cached is not None:
         return cached
 
-    raw, overlaps, clamped = StreamingPairCounter(graph).count(md)
-    requested = frozenset(code for code, category in RELATIONSHIPS.items() if category.degree <= md)
-    exact = requested & estimate_exact_codes()
-    values = {code: raw[code] - overlaps[code] if code in requested else None for code in RELATIONSHIPS}
-    result = RelationshipCountResult(values, requested, exact, requested - exact, clamped)
-    if clamped:
-        names = ", ".join(code for code in RELATIONSHIPS if code in clamped)
-        warnings.warn(
-            f"estimate_relationship_counts(max_degree={md}): the scalar residual for {names} "
-            "underflowed and was clamped to 0, so those counts are unreliable rather than a true "
-            "absence (typically inbreeding or complex mating); use relationship_counts for exact values",
-            RuntimeWarning,
-            stacklevel=4,
-        )
-    entry = CachedEstimate(result)
-    graph._estimate_cache[md] = entry
-    # _A…_A5 would otherwise stay resident for the graph's lifetime and inflate
-    # later inbreeding / Ne work (issue #4).
-    graph._release_pair_matrices()
-    return entry
+    try:
+        raw, overlaps, clamped = StreamingPairCounter(graph).count(md)
+        requested = frozenset(code for code, category in RELATIONSHIPS.items() if category.degree <= md)
+        exact = requested & estimate_exact_codes()
+        values = {code: raw[code] - overlaps[code] if code in requested else None for code in RELATIONSHIPS}
+        result = RelationshipCountResult(values, requested, exact, requested - exact, clamped)
+        if clamped:
+            names = ", ".join(code for code in RELATIONSHIPS if code in clamped)
+            warnings.warn(
+                f"estimate_relationship_counts(max_degree={md}): the scalar residual for {names} "
+                "underflowed and was clamped to 0, so those counts are unreliable rather than a true "
+                "absence (typically inbreeding or complex mating); use relationship_counts for exact values",
+                RuntimeWarning,
+                stacklevel=4,
+            )
+        entry = CachedEstimate(result)
+        graph._estimate_cache[md] = entry
+        return entry
+    finally:
+        # _A…_A5 would otherwise stay resident for the graph's lifetime and inflate
+        # later inbreeding / Ne work (issue #4).  In a ``finally`` because the
+        # warning above becomes an exception under an "error" filter.
+        graph._release_pair_matrices()
 
 
 class StreamingPairCounter:

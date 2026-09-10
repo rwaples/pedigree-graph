@@ -307,7 +307,13 @@ class _Prerequisites:
             return _ltc_from(cohorts, self.founder_means(), 1e-6)
         if name == "ne_hill_overlapping":
             with warnings.catch_warnings():
-                warnings.simplefilter("ignore", RuntimeWarning)
+                # Only the duplicate uniform-sex notice from the nested call; the
+                # caller already had it under this estimator's own name.
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"ne_variance_family_size: pg\.sex is uniform",
+                    category=RuntimeWarning,
+                )
                 variance = self.result("ne_variance_family_size")
             assert isinstance(variance, NeVarianceResult)
             return _hill_from_variance(variance, self.hill_vk_scale)

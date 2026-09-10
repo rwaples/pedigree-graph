@@ -60,6 +60,7 @@ import platform
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -666,29 +667,38 @@ def _spawn(script: Path, cell: Cell, timeout_s: float) -> _ChildOutcome:
     child itself, so rusage is never exposed.  That is why one existing script
     has a timeout and no ``ru_maxrss`` and the other has ``ru_maxrss`` and no
     timeout.  This is the first place in the repository that needs both.
+
+    Output goes to temporary files rather than pipes.  Nothing can drain a pipe
+    until ``wait4`` has reaped the child, so a child noisy enough to fill one
+    would block on write and be killed at the deadline as a spurious timeout.
     """
     env = {**os.environ, **PINNED_ENV}
     command = [sys.executable, str(script), "--cell", str(cell)]
-    proc = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    deadline = time.monotonic() + timeout_s
-    usage = None
-    while True:
-        pid, status, rusage = os.wait4(proc.pid, os.WNOHANG)
-        if pid:
-            usage = rusage
-            break
-        if time.monotonic() > deadline:
-            proc.kill()
-            os.wait4(proc.pid, 0)
-            return _ChildOutcome(None, 0.0, True)
-        time.sleep(0.05)
+    with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
+        proc = subprocess.Popen(command, env=env, stdout=out, stderr=err)
+        deadline = time.monotonic() + timeout_s
+        while True:
+            pid, status, rusage = os.wait4(proc.pid, os.WNOHANG)
+            if pid:
+                break
+            if time.monotonic() > deadline:
+                proc.kill()
+                os.wait4(proc.pid, 0)
+                return _ChildOutcome(None, 0.0, True)
+            time.sleep(0.05)
+        out.seek(0)
+        stdout = out.read()
+        err.seek(0)
+        stderr = err.read()
 
-    stdout, stderr = proc.communicate()
     exit_code = os.waitstatus_to_exitcode(status)
+    proc.returncode = exit_code  # reaped above by wait4, so Popen never learns it otherwise
     if exit_code != 0:
         raise ContractError(f"{cell} child exited {exit_code}\n{stderr}")
-    line = stdout.strip().splitlines()[-1]
-    return _ChildOutcome(json.loads(line), usage.ru_maxrss / 1024.0, False)
+    lines = stdout.strip().splitlines()
+    if not lines:
+        raise ContractError(f"{cell} child wrote no record\n{stderr}")
+    return _ChildOutcome(json.loads(lines[-1]), rusage.ru_maxrss / 1024.0, False)
 
 
 def _schedule(cells: Sequence[Cell], repeat: int, order: RunOrder) -> Iterator[tuple[Cell, int]]:
@@ -987,9 +997,10 @@ def _write(
     timeout_s: float,
 ) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps(_report(suite, runs, outcomes, environments, timeout_s).as_dict(), indent=2, sort_keys=True)
-    )
+    payload = json.dumps(_report(suite, runs, outcomes, environments, timeout_s).as_dict(), indent=2, sort_keys=True)
+    staged = out.with_name(f"{out.name}.partial")
+    staged.write_text(payload)
+    os.replace(staged, out)
 
 
 def main(suite: Suite) -> NoReturn:
