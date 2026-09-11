@@ -25,16 +25,42 @@ labels really are ``0..k-1`` before relying on it.
 One documented migration is allowed through: 6b gave each parentless MZ
 co-twin its own Caballero-Toro founder column, 6c gives the pair one
 founder-genome column (ADR 0008), so ``n_founders_with_descendants_per_gen``
-may drop by at most the number of parentless MZ pairs in the fixture, and
-the long-term-contribution sum of squares runs over fewer columns, so its
-floating summation order moves in the last bit.  The shipped
-``small_pedigree`` carries three such pairs; every other fixture is exact.
+may drop by at most the number of parentless MZ pairs in the fixture.  The
+shipped ``small_pedigree`` carries three such pairs; every other fixture is
+exact.
 
 The second migration is a fix: 6b accepted any negative regression slope, so
 a flat series regressed to an Ne of order 1e16 from least-squares noise (the
 ``skip_gen`` inbreeding scalar in the golden, slope ``-6e-18``).  6c reports
 no estimate for a slope above ``-1e-12``; the golden's noise Ne must become
 ``None`` and nothing else may change.
+
+The third is a correction the golden has not caught up with, so
+``ne_individual_delta_f`` is excluded from the field comparison outright.  It
+used ``ΔF_i = 1 − (1 − F_i)^(1/(t−1))`` over rows with ``t > 1``, aggregated by
+harmonic mean of the per-cohort Ne; Gutiérrez eq. 2 is ``1/t`` over rows with
+``t > 0``, and §2.1 averages ΔF_i over a reference subpopulation (ADR 0012,
+issue #15).  Both the values and the record shape changed by design — the
+record gained ``standard_error``, ``n_reference``, ``reference_generation``
+and ``ne_unrelated_founders`` — so no field of the 6b payload still describes
+the estimator.  Its key stays in the key-set assertion, and the exclusion goes
+away when ``tests/data/ne_baseline_6b`` is regenerated at the end of the
+issue-15 work.
+
+The fourth is the same, so ``ne_long_term_contributions`` is excluded
+outright too.  It reported ``1/(2·Σc²)``; Wray & Thompson 1990 eq. 31 is
+``Ne ≈ 2N/(μ_r² + σ_r²)``, which at ``μ_r = 1`` gives ``Σr² = N·Σc²`` and so
+``Ne = 2/Σc²``, and Caballero & Toro 2000 eq. 19 is
+``N_ef = 1/[(1/N²)Σc²_{i(0,t)}]``, i.e. ``N_ef = 1/Σc²``, with their own text
+after eq. 20 giving ``N_ef = Ne/2`` (ADR 0012, issue #15).  The record shape
+changed with the values: it gained ``n_effective_founders``, and
+``n_iterations`` became ``n_cohorts``, which counts observed cohorts rather
+than the adjacent comparisons the deleted convergence loop made.  The golden
+carries an ``ne`` on ``closed_line_5`` alone, 1.0 against the corrected 4.0;
+on the other five ``tol = 1e-6`` was tighter than the contributions' own
+fluctuation, so 6b reported no estimate at all, which is the symptom that hid
+the error.  Its key stays in the key-set assertion, and this exclusion goes
+away with the same regeneration.
 """
 
 from __future__ import annotations
@@ -58,6 +84,7 @@ FIXTURES = sorted(golden.fixtures())
 
 _LABEL_FIELDS = ("generations", "parent_generations", "transition_from", "transition_to", "final_generation")
 _RATE_BASED = ("ne_inbreeding", "ne_coancestry", "ne_caballero_toro")
+_REWRITTEN_SINCE_THE_GOLDEN = ("ne_individual_delta_f", "ne_long_term_contributions")
 
 
 def _parentless_mz_pairs(pg: PedigreeGraph) -> int:
@@ -100,11 +127,9 @@ def test_the_estimators_match_slice_6b(name: str) -> None:
         assert np.all((ct_drop >= 0) & (ct_drop <= merged_pairs))
         expected["ne_caballero_toro"].pop(ct_key)
         actual["ne_caballero_toro"].pop(ct_key)
-        for key in ("sum_c_squared", "max_delta_final", "ne"):
-            got = actual["ne_long_term_contributions"].pop(key)
-            want = expected["ne_long_term_contributions"].pop(key)
-            assert got == pytest.approx(want, rel=1e-9, abs=1e-14) if want is not None else got is None
     for estimator in expected:
+        if estimator in _REWRITTEN_SINCE_THE_GOLDEN:
+            continue
         want, got = expected[estimator], actual[estimator]
         if want.get("ne") is not None and -1e-12 < (want.get("slope") or -1.0) < 0:
             assert got["ne"] is None, f"{estimator}: noise slope {want['slope']} must give no estimate"

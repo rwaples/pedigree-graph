@@ -15,7 +15,7 @@ import numpy as np
 import polars as pl
 import pytest
 
-from pedigree_graph import PedigreeGraph, ResourceError, effective_size
+from pedigree_graph import PedigreeGraph, PedigreeValidationError, ResourceError, effective_size
 from pedigree_graph import _ne_common as ne_common
 from pedigree_graph._cohorts import _densify_labels as _cohorts_densify_labels
 from pedigree_graph._kinship_kernel import _densify_labels as _kernel_densify_labels
@@ -274,6 +274,8 @@ def test_empty_graph_yields_no_estimate(empty_graph, est):
 def test_empty_graph_ltc_has_no_final_generation(empty_graph):
     result = effective_size.ne_long_term_contributions(empty_graph)
     assert result.final_generation is None
+    assert result.ne is None
+    assert result.n_effective_founders is None
     assert result.sum_c_squared == 0.0
 
 
@@ -343,20 +345,150 @@ def test_transition_labels_are_the_adjacent_cohort_pairs(line_graph, est):
     assert result.ne_per_gen.shape == (max(result.generations.shape[0] - 1, 0),)
 
 
-def test_ltc_final_generation_names_the_stopping_cohort(line_graph):
+def test_ltc_final_generation_names_the_last_observed_cohort(line_graph):
     result = effective_size.ne_long_term_contributions(line_graph)
     generations = effective_size.ne_inbreeding(line_graph).generations
-    assert result.n_iterations == 1
-    assert result.final_generation == int(generations[result.n_iterations])
+    assert result.n_cohorts == 5
+    assert result.final_generation == int(generations[-1])
 
 
-def test_ltc_counts_every_adjacent_cohort_comparison_it_makes():
-    """The MZ pedigree's cohort 0 holds an extra co-twin row, so the first comparison misses tol."""
-    pg = _mz_founder_pedigree()
-    result = effective_size.ne_long_term_contributions(pg)
-    generations = effective_size.ne_caballero_toro(pg).generations
-    assert result.n_iterations == 2
-    assert result.final_generation == int(generations[result.n_iterations])
+def test_a_parentless_mz_pair_is_one_effective_founder():
+    """Record level: the co-twins' shared contribution column (ADR 0008) leaves the record two founder genomes."""
+    mz = effective_size.ne_long_term_contributions(_mz_founder_pedigree())
+    assert mz.n_effective_founders == 2.0
+    assert mz.n_cohorts == 3
+    assert mz.final_generation == 2
+    assert mz.to_dict() == effective_size.ne_long_term_contributions(_single_founder_pedigree()).to_dict()
+
+
+def _rows_labelled(pg: PedigreeGraph, *labels: int) -> np.ndarray:
+    return np.flatnonzero(np.isin(np.asarray(pg.generation_labels), labels))
+
+
+def test_the_default_delta_f_reference_is_the_last_observed_cohort(line_graph):
+    default = effective_size.ne_individual_delta_f(line_graph)
+    explicit = effective_size.ne_individual_delta_f(line_graph, reference=_rows_labelled(line_graph, 4))
+    assert default == explicit
+    assert default.reference_generation == 4
+
+
+def test_a_narrower_delta_f_reference_moves_the_scalar_but_not_the_series(line_graph):
+    whole = effective_size.ne_individual_delta_f(line_graph)
+    part = effective_size.ne_individual_delta_f(line_graph, reference=_rows_labelled(line_graph, 2))
+    assert part.n_reference == 2
+    assert part.reference_generation == 2
+    assert part.ne != whole.ne
+    assert np.array_equal(part.ne_per_gen, whole.ne_per_gen, equal_nan=True)
+
+    assert whole.ne == pytest.approx(3.142606753941622, rel=1e-12)
+    assert whole.ne_unrelated_founders == pytest.approx(2.423661050931537, rel=1e-12)
+    assert part.ne == pytest.approx(3.732050807568876, rel=1e-12)
+    assert part.ne_unrelated_founders == pytest.approx(2.0, abs=1e-12)
+    assert part.ne_unrelated_founders != whole.ne_unrelated_founders
+
+
+def test_a_delta_f_reference_spanning_two_cohorts_has_no_single_label(line_graph):
+    result = effective_size.ne_individual_delta_f(line_graph, reference=_rows_labelled(line_graph, 3, 4))
+    assert result.n_reference == 4
+    assert result.reference_generation is None
+
+
+def test_the_delta_f_reference_label_follows_the_eligible_rows(line_graph):
+    """Founders carry no rate, so they neither count toward N nor claim the label."""
+    result = effective_size.ne_individual_delta_f(line_graph, reference=_rows_labelled(line_graph, 0, 2))
+    assert result.n_reference == 2
+    assert result.reference_generation == 2
+
+
+def test_a_one_generation_deep_delta_f_reference_yields_no_unrelated_founder_diagnostic(line_graph):
+    """``ne`` accepts ``t > 0`` and the diagnostic ``t > 1``, so only this direction of disagreement exists.
+
+    These rows have ``t = 1`` and ``F = 0``, eligible for ``ne`` but carrying
+    no drift, so ΔF̄ is 0 and neither field reports a number.  A reference
+    where ``ne`` is a number and the diagnostic is ``None`` needs some row with
+    ``F_i > 0`` at ``t_i ≤ 1``, and ``F_i > 0`` needs two known parents (1.0 of
+    ``t_i`` between them) that are themselves related, which adds a further
+    known ancestor path at meiotic distance 2 worth 0.25.  So ``F_i > 0``
+    forces ``t_i ≥ 1.25``, a floor realised by parent-offspring mating
+    (``F = 0.25`` at ``t = 1.25``; full-sib mating gives 2.0).
+
+    The one structure that escapes the floor is a child of two MZ co-twins,
+    ``F = 0.5`` at ``t = 1``, which the test below pins.
+    """
+    result = effective_size.ne_individual_delta_f(line_graph, reference=_rows_labelled(line_graph, 1))
+    assert result.n_reference == 2
+    assert result.ne is None
+    assert result.ne_unrelated_founders is None
+
+
+def _mz_parent_pedigree() -> PedigreeGraph:
+    """A child of two MZ co-twins: one genome node in both parent roles.
+
+    ``check_same_parent`` forbids one *row* in both roles and the MZ sex check
+    forbids co-twins of differing known sex, but neither forbids this, and ADR
+    0008 makes the genome node the semantic unit that makes it meaningful.
+    """
+    return PedigreeGraph.from_frame(
+        _df(
+            [
+                {"id": 0, "sex": 0, "generation": 0, "twin": 1},
+                {"id": 1, "sex": 0, "generation": 0, "twin": 0},
+                {"id": 2, "sex": 1, "generation": 1, "mother": 0, "father": 1},
+            ]
+        )
+    )
+
+
+def test_the_stricter_diagnostic_eligibility_can_empty_out_while_ne_still_reports():
+    """``F = 0.5`` at ``t = 1`` is the one place the two eligibility rules disagree.
+
+    Selfing a genome node puts a full generation of drift into a row one
+    generation deep, which is the only way past the ``t_i ≥ 1.25`` floor the
+    test above derives.  ``ne`` takes the row at ``t > 0`` and reports
+    ``1/(2·0.5)``; the diagnostic wants ``t > 1``, finds nothing, and reports
+    ``None`` rather than a number over an empty average.
+    """
+    result = effective_size.ne_individual_delta_f(_mz_parent_pedigree(), reference=[2])
+    assert result.n_reference == 1
+    assert result.ne == pytest.approx(1.0, abs=1e-12)
+    assert result.ne_unrelated_founders is None
+
+
+def test_the_unrelated_founder_diagnostic_narrows_the_reference_without_a_count(line_graph):
+    """All four rows feed ``ne``; only the two at ``t = 2`` feed the diagnostic, and nothing reports that."""
+    result = effective_size.ne_individual_delta_f(line_graph, reference=_rows_labelled(line_graph, 1, 2))
+    assert result.n_reference == 4
+    assert result.ne == pytest.approx(7.464101615137752, rel=1e-12)
+    assert result.ne_unrelated_founders == pytest.approx(2.0, abs=1e-12)
+
+
+def test_an_empty_delta_f_reference_and_an_empty_graph_have_no_unrelated_founder_diagnostic(line_graph, empty_graph):
+    assert effective_size.ne_individual_delta_f(line_graph, reference=[]).n_reference == 0
+    assert effective_size.ne_individual_delta_f(line_graph, reference=[]).ne_unrelated_founders is None
+    assert effective_size.ne_individual_delta_f(empty_graph).ne_unrelated_founders is None
+
+
+def test_a_delta_f_reference_of_founders_alone_yields_no_estimate(line_graph):
+    result = effective_size.ne_individual_delta_f(line_graph, reference=_rows_labelled(line_graph, 0))
+    assert result.n_reference == 0
+    assert result.ne is None
+    assert result.standard_error is None
+    assert result.reference_generation is None
+
+
+def test_a_delta_f_reference_row_outside_the_pedigree_is_rejected(line_graph):
+    with pytest.raises(PedigreeValidationError) as excinfo:
+        effective_size.ne_individual_delta_f(line_graph, reference=[0, 10])
+    assert excinfo.value.code == "reference_row_out_of_range"
+    assert excinfo.value.fields == {"row": 10, "position": 1, "n_individuals": 10}
+
+
+def test_a_repeated_delta_f_reference_row_is_rejected(line_graph):
+    """A repeat would weight one individual twice in ΔF̄ with nothing to show for it."""
+    with pytest.raises(PedigreeValidationError) as excinfo:
+        effective_size.ne_individual_delta_f(line_graph, reference=[8, 9, 8])
+    assert excinfo.value.code == "duplicate_reference_row"
+    assert excinfo.value.fields == {"row": 8, "positions": (0, 2), "duplicate_count": 1}
 
 
 @_over(ESTIMATORS)
@@ -434,6 +566,20 @@ def test_to_dict_returns_plain_python(line_graph, est):
     _assert_plain_python(est.call(line_graph).to_dict(), est.name)
 
 
+def test_the_serialized_delta_f_record_always_carries_the_diagnostic_key(line_graph, empty_graph):
+    """The key's presence is how a consumer tells a post-ADR-0012 record from a 0.8 one.
+
+    simACE reads it that way: only the corrected estimator reports
+    ``ne_unrelated_founders``, so the key must survive serialization even
+    where the value is ``None``, or the probe silently misreads a current
+    record as an old one.
+    """
+    for pg in (line_graph, empty_graph):
+        payload = effective_size.ne_individual_delta_f(pg).to_dict()
+        assert "ne_unrelated_founders" in payload
+    assert effective_size.ne_individual_delta_f(empty_graph).to_dict()["ne_unrelated_founders"] is None
+
+
 @pytest.mark.parametrize("d", [1e-3, 1e-9])
 def test_transition_ne_recovers_a_constant_rate_across_label_gaps(d):
     generations = np.array([0, 2, 5, 9])
@@ -475,9 +621,19 @@ def test_rebasing_the_labels_shifts_only_the_ltc_final_generation():
     shifted = effective_size.ne_long_term_contributions(
         PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
     )
-    assert base.final_generation == 1
-    assert shifted.final_generation == 11
+    assert base.final_generation == 4
+    assert shifted.final_generation == 14
     assert replace(base, final_generation=shifted.final_generation) == shifted
+
+
+def test_rebasing_the_labels_shifts_only_the_delta_f_reference_generation():
+    base = effective_size.ne_individual_delta_f(PedigreeGraph.from_frame(_closed_line(4)))
+    shifted = effective_size.ne_individual_delta_f(
+        PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
+    )
+    assert base.reference_generation == 4
+    assert shifted.reference_generation == 14
+    assert replace(base, generations=shifted.generations, reference_generation=shifted.reference_generation) == shifted
 
 
 def test_sparse_labels_are_reported_as_observed():
@@ -571,7 +727,7 @@ def test_labels_that_merge_structural_depths_propagate_by_structure():
     m_g = _per_gen_founder_means(pg).m_g
     assert m_g == pytest.approx(np.full((3, 2), 0.5))
     assert m_g.sum(axis=1) == pytest.approx(1.0)
-    assert effective_size.ne_long_term_contributions(pg).final_generation == 1
+    assert effective_size.ne_long_term_contributions(pg).final_generation == 2
     assert np.array_equal(effective_size.ne_caballero_toro(pg).generations, [0, 1, 2])
 
 

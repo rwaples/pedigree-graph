@@ -24,9 +24,9 @@ from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._input import (
     _INT32_MAX,
     _INT64_MAX,
+    _check_duplicate_rows,
     _coerce_row_selection,
     _coerce_selection,
-    _duplicate_witness,
     _FieldSpec,
     _own,
 )
@@ -77,27 +77,6 @@ def _row_out_of_range(value: object, position: int, n_individuals: int) -> Pedig
         row=value,
         position=position,
         n_individuals=n_individuals,
-    )
-
-
-def _check_duplicate_rows(rows: np.ndarray, n_individuals: int, code: str, key: str, values: np.ndarray) -> None:
-    """Raise *code* when in-range *rows* repeat, naming the smallest repeated entry of *values*.
-
-    Uniqueness is an O(n) mark over the row range; the sort-based witness runs
-    only once a repeat is known, so the failure path shares the constructor's
-    ``duplicate_id`` rule while the success path never sorts.
-    """
-    seen = np.zeros(n_individuals, dtype=bool)
-    seen[rows] = True
-    if int(np.count_nonzero(seen)) == rows.size:
-        return
-    witness = _duplicate_witness(values)
-    assert witness is not None
-    duplicated, positions, count = witness
-    raise PedigreeValidationError(
-        code,
-        f"{key} {duplicated} appears at positions {positions}; {count} selected {key}(s) repeat an earlier one",
-        **{key: duplicated, "positions": positions, "duplicate_count": count},
     )
 
 

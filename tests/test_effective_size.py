@@ -13,6 +13,7 @@ from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._kinship_kernel import _compute_eqg, _compute_generation_kinship_summary
 from pedigree_graph._ne_caballero_toro import CTAccumulators, _caballero_toro_accumulators
+from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
     FamilySizeEntry,
     Sigma2Decomposition,
@@ -342,67 +343,241 @@ def test_ne_coancestry_toy1_smoke():
 
 
 def test_ne_individual_delta_f_closed_line():
-    """Per-individual ΔF on the closed-line full-sib chain.
+    """Gutiérrez eq. 2 on the closed-line full-sib chain.
 
-    EqG values: gen 1 → 1 (excluded; ΔF undefined for EqG=1),
-    gen 2 → 2, gen 3 → 3, gen 4 → 4, gen 5 → 5.
-    Hand:
-      ΔF_2 = 1 − (1 − 0.25)^(1/1) = 0.25
-      ΔF_3 = 1 − (0.625)^(1/2)    = 0.20943058…
-      ΔF_4 = 1 − (0.5)^(1/3)      = 0.20629947…
-      ΔF_5 = 1 − (0.40625)^(1/4)  = 0.20144841…
-    Per-gen Ne_g = 1/(2·ΔF̄_g).  Aggregate is harmonic mean.
+    Equivalent complete generations are 0, 1, 2, 3, 4, 5 by cohort and F is
+    0, 0, 0.25, 0.375, 0.5, 0.59375, so ``ΔF_i = 1 − (1 − F_i)^(1/t_i)`` is::
+
+        cohort 1   1 − (1 − 0)^(1/1)       = 0
+        cohort 2   1 − (1 − 0.25)^(1/2)    = 0.13397460…
+        cohort 3   1 − (1 − 0.375)^(1/3)   = 0.14501203…
+        cohort 4   1 − (1 − 0.5)^(1/4)     = 0.15910358…
+        cohort 5   1 − (1 − 0.59375)^(1/5) = 0.16486062…
+
+    The founders have ``t = 0`` and no rate at all.  Cohort 1 has ``t = 1``
+    and ``F = 0``, so it is eligible with ``ΔF_i = 0`` exactly — counted, but
+    still no Ne.  Both members of a later cohort share one pedigree, so ΔF̄_g
+    is that cohort's single value and ``Ne_g = 1/(2·ΔF̄_g)``.
+
+    The reference subpopulation defaults to the last observed cohort, whose
+    two members are identical, so the scalar is its ``Ne_g``, σ_ΔF is zero and
+    the standard error with it.
+
+    ``ne_unrelated_founders`` is this package's diagnostic and not the paper's,
+    dividing by ``t − 1`` instead, so the last cohort's ΔF′ is
+    ``1 − (1 − 0.59375)^(1/4)``.  It is the smaller of the two here, and on
+    any pedigree whose ``t ≤ 1`` rows carry ``F = 0``: ``1/(t − 1) > 1/t``
+    raises every ΔF′_i to at least its ΔF_i, and dropping those rows then only
+    removes zeros.  A child of two MZ co-twins carries ``F = 0.5`` at ``t = 1``
+    and breaks both halves of that, which ``test_effective_size_api.py`` pins.
     """
     pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
     res = ne_individual_delta_f(pg)
 
-    # Gen 0 (founders, F=0, EqG=0) and gen 1 (EqG=1) excluded — n_used=0.
-    assert res.n_used_per_gen[0] == 0
-    assert res.n_used_per_gen[1] == 0
-    # Gens 2–5: 2 individuals each.
-    np.testing.assert_array_equal(res.n_used_per_gen[2:], [2, 2, 2, 2])
+    np.testing.assert_array_equal(res.n_used_per_gen, [0, 2, 2, 2, 2, 2])
+    assert np.isnan(res.mean_eqg_per_gen[0])
+    np.testing.assert_allclose(res.mean_eqg_per_gen[1:], [1.0, 2.0, 3.0, 4.0, 5.0], atol=1e-12)
 
-    # Per-gen Ne values (closed-form).
-    expected_df = np.array(
+    assert np.isnan(res.ne_per_gen[0])
+    assert np.isnan(res.ne_per_gen[1])
+    f_per_gen = np.array([0.25, 0.375, 0.5, 0.59375])
+    eqg_per_gen = np.array([2.0, 3.0, 4.0, 5.0])
+    delta_f = 1.0 - (1.0 - f_per_gen) ** (1.0 / eqg_per_gen)
+    np.testing.assert_allclose(res.ne_per_gen[2:], 1.0 / (2.0 * delta_f), atol=1e-12)
+
+    assert res.ne == pytest.approx(1.0 / (2.0 * delta_f[-1]), abs=1e-12)
+    assert res.standard_error == 0.0
+    assert res.n_reference == 2
+    assert res.reference_generation == 5
+
+    lagged_df = 1.0 - (1.0 - 0.59375) ** (1.0 / 4.0)
+    assert res.ne_unrelated_founders == pytest.approx(1.0 / (2.0 * lagged_df), abs=1e-12)
+    assert res.ne_unrelated_founders == pytest.approx(2.4796571025831384, abs=1e-9)
+    assert res.ne_unrelated_founders < res.ne
+
+
+def _unequal_cohort_pedigree() -> pl.DataFrame:
+    """Cohorts of 2, 2, 3 and 4 rows, with two pedigree depths in the last one.
+
+    Generation 2 holds the full-sib pair (4, 5) and a third founder, 6, so
+    generation 3 mixes 7 and 10 (children of 4 × 5, ``F = 0.375`` at ``t = 3``)
+    with their paternal half-sibs 8 and 9 (children of 4 × 6, ``F = 0`` at
+    ``t = 2``).
+    """
+    return _df(
         [
-            0.25,
-            1.0 - 0.625 ** (1.0 / 2.0),
-            1.0 - 0.5 ** (1.0 / 3.0),
-            1.0 - 0.40625 ** (1.0 / 4.0),
+            {"id": 0, "sex": 1, "generation": 0},
+            {"id": 1, "sex": 0, "generation": 0},
+            {"id": 2, "sex": 1, "generation": 1, "mother": 1, "father": 0},
+            {"id": 3, "sex": 0, "generation": 1, "mother": 1, "father": 0},
+            {"id": 4, "sex": 1, "generation": 2, "mother": 3, "father": 2},
+            {"id": 5, "sex": 0, "generation": 2, "mother": 3, "father": 2},
+            {"id": 6, "sex": 0, "generation": 2},
+            {"id": 7, "sex": 1, "generation": 3, "mother": 5, "father": 4},
+            {"id": 8, "sex": 1, "generation": 3, "mother": 6, "father": 4},
+            {"id": 9, "sex": 0, "generation": 3, "mother": 6, "father": 4},
+            {"id": 10, "sex": 0, "generation": 3, "mother": 5, "father": 4},
         ]
     )
-    np.testing.assert_allclose(res.ne_per_gen[2:6], 1.0 / (2.0 * expected_df), atol=1e-12)
-    # Aggregate harmonic mean of (2, 2.387, 2.423, 2.482) ≈ 2.31.
-    assert res.ne is not None
-    assert 1.5 < res.ne < 3.5
+
+
+def test_ne_individual_delta_f_averages_delta_f_over_the_reference_subpopulation():
+    """On unequal cohorts the scalar is ``1/(2ΔF̄)``, not a harmonic mean of cohort Ne.
+
+    Gutiérrez §2.1 averages ΔF_i over a reference subpopulation.  Aggregating
+    the per-cohort Ne instead gives every cohort the same weight whatever its
+    size and whatever spread of pedigree depth it holds, and here the two
+    answers are two units apart (issue #15, ADR 0012).
+    """
+    pg = PedigreeGraph.from_frame(_unequal_cohort_pedigree())
+    res = ne_individual_delta_f(pg)
+
+    np.testing.assert_array_equal(res.n_used_per_gen, [0, 2, 2, 4])
+    assert res.n_reference == 4
+    assert res.reference_generation == 3
+
+    f_last = np.array([0.375, 0.0, 0.0, 0.375])
+    eqg_last = np.array([3.0, 2.0, 2.0, 3.0])
+    delta_f = 1.0 - (1.0 - f_last) ** (1.0 / eqg_last)
+    assert res.ne == pytest.approx(1.0 / (2.0 * delta_f.mean()), abs=1e-12)
+    assert res.standard_error == pytest.approx(2.0 / np.sqrt(delta_f.size) * res.ne**2 * delta_f.std(ddof=1), rel=1e-12)
+
+    assert res.ne == pytest.approx(6.895979754377508, abs=1e-9)
+    assert res.standard_error == pytest.approx(3.981395767516064, abs=1e-9)
+    assert _harmonic_mean(res.ne_per_gen) == pytest.approx(4.843069778788811, abs=1e-9)
+
+
+def _random_mating(n_per_gen: int, n_gens: int, seed: int) -> pl.DataFrame:
+    """Closed random-mating pedigree, balanced sex, discrete non-overlapping generations."""
+    rng = np.random.default_rng(seed)
+    half = n_per_gen // 2
+    records: list[dict] = []
+    next_id = 0
+    previous_m: list[int] = []
+    previous_f: list[int] = []
+    for g in range(n_gens + 1):
+        current_m: list[int] = []
+        current_f: list[int] = []
+        for j in range(n_per_gen):
+            sex = 1 if j < half else 0
+            record = {"id": next_id, "sex": sex, "generation": g}
+            if g > 0:
+                record["mother"] = int(rng.choice(previous_f))
+                record["father"] = int(rng.choice(previous_m))
+            records.append(record)
+            (current_m if sex == 1 else current_f).append(next_id)
+            next_id += 1
+        previous_m, previous_f = current_m, current_f
+    return _df(records)
+
+
+@pytest.mark.parametrize(("n_per_gen", "n_gens", "seed"), [(60, 12, 7), (200, 16, 3)])
+def test_ne_individual_delta_f_tracks_the_census_size_under_random_mating(n_per_gen, n_gens, seed):
+    """Last-cohort reference tracks N on an idealised population, carrying its own upward bias.
+
+    Gutiérrez §2.1 derives ΔF_i by equating F_i to the inbreeding of a
+    hypothetical idealised population of size Ne with that individual's
+    pedigree structure, so on a pedigree that really is idealised the estimate
+    should track the census size.  It does, and it runs high while doing so,
+    by roughly ``t/(t − 1)``.  Eq. 1 inverts ``F_t = 1 − (1 − ΔF)^t``, so eq. 2
+    recovers N only where the pedigree has accumulated ``t`` generations of
+    drift.  These founders are unrelated and non-inbred by construction, so
+    generation 1 has ``F = 0`` exactly and inbreeding runs one generation
+    behind the generation count: measured mean F matches the idealised curve
+    at ``g − 1``, not ``g``, at every generation out to 16.  Replicated over
+    20 Wright-Fisher pedigrees at N=200 the mean lands +19.1% at ``t = 5``,
+    +10.5% at 10, +5.6% at 16 and +3.8% at 24, against a lag prediction of
+    +25.0/+11.1/+6.7/+4.3% less a 1.8/0.8/0.5/0.3% convexity term, because
+    ``F ↦ ΔF_i`` is convex and within-cohort variance in F raises ΔF̄.  The
+    bias is therefore a property of a shallow pedigree with a hard founder
+    boundary, and it decays as ``1/t``.  The seeds pinned here give +10.7% at
+    N=60 and +0.0% at N=200, and the 15% band holds both without asserting an
+    accuracy the estimator does not have.
+
+    What the band does separate is the reduction.  Averaging over the whole
+    genealogy feeds ΔF̄ every generation's N rows with ``t = 1`` and ``F = 0``,
+    which lands +40% out at N=60 (ADR 0012).
+    """
+    pg = PedigreeGraph.from_frame(_random_mating(n_per_gen, n_gens, seed))
+    res = ne_individual_delta_f(pg)
+
+    assert res.n_reference == n_per_gen
+    assert res.reference_generation == n_gens
+    assert res.ne == pytest.approx(n_per_gen, rel=0.15)
+    assert 0.0 < res.standard_error < res.ne
+
+
+def test_the_unrelated_founder_diagnostic_beats_the_estimator_on_a_wright_fisher_pedigree():
+    """Removing the one-generation lag lands nearer N on a pedigree whose founders are unrelated.
+
+    ``ne_unrelated_founders`` is this package's diagnostic, not Gutiérrez's.
+    Eq. 2 recovers the census size only where the pedigree has accumulated
+    ``t`` generations of drift, and a Wright-Fisher pedigree's founders are
+    unrelated and non-inbred by construction, so ``t`` generations of pedigree
+    carry ``t − 1`` generations of drift and ``ne`` runs high by ``t/(t − 1)``.
+    Dividing by ``t − 1`` over the rows with ``t > 1`` removes that lag, and
+    here it moves +10.65% down to +1.47%.
+
+    One pinned seed is not evidence.  The ``(200, 16, 3)`` parametrization of
+    the test above is a counter-case: its ``ne`` lands at +0.01% and the
+    diagnostic at −6.23%, so the closer-to-N claim is deliberately not asserted
+    there.  What the claim rests on is the 20-replicate-per-cell Wright-Fisher
+    table in ADR 0012, where the correction cuts a bias running from +5.57% to
+    +24.66% to a residual no worse than −4.57%.
+
+    The assumption is true of a simulated pedigree and false of a real one,
+    whose founders are merely where record-keeping stopped and are generally
+    related.  There is no lag to remove there, and the field biases downward.
+    """
+    pg = PedigreeGraph.from_frame(_random_mating(60, 12, 7))
+    res = ne_individual_delta_f(pg)
+
+    assert res.n_reference == 60
+    assert res.ne == pytest.approx(66.3906634390028, rel=1e-9)
+    assert res.ne_unrelated_founders == pytest.approx(60.881503258688106, rel=1e-9)
+    assert abs(res.ne_unrelated_founders - 60) < abs(res.ne - 60)
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — Ne_LTC (Wray–Thompson): asymptote on small closed pedigrees
+# Step 2 — Ne_LTC: W&T eq. 31 / C&T eq. 19 at the last observed cohort
 # ---------------------------------------------------------------------------
 
 
 def test_ne_long_term_contributions_closed_line():
-    """Closed line, N_founders = 2 → c stable at (0.5, 0.5) ⇒ Ne_LTC = 1.
+    """Closed line, 2 founder genomes → c stable at (0.5, 0.5) ⇒ Σc² = 0.5.
 
-    The master plan's "Ne ≈ 2·N_founders" rule of thumb does not hold for
-    the formula ``Ne = 1/(2·Σ c²)``; the analytic value here is 1.
+    Caballero & Toro 2000 (Genet. Res. 75(3):331-343) eq. 19 is
+    ``N_ef = 1/[(1/N²)Σc²_{i(0,t)}]``, which in normalised contributions is
+    ``1/Σc² = 2``.  Wray & Thompson 1990 (Genet. Res. 55(1):41-54) eq. 31 is
+    ``Ne ≈ 2N/(μ_r² + σ_r²)``, which at ``μ_r = 1`` gives ``Σr² = N·Σc²`` and
+    so ``Ne = 2/Σc² = 4``; C&T's own text after their eq. 20 states the same
+    link as ``N_ef = Ne/2``.  The version this replaces reported
+    ``1/(2Σc²) = 1`` (ADR 0012, issue #15).
+
+    Forced full-sib mating is not W&T's regular random mating, so what is
+    pinned here is the formula and not the interpretation: nothing about this
+    pedigree makes 4 its effective size.  The interpretation is pinned by
+    ``test_ne_long_term_contributions_tracks_the_census_size_under_random_mating``.
     """
     pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
     res = ne_long_term_contributions(pg)
-    assert res.asymptote_reached
-    # Stabilizes at gen 1 (c_per_gen[0] == c_per_gen[1] = (0.5, 0.5)).
-    assert res.n_iterations == 1
     assert res.sum_c_squared == pytest.approx(0.5, abs=1e-12)
-    assert res.ne == pytest.approx(1.0, abs=1e-12)
+    assert res.n_effective_founders == pytest.approx(2.0, abs=1e-12)
+    assert res.ne == pytest.approx(4.0, abs=1e-12)
     assert res.max_delta_final == pytest.approx(0.0, abs=1e-12)
+    assert res.asymptote_reached
+    assert res.n_cohorts == 6
+    assert res.final_generation == 5
 
 
 def test_ne_long_term_contributions_4_founders_symmetric():
     """4 founders → 4 gen-1 individuals with each founder seen by exactly 2.
 
-    Each gen-1 individual has c-vector with two 0.5s and two 0s; the
-    cohort mean is uniform 0.25.  Σ c² = 4·0.25² = 0.25 ⇒ Ne_LTC = 2.
+    Each gen-1 individual has a c-vector with two 0.5s and two 0s; the
+    cohort mean is uniform 0.25, so Σc² = 4·0.25² = 0.25, C&T eq. 19 gives
+    ``N_ef = 1/Σc² = 4`` and W&T eq. 31 gives ``Ne = 2/Σc² = 8``.  As in the
+    closed line above, this mating scheme is not W&T's regular random mating,
+    so it pins the formula and not the interpretation.
     """
     df = _df(
         [
@@ -418,9 +593,48 @@ def test_ne_long_term_contributions_4_founders_symmetric():
     )
     pg = PedigreeGraph.from_frame(df)
     res = ne_long_term_contributions(pg)
-    assert res.asymptote_reached
     assert res.sum_c_squared == pytest.approx(0.25, abs=1e-12)
-    assert res.ne == pytest.approx(2.0, abs=1e-12)
+    assert res.n_effective_founders == pytest.approx(4.0, abs=1e-12)
+    assert res.ne == pytest.approx(8.0, abs=1e-12)
+    assert res.max_delta_final == pytest.approx(0.0, abs=1e-12)
+    assert res.asymptote_reached
+    assert res.n_cohorts == 2
+    assert res.final_generation == 1
+
+
+def test_ne_long_term_contributions_tracks_the_census_size_under_random_mating():
+    """``Ne = 2/Σc²`` lands on N on the pedigree its assumptions describe.
+
+    Wray & Thompson 1990 eq. 31 holds under regular random mating with
+    long-term contribution variance at its asymptote, so on a Wright-Fisher
+    pedigree that really is idealised the estimate should track the census
+    size.  Over 30 replicates at N=200, g=10 (seeds 2026-2055) the mean lands
+    at 202.30, +1.15% of N, sd 11.90.  The residual is O(1/N) and shrinks
+    with N — +5.02% at N=60 (g=8), +3.30% at N=120 (g=10), +1.15% at N=200
+    (g=10), all over the same 30 seeds.  A single replicate carries far more
+    spread than the mean does: these 30 run from 172.09 (−13.95%) to 226.95
+    (+13.48%), so the band is asserted on the mean and no single pedigree is
+    asserted to land near N.
+
+    The 5% band sits about 3.5 sem from the measured mean (sem 2.17) and
+    still separates ``2/Σc²`` from the ``1/(2Σc²)`` it replaces, from a
+    factor of 2, and from a sign flip (ADR 0012, issue #15).
+
+    ``asymptote_reached`` is False on every one of the 30 — ``max_delta_final``
+    runs 3.6e-4 to 1.2e-3 against a 1e-6 tolerance — which is why the version
+    that gated ``ne`` on that flag reported no estimate on any realistic
+    pedigree.
+    """
+    results = [
+        ne_long_term_contributions(PedigreeGraph.from_frame(_random_mating(200, 10, seed)))
+        for seed in range(2026, 2056)
+    ]
+
+    assert np.mean([res.ne for res in results]) == pytest.approx(200.0, rel=0.05)
+    assert results[0].ne == pytest.approx(2.0 * results[0].n_effective_founders, abs=1e-12)
+    for res in results:
+        assert res.ne is not None
+        assert not res.asymptote_reached
 
 
 # ---------------------------------------------------------------------------

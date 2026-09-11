@@ -403,16 +403,17 @@ def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> No
 
     # Reference path: feed dense-derived structures through the reducers.
     cohorts = ObservedCohorts.for_graph(pg, "reference")
-    res_ltc_ref = _ltc_from(cohorts, FounderContributionMeans(*_ref_per_gen_means(pg)), 1e-6)
+    res_ltc_ref = _ltc_from(cohorts, FounderContributionMeans(*_ref_per_gen_means(pg)))
     res_ct_ref = _caballero_toro_from(cohorts, _ref_ct_accumulators(pg, F))
 
     # LTC dataclass parity
     assert res_ltc_new.asymptote_reached == res_ltc_ref.asymptote_reached
-    assert res_ltc_new.n_iterations == res_ltc_ref.n_iterations
+    assert res_ltc_new.n_cohorts == res_ltc_ref.n_cohorts
     if res_ltc_new.ne is None or res_ltc_ref.ne is None:
         assert res_ltc_new.ne is res_ltc_ref.ne
     else:
         assert res_ltc_new.ne == pytest.approx(res_ltc_ref.ne, abs=1e-12)
+    assert res_ltc_new.n_effective_founders == pytest.approx(res_ltc_ref.n_effective_founders, abs=1e-12)
     assert res_ltc_new.sum_c_squared == pytest.approx(res_ltc_ref.sum_c_squared, abs=1e-12)
 
     # CT dataclass parity
@@ -513,11 +514,18 @@ def test_ne_coancestry_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
 
 
 def test_ne_individual_delta_f_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
-    """Ne_iΔF computes per-individual ΔF via EqG; generation gap is irrelevant."""
+    """Ne_iΔF divides by each individual's own equivalent complete generations.
+
+    Label gaps are irrelevant to eq. 2.  The founders are excluded because
+    ``t = 0``, not because of where their label sits, and the reference
+    subpopulation is the last observed cohort however far it is from the one
+    before it: here generation 3, holding the two skip-gen children 8 and 9.
+    """
     res = ne_individual_delta_f(skip_gen_pedigree)
-    # Founders contribute 0 to n_used (EqG=0); gen ≥ 1 individuals enter the count.
     assert res.n_used_per_gen[0] == 0
     assert res.n_used_per_gen.sum() > 0
+    assert res.n_reference == 2
+    assert res.reference_generation == 3
 
 
 def test_ne_sex_ratio_skip_gen(skip_gen_pedigree: PedigreeGraph) -> None:
@@ -758,20 +766,26 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
 def test_ltc_runs_at_scale_old_code_could_not() -> None:
     """N=2000, G=10 — old dense code allocated ~2.6 GB; new path is fine.
 
-    Verifies the new path completes and produces a sensible LTC value.
+    Wray & Thompson 1990 eq. 31 reduces to ``ne = 2/Σc²`` at ``μ_r = 1``,
+    which tracks the census size on a Wright-Fisher pedigree.  This seed
+    measures 2051.42, +2.57% of N=2000, with ``n_effective_founders``
+    1025.71.  The 10% band around N is one replicate wide, so it guards
+    against regression rather than asserting an accuracy the estimator has
+    only in the mean — that mean is pinned over 30 replicates by
+    ``test_ne_long_term_contributions_tracks_the_census_size_under_random_mating``
+    in ``tests/test_effective_size.py``.  It still separates ``2/Σc²`` from
+    the ``1/(2Σc²)`` it replaces (512.85 here) and from
+    ``n_effective_founders`` itself (ADR 0012).
     """
     rng = np.random.default_rng(13)
     df = _build_random_mating_pedigree(rng, n_per_gen=2000, n_gens=10)
     pg = PedigreeGraph.from_frame(df)
     res = ne_long_term_contributions(pg)
-    # Loose bound: under WF random mating with N=2000, the LTC asymptote
-    # (when reached) sits near N/2.  Don't assert convergence — at this
-    # scale and tolerance the asymptote often doesn't cross 1e-6 within
-    # 10 generations.  Just assert the call returned a well-formed result.
-    assert res.n_iterations >= 1
+    assert res.n_cohorts >= 1
     assert np.isfinite(res.sum_c_squared)
-    if res.ne is not None:
-        assert 100.0 < res.ne < 5000.0
+    assert res.ne is not None
+    assert res.ne == pytest.approx(2.0 * res.n_effective_founders, abs=1e-12)
+    assert res.ne == pytest.approx(2000.0, rel=0.1)
 
 
 # ---------------------------------------------------------------------------

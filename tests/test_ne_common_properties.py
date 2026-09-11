@@ -1,7 +1,7 @@
 """Property-based tests for the shared Ne numeric helpers in _ne_common.
 
-These pure functions back five estimators (Ne_I / Ne_C / Ne_CT via the log
-regression, and Ne_V / Ne_sr / Ne_iΔF / Ne_H via the harmonic mean), so a
+These pure functions back six estimators (Ne_I / Ne_C / Ne_CT via the log
+regression, and Ne_V / Ne_sr / Ne_H via the harmonic mean), so a
 defect here biases several estimators at once.  The log-regression reducer is
 checked by *planted-signal recovery*: build a series whose true slope (hence
 Ne) is known exactly and assert it is recovered — an oracle that inverts the

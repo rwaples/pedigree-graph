@@ -8,8 +8,10 @@ missing sentinel except in ``id``, which needs a value.  The resulting int64
 columns cross into ``pedigree_graph._native.build_pedigree``, where every
 pedigree-semantic rule lives (ADR 0006, ADR 0007).
 
-The same coercers serve the selection arguments of views and pair endpoints,
-which is why they are shared here rather than owned by the constructor.
+The same coercers serve every row or id selection a caller hands to a
+receiver — views, pair endpoints, and the effective-size reference
+subpopulation — which is why they are shared here rather than owned by the
+constructor.
 """
 
 from __future__ import annotations
@@ -259,7 +261,7 @@ def _duplicate_witness(values: np.ndarray) -> tuple[int, tuple[int, ...], int] |
     """Name the smallest repeated value, every position it holds, and how many entries repeat.
 
     ``None`` when *values* are unique. The one witness rule shared by
-    ``duplicate_id`` at construction and the ``duplicate_view_*`` codes.
+    ``duplicate_id`` at construction and every ``duplicate_*`` selection code.
     """
     if values.size < 2:
         return None
@@ -270,6 +272,27 @@ def _duplicate_witness(values: np.ndarray) -> tuple[int, tuple[int, ...], int] |
     duplicated = int(ordered[int(np.argmax(repeats))])
     positions = tuple(int(position) for position in np.flatnonzero(values == duplicated))
     return duplicated, positions, int(np.count_nonzero(repeats))
+
+
+def _check_duplicate_rows(rows: np.ndarray, n_individuals: int, code: str, key: str, values: np.ndarray) -> None:
+    """Raise *code* when in-range *rows* repeat, naming the smallest repeated entry of *values*.
+
+    Uniqueness is an O(n) mark over the row range; the sort-based witness runs
+    only once a repeat is known, so the failure path shares the constructor's
+    ``duplicate_id`` rule while the success path never sorts.
+    """
+    seen = np.zeros(n_individuals, dtype=bool)
+    seen[rows] = True
+    if int(np.count_nonzero(seen)) == rows.size:
+        return
+    witness = _duplicate_witness(values)
+    assert witness is not None
+    duplicated, positions, count = witness
+    raise PedigreeValidationError(
+        code,
+        f"{key} {duplicated} appears at positions {positions}; {count} selected {key}(s) repeat an earlier one",
+        **{key: duplicated, "positions": positions, "duplicate_count": count},
+    )
 
 
 @dataclass(frozen=True, slots=True)

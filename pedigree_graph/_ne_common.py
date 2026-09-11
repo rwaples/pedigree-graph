@@ -1,10 +1,10 @@
 """Shared numeric helpers for the Ne estimators (PGQ-006).
 
 Pure functions used by more than one estimator module: the harmonic-mean
-aggregator (variance / sex-ratio / individual-ΔF / Hill), the adjacent
-observed-cohort rate and the ``ln(1 − x)`` OLS used by the rate-based
-estimators (inbreeding, coancestry, Caballero-Toro), and the checked
-``(k, n_founder_genomes)`` allocation the founder-based estimators share.
+aggregator (variance / sex-ratio / Hill), the adjacent observed-cohort rate
+and the ``ln(1 − x)`` OLS used by the rate-based estimators (inbreeding,
+coancestry, Caballero-Toro), and the checked ``(k, n_founder_genomes)``
+allocation the founder-based estimators share.
 """
 
 from __future__ import annotations

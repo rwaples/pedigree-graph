@@ -5,7 +5,7 @@ Gutiérrez 2008 individual-ΔF estimator:
 
 * :func:`ne_inbreeding`         — regression of ``ln(1 − F̄_t)`` on t.
 * :func:`ne_coancestry`         — regression of ``ln(1 − θ̄_t)`` on t.
-* :func:`ne_individual_delta_f` — Gutiérrez individual ΔF_i via EqG.
+* :func:`ne_individual_delta_f` — Gutiérrez individual increase in inbreeding.
 
 Each public estimator resolves its prerequisites from the graph and hands
 them to a private evaluator (``_inbreeding_from`` and friends) that works
@@ -20,12 +20,15 @@ Also owns :func:`_summary_from_matrix`, the cached-matrix route to
 from __future__ import annotations
 
 import logging
+import math
 import time
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from pedigree_graph._cohorts import ObservedCohorts
+from pedigree_graph._errors import PedigreeValidationError
+from pedigree_graph._input import _INT32_MAX, _check_duplicate_rows, _coerce_row_selection, _FieldSpec, _own
 from pedigree_graph._kinship_kernel import (
     _compute_eqg,
     _compute_generation_kinship_summary,
@@ -33,7 +36,6 @@ from pedigree_graph._kinship_kernel import (
     _finalize_summary,
 )
 from pedigree_graph._ne_common import (
-    _harmonic_mean,
     _scalar_ne_from_log_regression,
     _transition_ne,
 )
@@ -193,47 +195,177 @@ def ne_coancestry(pg: PedigreeGraph) -> NeCoancestryResult:
     return _coancestry_from(cohorts, _generation_kinship_summary(pg))
 
 
-def _individual_delta_f_from(cohorts: ObservedCohorts, F: np.ndarray, eqg: np.ndarray) -> NeIndividualDeltaFResult:
-    valid = (eqg > 1.0) & (F < 1.0)
+def _ne_from_delta_f(delta_f: np.ndarray) -> float | None:
+    """``1/(2·ΔF̄)`` over *delta_f*; ``None`` when it is empty or ΔF̄ is not positive.
+
+    The one reduction behind every Ne this estimator reports — the scalar, each
+    cohort's, and the unrelated-founder diagnostic — so the "no rate, no
+    estimate" rule is stated once rather than guarded at each site.
+    """
+    if delta_f.shape[0] == 0:
+        return None
+    mean = float(delta_f.mean())
+    return 1.0 / (2.0 * mean) if mean > 0.0 else None
+
+
+def _individual_delta_f_from(
+    cohorts: ObservedCohorts,
+    F: np.ndarray,
+    eqg: np.ndarray,
+    reference: np.ndarray | None = None,
+) -> NeIndividualDeltaFResult:
+    valid = (eqg > 0.0) & (F < 1.0)
     delta_f = np.full(F.shape[0], np.nan, dtype=np.float64)
     if valid.any():
-        delta_f[valid] = 1.0 - np.power(1.0 - F[valid], 1.0 / (eqg[valid] - 1.0))
+        delta_f[valid] = 1.0 - np.power(1.0 - F[valid], 1.0 / eqg[valid])
 
     k = cohorts.k
+    members = cohorts.members()
     ne_per_gen = np.full(k, np.nan, dtype=np.float64)
     mean_eqg_per_gen = np.full(k, np.nan, dtype=np.float64)
     n_used_per_gen = np.zeros(k, dtype=np.int64)
-    for b, rows in enumerate(cohorts.members()):
+    for b, rows in enumerate(members):
         in_b = rows[valid[rows]]
         n_used_per_gen[b] = int(in_b.shape[0])
         if in_b.shape[0] == 0:
             continue
-        mean_df = float(delta_f[in_b].mean())
         mean_eqg_per_gen[b] = float(eqg[in_b].mean())
-        if mean_df > 0:
-            ne_per_gen[b] = 1.0 / (2.0 * mean_df)
+        cohort_ne = _ne_from_delta_f(delta_f[in_b])
+        if cohort_ne is not None:
+            ne_per_gen[b] = cohort_ne
 
+    if reference is None:
+        reference = members[-1] if k else np.zeros(0, dtype=np.int32)
+    eligible = reference[valid[reference]]
+    n_reference = int(eligible.shape[0])
+    reference_df = delta_f[eligible]
+    ne = _ne_from_delta_f(reference_df)
+    standard_error: float | None = None
+    if ne is not None and n_reference > 1:
+        standard_error = 2.0 / math.sqrt(n_reference) * ne**2 * float(reference_df.std(ddof=1))
+
+    lagged = eligible[eqg[eligible] > 1.0]
+    lagged_df = 1.0 - np.power(1.0 - F[lagged], 1.0 / (eqg[lagged] - 1.0))
+    ne_unrelated_founders = _ne_from_delta_f(lagged_df)
+
+    buckets = np.unique(cohorts.dense[eligible])
+    shared = buckets.shape[0] == 1 and int(buckets[0]) < k
     return NeIndividualDeltaFResult(
-        ne=_harmonic_mean(ne_per_gen) if np.isfinite(ne_per_gen).any() else None,
+        ne=ne,
         generations=cohorts.generations,
         ne_per_gen=ne_per_gen,
         mean_eqg_per_gen=mean_eqg_per_gen,
         n_used_per_gen=n_used_per_gen,
+        standard_error=standard_error,
+        n_reference=n_reference,
+        reference_generation=int(cohorts.generations[buckets[0]]) if shared else None,
+        ne_unrelated_founders=ne_unrelated_founders,
     )
 
 
-def ne_individual_delta_f(pg: PedigreeGraph) -> NeIndividualDeltaFResult:
-    """Gutiérrez 2008 individual ΔF Ne (Ne_iΔF).
+_REFERENCE = _FieldSpec("reference", True, 0, _INT32_MAX, np.int32)
 
-    For each individual ``i`` with ``EqG_i > 1`` and ``F_i < 1``:
 
-        ``ΔF_i = 1 − (1 − F_i)^(1/(EqG_i − 1))``.
+def _reference_out_of_range(value: object, position: int, n_individuals: int) -> PedigreeValidationError:
+    return PedigreeValidationError(
+        "reference_row_out_of_range",
+        f"row {value} at position {position} is outside the {n_individuals}-row pedigree",
+        row=value,
+        position=position,
+        n_individuals=n_individuals,
+    )
 
-    Per-cohort ``Ne_g = 1/(2 · mean_{i ∈ cohort g} ΔF_i)``; aggregate is
-    the harmonic mean across observed cohorts.  EqG already counts complete
-    generations per individual, so labels only group the result.
+
+def _reference_rows(pg: PedigreeGraph, selection: object) -> np.ndarray:
+    """Validate a reference-subpopulation selection against the graph's row range.
+
+    The same shape, integer-form, range, then duplicate order a view selection
+    follows, so a caller sees a single-entry failure before a whole-argument
+    one.  Duplicates are rejected rather than collapsed: a repeated row would
+    silently weight one individual twice in ΔF̄.
+
+    Args:
+        pg: The graph whose rows are being selected.
+        selection: The caller's array-like of graph rows.
+
+    Returns:
+        The rows as an owned read-only int32 array, in the order given.
+
+    Raises:
+        PedigreeValidationError: ``invalid_shape`` or ``invalid_integer_value``
+            for a malformed selection, ``reference_row_out_of_range`` for a row
+            outside the pedigree, then ``duplicate_reference_row``.
     """
+    n_individuals = pg.n_individuals
+    rows = _coerce_row_selection(
+        _REFERENCE,
+        selection,
+        n_individuals,
+        lambda value, position: _reference_out_of_range(value, position, n_individuals),
+    )
+    _check_duplicate_rows(rows, n_individuals, "duplicate_reference_row", "row", rows)
+    return _own(rows, np.int32)
+
+
+def ne_individual_delta_f(pg: PedigreeGraph, *, reference: object | None = None) -> NeIndividualDeltaFResult:
+    """Gutiérrez et al. 2008 individual increase in inbreeding (Ne_iΔF).
+
+    Gutiérrez, Cervantes, Molina, Valera and Goyache, *Individual increase in
+    inbreeding allows estimating effective sizes from pedigrees*, Genet. Sel.
+    Evol. 40(4):359-378, eq. 2::
+
+        ΔF_i = 1 − (1 − F_i)^(1/t_i)
+
+    where ``t_i`` is the individual's equivalent complete generations, the sum
+    over its known ancestors of ``(1/2)^n`` for meiotic distance ``n``
+    (:func:`~pedigree_graph._kinship_depth._compute_eqg`).  A row is eligible
+    when ``t_i > 0``: a founder has ``t = 0`` and no rate.  Rows with
+    ``F_i = 1`` are dropped as well, which is this package's guard and not the
+    paper's — eq. 2 is finite there and would report ``ΔF_i = 1``.
+
+    Their §2.1 averages ΔF_i over a **reference subpopulation** to give ΔF̄ and
+    reports ``Ne = 1/(2·ΔF̄)``, with standard error
+    ``σ_Ne = (2/√N)·Ne²·σ_ΔF`` over that subpopulation's ``N`` individuals.
+    σ_ΔF is the sample standard deviation (``ddof=1``): the paper does not
+    state a ddof, and the difference is O(1/N).
+
+    Equivalent complete generations already count each individual's own
+    pedigree depth, so labels only group the per-cohort series; each cohort is
+    itself a valid reference subpopulation, which is what ``ne_per_gen``
+    reports.
+
+    The result also carries ``ne_unrelated_founders``, a package-defined
+    diagnostic that no line of the paper contains, dividing by ``t_i − 1``
+    over the reference rows with ``t_i > 1``.  Its justification is
+    measurement, not theory.  Eq. 1 is ``F_t = 1 − (1 − ΔF)^t``, so eq. 2
+    recovers the census size only where the pedigree has accumulated ``t``
+    generations of drift, and founders that really are unrelated and
+    non-inbred leave generation 1 at ``F = 0`` exactly, one generation behind.
+    The paper's own remedy is choosing the reference subpopulation by pedigree
+    depth (its Table II) and reading ΔF_i against equivalent generations (its
+    Figs. 3-4), which is what ``reference=`` does here.  A real pedigree's
+    founders are merely where record-keeping stopped and are generally
+    related, so there the lag does not exist and the field biases downward.
+    ``ne`` remains the estimator; see
+    :class:`~pedigree_graph.effective_size.NeIndividualDeltaFResult`.
+
+    Args:
+        pg: Pedigree graph.
+        reference: Graph rows of the reference subpopulation, unique and in
+            range.  ``None`` selects the rows of the last observed cohort.
+
+    Returns:
+        The :class:`~pedigree_graph.effective_size.NeIndividualDeltaFResult`.
+
+    Raises:
+        PedigreeValidationError: ``invalid_shape``, ``invalid_integer_value``,
+            ``reference_row_out_of_range``, or ``duplicate_reference_row`` for
+            a *reference* the graph cannot accept.
+        MissingMetadataError: ``missing_generation_labels`` when the supplied
+            labels are partly ``-1``.
+    """
+    rows = None if reference is None else _reference_rows(pg, reference)
     cohorts = ObservedCohorts.for_graph(pg, "ne_individual_delta_f")
     F = pg._inbreeding_values()
     eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), np.asarray(pg.depth), pg.n_individuals)
-    return _individual_delta_f_from(cohorts, F, eqg)
+    return _individual_delta_f_from(cohorts, F, eqg, rows)

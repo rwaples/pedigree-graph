@@ -325,13 +325,68 @@ class NeSexRatioResult(_FrozenResult):
 
 @dataclass(frozen=True, slots=True, eq=False)
 class NeIndividualDeltaFResult(_FrozenResult):
-    """Gutiérrez 2008/2009 individual ΔF (Ne_iΔF) result.
+    """Gutiérrez et al. 2008 individual increase in inbreeding (Ne_iΔF) result.
 
-    Per individual i with EqG_i > 1 and F_i < 1:
-    ``ΔF_i = 1 − (1 − F_i)^(1/(EqG_i − 1))``.  Per-cohort Ne_g =
-    ``1/(2 · mean_g ΔF_i)``; aggregate Ne is the harmonic mean across
-    cohorts.  EqG already counts complete generations per individual, so
-    no label-gap correction applies.
+    The individual increase in inbreeding of Gutiérrez et al. 2008 (Genet.
+    Sel. Evol. 40:359, eq. 2) is ``ΔF_i = 1 − (1 − F_i)^(1/t_i)``, where
+    ``t_i`` is the individual's equivalent complete generations.  A row is
+    eligible when ``t_i > 0``, and when ``F_i < 1`` — the second is this
+    package's guard, not the paper's.  Their §2.1 averages ΔF_i over a
+    reference subpopulation to give ΔF̄ and reports ``Ne = 1/(2·ΔF̄)``.
+
+    ``ne_unrelated_founders`` is this package's own diagnostic rather than
+    theirs, and no line of the paper contains it.  Its justification is
+    measurement, not theory.  Eq. 1 is ``F_t = 1 − (1 − ΔF)^t``, so eq. 2
+    recovers the census size only where the pedigree has accumulated ``t``
+    generations of drift.  Founders that are genuinely unrelated and non-inbred
+    leave generation 1 at ``F = 0`` exactly, so ``t`` generations of pedigree
+    carry ``t − 1`` generations of drift: measured on Wright-Fisher pedigrees,
+    mean F tracks the idealised curve at ``g − 1`` rather than ``g`` at every
+    generation out to 16, and the resulting upward bias in ``ne`` is
+    ``t/(t − 1)`` in the large-N limit, less an O(1/N) term from the convexity
+    of ``F ↦ ΔF_i``.  At ``N = 1000``, ``t = 5`` the measured bias is +24.66%
+    against a 25.00% prediction, and this field's residual there is −0.16% (20
+    Wright-Fisher replicates per cell, ADR 0012).  The paper's own remedy is
+    methodological instead: choosing the reference subpopulation by pedigree
+    depth (its Table II reports Ne at no pedigree depth restriction, ``t ≥ 4``
+    and ``t ≥ 8``) and reading ΔF_i against equivalent generations (its
+    Figs. 3-4), and ``reference=`` is how a caller does that here.
+
+    The assumption is true of a simulated pedigree and false of a real one,
+    whose founders are merely where record-keeping stopped and are generally
+    related: there is no lag to remove and the field introduces a *downward*
+    bias instead.  It is a diagnostic for simulated or genuinely
+    founder-complete pedigrees, and ``ne`` remains the estimator.
+
+    Attributes:
+        ne: ``1/(2·ΔF̄)`` over the eligible rows of the reference
+            subpopulation; ``None`` when none are eligible or ``ΔF̄ ≤ 0``.
+        generations: observed generation labels, int32, ascending.
+        ne_per_gen: ``1/(2·ΔF̄_g)`` taking cohort ``g`` as the reference
+            subpopulation, aligned with ``generations``; NaN where that
+            cohort has no eligible row or ``ΔF̄_g ≤ 0``.  Equivalent complete
+            generations are counted per individual, so no label-gap
+            correction applies.
+        mean_eqg_per_gen: mean equivalent complete generations over the
+            eligible rows of each cohort; NaN where there are none.
+        n_used_per_gen: eligible rows per cohort.
+        standard_error: the paper's ``σ_Ne = (2/√N)·Ne²·σ_ΔF``, with ``N =
+            n_reference`` and σ_ΔF the sample standard deviation (``ddof=1``,
+            this package's choice; the paper does not state one and the
+            difference is O(1/N)).  ``None`` when ``ne`` is ``None`` or
+            ``n_reference < 2``.
+        n_reference: eligible rows of the reference subpopulation — the ``N``
+            behind both ΔF̄ and σ_ΔF, so the paper's two formulas describe the
+            same set of individuals.
+        reference_generation: the observed label shared by every eligible
+            reference row, or ``None`` when they span several cohorts or none.
+        ne_unrelated_founders: ``1/(2·ΔF̄′)`` over the reference rows with
+            ``t_i > 1``, averaging ``ΔF′_i = 1 − (1 − F_i)^(1/(t_i − 1))``.
+            Package-defined and absent from the paper, for the reasons above.
+            Eligibility is stricter than ``ne``'s (``t > 1``, not ``t > 0``),
+            so fewer rows than ``n_reference`` can stand behind it, and no
+            count is reported for it.  ``None`` when no reference row
+            qualifies, when ``ΔF̄′ ≤ 0``, or when the graph is empty.
     """
 
     ne: float | None
@@ -339,33 +394,51 @@ class NeIndividualDeltaFResult(_FrozenResult):
     ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
     mean_eqg_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
     n_used_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
+    standard_error: float | None = None
+    n_reference: int = 0
+    reference_generation: int | None = None
+    ne_unrelated_founders: float | None = None
 
 
 @dataclass(frozen=True, slots=True, eq=False)
 class NeLTCResult(_FrozenResult):
-    """Wray & Thompson 1990 long-term contribution (Ne_LTC) result.
+    """Founder-genome long-term contribution (Ne_LTC) result.
 
-    Represented-founder-genome contributions are averaged per observed
-    cohort and adjacent cohort vectors compared until the per-genome mean
-    stabilizes (``max |Δc| < tol``) or the last observed cohort is reached.
+    Both effective sizes are read from the last observed cohort.  See
+    :func:`~pedigree_graph.effective_size.ne_long_term_contributions` for the
+    sources and for the assumptions ``ne`` carries.
 
-    ``Ne = 1 / (2 · Σ_f c_f²)`` over founder genomes at the final cohort.
-    When the asymptote is not reached, ``ne`` is ``None`` and
-    ``asymptote_reached`` is ``False``.
+    A graph with no represented founder or no observed cohort is the
+    degenerate case named below, and the only one where ``ne`` and
+    ``n_effective_founders`` are ``None``.
 
     Attributes:
-        n_iterations: adjacent observed-cohort comparisons performed.
-        final_generation: label of the cohort whose vector produced
-            ``sum_c_squared`` — the convergence cohort, else the last
-            observed cohort; ``None`` when the graph is empty or has no
-            represented founder.
+        ne: ``2/Σ_f c_f²``, Wray & Thompson 1990 eq. 31.  Derived, and sound
+            only under regular random mating (α = 0) with long-term
+            contribution variance at its asymptote.
+        n_effective_founders: ``1/Σ_f c_f²``, Caballero & Toro 2000 eq. 19.
+            Assumption-free, and the quantity that still stands where either
+            of ``ne``'s assumptions is in doubt.
+        sum_c_squared: ``Σ_f c_f²`` over founder genomes at that cohort;
+            ``0.0`` in the degenerate case.
+        max_delta_final: ``max_f |c_last[f] − c_{last−1}[f]|``, the movement
+            into the cohort the estimate was read from, and the evidence a
+            caller weighs against the asymptotic-variance assumption.
+            ``nan`` when only one cohort is observed.
+        asymptote_reached: descriptive only — ``max_delta_final`` fell below
+            the estimator's fixed tolerance.  It gates nothing.
+        n_cohorts: observed cohorts, i.e. how much series stands behind
+            ``max_delta_final``; ``0`` in the degenerate case.
+        final_generation: label of the last observed cohort; ``None`` in the
+            degenerate case.
     """
 
     ne: float | None
-    asymptote_reached: bool
-    n_iterations: int
-    max_delta_final: float
+    n_effective_founders: float | None
     sum_c_squared: float
+    max_delta_final: float
+    asymptote_reached: bool
+    n_cohorts: int
     final_generation: int | None
 
 

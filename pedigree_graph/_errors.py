@@ -57,6 +57,8 @@ VALIDATION_CODES: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "unknown_view_id": ("id", "position", "missing_count"),
         "duplicate_view_row": ("row", "positions", "duplicate_count"),
         "view_row_out_of_range": ("row", "position", "n_individuals"),
+        "duplicate_reference_row": ("row", "positions", "duplicate_count"),
+        "reference_row_out_of_range": ("row", "position", "n_individuals"),
         "pair_length_mismatch": ("first_length", "second_length"),
         "pair_row_out_of_range": ("argument", "row", "position", "n_individuals"),
         "unknown_relationship_category": ("codes",),

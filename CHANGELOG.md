@@ -6,6 +6,140 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Fixed, and breaking: `ne_long_term_contributions` reported an effective
+  size 4× below the one it cites** (issue #15, ADR 0012).  It computed
+  `1 / (2 · Σ_f c_f²)` over the per-cohort mean founder-genome contributions.
+  Wray & Thompson 1990 (Genet. Res. 55(1):41-54) eq. 31 is
+  `Ne ≈ 2N/(μ_r² + σ_r²)`, and long-term contributions carry `μ_r = 1` by
+  construction, so `Σ_i r_i² = N · Σ_f c_f²` and the normalised form is
+  `Ne = 2/Σc²`.  Caballero & Toro 2000 (Genet. Res. 75(3):331-343) eq. 19 is
+  `N_ef = 1/[(1/N²)Σc²_{i(0,t)}]`, i.e. `N_ef = 1/Σc²` in the same
+  normalisation, and the sentence after their eq. 20 states `N_ef = Ne/2`.
+  The shipped value was therefore 4× below W&T's `Ne` and 2× below C&T's
+  `N_ef`.  It went unnoticed because the estimator almost never reported
+  anything to check: `ne` was gated on `asymptote_reached`, itself
+  `max |Δc| < tol` at a default `tol = 1e-6`, and the mean contributions of a
+  stochastic pedigree fluctuate around 1e-4 from cohort to cohort.  Measured
+  over 30 Wright-Fisher replicates at N=200 and 10 generations, the final
+  `max |Δc|` ranges 3.6e-4 to 1.2e-3 — `asymptote_reached` is `False` on every
+  one of them, so `ne` was `None` on every one of them.  simACE's 0.8 migration
+  record corroborates it independently from the other side of the API
+  (`docs/pedigree-graph-0.8-migration/README.md:45`: "`ne_long_term_contributions`
+  reported no estimate under both versions").  `NeLTCResult` now reports
+  **both** quantities, and in that order: `n_effective_founders = 1/Σc²` is
+  C&T eq. 19 and is assumption-free — it is what the founder-contribution
+  vector measures directly — while `ne = 2 · n_effective_founders` is W&T
+  eq. 31 and is derived, holding only under regular random mating (α = 0) and
+  long-term contribution variance at its asymptote.  Reporting only `Ne` would
+  state an effective size under a mating assumption a pedigree cannot check;
+  reporting both puts that assumption on the record that carries the number
+  rather than in prose beside it, and leaves a caller who doubts it a quantity
+  that still stands.  The asymptote gate is gone with it.  Both estimates are
+  now read from the **last observed cohort**, always, and `final_generation`
+  names it; `max_delta_final` is the movement into that cohort,
+  `max_f |c_last[f] − c_{last−1}[f]|` (`nan` when only one cohort is observed),
+  and is the evidence a caller weighs against the asymptotic-variance
+  assumption.  `asymptote_reached` stays as that same movement against a fixed
+  1e-6 tolerance, descriptive only, gating nothing.  `ne` and
+  `n_effective_founders` are `None` only where the graph has no represented
+  founder or no observed cohort, which is also the only case where
+  `sum_c_squared` stays `0.0`.  Two API changes follow.  The `tol` keyword is
+  **removed** from `ne_long_term_contributions`: it no longer moves any
+  reported number, only the `asymptote_reached` boolean, so a caller passing
+  `tol=1e-3` would reasonably believe they had tuned the estimate and would
+  not have — and `max_delta_final` carries strictly more information than the
+  boolean, so a caller who wants their own threshold applies it themselves.
+  `estimate_effective_sizes` hard-coded `1e-6` anyway, so the batch path never
+  exposed the knob.  `n_iterations` is **renamed** `n_cohorts` and holds the
+  number of observed cohorts: with the convergence loop deleted, a field named
+  after iterations would describe work the estimator no longer does, while the
+  count still earns its place by saying how much cohort series stands behind
+  `max_delta_final`.  It is `0` in the degenerate case.  The reducer reads one
+  cohort vector and one difference instead of scanning every adjacent pair,
+  which drops it from O(k · n_genomes) to O(n_genomes).  Measured on
+  Wright-Fisher pedigrees with balanced sex and discrete non-overlapping
+  generations, where W&T's derivation predicts the census size, over 30
+  replicates per cell: at N=200 and 10 generations `2/Σc²` averages 202.30
+  (sd 11.90, **+1.15%** of N), where the old formula on the same cohort vectors
+  averages 50.58 and reported `None` on all 30.  The residual is O(1/N)
+  and shrinks with N — +5.02% at N=60 (8 generations), +3.30% at N=120 and
+  +1.15% at N=200 (10 generations each) — and single replicates scatter widely
+  around it, from −13.95% to +13.48% at N=200, so the regression test gates the
+  replicate mean rather than any one pedigree.  Any persisted 0.8.x value for
+  this estimator is not comparable: the old numbers are 4× low where they exist
+  at all, and on a realistic pedigree they do not exist.  `tests/data/ne_baseline_6b`
+  still holds them, so the parity test excludes this estimator, as it already
+  excludes `ne_individual_delta_f`, until the golden is regenerated at the end
+  of the issue-15 work.
+
+- **Fixed, and breaking: `ne_individual_delta_f` now computes the formula it
+  cites** (issue #15, ADR 0012).  Gutiérrez et al. 2008 (Genet. Sel. Evol.
+  40(4):359-378) eq. 2 is `ΔF_i = 1 − (1 − F_i)^(1/t)` over every individual
+  with `t > 0` equivalent complete generations, and their §2.1 reports
+  `Ne = 1/(2·ΔF̄)` averaged over a **reference subpopulation**.  The
+  implementation used the exponent `1/(t − 1)`, excluded `t ≤ 1`, and
+  aggregated by harmonic mean of the per-cohort Ne, which weights every cohort
+  equally whatever its size.  All three are corrected against the paper as
+  read.  The reference subpopulation defaults to the last observed cohort and
+  is overridable with the new keyword-only `reference=`, taking graph rows
+  (not a `PedigreeView` — ADR 0006 keeps effective-size operations off views);
+  rows are validated like a view selection, under the new
+  `reference_row_out_of_range` and `duplicate_reference_row` codes.  A
+  duplicate is rejected rather than collapsed, since a repeated row would
+  silently reweight ΔF̄.  `NeIndividualDeltaFResult` gains `standard_error`
+  (the paper's `σ_Ne = (2/√N)·Ne²·σ_ΔF`, with σ_ΔF at `ddof=1`, this package's
+  choice), `n_reference` and `reference_generation`; `ne_per_gen`,
+  `mean_eqg_per_gen` and `n_used_per_gen` keep their meanings, but their
+  values move because the eligible set widened to `t > 0`.  Measured on closed
+  random-mating pedigrees with balanced sex and discrete generations, where
+  the paper's derivation predicts the census size: 66.39 against N=60, 132.43
+  against N=120 and 200.01 against N=200, versus 61.69, 130.73 and 190.65
+  before.  The old values sat near N by cancellation — the inflated exponent
+  deflated each Ne by about as much as averaging over the whole genealogy
+  inflated it — so the defence of the change is fidelity to eq. 2, not a
+  smaller bias.  Replication makes that explicit.  Over 20 Wright-Fisher
+  pedigrees at N=200 the corrected estimator averages +19.1% high at `t = 5`
+  equivalent complete generations, +10.5% at 10, +5.6% at 16 and +3.8% at 24,
+  where the old one sat within 1.5% throughout.  The cause is a founder
+  boundary, not the reduction: eq. 1 inverts `F_t = 1 − (1 − ΔF)^t`, so eq. 2
+  recovers N only where the pedigree has really accumulated `t` generations of
+  drift, and a simulated pedigree whose founders are unrelated by construction
+  runs one generation behind (measured mean F tracks the idealised curve at
+  `g − 1` at every generation out to 16).  That predicts `t/(t − 1)`, or
+  +25.0/+11.1/+6.7/+4.3%, against which the convexity of `F ↦ ΔF_i` returns
+  1.8/0.8/0.5/0.3%.  The discarded `1/(t − 1)` exponent was numerically
+  absorbing exactly that lag, which is why the old estimator looked accurate
+  on simulated pedigrees; it has no such justification on a real one, whose
+  founders are where record-keeping stopped rather than genuinely unrelated.
+  The bias decays as `1/t`, and §2.1's standard error now ships beside the
+  estimate.  The record also gains `ne_unrelated_founders`, a **package-defined
+  statistic** that no line of Gutiérrez contains and that therefore ships under
+  no attribution: `1/(2·ΔF̄′)` over `ΔF′_i = 1 − (1 − F_i)^(1/(t_i − 1))`,
+  averaged over the reference rows with `t_i > 1` and `F_i < 1`, `None` when
+  none qualify.  To first order it is algebraically the `1/(t − 1)` exponent
+  this same entry deletes as unsourced, which is exactly why the deleted
+  formula appeared accurate on simulated pedigrees; shipping it back as a
+  named, assumption-gated diagnostic beside the cited estimator is a
+  deliberate decision, not an oversight.  Measured against the census size
+  over 20 Wright-Fisher replicates per cell, eq. 2 first and the companion
+  second: at N=1000, `t = 5`, 1246.59 (+24.66%, against the `t/(t − 1)`
+  prediction of 25.00%) versus 998.40 (−0.16%); at N=200, `t = 16`, 211.14
+  (+5.57%) versus 197.96 (−1.02%).  ADR 0012 carries the full table.  The
+  assumption it needs is true of a simulated pedigree and false of a real one,
+  for the reason just given: on a real pedigree there is no lag to remove, and
+  the field introduces a downward bias instead.  It is a diagnostic for
+  simulated or genuinely founder-complete pedigrees, and `ne` remains the
+  estimator.  Its eligibility is stricter than `ne`'s (`t > 1`, not `t > 0`),
+  so fewer rows can stand behind it than `n_reference` counts; it reports
+  neither a count nor a standard error of its own.  Gutiérrez's own remedy for
+  the same effect is methodological rather than algebraic — Table II reports
+  Ne at no pedigree-depth restriction, at `t ≥ 4` and at `t ≥ 8`, and
+  Figs. 3-4 read ΔF_i against equivalent generations — which a caller reaches
+  here through `reference=`.  Any persisted 0.8.x value for this estimator is
+  not comparable, and `tests/data/ne_baseline_6b` still holds the old numbers,
+  so the parity test excludes this one estimator until the golden is
+  regenerated.
+
 - **Changed: the parent adjacency is built once, lazily, from the edge lists**
   (issue #18).  Construction eagerly built a CSR per parent, `_Am` and `_Af`,
   whose only production reader was their sum in `_A`.  Every graph paid for

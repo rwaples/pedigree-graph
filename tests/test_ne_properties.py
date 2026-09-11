@@ -156,7 +156,9 @@ def test_founder_contributions_conserved(pg):
     for bucket in m_g:
         if np.isfinite(bucket).all():
             assert bucket.sum() == pytest.approx(1.0, abs=1e-9)
-    # Corollary: Σ_f c_f² ∈ [1/n_founders, 1] ⇒ Ne_LTC ∈ [0.5, n_founders/2].
+    # Corollary: Σ_f c_f² ∈ [1/n_founders, 1] ⇒ n_effective_founders = 1/Σc² ∈ [1, n_founders],
+    # and ne = 2·n_effective_founders ∈ [2, 2·n_founders].
     res = ne_long_term_contributions(pg)
-    if res.asymptote_reached and res.ne is not None:
-        assert 0.5 - 1e-9 <= res.ne <= len(founder_idx) / 2.0 + 1e-9
+    if res.ne is not None:
+        assert 1.0 - 1e-9 <= res.n_effective_founders <= len(founder_idx) + 1e-9
+        assert 2.0 - 1e-9 <= res.ne <= 2.0 * len(founder_idx) + 1e-9

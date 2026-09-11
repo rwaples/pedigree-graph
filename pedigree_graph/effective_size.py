@@ -16,8 +16,9 @@ Estimator coverage:
 * :func:`ne_variance_family_size`    — Caballero 1994 eq. 6 (separate sex,
   sex-of-offspring covariance).
 * :func:`ne_sex_ratio`               — Wright ``4 N_m N_f / (N_m + N_f)``.
-* :func:`ne_individual_delta_f`      — Gutiérrez 2008 individual ΔF_i via EqG.
-* :func:`ne_long_term_contributions` — Wray & Thompson 1990 founder-genome contributions.
+* :func:`ne_individual_delta_f`      — Gutiérrez 2008 ΔF_i over a reference subpopulation.
+* :func:`ne_long_term_contributions` — W&T 1990 eq. 31 Ne, C&T 2000 eq. 19 N_ef, from
+  founder-genome contributions.
 * :func:`ne_hill_overlapping`        — Hill 1979 (collapses to Ne_V at L=1).
 * :func:`ne_caballero_toro`          — Caballero & Toro 2002 self-coancestry regression.
 

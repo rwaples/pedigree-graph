@@ -1,7 +1,7 @@
 """Founder-contribution Ne estimator and its primitives (PGQ-006).
 
 Owns the represented-founder index, the adjoint per-cohort mean-contribution
-propagation, and the Wray & Thompson 1990 long-term contribution estimator
+propagation, and the founder-contribution effective sizes
 (:func:`ne_long_term_contributions`) built on them.  ``_founder_idx`` and
 ``_founder_columns`` are also consumed by the Caballero-Toro engine.
 
@@ -25,6 +25,9 @@ from pedigree_graph._ne_results import NeLTCResult
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+
+_ASYMPTOTE_TOL = 1e-6
+"""Movement below which ``NeLTCResult.asymptote_reached`` is reported; descriptive only."""
 
 
 class FounderContributionMeans(NamedTuple):
@@ -143,55 +146,59 @@ def _per_gen_founder_means(
     return FounderContributionMeans(m_g, founder_idx)
 
 
-def _ltc_from(cohorts: ObservedCohorts, means: FounderContributionMeans, tol: float) -> NeLTCResult:
+def _ltc_from(cohorts: ObservedCohorts, means: FounderContributionMeans) -> NeLTCResult:
     m_g, founder_idx = means
     if founder_idx.shape[0] == 0 or cohorts.k == 0:
         return NeLTCResult(
             ne=None,
-            asymptote_reached=False,
-            n_iterations=0,
-            max_delta_final=float("nan"),
+            n_effective_founders=None,
             sum_c_squared=0.0,
+            max_delta_final=float("nan"),
+            asymptote_reached=False,
+            n_cohorts=0,
             final_generation=None,
         )
 
-    asymptote_reached = False
-    n_iterations = 0
-    max_delta_final = float("nan")
-    final = 0
-    for b in range(1, cohorts.k):
-        delta = float(np.max(np.abs(m_g[b] - m_g[b - 1])))
-        n_iterations += 1
-        max_delta_final = delta
-        final = b
-        if delta < tol:
-            asymptote_reached = True
-            break
-
-    sum_c_sq = float((m_g[final] ** 2).sum())
-    ne = 1.0 / (2.0 * sum_c_sq) if asymptote_reached and sum_c_sq > 0 else None
+    last = cohorts.k - 1
+    sum_c_sq = float((m_g[last] ** 2).sum())
+    max_delta_final = float(np.max(np.abs(m_g[last] - m_g[last - 1]))) if last else float("nan")
+    n_ef = 1.0 / sum_c_sq if sum_c_sq > 0 else None
     return NeLTCResult(
-        ne=ne,
-        asymptote_reached=asymptote_reached,
-        n_iterations=n_iterations,
-        max_delta_final=max_delta_final,
+        ne=None if n_ef is None else 2.0 * n_ef,
+        n_effective_founders=n_ef,
         sum_c_squared=sum_c_sq,
-        final_generation=int(cohorts.generations[final]),
+        max_delta_final=max_delta_final,
+        asymptote_reached=max_delta_final < _ASYMPTOTE_TOL,
+        n_cohorts=cohorts.k,
+        final_generation=int(cohorts.generations[last]),
     )
 
 
-def ne_long_term_contributions(pg: PedigreeGraph, *, tol: float = 1e-6) -> NeLTCResult:
-    """Wray & Thompson 1990 long-term contribution Ne (Ne_LTC).
+def ne_long_term_contributions(pg: PedigreeGraph) -> NeLTCResult:
+    """Founder-genome long-term contribution Ne (Ne_LTC).
 
-    Per-cohort mean founder-genome contribution ``c_b[f] =
-    mean_{i ∈ cohort b} c[i, f]`` over the observed generation labels.
-    Compare each adjacent observed pair in turn; stop at the first cohort
-    where ``max_f |c_b[f] − c_{b−1}[f]| < tol``, or after the last observed
-    cohort.  Ne is computed at the stopping cohort as
-    ``1 / (2 · Σ_f c_b[f]²)``; ``final_generation`` names that cohort.
+    Mean founder-genome contributions ``c_b[f] = mean_{i ∈ cohort b} c[i, f]``
+    are taken over the observed generation labels, and both effective sizes
+    are read from the **last observed cohort**, named by
+    ``final_generation``.
 
-    When the asymptote is not reached before the last cohort, ``ne`` is
-    ``None`` and ``asymptote_reached`` is ``False``.
+    ``n_effective_founders = 1 / Σ_f c_f²`` is Caballero & Toro 2000
+    (Genet. Res. 75(3):331-343) eq. 19, ``N_ef = 1/[(1/N²)Σc²_{i(0,t)}]``,
+    in normalised contributions.  It is the assumption-free quantity: what
+    the founder-contribution vector measures directly.
+
+    ``ne = 2 · n_effective_founders`` is Wray & Thompson 1990
+    (Genet. Res. 55(1):41-54) eq. 31, ``Ne ≈ 2N/(μ_r² + σ_r²)``, which with
+    ``μ_r = 1`` gives ``Σr² = N·Σc²`` and so ``Ne = 2/Σc²``; C&T state the
+    same link as ``N_ef = Ne/2`` in the text after their eq. 20.  It is the
+    derived quantity, and it holds under two assumptions this package cannot
+    check against a pedigree: **regular random mating (α = 0)**, and
+    **long-term contribution variance at its asymptote**.
+
+    ``max_delta_final`` reports how far the contributions still moved into
+    the last cohort, which is what a caller weighs against the second
+    assumption; ``asymptote_reached`` is that same movement against a fixed
+    tolerance and gates neither estimate.
 
     Requires complete generation labels (or none), then closed represented
     parentage: a row with exactly one represented parent raises
@@ -199,4 +206,4 @@ def ne_long_term_contributions(pg: PedigreeGraph, *, tol: float = 1e-6) -> NeLTC
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_long_term_contributions")
     _require_closed_parentage(pg, "ne_long_term_contributions")
-    return _ltc_from(cohorts, _per_gen_founder_means(pg, cohorts=cohorts), tol)
+    return _ltc_from(cohorts, _per_gen_founder_means(pg, cohorts=cohorts))

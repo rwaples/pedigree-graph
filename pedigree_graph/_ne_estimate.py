@@ -304,7 +304,7 @@ class _Prerequisites:
             )
             return _individual_delta_f_from(cohorts, self.inbreeding(), eqg)
         if name == "ne_long_term_contributions":
-            return _ltc_from(cohorts, self.founder_means(), 1e-6)
+            return _ltc_from(cohorts, self.founder_means())
         if name == "ne_hill_overlapping":
             with warnings.catch_warnings():
                 # Only the duplicate uniform-sex notice from the nested call; the

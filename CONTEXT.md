@@ -114,6 +114,43 @@ The dyadic rational a pair's kinship would be with unbounded precision. A
 reference-oracle and analysis term; not a public API value.
 _Avoid_: using it for what `pair_kinship` returns
 
+### Effective size
+
+**Reference subpopulation**:
+The set of individuals whose values are averaged to produce one effective-size
+estimate, chosen by the caller rather than implied by the pedigree.
+_Avoid_: reference population, target cohort, sample
+
+**Equivalent complete generations**:
+The pedigree depth of one individual: the sum over its known ancestors of
+`(1/2)^n` for meiotic distance `n`.
+_Avoid_: generation number, pedigree completeness, structural depth
+
+**Individual increase in inbreeding**:
+The per-generation rate of inbreeding implied by a single individual's own
+inbreeding coefficient and its equivalent complete generations.
+_Avoid_: delta F, rate of inbreeding
+
+**Self-coancestry**:
+An individual's coancestry with itself, one half of one plus its inbreeding
+coefficient.
+_Avoid_: diagonal kinship, self-kinship
+
+**Group coancestry**:
+The average coancestry of a cohort taken over every ordered pair of its genome
+nodes, self-coancestries included.
+_Avoid_: mean kinship, average coancestry, pairwise coancestry
+
+**Founder contribution**:
+The expected fraction of one individual's genome inherited from one represented
+founder genome.
+_Avoid_: founder representation, ancestry proportion, long-term contribution
+
+**Effective number of founders**:
+The number of equally contributing founders that would produce the same founder
+diversity as the observed founder contributions.
+_Avoid_: founder equivalents, founder genome equivalents
+
 ## Relationships
 
 - Every **represented founder** belongs to one **represented founder genome**; two MZ represented founders share the same one.
@@ -122,12 +159,22 @@ _Avoid_: using it for what `pair_kinship` returns
 - When a pair satisfies several **relationship categories**, it belongs to its **closest category**; exact counts and pair lists agree on that assignment.
 - Every public row index is expressed in either **graph-space** or **view-space**; the same individual generally has a different index in each.
 - A graph query returns graph-space rows, while a view query returns view-space rows. Coordinate space follows the query receiver.
+- An effective-size estimate is computed over one **reference subpopulation**; a cohort is one way of choosing one, not the only one.
+- **Group coancestry** differs from a mean pairwise kinship by including **self-coancestry** on the diagonal, and is taken over genome nodes rather than rows.
+- A **founder contribution** vector sums to one over the **represented founder genomes**; the **effective number of founders** summarises how evenly it is spread.
+- The **effective number of founders** is half the asymptotic effective size only under random mating — a condition a pedigree alone cannot establish.
 
 ## Example dialogue
 
 > **Reviewer:** "This relationship pair came from a pedigree view. Can I use its rows against the full graph's matrix?"
 > **Author:** "No. Those are **view-space** rows, while the full matrix is indexed in **graph-space**. Query pairwise kinship through the same view, which owns the coordinate conversion."
 
+> **Reviewer:** "The coancestry went up between these two cohorts — can I read an effective size straight off that?"
+> **Author:** "Only if you say which coancestry. **Group coancestry** includes each individual's **self-coancestry**, so it moves with inbreeding; the off-diagonal mean does not. And an estimate needs a **reference subpopulation** — say which individuals you averaged over, or the number means nothing."
+
 ## Flagged ambiguities
 
 - "index" alone is ambiguous between **graph-space** and **view-space** — always qualify which space, since the same individual differs between them and conflating them caused a kinship-lookup bug (PGQ-001).
+- "coancestry" alone is ambiguous between **group coancestry** (diagonal included, over genome nodes) and the off-diagonal mean pairwise kinship — always qualify which, since conflating them let an estimator carry an attribution its source did not support (#15, ADR 0012).
+- "contribution" was used for both a **founder contribution** and the long-term contribution of an arbitrary ancestor — resolved: the package's contribution columns are always **represented founder genomes**.
+- "Ne" unqualified is forbidden — every reference names its estimator, because the operational definitions are not interchangeable.
