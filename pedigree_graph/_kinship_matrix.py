@@ -123,6 +123,8 @@ class PedigreeMatrixMethods:
         It is a SciPy CSC matrix with float32 data, int32 indices and indptr,
         sorted rows per column, and read-only cached arrays.  Every coefficient
         is bit-identical to :meth:`pair_kinship` for the same graph rows.
+        Values follow represented parent edges alone, so they derive from
+        structural depth and supplied generation labels never enter them.
 
         Returns:
             The complete ``n_individuals × n_individuals`` kinship matrix.
@@ -141,6 +143,8 @@ class PedigreeMatrixMethods:
         dependency-closure semantics as :meth:`relationship_pairs`.  All
         selected pairs are classified through the complete graph; every
         retained float32 value is bit-identical to :meth:`pair_kinship`.
+        Classification and values alike derive from structural depth, and
+        supplied generation labels never enter either.
 
         Args:
             max_degree: Select every category at or below this degree (0-5).
@@ -172,7 +176,9 @@ class PedigreeMatrixMethods:
         can contain false positives or false negatives.  Once the support is
         chosen, every retained coefficient (including the always-present
         diagonal) is recomputed with the pinned float32 recurrence and is
-        bit-identical to :meth:`pair_kinship`.
+        bit-identical to :meth:`pair_kinship`.  The support and the values both
+        derive from structural depth; supplied generation labels never enter
+        either.
 
         ``min_propagated_kinship=0`` delegates to :meth:`kinship_matrix`.
         This operation is intentionally full-graph-only; views expose no

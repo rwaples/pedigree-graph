@@ -609,7 +609,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         Exactly one selector is given.  Selection is an output filter: the
         engine always resolves the closer categories a selected one depends
         on, so a pair is reported under its closest category (lowest degree,
-        then registry order) whichever categories were named.
+        then registry order) whichever categories were named.  Degree and
+        category are read from represented parent edges, so they derive from
+        structural depth and supplied generation labels never enter the
+        classification.
 
         Args:
             max_degree: Select every category at or below this degree (0-5).
@@ -648,7 +651,8 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         one row at a time and never builds a pair list, so peak memory is
         O(N) and the call fits pedigrees where :meth:`relationship_pairs`
         would not (ADR 0010).  The counts are the same under every thread
-        budget.
+        budget.  Like the pairs they count, they derive from structural depth;
+        supplied generation labels never enter them.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipCountResult`
@@ -772,6 +776,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         commits the package thread budget
         (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation.
 
+        The walk follows represented parent edges only, so *F* derives from
+        structural depth; supplied generation labels never enter it.
+
         Returns:
             A read-only float64 array of length ``n_individuals``, one entry per
             graph row.
@@ -798,9 +805,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
 
         An ancestor reachable through several paths, as marriage loops
         create, is counted once.  A missing or external parent contributes
-        nothing.  Computed once and memoised; the call commits the package
-        thread budget (:func:`~pedigree_graph.configure_threads`) like every
-        0.8 operation.
+        nothing, so the count derives from structural depth and supplied
+        generation labels never enter it.  Computed once and memoised; the call
+        commits the package thread budget
+        (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation.
 
         Returns:
             A read-only int32 array of length ``n_individuals``, in graph rows.
@@ -816,7 +824,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         the number of distinct descendants in a pedigree without marriage
         loops and exceeds it where a descendant reaches ``v`` through more
         than one child, which is why the name says *paths*; contrast
-        :meth:`distinct_ancestor_counts`.  Computed once and memoised; the
+        :meth:`distinct_ancestor_counts`.  The walk follows represented parent
+        edges, so the count derives from structural depth and supplied
+        generation labels never enter it.  Computed once and memoised; the
         call commits the package thread budget like every 0.8 operation.
 
         Returns:
@@ -869,6 +879,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         to float64 before comparing against a non-dyadic cutoff.  The call
         runs on one thread and commits the package thread budget like every
         0.8 operation.
+
+        The recurrence follows represented parent edges alone, so every value
+        derives from structural depth; supplied generation labels never enter
+        it.
 
         The recurrence memo outlives the call: the graph keeps the ancestor
         pairs each query resolved and starts the next query from them, so

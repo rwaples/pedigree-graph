@@ -236,6 +236,23 @@ live on the corresponding GitHub release pages.
   `PedigreeGraph.relationship_counts` is unchanged, having validated the
   selector all along.
 
+- **Documented: the depth-versus-label contract on the structural consumers**
+  (issue #22).  Structural results derive from structural depth in the parent
+  DAG, and a supplied generation label never enters them; cohort-indexed
+  results group by generation label, falling back to structural depth only
+  when the whole pedigree is unlabelled.  The rule held in the code and was
+  covered by `test_generation_labels_do_not_drive_structure`, but an
+  `inspect.getdoc` scan of the public surface found it stated nowhere: none of
+  `kinship_matrix`, `approximate_kinship_matrix`, `relationship_kinship_matrix`,
+  `pair_kinship`, `inbreeding`, `relationship_pairs`, `relationship_counts`,
+  `distinct_ancestor_counts` or `descendant_path_counts` mentioned depth,
+  labels or cohorts.  All nine now say it, as do the three view methods, and
+  the rule is stated once in `CONTEXT.md`'s `## Relationships` section.
+  `test_generation_labels_stay_off_the_structural_path` pins the six modules
+  that read the `generation_labels` property — the property itself plus five
+  cohort-side effective-size modules — so a structural module reading labels
+  fails the suite rather than waiting on a reviewer.  No behaviour changes.
+
 - **Fixed: `mean_kinship_by_generation` counts MZ co-twins as one genome**
   (issue #25).  It used a third convention that was neither row-based nor
   genome-node: `_finalize_summary` dropped the MZ pair from both the numerator

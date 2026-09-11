@@ -175,6 +175,29 @@ def test_removed_names_do_not_reappear():
     assert not offenders, "names deleted in 0.8.0 or 0.9 back in the tree:\n  " + "\n  ".join(offenders)
 
 
+# Every module that reads the ``generation_labels`` property.  The rule this
+# pins is the depth-versus-label contract (#22): structural results derive from
+# structural depth alone, so every reader here is either the property itself or
+# a cohort-side effective-size module.  A structural module joining this set is
+# the bug; adding it to the allowlist instead of fixing it defeats the check.
+GENERATION_LABEL_READERS = frozenset(
+    {
+        "_cohorts.py",
+        "_ne_common.py",
+        "_ne_estimate.py",
+        "_ne_metadata.py",
+        "_ne_rates.py",
+        "_properties.py",
+    }
+)
+
+
+def test_generation_labels_stay_off_the_structural_path():
+    names = frozenset({"generation_labels"})
+    readers = {path.name for path in _production_modules() if _identifier_uses(path, names)}
+    assert readers == GENERATION_LABEL_READERS
+
+
 def test_no_delete_markers_remain():
     marker = "0.8.0-" + "DELETE"
     tracked = subprocess.run(

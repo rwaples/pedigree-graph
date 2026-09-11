@@ -202,11 +202,12 @@ class PedigreeView:
     ) -> RelationshipPairs:
         """Return every relationship pair of the selected categories, in view rows.
 
-        Pairs are classified through the full graph, so cousins whose parents
-        and grandparents are unselected are still cousins here.  Only pairs
-        with both endpoints in this view are reported, and each row is the
-        member's position in the view (``0 <= row < len(view)``).  Selectors,
-        closest-category precedence, and roles are those of
+        Pairs are classified through the full graph from structural depth, so
+        cousins whose parents and grandparents are unselected are still cousins
+        here.  Only pairs with both endpoints in this view are reported, and
+        each row is the member's position in the view
+        (``0 <= row < len(view)``).  Selectors, closest-category precedence,
+        and roles are those of
         :meth:`pedigree_graph.PedigreeGraph.relationship_pairs`; symmetric
         blocks store ``first < second`` in view rows, every block is sorted
         by the canonical unordered view-row key, and every block carries this
@@ -241,8 +242,9 @@ class PedigreeView:
 
         Same selectors as :meth:`relationship_pairs`; each count equals the
         length of that call's block.  Pairs are classified through the full
-        graph and counted when both members are selected; no pair list is
-        built, as for :meth:`pedigree_graph.PedigreeGraph.relationship_counts`.
+        graph from structural depth and counted when both members are
+        selected; no pair list is built, as for
+        :meth:`pedigree_graph.PedigreeGraph.relationship_counts`.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipCountResult`
@@ -262,9 +264,10 @@ class PedigreeView:
         The same three call forms, values, and guarantees as
         :meth:`pedigree_graph.PedigreeGraph.pair_kinship`.  Rows are view rows
         (``0 <= row < len(view)``) and a block or collection must carry this
-        view's own token; the recurrence itself runs through the full graph,
-        so unselected ancestors still count, and it starts from and extends the
-        owning graph's retained memo, so views and graph share one closure.
+        view's own token; the recurrence itself runs through the full graph
+        from structural depth, so unselected ancestors still count, and it
+        starts from and extends the owning graph's retained memo, so views and
+        graph share one closure.
 
         Returns:
             A read-only float32 array aligned to the input pairs, or for a
