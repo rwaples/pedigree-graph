@@ -5,9 +5,9 @@ invariant to swapping the sexes; ne_inbreeding's mean-F-per-cohort must match
 inbreeding; and every estimator of a batch returns None or a positive finite
 Ne.  Three further cross-cutting properties generalise the example suite over
 random pedigrees: ne_coancestry agrees whether theta is streamed from the DP
-or walked from a cached kinship matrix; one-parent rows disable the two
-founder estimators and nothing else; and founder contributions are conserved
-(sum to 1 per cohort) under complete parentage.
+or walked from a cached kinship matrix; one-parent rows disable the founder
+estimator and nothing else; and founder contributions are conserved (sum to 1
+per cohort) under complete parentage.
 """
 
 from __future__ import annotations
@@ -39,8 +39,6 @@ _HEAVY = settings(deadline=None, max_examples=30)
 # A randomly-generated pedigree can have uniform sex in/across a cohort; the
 # sex-aware estimators then legitimately return ne=None after a RuntimeWarning.
 _UNIFORM_SEX_OK = pytest.mark.filterwarnings("ignore:.*is uniform.*:RuntimeWarning")
-
-_FOUNDER_BASED = ("ne_long_term_contributions", "ne_caballero_toro")
 
 
 @_UNIFORM_SEX_OK
@@ -103,15 +101,16 @@ def test_every_estimator_reports_none_or_a_positive_ne(pg):
 @_UNIFORM_SEX_OK
 @_SETTINGS
 @given(pg=random_pedigree())
-def test_one_parent_rows_disable_only_the_founder_estimators(pg):
-    # The founder-based estimators need closed represented parentage; the
-    # batch reports missing metadata for them and keeps the other six.
+def test_one_parent_rows_disable_only_the_founder_estimator(pg):
+    # ne_long_term_contributions is the only estimator needing closed
+    # represented parentage; the batch reports missing metadata for it and
+    # keeps the other seven.
     one_parent = (np.asarray(pg.mother_rows) < 0) != (np.asarray(pg.father_rows) < 0)
     results = estimate_effective_sizes(pg)
     assert len(results) == 8
     for name, result in results.items():
         refused = isinstance(result, UnavailableEffectiveSize)
-        assert refused == (bool(one_parent.any()) and name in _FOUNDER_BASED), name
+        assert refused == (bool(one_parent.any()) and name == "ne_long_term_contributions"), name
         if refused:
             assert result.code == "incomplete_parentage", name
             assert result.fields["affected_count"] == int(one_parent.sum()), name

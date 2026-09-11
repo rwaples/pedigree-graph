@@ -192,7 +192,7 @@ ESTIMATORS = (
     _Estimator("ne_individual_delta_f", effective_size.ne_individual_delta_f, "generations", frozenset()),
     _Estimator("ne_long_term_contributions", effective_size.ne_long_term_contributions, None, frozenset()),
     _Estimator("ne_hill_overlapping", effective_size.ne_hill_overlapping, None, frozenset()),
-    _Estimator("ne_caballero_toro", effective_size.ne_caballero_toro, "generations", _RATE_TRANSITIONS),
+    _Estimator("ne_group_coancestry", effective_size.ne_group_coancestry, "generations", _RATE_TRANSITIONS),
 )
 
 ESTIMATOR_NAMES = frozenset(e.name for e in ESTIMATORS)
@@ -295,7 +295,7 @@ def test_empty_graph_batch_serializes(empty_graph):
 
 
 @_over(ESTIMATORS)
-@pytest.mark.parametrize("keyword", ["mean_contributions", "ct_accumulators", "theta_per_gen", "K"])
+@pytest.mark.parametrize("keyword", ["mean_contributions", "group_coancestry", "theta_per_gen", "K"])
 def test_final_estimator_rejects_injected_prerequisites(line_graph, est, keyword):
     with pytest.raises(TypeError):
         est.call(line_graph, **{keyword: None})
@@ -685,38 +685,40 @@ def test_mz_founder_pair_matches_a_single_founder_beyond_cohort_zero():
     assert mz.sum(axis=1) == pytest.approx(1.0)
 
 
-def test_mz_founder_pair_matches_a_single_founder_in_caballero_toro():
-    mz = effective_size.ne_caballero_toro(_mz_founder_pedigree())
-    single = effective_size.ne_caballero_toro(_single_founder_pedigree())
-    assert np.array_equal(mz.mean_self_coancestry_per_gen, single.mean_self_coancestry_per_gen, equal_nan=True)
-    assert np.array_equal(mz.n_founders_with_descendants_per_gen, single.n_founders_with_descendants_per_gen)
-    assert mz.mean_self_coancestry_per_gen[1:] == pytest.approx([0.5, 0.625])
-    assert np.isnan(mz.mean_self_coancestry_per_gen[0])
-    assert np.array_equal(mz.n_founders_with_descendants_per_gen, [0, 2, 2])
+def test_an_mz_founder_pair_matches_a_single_founder_in_group_coancestry():
+    """One genome is one genome, in the founder cohort as in every later one.
+
+    :func:`test_mz_founder_pair_matches_a_single_founder_beyond_cohort_zero`
+    has to exclude cohort 0, because the founder-contribution means count
+    rows there and the MZ pedigree carries an extra one.  The genome-node
+    collapse removes that exception: these two records are equal field for
+    field, cohort 0 included.
+    """
+    mz = effective_size.ne_group_coancestry(_mz_founder_pedigree())
+
+    assert mz == effective_size.ne_group_coancestry(_single_founder_pedigree())
+    assert np.array_equal(mz.n_genomes_per_gen, [2, 2, 2])
+    assert np.array_equal(mz.mean_group_coancestry_per_gen, [0.25, 0.375, 0.5])
 
 
-def test_caballero_toro_first_cohort_is_the_baseline():
-    result = effective_size.ne_caballero_toro(_late_founder_pedigree())
-    assert np.isnan(result.mean_self_coancestry_per_gen[0])
-    assert result.n_founders_with_descendants_per_gen[0] == 0
+def test_group_coancestry_computes_its_baseline_around_a_late_founder():
+    """The first cohort's f̄ is eq. 3 over its own rows, never a sentinel.
 
-
-def test_a_founder_is_not_its_own_descendant():
+    Those two rows are unrelated and non-inbred, so the baseline is C&T's
+    ``1/(2N)`` at ``N = 2``.  The cohort after it holds one child and one
+    newly appearing founder, unrelated to each other, so its f̄ is that same
+    ``0.25``: no drift where the pedigree records none.  That newly
+    appearing founder counts toward its own cohort's census, which leaves a
+    two-row cohort beside a one-row one and a ``census_ratio`` that says so.
+    """
     pg = _late_founder_pedigree()
     assert np.array_equal(_founder_idx(pg), [0, 1, 3])
-    result = effective_size.ne_caballero_toro(pg)
-    assert np.array_equal(result.n_founders_with_descendants_per_gen, [0, 2, 3])
 
+    result = effective_size.ne_group_coancestry(pg)
 
-def test_caballero_toro_first_transition_starts_from_the_half_baseline():
-    """Self-coancestry is (1 + F) / 2, so a non-inbred baseline is 0.5, not 0."""
-    pg = PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") // 2).alias("generation")))
-    result = effective_size.ne_caballero_toro(pg)
-    expected = _transition_ne(
-        np.array([0.5, result.mean_self_coancestry_per_gen[1]]),
-        result.generations[:2],
-    )
-    assert result.ne_per_gen[0] == pytest.approx(expected[0])
+    assert np.array_equal(result.n_genomes_per_gen, [2, 2, 1])
+    assert np.array_equal(result.mean_group_coancestry_per_gen, [0.25, 0.25, 0.5])
+    assert result.census_ratio == 2.0
 
 
 def test_labels_that_merge_structural_depths_propagate_by_structure():
@@ -728,13 +730,13 @@ def test_labels_that_merge_structural_depths_propagate_by_structure():
     assert m_g == pytest.approx(np.full((3, 2), 0.5))
     assert m_g.sum(axis=1) == pytest.approx(1.0)
     assert effective_size.ne_long_term_contributions(pg).final_generation == 2
-    assert np.array_equal(effective_size.ne_caballero_toro(pg).generations, [0, 1, 2])
+    assert np.array_equal(effective_size.ne_group_coancestry(pg).generations, [0, 1, 2])
 
 
 def test_a_parent_and_its_child_in_one_label_group_still_run():
     pg = PedigreeGraph.from_frame(_relabelled(_closed_line(2), {0: 0, 1: 1, 2: 1}))
     assert effective_size.ne_long_term_contributions(pg).final_generation == 1
-    assert np.array_equal(effective_size.ne_caballero_toro(pg).generations, [0, 1])
+    assert np.array_equal(effective_size.ne_group_coancestry(pg).generations, [0, 1])
 
 
 def test_variance_keeps_the_maximum_parent_cohort():

@@ -13,8 +13,10 @@ on an :class:`~pedigree_graph._cohorts.ObservedCohorts` grouping.  The
 orchestrator calls the same evaluators, so a direct call and an
 orchestrated call cannot disagree.
 
-Also owns :func:`_summary_from_matrix`, the cached-matrix route to
-:meth:`PedigreeGraph.mean_kinship_by_generation`.
+Also owns the two routes to :meth:`PedigreeGraph.mean_kinship_by_generation`
+— :func:`_summary_from_matrix` over a cached kinship matrix and the streamed
+DP — and :func:`_kinship_summary_for_labels`, the one place that chooses
+between them for any labelling, the genome-node one included.
 """
 
 from __future__ import annotations
@@ -89,13 +91,46 @@ def _summary_from_matrix(
     return _finalize_summary(sum_theta, dense, twin, observed, n_unlabelled)
 
 
+def _kinship_summary_for_labels(pg: PedigreeGraph, labels: np.ndarray) -> GenerationKinshipSummary:
+    """Generation kinship summary of *labels*, by whichever route the graph affords.
+
+    Walks the complete kinship matrix when the graph already caches it, else
+    streams the retiring DP.  :func:`_summary_from_matrix` is written to be
+    the matrix oracle of the DP path, so the route is an implementation
+    choice and never a semantic one; both the memoised graph-label summary
+    and the masked-label summary the group-coancestry prerequisite needs go
+    through here rather than each picking a route of its own.
+
+    Args:
+        pg: Pedigree graph supplying the structure.
+        labels: per-row cohort label to group by; ``-1`` for a row that
+            belongs to no cohort.
+
+    Returns:
+        The :class:`~pedigree_graph.summaries.GenerationKinshipSummary` over
+        those labels.
+    """
+    K = pg._complete_kinship_cache
+    if K is not None:
+        return _summary_from_matrix(K, np.asarray(labels), np.asarray(pg.twin_rows))
+    return _compute_generation_kinship_summary(
+        pg.n_individuals,
+        pg.mother_rows,
+        pg.father_rows,
+        pg.twin_rows,
+        pg.depth,
+        0.0,
+        labels=labels,
+    )
+
+
 def _generation_kinship_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
     """Memoised body of :meth:`PedigreeGraph.mean_kinship_by_generation`.
 
-    Walks the complete kinship matrix when the graph already caches it, else
-    streams the retiring DP; both group by the supplied labels, or by
-    structural depth when none were supplied.  Stored on the graph, so every
-    later call returns the same frozen object.
+    Groups by the supplied labels, or by structural depth when none were
+    supplied, over whichever route :func:`_kinship_summary_for_labels`
+    picks.  Stored on the graph, so every later call returns the same
+    frozen object.
     """
     cached = pg._generation_kinship_summary
     if cached is not None:
@@ -104,19 +139,7 @@ def _generation_kinship_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
     if labels is None:
         labels = pg.depth
     t0 = time.perf_counter()
-    K = pg._complete_kinship_cache
-    if K is not None:
-        summary = _summary_from_matrix(K, np.asarray(labels), np.asarray(pg.twin_rows))
-    else:
-        summary = _compute_generation_kinship_summary(
-            pg.n_individuals,
-            pg.mother_rows,
-            pg.father_rows,
-            pg.twin_rows,
-            pg.depth,
-            0.0,
-            labels=labels,
-        )
+    summary = _kinship_summary_for_labels(pg, labels)
     pg._generation_kinship_summary = summary
     logger.info(
         "mean_kinship_by_generation: n=%d, groups=%d, unlabelled=%d, %.2fs",

@@ -17,8 +17,8 @@ to interleave against, and the larger cell runs for close to half an hour, so
 finishing a cell before starting the next keeps an interrupted sweep useful.
 
 The fixtures are closed-parentage Wright-Fisher pedigrees with dense generation
-labels, sex, and birth years, built by ``tests/parity/generate_ne_baseline.py``
-(the slice-6c parity generator) so every estimator, Hill's birth-year branch
+labels, sex, and birth years, built by ``tests/parity/generate_ne_baseline_0_9.py``
+(the 0.9 golden generator) so every estimator, Hill's birth-year branch
 included, runs.  The parity corpus is not used because its random pedigrees
 carry external parents, which the founder-based estimators refuse.
 """
@@ -43,7 +43,7 @@ _FIXTURES = {
 
 
 def _frame(name: str):
-    import generate_ne_baseline as gen
+    import generate_ne_baseline_0_9 as gen
 
     params = _FIXTURES[name]
     return gen.with_birth_years(gen.random_mating(**params))

@@ -88,10 +88,10 @@ def _require_closed_parentage(pg: PedigreeGraph, operation: str) -> None:
 
     The founder-contribution recurrences halve each parent's row into the
     child; a child with one represented parent would keep only half its
-    ancestry, so the long-term-contribution and Caballero-Toro estimators
-    require every row to have zero represented parents (a represented
-    founder) or two.  The unrepresented parent is ``"missing"`` when its id
-    is ``-1`` and ``"external"`` when it names an id outside the graph.
+    ancestry, so the long-term-contribution estimator requires every row to
+    have zero represented parents (a represented founder) or two.  The
+    unrepresented parent is ``"missing"`` when its id is ``-1`` and
+    ``"external"`` when it names an id outside the graph.
 
     Raises:
         MissingMetadataError: ``incomplete_parentage`` with the number of

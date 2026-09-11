@@ -12,7 +12,6 @@ import pytest
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._kinship_kernel import _compute_eqg, _compute_generation_kinship_summary
-from pedigree_graph._ne_caballero_toro import CTAccumulators, _caballero_toro_accumulators
 from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
     FamilySizeEntry,
@@ -20,15 +19,15 @@ from pedigree_graph._ne_family_size import (
     _sex_specific_family_table,
     _sigma2_from_quadrants,
 )
-from pedigree_graph._ne_founders import _founder_idx
+from pedigree_graph._ne_group_coancestry import GroupCoancestryByCohort, _group_coancestry_by_cohort
 from pedigree_graph._ne_rates import _summary_from_matrix
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
     EffectiveSizeResults,
     NeInbreedingResult,
     estimate_effective_sizes,
-    ne_caballero_toro,
     ne_coancestry,
+    ne_group_coancestry,
     ne_hill_overlapping,
     ne_inbreeding,
     ne_individual_delta_f,
@@ -856,25 +855,31 @@ def test_sex_specific_family_table_unlabelled_rows_belong_to_no_cohort():
     np.testing.assert_array_equal(table[0].k_ff, [1])
 
 
-def test_ne_caballero_toro_closed_line_self_coancestry():
-    """Closed line: per-gen mean self-coancestry follows (1 + F_g)/2.
+def test_group_coancestry_equals_diluted_theta_plus_self_coancestry():
+    """Closed line: ``f̄_g = θ̄_g·(n_g − 1)/n_g + s̄_g/n_g`` holds exactly.
 
-    Both founders descend from every gen ≥ 1 (closed line), so
-    f̄_s,g = (1 + F_g)/2.  Hand values:
-      gen 1: F=0     ⇒ 0.5
-      gen 2: F=0.25  ⇒ 0.625
-      gen 3: F=0.375 ⇒ 0.6875
-      gen 4: F=0.5   ⇒ 0.75
-      gen 5: F=0.59375 ⇒ 0.796875
+    Eq. 3 sums the ``n_g`` self-coancestries ``s_i = (1 + F_i)/2`` alongside
+    the ``n_g(n_g − 1)`` ordered pairs, so group coancestry is the
+    within-cohort θ̄ diluted by ``(n_g − 1)/n_g`` plus a self term worth
+    ``s̄_g/n_g``.  That second term is the algebra behind ``census_ratio``:
+    it is the part of f̄ that tracks cohort size rather than drift, so a
+    changing census shifts ``ln(1 − f̄)`` and the regression reads the shift
+    as drift.
+
+    The closed line has two rows per cohort and no MZ twins, so ``n_g == 2``
+    throughout and ``θ̄_g`` is the single within-cohort pair.
     """
     pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
-    res = ne_caballero_toro(pg)
-    expected_fs = np.array([0.5, 0.625, 0.6875, 0.75, 0.796875])
-    np.testing.assert_allclose(res.mean_self_coancestry_per_gen[1:], expected_fs, atol=1e-12)
-    np.testing.assert_array_equal(res.n_founders_with_descendants_per_gen[1:], [2, 2, 2, 2, 2])
-    # Aggregate slope-derived Ne should be in the same ballpark as Ne_I (~2–3).
-    assert res.ne is not None
-    assert 1.5 < res.ne < 4.0
+    res = ne_group_coancestry(pg)
+    np.testing.assert_array_equal(res.n_genomes_per_gen, [2, 2, 2, 2, 2, 2])
+    theta = ne_coancestry(pg).mean_theta_per_gen
+    s_bar = (1.0 + ne_inbreeding(pg).mean_f_per_gen) / 2.0
+    n_g = res.n_genomes_per_gen.astype(np.float64)
+    np.testing.assert_allclose(
+        res.mean_group_coancestry_per_gen,
+        theta * (n_g - 1.0) / n_g + s_bar / n_g,
+        atol=1e-12,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1053,24 +1058,22 @@ class TestTypedPayloadModels:
             decomp.n_f,
         )
 
-    def test_ct_accumulators_are_typed(self):
+    def test_group_coancestry_by_cohort_is_typed(self):
         pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
-        F = pg.inbreeding()
-        acc = _caballero_toro_accumulators(pg, _founder_idx(pg), F)
-        assert isinstance(acc, CTAccumulators)
-        shape = (ObservedCohorts.for_graph(pg, "test").k, len(_founder_idx(pg)))
-        assert acc.sums.shape == shape
-        assert acc.counts.shape == shape
-        assert acc.sums.dtype == np.float64
-        assert acc.counts.dtype == np.int64
+        cohorts = ObservedCohorts.for_graph(pg, "test")
+        gc = _group_coancestry_by_cohort(pg, cohorts)
+        assert isinstance(gc, GroupCoancestryByCohort)
+        for array in gc:
+            assert array.shape == (cohorts.k,)
+        assert gc.generations.dtype == np.int32
+        assert gc.mean_group_coancestry.dtype == np.float64
+        assert gc.n_genomes.dtype == np.int64
 
-    def test_ct_accumulators_missing_field_raises(self):
+    def test_group_coancestry_by_cohort_missing_field_raises(self):
         with pytest.raises(TypeError):
-            CTAccumulators(  # type: ignore[call-arg]
-                sums=np.zeros((1, 0)),
-                counts=np.zeros((1, 0), dtype=np.int64),
-                # peak/telemetry fields intentionally omitted
-                founder_idx=np.empty(0, dtype=np.intp),
+            GroupCoancestryByCohort(  # type: ignore[call-arg]
+                generations=np.zeros(1, dtype=np.int32),
+                mean_group_coancestry=np.zeros(1),
             )
 
     def test_estimate_effective_sizes_values_are_typed_results(self):

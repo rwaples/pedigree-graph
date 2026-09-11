@@ -20,7 +20,8 @@ Estimator coverage:
 * :func:`ne_long_term_contributions` — W&T 1990 eq. 31 Ne, C&T 2000 eq. 19 N_ef, from
   founder-genome contributions.
 * :func:`ne_hill_overlapping`        — Hill 1979 (collapses to Ne_V at L=1).
-* :func:`ne_caballero_toro`          — Caballero & Toro 2002 self-coancestry regression.
+* :func:`ne_group_coancestry`        — C&T 2000 eq. 3 group coancestry over the
+  genome-node pedigree.
 
 :func:`estimate_effective_sizes` runs a selection of them over one lazily
 built prerequisite memo, serially in canonical order, and returns an
@@ -33,12 +34,13 @@ Metadata dependency matrix.  Every guard raises
 empty graph bypasses them all (every estimator then returns its record
 with ``ne=None`` and zero-length arrays).
 
-* ``ne_inbreeding``, ``ne_coancestry``, ``ne_individual_delta_f``: complete
-  generation labels, or none (``missing_generation_labels`` when partial;
-  absent labels group by structural depth).
-* ``ne_long_term_contributions``, ``ne_caballero_toro``: generation labels
-  as above, then closed represented parentage (``incomplete_parentage``
-  when a row has exactly one represented parent).
+* ``ne_inbreeding``, ``ne_coancestry``, ``ne_individual_delta_f``,
+  ``ne_group_coancestry``: complete generation labels, or none
+  (``missing_generation_labels`` when partial; absent labels group by
+  structural depth).
+* ``ne_long_term_contributions``: generation labels as above, then closed
+  represented parentage (``incomplete_parentage`` when a row has exactly
+  one represented parent).
 * ``ne_variance_family_size``, ``ne_sex_ratio``: generation labels as
   above, then complete sex (``missing_sex``, ``status`` ``"absent"`` or
   ``"partial"``); uniform but known sex is valid and warns.
@@ -51,7 +53,6 @@ with ``ne=None`` and zero-length arrays).
 from __future__ import annotations
 
 from pedigree_graph._cohort_utils import CohortWindow, eligible_cohort_range
-from pedigree_graph._ne_caballero_toro import ne_caballero_toro
 from pedigree_graph._ne_estimate import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
     EffectiveSizeResults,
@@ -60,12 +61,13 @@ from pedigree_graph._ne_estimate import (
 )
 from pedigree_graph._ne_family_size import ne_sex_ratio, ne_variance_family_size
 from pedigree_graph._ne_founders import ne_long_term_contributions
+from pedigree_graph._ne_group_coancestry import ne_group_coancestry
 from pedigree_graph._ne_hill import ne_hill_overlapping
 from pedigree_graph._ne_rates import ne_coancestry, ne_inbreeding, ne_individual_delta_f
 from pedigree_graph._ne_results import (
     GenerationInterval,
-    NeCaballeroToroResult,
     NeCoancestryResult,
+    NeGroupCoancestryResult,
     NeHillResult,
     NeInbreedingResult,
     NeIndividualDeltaFResult,
@@ -79,8 +81,8 @@ __all__ = [
     "CohortWindow",
     "EffectiveSizeResults",
     "GenerationInterval",
-    "NeCaballeroToroResult",
     "NeCoancestryResult",
+    "NeGroupCoancestryResult",
     "NeHillResult",
     "NeInbreedingResult",
     "NeIndividualDeltaFResult",
@@ -90,8 +92,8 @@ __all__ = [
     "UnavailableEffectiveSize",
     "eligible_cohort_range",
     "estimate_effective_sizes",
-    "ne_caballero_toro",
     "ne_coancestry",
+    "ne_group_coancestry",
     "ne_hill_overlapping",
     "ne_inbreeding",
     "ne_individual_delta_f",

@@ -46,7 +46,7 @@ def test_flat_series_regresses_to_no_estimate():
 @pytest.mark.parametrize("labels", [None, [10, 12, 15]])
 def test_non_inbred_pedigree_has_no_rate_estimate(labels):
     pg = _closed_line(2, labels) if labels else _non_inbred()
-    for estimator in (es.ne_coancestry, es.ne_caballero_toro):
+    for estimator in (es.ne_coancestry, es.ne_group_coancestry):
         res = estimator(pg)
         assert res.ne is None or res.ne < 1e9, (estimator.__name__, res.ne)
 

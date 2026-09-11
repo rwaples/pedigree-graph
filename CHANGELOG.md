@@ -6,6 +6,68 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking: `ne_caballero_toro` is replaced by `ne_group_coancestry`**
+  (issue #15, ADR 0012).  The departing estimator averaged descendant
+  self-coancestry `(1 + F)/2` within each founder genome's reachable set,
+  averaged that across founder genomes, and regressed it against a hardcoded
+  `0.5` baseline.  Caballero & Toro 2002 (Cons. Genet. 3(3):289-299) contains
+  no such statistic: its `s` feeds a diversity partition and its effective size
+  (eq. 14) is a contribution-variance formula.  Where every represented founder
+  reached every cohort member the statistic was **bitwise** `(1 + F̄)/2`, so it
+  reproduced `ne_inbreeding` to 15 significant figures; where founder reach was
+  incomplete it differed only by a reweighting no cited paper motivates.
+
+  The replacement is Caballero & Toro 2000 (Genet. Res. 75(3):331-343) eq. 3
+  group coancestry, `f̄ = Σ_i Σ_j a_ij / 2N²` over all `N²` ordered pairs with
+  self-coancestries and reciprocals included, evaluated per observed cohort
+  over the genome-node pedigree of ADR 0008 so that an MZ pair is one genome
+  rather than two, and reduced by the same `ln(1 − x)` regression
+  `ne_inbreeding` and `ne_coancestry` use.  It does **not** claim to be their
+  eq. 11, whose linearisation the authors flag as "only accurate if `F̄ₖ₋₁` is
+  small".  The baseline cohort's `f̄` is computed like every other cohort's
+  rather than assumed; with unrelated non-inbred founders it lands on the
+  `f̄₀ = 1/(2N)` the paper states, exactly, which makes the first `ne_per_gen`
+  entry their eq. 11 `Δf₀,₁`.
+
+  The record changes shape with the name.  `mean_group_coancestry_per_gen`
+  replaces `mean_self_coancestry_per_gen`; `n_founders_with_descendants_per_gen`
+  is gone, because it described the deleted weighting; `n_genomes_per_gen`,
+  `n_generations_used` and `census_ratio` are new.  The estimator no longer
+  requires closed represented parentage, since it reads no founder
+  contributions, so `incomplete_parentage` now gates `ne_long_term_contributions`
+  alone.  It streams off the existing kinship DP (the genome-node collapse is a
+  row mask and the diagonal needs only `F`), reusing the summary
+  `ne_coancestry` already memoises when the pedigree has no MZ twins, so unlike
+  `ne_coancestry` it carries no OOM exposure and needs no `skip_` flag.
+
+  Two measured caveats ship with it rather than being discovered downstream.
+  Its **scalar is not an independent number**: against `ne_coancestry` it runs
+  `−0.64%` at `N=10`, `+0.05%` at `N=20` and under `0.03%` from `N=40` up, and
+  sweeping the MZ fraction of every cohort from 0 to 0.9 never separates them by
+  more than `0.41%`, because `f̄_g = θ̄_g·(n_g−1)/n_g + s̄_g/n_g` differs from
+  `θ̄_g` by an `O(1/n)` term that is near-constant across cohorts and so nearly
+  absent from the slope.  What the estimator adds is the per-cohort series, not
+  a second opinion on the scalar.  And that series is a function of group size,
+  so the **scalar assumes a constant census**: at 6 cohorts and 8 seeds
+  `Ne_GC/Ne_C` is 1.00 at a constant 40, 0.57 declining 40 to 4, 1.28 growing 10
+  to 40, and 0.08 with a lone trailing individual.  Following the same rule as
+  the Ne_LTC asymptote, `ne` is always reported and `census_ratio` — `max/min`
+  of `n_genomes_per_gen` over exactly the cohorts the fit uses, `1.0` under a
+  constant census — ships beside it as the evidence to distrust it.
+
+  Any persisted 0.8.x value under the old key is not comparable.  On the golden
+  fixtures the old and new scalars are 2.27 against 2.34 (`closed_line_5`),
+  none against 5.15 (`skip_gen`, where the old series was flat to 1.5e−16 and
+  reported nothing), 2934.68 against 809.44 (`small_pedigree`, where founder
+  reach is least saturated and the deleted reweighting bit hardest), 15.16
+  against 16.68, 45.31 against 47.64, and 67.54 against 62.15.
+
+  The estimator's numba ancestor-set arena (`_ct_ensure_pool_capacity`,
+  `_ct_merge_to_pool`, `_ct_accumulators_kernel`) is deleted with it.  Issue #1
+  names that arena as a retirement-style DP pattern to reuse, but asks for it
+  adapted inline and excludes a shared kernel, so it survives in git history
+  rather than as an importer-free module.
+
 - **Fixed, and breaking: `ne_long_term_contributions` reported an effective
   size 4× below the one it cites** (issue #15, ADR 0012).  It computed
   `1 / (2 · Σ_f c_f²)` over the per-cohort mean founder-genome contributions.
@@ -67,10 +129,9 @@ live on the corresponding GitHub release pages.
   around it, from −13.95% to +13.48% at N=200, so the regression test gates the
   replicate mean rather than any one pedigree.  Any persisted 0.8.x value for
   this estimator is not comparable: the old numbers are 4× low where they exist
-  at all, and on a realistic pedigree they do not exist.  `tests/data/ne_baseline_6b`
-  still holds them, so the parity test excludes this estimator, as it already
-  excludes `ne_individual_delta_f`, until the golden is regenerated at the end
-  of the issue-15 work.
+  at all, and on a realistic pedigree they do not exist.  The golden that held
+  the old numbers has since been retired for `tests/data/ne_baseline_0_9`, so
+  the parity test gates this estimator rather than excluding it.
 
 - **Fixed, and breaking: `ne_individual_delta_f` now computes the formula it
   cites** (issue #15, ADR 0012).  Gutiérrez et al. 2008 (Genet. Sel. Evol.
@@ -136,9 +197,9 @@ live on the corresponding GitHub release pages.
   Ne at no pedigree-depth restriction, at `t ≥ 4` and at `t ≥ 8`, and
   Figs. 3-4 read ΔF_i against equivalent generations — which a caller reaches
   here through `reference=`.  Any persisted 0.8.x value for this estimator is
-  not comparable, and `tests/data/ne_baseline_6b` still holds the old numbers,
-  so the parity test excludes this one estimator until the golden is
-  regenerated.
+  not comparable; the golden that held the old numbers has since been retired
+  for `tests/data/ne_baseline_0_9`, so the parity test gates this estimator
+  rather than excluding it.
 
 - **Changed: the parent adjacency is built once, lazily, from the edge lists**
   (issue #18).  Construction eagerly built a CSR per parent, `_Am` and `_Af`,

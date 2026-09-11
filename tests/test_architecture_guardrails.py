@@ -107,13 +107,32 @@ REMOVED_NAMES = (
     "_kinship_cache",
     "streaming_exact",
 )
+
+# Names 0.9 deleted with the Caballero-Toro estimator (issue #15, ADR 0012).
+# It was replaced rather than renamed, so any of these reappearing as code
+# would reintroduce a statistic whose cited paper does not contain it, or a
+# record field describing the founder-reach weighting that went with it.
+# String literals are prose to the sweep, so a test asserting the old key is
+# absent from ``ALL_EFFECTIVE_SIZE_ESTIMATORS`` still reads naturally.
+REMOVED_NAMES_0_9 = (
+    "ne_caballero_toro",
+    "NeCaballeroToroResult",
+    "CTAccumulators",
+    "_caballero_toro_accumulators",
+    "_caballero_toro_from",
+    "_ct_ensure_pool_capacity",
+    "_ct_merge_to_pool",
+    "_ct_accumulators_kernel",
+    "mean_self_coancestry_per_gen",
+    "n_founders_with_descendants_per_gen",
+    "n_iterations",
+)
 REPO_DIR = PKG_DIR.parent
 SWEPT_DIRS = ("pedigree_graph", "tests", "benchmarks")
 FROZEN_GENERATORS = frozenset(
     {
         "tests/parity/generate_baseline.py",
         "tests/parity/dump_relationship_inputs.py",
-        "tests/parity/generate_ne_baseline.py",
     }
 )
 
@@ -151,9 +170,9 @@ def test_frame_like_lives_in_the_typing_module():
 
 
 def test_removed_names_do_not_reappear():
-    names = frozenset(REMOVED_NAMES)
+    names = frozenset(REMOVED_NAMES + REMOVED_NAMES_0_9)
     offenders = [use for path in _swept_files() for use in _identifier_uses(path, names)]
-    assert not offenders, "0.7.1 names in the 0.8 tree:\n  " + "\n  ".join(offenders)
+    assert not offenders, "names deleted in 0.8.0 or 0.9 back in the tree:\n  " + "\n  ".join(offenders)
 
 
 def test_no_delete_markers_remain():

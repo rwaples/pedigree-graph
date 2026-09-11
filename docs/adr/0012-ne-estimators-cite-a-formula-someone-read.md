@@ -75,7 +75,10 @@ Applied:
 * **`ne_caballero_toro` is replaced by `ne_group_coancestry`** — C&T Eq. 3
   group coancestry, evaluated on the genome-node pedigree, with a *computed*
   baseline, reduced by the same `ln(1−x)` regression the other rate estimators
-  use.
+  use. Its record carries `n_genomes_per_gen`, the `n` behind the baseline's
+  `1/(2n)`, so a reader can check that number against the record rather than
+  the pedigree, and `census_ratio`, which is how the estimator states the one
+  assumption its reduction cannot verify. See the consequence below.
 * **`ne_long_term_contributions`** reports `n_effective_founders = 1/Σc²` as
   the assumption-free quantity and `ne = 2·n_effective_founders` as the derived
   one, at the last observed cohort, with the achieved `max_delta` reported as
@@ -90,12 +93,105 @@ Applied:
 ## Consequences
 
 * Three of eight estimators change numerically. Persisted 0.8.x results are not
-  comparable, and `tests/data/ne_baseline_6b` is regenerated once.
+  comparable.
+* **The 6b golden is retired rather than regenerated.** `tests/data/ne_baseline_6b`
+  was gated by a generator frozen at a pre-0.8 API: `compute_all_ne` no longer
+  exists and the positional `PedigreeGraph(df)` raises `TypeError`, and the
+  file's own docstring forbade migrating it forward. `tests/data/ne_baseline_0_9`
+  replaces it, written by `tests/parity/generate_ne_baseline_0_9.py` against the
+  current API, with the six fixture builders byte-identical so the two goldens
+  differ only by the estimator changes. Everything that existed to bridge the 6b
+  record shapes goes with it: the dense-label projection, the MZ founder-column
+  migration allowance, the noise-slope exception, and the two outright
+  exclusions the old test promised would "go away when the baseline is
+  regenerated". The parity module falls from 152 lines to 63, and the generator
+  it reads is the generator that wrote it.
 * One canonical key is renamed, so pedsum and simACE both need edits. The three
-  repos move as a coordinated set.
+  repos move as a coordinated set, but **not in the same change**. Both
+  consumers pin `pedigree-graph>=0.8,<0.9` and resolve 0.8.3 from PyPI, so
+  nothing that calls the library sees the rename until 0.9 ships. Pure
+  expectation constants moved early; every site that reads a key out of a live
+  result dict moves at the relock, with no both-keys compatibility shim in
+  between. The relock must also amend simACE's `CONTEXT.md`, which currently
+  records these estimator names as not to be renamed and protects
+  `mean_self_coancestry` and `Ne_caballero_toro` as fixed caption identifiers.
+* **The Caballero-Toro numba ancestor-set arena is deleted, not relocated.**
+  Issue #1 names `_caballero_toro_accumulators` as "the exact retirement-style
+  ancestor-set DP pattern" it wants for `_compute_n_ancestors`, but it asks for
+  that pattern adapted inline and excludes a shared kernel outright, so keeping
+  the three kernels alive would ship an importer-free module the issue declined.
+  Git history is the durable record, and the issue carries a pointer to the path
+  and commit that hold it.
 * `ne_group_coancestry` streams from the existing DP (the genome-node collapse
   is a row mask, the diagonal needs only `F`), so unlike `ne_coancestry` it
   carries no OOM exposure and needs no `skip_` flag downstream.
+* **`ne_group_coancestry`'s scalar is not a new independent number, and this
+  ADR does not claim it is.** Against `ne_coancestry` over 10 random-mating
+  seeds per cell it runs `−0.16%` at `N=6`, `−0.64%` at `N=10`, `+0.05%` at
+  `N=20` and under `0.03%` from `N=40` up; sweeping the MZ fraction of every
+  cohort from 0 to 0.9 at `N=60` never separates them by more than `0.41%`.
+  The algebra says why: `f̄_g = θ̄_g·(n_g−1)/n_g + s̄_g/n_g`, whose extra term is
+  `O(1/n)` and near-constant across cohorts, so it is nearly absent from the
+  slope both scalars are read off. **This is not the defect finding 2 records.**
+  That one was an algebraic identity to `ne_inbreeding` whose only
+  distinguishing signal was an unsourced reweighting; this difference is the
+  diagonal C&T Eq. 3 explicitly includes. Nor is it a general property of rate
+  estimators agreeing on clean pedigrees: on the same MZ sweep `ne_inbreeding`
+  separates from `ne_coancestry` by `−1.18%`, `+0.92%` and `+8.68%`. What
+  `ne_group_coancestry` adds is the per-cohort series — group coancestry with
+  the diagonal, over genome nodes, with a computed `1/(2N)` baseline that
+  carries information where `ne_coancestry`'s founder θ̄ of roughly zero
+  carries none, and which is the quantity C&T's gene diversity `GD = 1 − f̄` is
+  built on. A consumer choosing between the two on the strength of the scalar
+  alone is choosing on a difference that is not there.
+* **That series is a function of group size, so the scalar assumes a constant
+  census, and the record says so.** The `s̄_g/n_g` term above is a
+  self-coancestry near 0.5 over the cohort size and does not accumulate at the
+  drift rate, so `ln(1 − f̄)` reads a change in census as drift. Six cohorts,
+  8 seeds, `Ne_GC` against `Ne_C`:
+
+  | cohort sizes | Ne_GC | Ne_C | ratio |
+  |---|---:|---:|---:|
+  | constant 40 | 41.39 | 41.36 | 1.00 |
+  | decline 40 → 4 | 8.30 | 14.47 | 0.57 |
+  | growth 10 → 40 | 31.54 | 24.70 | 1.28 |
+  | constant 40, lone last | 3.40 | 40.73 | 0.08 |
+
+  One trailing cohort of a single individual moves the reported Ne from about
+  41 to 3.40 while `ne_coancestry` is unmoved. C&T's own Eq. 11 carries the
+  same assumption, building `f̄₀ = 1/(2N)` in at `t = 0` and holding `N` fixed
+  after, so the formula is faithful and this is an assumption to carry rather
+  than a defect to fix. It is carried the way the Ne_LTC asymptote is carried,
+  not the way the old `tol` was: `ne` is always reported, and `census_ratio` —
+  `max/min` of `n_genomes_per_gen` over exactly the cohorts the fit uses, `1.0`
+  when the census is constant — ships beside it as the evidence to distrust it.
+  Withholding `ne` above some threshold was rejected twice over, for inventing
+  a tolerance no cited paper gives and for recreating the never-reports failure
+  this ADR removes from `ne_long_term_contributions`.
+* **What the replacement did to the shipped numbers.** The six golden fixtures
+  are byte-identical pedigrees across the change, and the regenerated golden
+  differs from its predecessor by exactly the removal of the
+  `ne_caballero_toro` block and the addition of a `ne_group_coancestry` one;
+  the other seven estimator blocks compare equal in every fixture.
+
+  | fixture | old `ne_caballero_toro` | new `ne_group_coancestry` | `census_ratio` |
+  |---|---:|---:|---:|
+  | `closed_line_5` | 2.265480 | 2.344616 | 1.000000 |
+  | `skip_gen` | *none* | 5.154730 | 3.000000 |
+  | `small_pedigree` | 2934.679127 | 809.438884 | 1.001004 |
+  | `wf_n20_g4` | 15.159835 | 16.678037 | 1.000000 |
+  | `wf_n40_g5_birth_years` | 45.309974 | 47.642255 | 1.000000 |
+  | `wf_n60_g6` | 67.538291 | 62.152448 | 1.000000 |
+
+  Two of these earn comment. `small_pedigree` moves by a factor of 3.6, which
+  is the founder-reachability reweighting of finding 2 leaving: that fixture is
+  where founder reach is least saturated, and the early cohorts where the
+  reweighting bit hardest are the ones the regression leans on. `skip_gen` goes
+  from no estimate at all to 5.15, because the departing statistic's series was
+  flat to 1.5e−16, below the slope-noise floor, so it reported `None`; it is
+  also the one fixture whose cohorts differ in size, so the new golden ships a
+  live example of `census_ratio` firing, at 3.0, on the single number in it
+  that should be distrusted.
 * Assumptions that a pedigree cannot verify — random mating, asymptotic
   contribution variance, unrelated founders, the choice of reference
   subpopulation — are now stated on the result record that carries the number,

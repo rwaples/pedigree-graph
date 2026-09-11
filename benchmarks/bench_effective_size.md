@@ -42,8 +42,8 @@ this note carries the environment and spread inline.
 ## Inputs
 
 Closed-parentage Wright-Fisher pedigrees with dense generation labels, sex,
-and birth years, built by `tests/parity/generate_ne_baseline.py` (the slice-6c
-parity generator, `random_mating` plus `with_birth_years`), so every estimator
+and birth years, built by `tests/parity/generate_ne_baseline_0_9.py` (the 0.9
+golden generator, `random_mating` plus `with_birth_years`), so every estimator
 runs, Hill's birth-year branch included. The parity corpus is not used: its
 random pedigrees carry external parents, which the founder-based estimators
 refuse since slice 6c-2 (`incomplete_parentage`), and the adapter re-raises

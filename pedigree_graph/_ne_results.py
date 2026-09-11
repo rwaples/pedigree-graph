@@ -279,6 +279,65 @@ class NeCoancestryResult(_FrozenResult):
 
 
 @dataclass(frozen=True, slots=True, eq=False)
+class NeGroupCoancestryResult(_FrozenResult):
+    """Group-coancestry rate (Ne_GC) result.
+
+    Per-cohort group coancestry over the genome-node pedigree of ADR 0008,
+    reduced by the ``ln(1 − f̄)`` regression the other rate estimators share.
+    See :func:`~pedigree_graph._ne_group_coancestry.ne_group_coancestry` for
+    the sources, the equations, and why the reduction is not that paper's
+    eq. 11.
+
+    Attributes:
+        ne: scalar Ne from regression of ``ln(1 − f̄)`` on the label offset,
+            first observed cohort excluded.
+        generations: observed generation labels, int32, ascending.
+        mean_group_coancestry_per_gen: per-cohort f̄ over that cohort's
+            genome-node representatives; NaN where it has none.  The first
+            entry is the computed baseline, not an assumed one.
+        n_genomes_per_gen: genome-node representatives per cohort.  One per
+            row, except that only the canonical row of an MZ pair counts, in
+            whichever cohort that row carries — so a cohort holding nothing
+            but co-twins of earlier rows reports ``0``.  This is the ``n``
+            behind the baseline's ``1/(2n)``, which is what lets a reader
+            check that number against the record rather than the pedigree.
+        transition_from: ``generations[:-1]``.
+        transition_to: ``generations[1:]``.
+        ne_per_gen: Ne of each adjacent observed-cohort transition,
+            gap-corrected.  The first entry runs from the computed baseline,
+            so where that baseline is the paper's ``1/(2N)`` it is their
+            eq. 11 ``Δf₀,₁ = (f̄₁ − f̄₀)/(1 − f̄₀)``.
+        slope: regression slope.
+        n_generations_used: post-baseline cohorts in the regression.
+        census_ratio: ``max / min`` of ``n_genomes_per_gen`` over exactly
+            the cohorts ``n_generations_used`` counts, ``1.0`` for a
+            constant census across them and ``nan`` when the fit is empty.
+            **The scalar assumes a constant census, and this is the
+            evidence for or against that assumption.**
+            ``f̄_g = θ̄_g·(n_g − 1)/n_g + s̄_g/n_g`` is an identity, and its
+            ``s̄_g/n_g`` term is a self-coancestry near ``0.5`` over the
+            cohort size, which does not accumulate at the drift rate — so
+            ``ln(1 − f̄)`` reads a change in census as drift.  Caballero &
+            Toro's own eq. 11 carries the assumption too, fixing ``N`` at
+            ``f̄₀ = 1/(2N)`` and holding it after, so this is an assumption
+            to weigh rather than a defect to correct.  How far the estimate
+            moves as this ratio rises is measured once, in
+            :func:`~pedigree_graph._ne_group_coancestry.ne_group_coancestry`.
+    """
+
+    ne: float | None
+    generations: np.ndarray = field(metadata=_meta(np.int32, "cohort", labels=True))
+    mean_group_coancestry_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
+    n_genomes_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
+    transition_from: np.ndarray = field(metadata=_meta(np.int32, "transition"))
+    transition_to: np.ndarray = field(metadata=_meta(np.int32, "transition"))
+    ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "transition"))
+    slope: float = float("nan")
+    n_generations_used: int = 0
+    census_ratio: float = float("nan")
+
+
+@dataclass(frozen=True, slots=True, eq=False)
 class NeVarianceResult(_FrozenResult):
     """Variance-of-family-size (Ne_V) result.
 
@@ -577,27 +636,3 @@ class NeHillResult(_FrozenResult):
         cohort_years = self.cohort_years
         if cohort_years is None or len(cohort_years) != self.n_eligible_cohorts:
             raise ValueError(message)
-
-
-@dataclass(frozen=True, slots=True, eq=False)
-class NeCaballeroToroResult(_FrozenResult):
-    """Caballero & Toro 2002 self-coancestry rate (Ne_CT) result.
-
-    For each represented founder genome f and observed cohort after the
-    first, computes the mean self-coancestry of f's descendants in that
-    cohort, ``f̄_s,f,g = mean_{i ∈ desc(f,g)} (1 + F_i) / 2``, averages over
-    founder genomes with descendants there, and regresses
-    ``ln(1 − f̄_s,g)`` on the label offset, reporting
-    ``ne = −1 / (2·slope)``.  The first observed cohort is the baseline: its
-    mean is NaN and its founder-descendant count 0, and the first transition
-    starts from the conceptual non-inbred self-coancestry ``0.5``.
-    """
-
-    ne: float | None
-    generations: np.ndarray = field(metadata=_meta(np.int32, "cohort", labels=True))
-    mean_self_coancestry_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
-    n_founders_with_descendants_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
-    transition_from: np.ndarray = field(metadata=_meta(np.int32, "transition"))
-    transition_to: np.ndarray = field(metadata=_meta(np.int32, "transition"))
-    ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "transition"))
-    slope: float = float("nan")

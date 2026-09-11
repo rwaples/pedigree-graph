@@ -1,9 +1,9 @@
 """Partly known generation labels are a structured error, never a wrapped bucket.
 
 A ``-1`` label would index the last cohort of every label-indexed
-accumulator (the kinship DP theta sums, the Caballero-Toro founder sweep, the
-per-cohort inbreeding means) and silently bias the estimate.  Absent labels
-are fine: the estimators fall back to structural depth.
+accumulator (the kinship DP theta sums, the group-coancestry cohort sums,
+the per-cohort inbreeding means) and silently bias the estimate.  Absent
+labels are fine: the estimators fall back to structural depth.
 """
 
 import numpy as np
@@ -12,8 +12,8 @@ import pytest
 from pedigree_graph import MissingMetadataError, PedigreeGraph
 from pedigree_graph.effective_size import (
     estimate_effective_sizes,
-    ne_caballero_toro,
     ne_coancestry,
+    ne_group_coancestry,
     ne_inbreeding,
     ne_individual_delta_f,
     ne_long_term_contributions,
@@ -42,7 +42,7 @@ ESTIMATORS = [
     ne_variance_family_size,
     ne_sex_ratio,
     ne_long_term_contributions,
-    ne_caballero_toro,
+    ne_group_coancestry,
 ]
 
 
@@ -83,4 +83,4 @@ def test_complete_labels_and_absent_labels_both_run():
     unlabelled = PedigreeGraph.from_arrays(ids=_IDS, mother_ids=_MOTHER, father_ids=_FATHER, sex=_SEX)
     assert unlabelled.generation_labels is None
     assert labelled.mean_kinship_by_generation() == unlabelled.mean_kinship_by_generation()
-    assert ne_caballero_toro(labelled).ne == ne_caballero_toro(unlabelled).ne
+    assert ne_group_coancestry(labelled).ne == ne_group_coancestry(unlabelled).ne

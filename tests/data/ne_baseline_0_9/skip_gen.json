@@ -1,27 +1,11 @@
 {
- "ne_caballero_toro": {
-  "mean_self_coancestry_per_gen": [
-   null,
-   0.5,
-   0.625,
-   0.5
-  ],
-  "n_founders_with_descendants_per_gen": [
-   0,
-   4,
-   2,
-   4
-  ],
-  "ne": null,
-  "ne_per_gen": [
-   null,
-   null,
-   2.0,
-   null
-  ],
-  "slope": 1.477766939657583e-16
- },
  "ne_coancestry": {
+  "generations": [
+   0,
+   1,
+   2,
+   3
+  ],
   "mean_theta_per_gen": [
    0.0,
    0.08333333333333333,
@@ -31,12 +15,60 @@
   "n_generations_used": 2,
   "ne": 6.25591571346891,
   "ne_per_gen": [
-   null,
    6.0,
    null,
    null
   ],
-  "slope": -0.07992435047094802
+  "slope": -0.07992435047094802,
+  "transition_from": [
+   0,
+   1,
+   2
+  ],
+  "transition_to": [
+   1,
+   2,
+   3
+  ]
+ },
+ "ne_group_coancestry": {
+  "census_ratio": 3.0,
+  "generations": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "mean_group_coancestry_per_gen": [
+   0.125,
+   0.2222222222222222,
+   0.625,
+   0.359375
+  ],
+  "n_generations_used": 3,
+  "n_genomes_per_gen": [
+   4,
+   3,
+   1,
+   2
+  ],
+  "ne": 5.154729824783159,
+  "ne_per_gen": [
+   4.500000000000001,
+   0.9655172413793103,
+   null
+  ],
+  "slope": -0.09699829418722895,
+  "transition_from": [
+   0,
+   1,
+   2
+  ],
+  "transition_to": [
+   1,
+   2,
+   3
+  ]
  },
  "ne_hill_overlapping": {
   "N1_f": null,
@@ -70,6 +102,12 @@
   "vk_scaled": false
  },
  "ne_inbreeding": {
+  "generations": [
+   0,
+   1,
+   2,
+   3
+  ],
   "mean_f_per_gen": [
    0.0,
    0.0,
@@ -77,44 +115,71 @@
    0.0
   ],
   "n_generations_used": 3,
-  "ne": 8.584955506242638e+16,
+  "ne": null,
   "ne_per_gen": [
-   null,
    null,
    2.0,
    null
   ],
-  "slope": -5.824142007916289e-18
- },
- "ne_individual_delta_f": {
-  "mean_eqg_per_gen": [
-   null,
-   null,
-   2.0,
-   2.25
-  ],
-  "n_used_per_gen": [
-   0,
+  "slope": -5.824142007916289e-18,
+  "transition_from": [
    0,
    1,
    2
   ],
-  "ne": 2.0,
+  "transition_to": [
+   1,
+   2,
+   3
+  ]
+ },
+ "ne_individual_delta_f": {
+  "generations": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "mean_eqg_per_gen": [
+   null,
+   1.0,
+   2.0,
+   2.25
+  ],
+  "n_reference": 2,
+  "n_used_per_gen": [
+   0,
+   3,
+   1,
+   2
+  ],
+  "ne": null,
   "ne_per_gen": [
    null,
    null,
-   2.0,
+   3.732050807568876,
    null
-  ]
+  ],
+  "ne_unrelated_founders": null,
+  "reference_generation": 3,
+  "standard_error": null
  },
  "ne_long_term_contributions": {
   "asymptote_reached": false,
+  "final_generation": 3,
   "max_delta_final": 0.375,
-  "n_iterations": 3,
-  "ne": null,
+  "n_cohorts": 4,
+  "n_effective_founders": 3.5555555555555554,
+  "ne": 7.111111111111111,
   "sum_c_squared": 0.28125
  },
  "ne_sex_ratio": {
+  "generations": [
+   0,
+   1,
+   2,
+   3
+  ],
   "n_female_per_gen": [
    2,
    2,
@@ -139,10 +204,12 @@
   "cov_f": [
    0.0,
    null,
+   null,
    null
   ],
   "cov_m": [
    0.0,
+   null,
    null,
    null
   ],
@@ -150,25 +217,36 @@
   "ne_per_transition": [
    18.0,
    null,
+   null,
    null
+  ],
+  "parent_generations": [
+   0,
+   1,
+   2,
+   3
   ],
   "v_ff": [
    0.0,
+   null,
    null,
    null
   ],
   "v_fm": [
    0.0,
    null,
+   null,
    null
   ],
   "v_mf": [
    0.0,
    null,
+   null,
    null
   ],
   "v_mm": [
    0.5,
+   null,
    null,
    null
   ]

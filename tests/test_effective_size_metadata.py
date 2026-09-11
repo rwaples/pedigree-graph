@@ -32,10 +32,10 @@ ALL = [
     es.ne_sex_ratio,
     es.ne_long_term_contributions,
     es.ne_hill_overlapping,
-    es.ne_caballero_toro,
+    es.ne_group_coancestry,
 ]
 NEEDS_SEX = [es.ne_variance_family_size, es.ne_sex_ratio, es.ne_hill_overlapping]
-NEEDS_PARENTAGE = [es.ne_long_term_contributions, es.ne_caballero_toro]
+NEEDS_PARENTAGE = [es.ne_long_term_contributions]
 NEEDS_GENERATION = [f for f in ALL if f is not es.ne_hill_overlapping]
 
 
@@ -108,7 +108,7 @@ def test_uniform_fully_known_sex_is_valid_and_warns(estimator):
     [(np.array([-1, -1, 1, 1, 3, -1, 5, 5]), "missing"), (np.array([-1, -1, 1, 1, 3, 99, 5, 5]), "external")],
     ids=["missing", "external"],
 )
-def test_one_represented_parent_disables_only_ltc_and_ct(estimator, father, status):
+def test_one_represented_parent_disables_only_ltc(estimator, father, status):
     pg = _graph(father=father)
     with pytest.raises(MissingMetadataError) as info:
         estimator(pg)
@@ -140,7 +140,6 @@ def test_generation_is_validated_before_parentage(estimator):
 def test_represented_founders_with_external_parents_are_closed_parentage():
     pg = _graph(mother=np.array([90, 91, 0, 0, 2, 2, 4, 4]), father=np.array([92, 93, 1, 1, 3, 3, 5, 5]))
     assert es.ne_long_term_contributions(pg).final_generation is not None
-    assert es.ne_caballero_toro(pg).ne is not None or True
 
 
 class TestHill:

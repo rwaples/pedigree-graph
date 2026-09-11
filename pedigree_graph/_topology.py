@@ -3,10 +3,9 @@
 Public graph coordinates are input rows, in any acyclic order.  Several
 kernels need parents to precede children in the index space they sweep:
 the Meuwissen-Luo inbreeding walk, the descendant path-count reverse
-sweep, the pairwise kinship peel, the kinship DP, and the Caballero-Toro
-forward sweep.  This module builds one order for all of them --- stable
-depth-major --- and the maps that move arrays and row references between
-graph space and that order.
+sweep, the pairwise kinship peel, and the kinship DP.  This module builds
+one order for all of them --- stable depth-major --- and the maps that
+move arrays and row references between graph space and that order.
 
 Stable depth-major is a topological order because a child's structural
 depth strictly exceeds both parents'.  Ties within a depth keep input row

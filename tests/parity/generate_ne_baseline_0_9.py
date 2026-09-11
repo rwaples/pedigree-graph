@@ -1,22 +1,19 @@
-"""Freeze the slice-6b effective-size outputs as the ``h = 1`` parity golden.
+"""Freeze the current effective-size outputs as the 0.9 scientific-contract golden.
 
-Run against the ``v0.8`` branch at ``00a3667`` (slice 6b), before the sparse
-label rewrite of slice 6c::
+    pixi run python tests/parity/generate_ne_baseline_0_9.py
 
-    pixi run python tests/parity/generate_ne_baseline.py
+``tests/test_ne_golden_parity.py`` replays the same fixtures through
+``estimate_effective_sizes`` and compares the serialized records field by
+field, so the golden pins both the numbers and the record shape of every
+estimator.  Unlike the pre-0.8 ``ne_baseline_6b`` golden it replaces, it is
+written by the same API the test reads it with, so it is regenerated
+deliberately whenever an estimator's contract changes, and the ADR that
+changed the contract records the old and new values (ADR 0012, issue #15
+decision D14).
 
-Every fixture carries dense ``0..g_max`` generation labels, so slice 6c's gap
-formula must reduce to the one-step arithmetic bit for bit on each of them.
-``tests/test_ne_h1_parity.py`` replays the same fixtures through the current
-estimators and asserts the serialized results are equal.
-
-This module is a generator, not a test: it targets the API of its base commit
-``00a3667`` and is never migrated forward.  Only :func:`capture` reaches into
-``pedigree_graph``, and it imports there rather than at module scope, so the
-test module that reads the fixtures and the frozen output imports nothing from
-the package through this file.  The fixtures are deterministic and import
-nothing from the test modules, so the golden can be regenerated from any
-checkout of the base commit.
+The fixtures are deterministic, import nothing from the test modules, and
+carry forward unchanged across regenerations, so a diff between two goldens is
+attributable to the estimators alone.
 """
 
 from __future__ import annotations
@@ -29,9 +26,12 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+from pedigree_graph import PedigreeGraph
+from pedigree_graph.effective_size import estimate_effective_sizes
+
 HERE = Path(__file__).resolve().parent
 DATA = HERE.parent / "data"
-OUT = DATA / "ne_baseline_6b"
+OUT = DATA / "ne_baseline_0_9"
 
 
 def _df(records: list[dict]) -> pl.DataFrame:
@@ -118,11 +118,9 @@ def fixtures() -> dict[str, pl.DataFrame]:
 
 
 def capture(name: str, df: pl.DataFrame) -> dict[str, dict]:
-    from pedigree_graph import PedigreeGraph, compute_all_ne
-
-    pg = PedigreeGraph(df)
-    hill_kwargs = {"hill_vk_scale": name.endswith("birth_years")}
-    return {key: result.to_dict() for key, result in compute_all_ne(pg, **hill_kwargs).items()}
+    pg = PedigreeGraph.from_frame(df)
+    results = estimate_effective_sizes(pg, hill_vk_scale=name.endswith("birth_years"))
+    return {key: result.to_dict() for key, result in results.items()}
 
 
 def main() -> int:

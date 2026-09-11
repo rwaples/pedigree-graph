@@ -203,21 +203,25 @@ APPROX_THRESHOLD = 0.001
 APPROX_SUPPORT_DRIFT = 0.005
 
 NE_ATOL = 1e-12
-# Six of the eight estimators are exactly invariant under permutation.  Two are
-# not, for reasons that are properties of the estimator rather than of the
+# Five of the eight estimators are exactly invariant under permutation.  Three
+# are not, for reasons that are properties of the estimator rather than of the
 # routing, and each gets the tolerance its measured cause needs:
-#   ne_caballero_toro / ne_inbreeding reduce per-individual float64 quantities in
-#     row order (the founder-set sweep, the per-cohort mean of F), so a
-#     permutation moves the last bits; worst observed 2.0e-12.
-#   ne_coancestry is derived from theta-bar, a float64 mean of float32 kinship
-#     that carries the ADR 0009 cross-order envelope, and then amplified through
-#     ``1 / (2 * delta)``; worst observed 6.3e-6 on deep_inbred_60g.
-# A routing bug moves all of these by percent, well outside either tolerance.
+#   ne_inbreeding reduces a per-individual float64 quantity in row order (the
+#     per-cohort mean of F), so a permutation moves the last bits; worst
+#     observed 1.6e-12.
+#   ne_coancestry and ne_group_coancestry both reduce a float64 sum of float32
+#     kinship that carries the ADR 0009 cross-order envelope, amplified through
+#     ``1 / (2 * delta)``; worst observed 6.3e-6 and 6.4e-6, both on
+#     deep_inbred_60g ne_per_gen.  Group coancestry adds a float64 diagonal term
+#     to that sum, which dilutes the envelope by O(1/n) without changing its
+#     order, so it takes ne_coancestry's tolerance and not the 1e-10 that
+#     sufficed for a predecessor reading no kinship at all.
+# A routing bug moves all of these by percent, well outside any of these bounds.
 NE_RTOL = 1e-12
 NE_RTOL_BY_ESTIMATOR = {
-    "ne_caballero_toro": 1e-10,
     "ne_inbreeding": 1e-10,
     "ne_coancestry": 1e-4,
+    "ne_group_coancestry": 1e-4,
 }
 
 

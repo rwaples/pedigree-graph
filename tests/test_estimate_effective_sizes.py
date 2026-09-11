@@ -18,6 +18,8 @@ import pytest
 
 from pedigree_graph import PedigreeGraph, _threads, configure_threads
 from pedigree_graph import _ne_estimate as ne_estimate
+from pedigree_graph import _ne_group_coancestry as ne_group_coancestry
+from pedigree_graph import _ne_rates as ne_rates
 from pedigree_graph import effective_size as es
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
@@ -35,7 +37,7 @@ _BIRTH = np.array([1900, 1900, 1920, 1920, 1940, 1940, 1960, 1960])
 _ONE_PARENT_FATHER = np.array([-1, -1, 1, 1, 3, -1, 5, 5])
 
 _DIRECT = {name: getattr(es, name) for name in ALL_EFFECTIVE_SIZE_ESTIMATORS}
-_NEEDS_PARENTAGE = ("ne_long_term_contributions", "ne_caballero_toro")
+_NEEDS_PARENTAGE = ("ne_long_term_contributions",)
 _NEEDS_SEX = ("ne_variance_family_size", "ne_sex_ratio", "ne_hill_overlapping")
 
 
@@ -79,15 +81,15 @@ def prerequisites(monkeypatch):
     return built
 
 
-def _count_calls(monkeypatch, name):
+def _count_calls(monkeypatch, name, module=ne_estimate):
     calls = []
-    real = getattr(ne_estimate, name)
+    real = getattr(module, name)
 
     def counted(*args, **kwargs):
         calls.append(name)
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(ne_estimate, name, counted)
+    monkeypatch.setattr(module, name, counted)
     return calls
 
 
@@ -137,7 +139,7 @@ class TestSelectorAcceptance:
         )
 
     def test_input_order_does_not_change_output_order(self):
-        result = estimate_effective_sizes(_graph(), ["ne_caballero_toro", "ne_inbreeding"])
+        result = estimate_effective_sizes(_graph(), ["ne_group_coancestry", "ne_inbreeding"])
         assert list(result) == list(ALL_EFFECTIVE_SIZE_ESTIMATORS)
 
     def test_hill_vk_scale_true_reaches_the_hill_record(self):
@@ -225,7 +227,7 @@ class TestMissingMetadata:
         assert value.fields["operation"] == name
 
     @pytest.mark.parametrize("name", _without(*_NEEDS_PARENTAGE))
-    def test_incomplete_parentage_leaves_the_other_six_intact(self, name):
+    def test_incomplete_parentage_leaves_the_other_seven_intact(self, name):
         value = estimate_effective_sizes(_graph(father=_ONE_PARENT_FATHER))[name]
         assert not isinstance(value, UnavailableEffectiveSize)
 
@@ -262,14 +264,8 @@ class TestPrerequisiteClosure:
                 {"observed_cohorts", "represented_founders", "founder_means", "ne_long_term_contributions"},
             ),
             (
-                "ne_caballero_toro",
-                {
-                    "observed_cohorts",
-                    "inbreeding",
-                    "represented_founders",
-                    "ct_accumulators",
-                    "ne_caballero_toro",
-                },
+                "ne_group_coancestry",
+                {"observed_cohorts", "group_coancestry", "ne_group_coancestry"},
             ),
             (
                 "ne_variance_family_size",
@@ -281,9 +277,9 @@ class TestPrerequisiteClosure:
         estimate_effective_sizes(_graph(), [name])
         assert prerequisites[0].computed() == expected
 
-    def test_long_term_contributions_does_not_build_the_caballero_toro_accumulators(self, prerequisites):
+    def test_long_term_contributions_does_not_build_the_group_coancestry(self, prerequisites):
         estimate_effective_sizes(_graph(), ["ne_long_term_contributions"])
-        assert "ct_accumulators" not in prerequisites[0].computed()
+        assert "group_coancestry" not in prerequisites[0].computed()
 
     def test_hill_without_birth_years_collapses_through_a_private_variance(self, prerequisites):
         result = estimate_effective_sizes(_graph(), ["ne_hill_overlapping"])
@@ -309,10 +305,26 @@ class TestPrerequisiteClosure:
         estimate_effective_sizes(_graph(), ["ne_hill_overlapping", "ne_variance_family_size"])
         assert len(calls) == 1
 
-    def test_long_term_contributions_and_caballero_toro_share_one_founder_index(self, monkeypatch):
-        calls = _count_calls(monkeypatch, "_founder_idx")
-        estimate_effective_sizes(_graph(), list(_NEEDS_PARENTAGE))
-        assert len(calls) == 1
+    def test_group_coancestry_and_coancestry_share_one_kinship_summary(self, monkeypatch):
+        """The two kinship estimators walk a twin-free pedigree once between them.
+
+        ``_kinship_summary_for_labels`` is the single place either summary
+        can run its DP or matrix walk.  With no MZ twins the genome-node
+        mask is a no-op, so the group-coancestry prerequisite asks for the
+        graph-label summary rather than a masked one of its own and hits the
+        memo ``ne_coancestry`` fills.  Two walks would mean the shared memo
+        was missed, so one call is the proof.
+
+        Both call sites are counted because they reach that function by
+        different names: ``ne_coancestry`` through the memoised body in
+        ``_ne_rates``, the masked route through the import-time binding in
+        ``_ne_group_coancestry``.  Counting one module would score the
+        masked route as a hit on the memo.
+        """
+        via_rates = _count_calls(monkeypatch, "_kinship_summary_for_labels", module=ne_rates)
+        via_mask = _count_calls(monkeypatch, "_kinship_summary_for_labels", module=ne_group_coancestry)
+        estimate_effective_sizes(_graph(), ["ne_coancestry", "ne_group_coancestry"])
+        assert len(via_rates) + len(via_mask) == 1
 
     def test_a_failed_guard_memoizes_nothing_for_that_estimator(self, prerequisites):
         estimate_effective_sizes(_graph(father=_ONE_PARENT_FATHER))
@@ -346,10 +358,10 @@ class TestSerialization:
         payload = estimate_effective_sizes(_graph(father=_ONE_PARENT_FATHER)).to_dict()
         not_requested = estimate_effective_sizes(_graph(), []).to_dict()["ne_inbreeding"]
         assert set(not_requested) == {"reason", "code", "fields"}
-        entry = payload["ne_caballero_toro"]
+        entry = payload["ne_long_term_contributions"]
         assert set(entry) == {"reason", "code", "fields"}
         assert type(entry["fields"]) is dict
-        assert entry["fields"]["operation"] == "ne_caballero_toro"
+        assert entry["fields"]["operation"] == "ne_long_term_contributions"
         assert entry["fields"]["unrepresented_parent_status"] == "missing"
         json.dumps(payload)
 

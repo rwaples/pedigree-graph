@@ -2,8 +2,7 @@
 
 Owns the represented-founder index, the adjoint per-cohort mean-contribution
 propagation, and the founder-contribution effective sizes
-(:func:`ne_long_term_contributions`) built on them.  ``_founder_idx`` and
-``_founder_columns`` are also consumed by the Caballero-Toro engine.
+(:func:`ne_long_term_contributions`) built on them.
 
 A **represented founder** is a row with no represented mother or father,
 whatever its generation label and whether its parents are missing or
@@ -19,7 +18,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import numpy as np
 
 from pedigree_graph._cohorts import ObservedCohorts
-from pedigree_graph._ne_common import _checked_founder_matrix
+from pedigree_graph._ne_common import _checked_founder_matrix, _genome_of
 from pedigree_graph._ne_metadata import _require_closed_parentage
 from pedigree_graph._ne_results import NeLTCResult
 
@@ -47,13 +46,6 @@ class FounderContributionMeans(NamedTuple):
 def _founder_rows(pg: PedigreeGraph) -> np.ndarray:
     """Graph rows with no represented mother and no represented father."""
     return np.flatnonzero((np.asarray(pg.mother_rows) < 0) & (np.asarray(pg.father_rows) < 0)).astype(np.intp)
-
-
-def _genome_of(pg: PedigreeGraph) -> np.ndarray:
-    """Canonical genome-node row per graph row: itself, or the lower-indexed co-twin."""
-    rows = np.arange(pg.n_individuals, dtype=np.intp)
-    twin = np.asarray(pg.twin_rows, dtype=np.intp)
-    return np.where((twin >= 0) & (twin < rows), twin, rows)
 
 
 def _founder_idx(pg: PedigreeGraph) -> np.ndarray:

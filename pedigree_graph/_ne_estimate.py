@@ -5,7 +5,7 @@ Each one first runs its metadata guards in its own context, so a failure
 names that estimator, then pulls what it needs from a per-call memo of
 named prerequisites (:class:`_Prerequisites`): the observed cohorts, F, the
 generation kinship summary, the represented founders, the two family-size
-tables, the founder means, the Caballero-Toro accumulators, the generation
+tables, the founder means, the per-cohort group coancestry, the generation
 interval, and the cohort window.  Each is built at most once per call and
 only when a selected estimator asks for it, so an unselected estimator
 costs nothing and a shared prerequisite is never built twice.  Completed
@@ -15,10 +15,9 @@ privately while the public Ne_V key stays ``not_requested``.
 
 There is no worker pool on this path (ADR 0007): the old pool dispatched
 formulas only after eagerly building the expensive prerequisites, and
-running the kinship, founder, and Caballero-Toro prerequisites concurrently
-would multiply peak memory.  The package thread budget is committed once,
-after selection is validated, and applies through the kernels the
-prerequisites call.
+running the kinship and founder prerequisites concurrently would multiply
+peak memory.  The package thread budget is committed once, after selection
+is validated, and applies through the kernels the prerequisites call.
 """
 
 from __future__ import annotations
@@ -35,7 +34,6 @@ from pedigree_graph._cohort_utils import eligible_cohort_range, generation_inter
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._errors import MissingMetadataError
 from pedigree_graph._kinship_kernel import _compute_eqg
-from pedigree_graph._ne_caballero_toro import _caballero_toro_accumulators, _caballero_toro_from, ne_caballero_toro
 from pedigree_graph._ne_family_size import (
     _generation_family_table,
     _sex_column,
@@ -46,6 +44,7 @@ from pedigree_graph._ne_family_size import (
     ne_variance_family_size,
 )
 from pedigree_graph._ne_founders import _founder_idx, _ltc_from, _per_gen_founder_means, ne_long_term_contributions
+from pedigree_graph._ne_group_coancestry import _group_coancestry_by_cohort, _group_coancestry_from, ne_group_coancestry
 from pedigree_graph._ne_hill import _birth_year_family_table, _hill_from, _hill_from_variance, ne_hill_overlapping
 from pedigree_graph._ne_metadata import (
     _require_closed_parentage,
@@ -62,8 +61,8 @@ from pedigree_graph._ne_rates import (
     ne_individual_delta_f,
 )
 from pedigree_graph._ne_results import (
-    NeCaballeroToroResult,
     NeCoancestryResult,
+    NeGroupCoancestryResult,
     NeHillResult,
     NeInbreedingResult,
     NeIndividualDeltaFResult,
@@ -93,7 +92,7 @@ ALL_EFFECTIVE_SIZE_ESTIMATORS: tuple[str, ...] = (
     "ne_individual_delta_f",
     "ne_long_term_contributions",
     "ne_hill_overlapping",
-    "ne_caballero_toro",
+    "ne_group_coancestry",
 )
 """The eight estimator names, in canonical execution and output order."""
 
@@ -105,7 +104,7 @@ EffectiveSizeResult = (
     | NeIndividualDeltaFResult
     | NeLTCResult
     | NeHillResult
-    | NeCaballeroToroResult
+    | NeGroupCoancestryResult
 )
 
 _DIRECT: Mapping[str, Callable[..., EffectiveSizeResult]] = MappingProxyType(
@@ -117,7 +116,7 @@ _DIRECT: Mapping[str, Callable[..., EffectiveSizeResult]] = MappingProxyType(
         "ne_individual_delta_f": ne_individual_delta_f,
         "ne_long_term_contributions": ne_long_term_contributions,
         "ne_hill_overlapping": ne_hill_overlapping,
-        "ne_caballero_toro": ne_caballero_toro,
+        "ne_group_coancestry": ne_group_coancestry,
     }
 )
 
@@ -254,13 +253,8 @@ class _Prerequisites:
             ),
         )
 
-    def ct_accumulators(self):
-        return self._once(
-            "ct_accumulators",
-            lambda: _caballero_toro_accumulators(
-                self.pg, self.represented_founders(), self.inbreeding(), cohorts=self.observed_cohorts()
-            ),
-        )
+    def group_coancestry(self):
+        return self._once("group_coancestry", lambda: _group_coancestry_by_cohort(self.pg, self.observed_cohorts()))
 
     def generation_interval(self):
         return self._once("generation_interval", lambda: generation_interval(self.pg))
@@ -287,7 +281,7 @@ class _Prerequisites:
         if name in ("ne_variance_family_size", "ne_sex_ratio", "ne_hill_overlapping"):
             _require_complete_sex(pg, name)
             _warn_if_uniform_sex(pg, name)
-        if name in ("ne_long_term_contributions", "ne_caballero_toro"):
+        if name == "ne_long_term_contributions":
             _require_closed_parentage(pg, name)
         cohorts = self.observed_cohorts()
         if name == "ne_inbreeding":
@@ -317,8 +311,8 @@ class _Prerequisites:
                 variance = self.result("ne_variance_family_size")
             assert isinstance(variance, NeVarianceResult)
             return _hill_from_variance(variance, self.hill_vk_scale)
-        if name == "ne_caballero_toro":
-            return _caballero_toro_from(cohorts, self.ct_accumulators())
+        if name == "ne_group_coancestry":
+            return _group_coancestry_from(cohorts, self.group_coancestry())
         raise KeyError(name)
 
 

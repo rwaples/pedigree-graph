@@ -1,14 +1,14 @@
-"""Scaling tests for the refactored Ne_LTC and Ne_CT helpers.
+"""Scaling tests for the refactored Ne_LTC helpers.
 
 Validates byte-parity with a reference dense implementation, correct
-handling of skip-gen parents, structural memory bounds via internal
-sentinel metrics, and end-to-end RSS / convergence at scales the old
-dense path could not reach.
+handling of skip-gen parents, structural memory bounds on the founder
+means, and end-to-end RSS / convergence at scales the old dense path
+could not reach.
 
 The reference dense implementation embedded in this file is a verbatim
-copy of the deleted ``_founder_contribution_matrix`` — kept here purely
-so the parity test compares the streaming helpers against the algorithm
-they replace.
+copy of the deleted ``_founder_contribution_matrix``, kept here purely
+so the parity tests compare the streaming founder-means helper against
+the algorithm it replaces.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from pedigree_graph._kinship_kernel import (
     _finalize_summary,
     _run_dp_core,
 )
-from pedigree_graph._ne_caballero_toro import CTAccumulators, _caballero_toro_accumulators, _caballero_toro_from
 from pedigree_graph._ne_family_size import _sex_specific_family_table
 from pedigree_graph._ne_founders import (
     FounderContributionMeans,
@@ -43,7 +42,6 @@ from pedigree_graph._ne_rates import _summary_from_matrix
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
     estimate_effective_sizes,
-    ne_caballero_toro,
     ne_coancestry,
     ne_hill_overlapping,
     ne_inbreeding,
@@ -102,40 +100,6 @@ def _ref_per_gen_means(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray]:
         if in_g.any():
             m_g[g] = c[in_g].mean(axis=0)
     return m_g, founder_idx
-
-
-def _ref_ct_accumulators(pg: PedigreeGraph, F: np.ndarray) -> CTAccumulators:
-    """Reference (sums, counts) built from the dense matrix.
-
-    A founder row is not its own descendant, so founder rows are excluded
-    from every cohort before the ``c > 0`` reachability test.
-    """
-    c, founder_idx = _ref_founder_contribution_matrix(pg)
-    cohorts = ObservedCohorts.for_graph(pg, "reference")
-    n_founders = len(founder_idx)
-    sums = np.zeros((cohorts.k, n_founders), dtype=np.float64)
-    counts = np.zeros((cohorts.k, n_founders), dtype=np.int64)
-    self_coancestry = (1.0 + F) / 2.0
-    is_founder = (np.asarray(pg.mother_rows) < 0) & (np.asarray(pg.father_rows) < 0)
-    for b, rows in enumerate(cohorts.members()):
-        in_b = rows[~is_founder[rows]]
-        if len(in_b) == 0:
-            continue
-        for f_local in range(n_founders):
-            mask = c[in_b, f_local] > 0.0
-            if mask.any():
-                idx = in_b[mask]
-                sums[b, f_local] = float(self_coancestry[idx].sum())
-                counts[b, f_local] = int(idx.size)
-    # CT estimator only reads sums/counts; telemetry fields are zeroed.
-    return CTAccumulators(
-        sums=sums,
-        counts=counts,
-        peak_ancestor_set_size=0,
-        peak_live_ancestor_sets=0,
-        total_ancestor_pair_visits=0,
-        founder_idx=founder_idx,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -270,20 +234,6 @@ def test_per_gen_founder_means_matches_reference(parity_pedigree: PedigreeGraph)
     np.testing.assert_allclose(m_g_new, m_g_ref, atol=1e-12, rtol=0.0, equal_nan=True)
 
 
-def test_ct_accumulators_match_reference(parity_pedigree: PedigreeGraph) -> None:
-    """Streaming CT sums/counts match the dense reduction."""
-    pg = parity_pedigree
-    F = pg.inbreeding()
-    founder_idx = _founder_idx(pg)
-
-    new = _caballero_toro_accumulators(pg, founder_idx, F)
-    ref = _ref_ct_accumulators(pg, F)
-
-    np.testing.assert_array_equal(new.founder_idx, ref.founder_idx)
-    np.testing.assert_array_equal(new.counts, ref.counts)
-    np.testing.assert_allclose(new.sums, ref.sums, atol=1e-12, rtol=0.0)
-
-
 def _kernel_summary(pg: PedigreeGraph, **flags) -> GenerationKinshipSummary:
     """The generation kinship summary straight from the kernel, arrays only."""
     return _compute_generation_kinship_summary(
@@ -392,51 +342,25 @@ def test_kernel_debug_asserts_pass_on_a_well_formed_pedigree(parity_pedigree: Pe
     _assert_summaries_agree(pg.mean_kinship_by_generation(), _kernel_summary(pg, _debug_asserts=True))
 
 
-def test_estimator_results_match_reference(parity_pedigree: PedigreeGraph) -> None:
-    """End-to-end LTC and CT dataclasses match the reference path field-by-field."""
+def test_ltc_result_matches_the_reference_path(parity_pedigree: PedigreeGraph) -> None:
+    """End-to-end LTC dataclass matches the reference path field-by-field."""
     pg = parity_pedigree
-    F = pg.inbreeding()
+    res_new = ne_long_term_contributions(pg)
 
-    # New path
-    res_ltc_new = ne_long_term_contributions(pg)
-    res_ct_new = ne_caballero_toro(pg)
-
-    # Reference path: feed dense-derived structures through the reducers.
+    # Both records come out of the production reducer, so only the
+    # prerequisite differs: dense-derived means on this side, the adjoint
+    # sweep on the estimator's.
     cohorts = ObservedCohorts.for_graph(pg, "reference")
-    res_ltc_ref = _ltc_from(cohorts, FounderContributionMeans(*_ref_per_gen_means(pg)))
-    res_ct_ref = _caballero_toro_from(cohorts, _ref_ct_accumulators(pg, F))
+    res_ref = _ltc_from(cohorts, FounderContributionMeans(*_ref_per_gen_means(pg)))
 
-    # LTC dataclass parity
-    assert res_ltc_new.asymptote_reached == res_ltc_ref.asymptote_reached
-    assert res_ltc_new.n_cohorts == res_ltc_ref.n_cohorts
-    if res_ltc_new.ne is None or res_ltc_ref.ne is None:
-        assert res_ltc_new.ne is res_ltc_ref.ne
+    assert res_new.asymptote_reached == res_ref.asymptote_reached
+    assert res_new.n_cohorts == res_ref.n_cohorts
+    if res_new.ne is None or res_ref.ne is None:
+        assert res_new.ne is res_ref.ne
     else:
-        assert res_ltc_new.ne == pytest.approx(res_ltc_ref.ne, abs=1e-12)
-    assert res_ltc_new.n_effective_founders == pytest.approx(res_ltc_ref.n_effective_founders, abs=1e-12)
-    assert res_ltc_new.sum_c_squared == pytest.approx(res_ltc_ref.sum_c_squared, abs=1e-12)
-
-    # CT dataclass parity
-    np.testing.assert_allclose(
-        res_ct_new.mean_self_coancestry_per_gen,
-        res_ct_ref.mean_self_coancestry_per_gen,
-        atol=1e-12,
-        equal_nan=True,
-    )
-    np.testing.assert_array_equal(
-        res_ct_new.n_founders_with_descendants_per_gen,
-        res_ct_ref.n_founders_with_descendants_per_gen,
-    )
-    np.testing.assert_allclose(
-        res_ct_new.ne_per_gen,
-        res_ct_ref.ne_per_gen,
-        atol=1e-12,
-        equal_nan=True,
-    )
-    if res_ct_new.ne is None or res_ct_ref.ne is None:
-        assert res_ct_new.ne is res_ct_ref.ne
-    else:
-        assert res_ct_new.ne == pytest.approx(res_ct_ref.ne, abs=1e-12)
+        assert res_new.ne == pytest.approx(res_ref.ne, abs=1e-12)
+    assert res_new.n_effective_founders == pytest.approx(res_ref.n_effective_founders, abs=1e-12)
+    assert res_new.sum_c_squared == pytest.approx(res_ref.sum_c_squared, abs=1e-12)
 
 
 # ---------------------------------------------------------------------------
@@ -571,49 +495,29 @@ def test_ne_hill_inherits_skip_gen_fix(skip_gen_pedigree: PedigreeGraph) -> None
 
 
 # ---------------------------------------------------------------------------
-# Sentinel-metric test — structural memory invariants
+# Structural memory bound on the founder-means prerequisite
 # ---------------------------------------------------------------------------
 
 
-def test_sentinel_metrics_at_n2000_g8() -> None:
-    """At N=2000, G=8 the new helpers expose bounded structural metrics.
+def test_founder_means_output_stays_linear_at_n2000_g8() -> None:
+    """At N=2000, G=8 the founder means stay bounded by `(g_max+1, n_founders)`.
 
-    Asserts that no dense `(n × n_founders)` array is required: the only
-    dense structures produced are `m_g` and `(sums, counts)` of shape
-    `(g_max+1, n_founders)`, which scale linearly in N and G.
-
-    Uses `F = zeros` to avoid triggering the (unrelated) full kinship
-    matrix build at this scale — we are only validating structural memory
-    invariants of the new helpers, not numerical CT correctness (which
-    is covered by the parity tests above).
+    Asserts that no dense `(n × n_founders)` array is required: the adjoint
+    sweep produces only `m_g`, whose shape and bytes scale with `g_max` and
+    `n_founders` rather than with N.  The dense predecessor
+    `_founder_contribution_matrix` allocated `c` at `(n × n_founders)`.
     """
     rng = np.random.default_rng(7)
     n_per_gen, n_gens = 2000, 8
     df = _build_random_mating_pedigree(rng, n_per_gen=n_per_gen, n_gens=n_gens)
     pg = PedigreeGraph.from_frame(df)
-    F = np.zeros(pg.n_individuals, dtype=np.float64)
     founder_idx = _founder_idx(pg)
     n_founders = len(founder_idx)
 
     m_g, _ = _per_gen_founder_means(pg, founder_idx=founder_idx)
-    ct = _caballero_toro_accumulators(pg, founder_idx, F)
 
-    # Output shapes: linear in (g_max+1, n_founders), never (N · g_max, n_founders).
     assert m_g.shape == (n_gens + 1, n_founders)
-    assert ct.sums.shape == (n_gens + 1, n_founders)
-    assert ct.counts.shape == (n_gens + 1, n_founders)
-
-    # Output bytes scale with (g_max · n_founders), not N · n_founders.
-    output_bytes = m_g.nbytes + ct.sums.nbytes + ct.counts.nbytes
-    assert output_bytes < (n_gens + 1) * n_founders * (8 + 8 + 8) + 1024
-
-    # Live ancestor-set metrics: bounded by N (population cap) — the
-    # streaming structure never needs (n · n_founders) cells live at once.
-    assert 0 <= ct.peak_ancestor_set_size <= n_founders
-    assert 0 <= ct.peak_live_ancestor_sets <= pg.n_individuals
-    # Total work: ancestor-pair visits.  Strictly bounded above by N · n_founders
-    # (saturated case); typically far less.
-    assert ct.total_ancestor_pair_visits <= pg.n_individuals * n_founders
+    assert m_g.nbytes < (n_gens + 1) * n_founders * 8 + 1024
 
 
 # ---------------------------------------------------------------------------
@@ -627,7 +531,6 @@ _RSS_SCRIPT = textwrap.dedent(
     import sys
 
     from pedigree_graph import PedigreeGraph
-    from pedigree_graph._ne_caballero_toro import _caballero_toro_accumulators
     from pedigree_graph._ne_founders import _founder_idx, _per_gen_founder_means
 
 
@@ -647,7 +550,7 @@ _RSS_SCRIPT = textwrap.dedent(
         # pandas costs ~82 MB of RSS (it pulls pyarrow eagerly from 3.x
         # on), which has nothing to do with the helpers under test.  The
         # rng call order below matches the mating structure exactly, so
-        # the pedigree — and the accumulator counters — are unchanged.
+        # the pedigree is unchanged.
         rng = np.random.default_rng(seed)
         n_male = n_per_gen // 2
         n_female = n_per_gen - n_male
@@ -693,17 +596,10 @@ _RSS_SCRIPT = textwrap.dedent(
     ids, mothers, fathers, generation, sex = build(n_per_gen=2000, n_gens=8, seed=42)
     pg = PedigreeGraph.from_arrays(ids=ids, mother_ids=mothers, father_ids=fathers,
                                    generation=generation, sex=sex)
-    # Synthesize F via the lazy cache without forcing the full kinship
-    # matrix (which is unrelated to this PR and dominates RSS at scale).
-    F = np.zeros(pg.n_individuals, dtype=np.float64)
     founder_idx = _founder_idx(pg)
     m_g, _ = _per_gen_founder_means(pg, founder_idx=founder_idx)
-    ct = _caballero_toro_accumulators(pg, founder_idx, F)
     print(f"BASE_KB={base_kb}")
     print(f"RSS_KB={read_vm_hwm_kb()}")
-    print(f"PEAK_ANC_SET={ct.peak_ancestor_set_size}")
-    print(f"PEAK_LIVE_SETS={ct.peak_live_ancestor_sets}")
-    print(f"PAIR_VISITS={ct.total_ancestor_pair_visits}")
     """
 ).strip()
 
@@ -717,11 +613,9 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
     """Subprocess RSS growth at N=2000, G=8 with the new helpers in isolation.
 
     Old dense `_founder_contribution_matrix` peak: (2000 * 9) * 2000 *
-    8 bytes ≈ 290 MB just for ``c``.  The new helpers store only:
-
-    * ``m_g`` shape (g_max+1, n_founders) — ~0.13 MB
-    * ``sums`` + ``counts`` shape (g_max+1, n_founders) — ~0.27 MB
-    * working ancestor sets — bounded by frontier × ancestry depth
+    8 bytes ≈ 290 MB just for ``c``.  The new helpers store only ``m_g``,
+    shape (g_max+1, n_founders), at ~0.13 MB, plus the adjoint sweep's
+    per-cohort working buffers.
 
     Asserts on the peak RSS *delta over the post-import baseline*, not on
     total process RSS.  The earlier absolute threshold measured the
@@ -734,15 +628,16 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
     detects a regression here — a return to dense allocation would add
     hundreds of MB.
 
-    Observed delta is 62.4–62.8 MB across repeat runs (~0.5% spread);
-    the 120 MB bound leaves generous headroom for platform variance.
+    Observed delta is 5.3–5.4 MB across three repeat runs; the 120 MB
+    bound leaves generous headroom for platform variance.
     Excludes ``estimate_effective_sizes`` because the sparse kinship matrix
     at this scale is unrelated to this refactor and would mask the result.
 
     Caveat inherent to VmHWM: it is a high-water mark, so if imports ever
     peaked *above* the helpers' peak the delta would read ~0 and pass
-    trivially.  That is not the case here (imports ~119 MB, total
-    ~181 MB), but it is why the raw totals are reported on failure.
+    trivially.  That is still not the case here (imports ~128 MB, total
+    ~133 MB), but the margin is only the ~5 MB the delta itself measures,
+    which is why the raw totals are reported on failure.
     """
     proc = subprocess.run(
         [sys.executable, "-c", _RSS_SCRIPT],
