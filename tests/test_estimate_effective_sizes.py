@@ -18,7 +18,6 @@ import pytest
 
 from pedigree_graph import PedigreeGraph, _threads, configure_threads
 from pedigree_graph import _ne_estimate as ne_estimate
-from pedigree_graph import _ne_group_coancestry as ne_group_coancestry
 from pedigree_graph import _ne_rates as ne_rates
 from pedigree_graph import effective_size as es
 from pedigree_graph.effective_size import (
@@ -306,25 +305,21 @@ class TestPrerequisiteClosure:
         assert len(calls) == 1
 
     def test_group_coancestry_and_coancestry_share_one_kinship_summary(self, monkeypatch):
-        """The two kinship estimators walk a twin-free pedigree once between them.
+        """The two kinship estimators walk the pedigree once between them.
 
         ``_kinship_summary_for_labels`` is the single place either summary
-        can run its DP or matrix walk.  With no MZ twins the genome-node
-        mask is a no-op, so the group-coancestry prerequisite asks for the
-        graph-label summary rather than a masked one of its own and hits the
-        memo ``ne_coancestry`` fills.  Two walks would mean the shared memo
-        was missed, so one call is the proof.
-
-        Both call sites are counted because they reach that function by
-        different names: ``ne_coancestry`` through the memoised body in
-        ``_ne_rates``, the masked route through the import-time binding in
-        ``_ne_group_coancestry``.  Counting one module would score the
-        masked route as a hit on the memo.
+        can run its DP or matrix walk, and since issue #25 the graph-label
+        summary is itself genome-node, so the group-coancestry prerequisite
+        reads the memo ``ne_coancestry`` fills instead of masking a private
+        one.  Two walks would mean the shared memo was missed, so one call
+        is the proof.  This pedigree has no MZ twins; the twin-bearing case
+        is ``test_ne_group_coancestry`` ::
+        ``test_the_kinship_summary_is_shared_with_ne_coancestry``, which was
+        the pedigree that used to pay for two.
         """
-        via_rates = _count_calls(monkeypatch, "_kinship_summary_for_labels", module=ne_rates)
-        via_mask = _count_calls(monkeypatch, "_kinship_summary_for_labels", module=ne_group_coancestry)
+        calls = _count_calls(monkeypatch, "_kinship_summary_for_labels", module=ne_rates)
         estimate_effective_sizes(_graph(), ["ne_coancestry", "ne_group_coancestry"])
-        assert len(via_rates) + len(via_mask) == 1
+        assert len(calls) == 1
 
     def test_a_failed_guard_memoizes_nothing_for_that_estimator(self, prerequisites):
         estimate_effective_sizes(_graph(father=_ONE_PARENT_FATHER))

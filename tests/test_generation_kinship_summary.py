@@ -92,25 +92,32 @@ def test_labels_that_merge_depths_group_across_them():
     _assert_summary(pg.mean_kinship_by_generation(), [0], [expected], [45], 0)
 
 
-def test_mz_pair_in_the_same_group_leaves_sum_and_denominator():
-    # 2 and 3 are MZ co-twins in depth 1.  Depth 1 keeps 6 - 1 = 5 pairs:
-    # sibs 6-7 at 0.25, and the four cross-family pairs at 0.
+def test_mz_pair_in_the_same_group_collapses_to_one_genome():
+    # 2 and 3 are MZ co-twins in depth 1.  They are one genome, so depth 1
+    # holds 3 representatives and C(3, 2) = 3 pairs: sibs 6-7 at 0.25 and the
+    # two cross-family pairs at 0 (issue #25).
     pg = _graph(twin=[-1, -1, 3, 2, -1, -1, -1, -1, -1, -1])
-    _assert_summary(pg.mean_kinship_by_generation(), [0, 1, 2], [0.0, 0.25 / 5, 0.25], [6, 5, 1], 0)
+    _assert_summary(pg.mean_kinship_by_generation(), [0, 1, 2], [0.0, 0.25 / 3, 0.25], [6, 3, 1], 0)
 
 
-def test_mz_pair_split_across_groups_counts_both_twins_as_ordinary_members():
+def test_mz_pair_split_across_groups_joins_the_earlier_cohort():
     # Same twins, but the label puts 2 in cohort 1 and 3 in cohort 7 with 6, 7.
+    # One genome joins one cohort: both co-twins carry a label, so the earlier
+    # one wins, the genome enters at cohort 1, and cohort 7 is left with just
+    # the sibs 6-7.  The choice reads the labels, never a row index or an id,
+    # so it moves with neither.
     labels = [0, 0, 1, 7, 0, 0, 7, 7, 2, 2]
     pg = _graph(generation=labels, twin=[-1, -1, 3, 2, -1, -1, -1, -1, -1, -1])
-    # Cohort 7 = {3, 6, 7}: sibs 6-7 at 0.25 and two unrelated pairs.
-    _assert_summary(pg.mean_kinship_by_generation(), [0, 1, 2, 7], [0.0, np.nan, 0.25, 0.25 / 3], [6, 0, 1, 3], 0)
+    _assert_summary(pg.mean_kinship_by_generation(), [0, 1, 2, 7], [0.0, np.nan, 0.25, 0.25], [6, 0, 1, 1], 0)
 
 
-def test_mz_twin_whose_co_twin_is_unlabelled_is_an_ordinary_member():
+def test_mz_twin_whose_co_twin_is_unlabelled_keeps_the_labelled_row():
     labels = [0, 0, 1, -1, 0, 0, 1, 1, 2, 2]
     pg = _graph(generation=labels, twin=[-1, -1, 3, 2, -1, -1, -1, -1, -1, -1])
-    # Cohort 1 = {2, 6, 7}: sibs 6-7 at 0.25 and two unrelated pairs.
+    # The genome keeps the cohort it was actually assigned to: 2 carries the
+    # label, 3 does not, so 2 represents them and cohort 1 = {2, 6, 7} holds
+    # sibs 6-7 at 0.25 and two unrelated pairs.  3 stays unlabelled, and the
+    # count reports rows with no supplied label, never a collapsed co-twin.
     _assert_summary(pg.mean_kinship_by_generation(), [0, 1, 2], [0.0, 0.25 / 3, 0.25], [6, 3, 1], 1)
 
 

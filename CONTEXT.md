@@ -160,7 +160,7 @@ _Avoid_: founder equivalents, founder genome equivalents
 - Every public row index is expressed in either **graph-space** or **view-space**; the same individual generally has a different index in each.
 - A graph query returns graph-space rows, while a view query returns view-space rows. Coordinate space follows the query receiver.
 - An effective-size estimate is computed over one **reference subpopulation**; a cohort is one way of choosing one, not the only one.
-- **Group coancestry** differs from a mean pairwise kinship by including **self-coancestry** on the diagonal, and is taken over genome nodes rather than rows.
+- **Group coancestry** differs from a mean pairwise kinship by including **self-coancestry** on the diagonal. Both are taken over genome nodes rather than rows, so the diagonal is the whole of the difference.
 - A **founder contribution** vector sums to one over the **represented founder genomes**; the **effective number of founders** summarises how evenly it is spread.
 - The **effective number of founders** is half the asymptotic effective size only under random mating — a condition a pedigree alone cannot establish.
 

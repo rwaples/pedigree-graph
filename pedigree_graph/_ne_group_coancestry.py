@@ -8,11 +8,10 @@ The genome-node collapse is a row mask: a masked co-twin's ``-1`` label
 sends it to the sentinel bucket
 :func:`~pedigree_graph._cohorts._densify_labels` already discards.  So the
 prerequisite reads per-cohort θ sums off the streaming DP rather than
-materialising a kinship matrix, and a pedigree with no MZ twins — where the
-mask changes nothing — reuses outright the summary
-:func:`~pedigree_graph._ne_rates.ne_coancestry` memoises on the graph.  One
-with MZ twins pays a second streamed pass over the masked labels, and leaves
-that shared memo alone: ``ne_coancestry`` is not genome-node (issue #25).
+materialising a kinship matrix, and it reuses outright the summary the graph
+memoises for :func:`~pedigree_graph._ne_rates.ne_coancestry`: since issue #25
+that summary is itself genome-node, so both estimators share one convention
+and one DP pass whether or not the pedigree has MZ twins.
 """
 
 from __future__ import annotations
@@ -23,37 +22,16 @@ import numpy as np
 
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import (
-    _genome_of,
+    _genome_node_labels,
     _log_fit_mask,
     _scalar_ne_from_log_regression,
     _transition_ne,
 )
-from pedigree_graph._ne_rates import _generation_kinship_summary, _kinship_summary_for_labels
+from pedigree_graph._ne_rates import _generation_kinship_summary
 from pedigree_graph._ne_results import NeGroupCoancestryResult
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
-
-
-def _genome_node_labels(pg: PedigreeGraph) -> np.ndarray:
-    """Observed cohort labels with every non-canonical MZ co-twin masked to ``-1``.
-
-    The labels :meth:`~pedigree_graph._cohorts.ObservedCohorts.for_graph`
-    groups by — the supplied generation labels, else structural depth — with
-    the higher-indexed row of each MZ pair set to ``-1``.  One genome then
-    contributes one representative to its cohort, which is the genome-node
-    collapse of ADR 0008 written as a row mask.
-
-    Args:
-        pg: Pedigree graph.
-
-    Returns:
-        int32 of length ``pg.n_individuals``.
-    """
-    labels = pg.generation_labels
-    masked = np.array(pg.depth if labels is None else labels, dtype=np.int32, copy=True)
-    masked[_genome_of(pg) != np.arange(pg.n_individuals, dtype=np.intp)] = -1
-    return masked
 
 
 class GroupCoancestryByCohort(NamedTuple):
@@ -89,15 +67,14 @@ def _group_coancestry_by_cohort(pg: PedigreeGraph, cohorts: ObservedCohorts) -> 
     back off a kinship summary of :func:`_genome_node_labels` as
     ``mean_kinship · pair_counts``; the diagonal term needs only F.
 
-    Masking is unconditional, and a ``-1`` in those labels is a masked
-    co-twin and nothing else, because the estimator's cohorts reject
-    partly-unknown labels before this runs.  So when no label changes the
-    masked summary is the graph's own, and the memoised
-    :func:`~pedigree_graph._ne_rates._generation_kinship_summary` already
-    shared with ``ne_coancestry`` serves it: a twin-free pedigree pays one
-    DP pass, not two.  It also leaves the base labels free of ``-1``, so
-    ``cohorts.dense`` is a cohort index for every row and never the
-    sentinel bucket, and the kept rows bincount straight into cohort space.
+    A ``-1`` in those labels is a collapsed co-twin and nothing else,
+    because the estimator's cohorts reject partly-unknown labels before this
+    runs.  The masked summary is therefore exactly the one
+    :func:`~pedigree_graph._ne_rates._generation_kinship_summary` memoises on
+    the graph, so the pair sum costs no pass of its own.  It also leaves the
+    base labels free of ``-1``, so ``cohorts.dense`` is a cohort index for
+    every row and never the sentinel bucket, and the kept rows bincount
+    straight into cohort space.
 
     Args:
         pg: Pedigree graph.
@@ -107,18 +84,20 @@ def _group_coancestry_by_cohort(pg: PedigreeGraph, cohorts: ObservedCohorts) -> 
         A :class:`GroupCoancestryByCohort` aligned with ``cohorts.generations``.
     """
     labels = _genome_node_labels(pg)
-    collapsed = bool(np.any(labels < 0))
-    summary = _kinship_summary_for_labels(pg, labels) if collapsed else _generation_kinship_summary(pg)
+    summary = _generation_kinship_summary(pg)
 
     # Co-twins with differing generation labels are constructible: the MZ codes
     # in _errors.py's VALIDATION_CODES cover reciprocity, parents and sex, and
     # there is no label one. Masking can therefore empty a cohort out of the
     # summary entirely, so the summary's cohorts are a subset of the
     # estimator's and its pair sums scatter into cohort space.
+    summary_generations = np.asarray(summary.generations)
+    if not np.all(np.isin(summary_generations, cohorts.generations)):
+        raise ValueError("generation kinship summary does not describe the estimator's observed cohorts")
     pair_counts = np.asarray(summary.pair_counts, dtype=np.float64)
     mean_theta = np.asarray(summary.mean_kinship, dtype=np.float64)
     sum_theta = np.zeros(cohorts.k, dtype=np.float64)
-    sum_theta[np.searchsorted(cohorts.generations, summary.generations)] = np.where(
+    sum_theta[np.searchsorted(cohorts.generations, summary_generations)] = np.where(
         pair_counts > 0.0, mean_theta * pair_counts, 0.0
     )
 

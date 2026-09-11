@@ -24,6 +24,18 @@ Documented 0.8 divergences:
   frozen ``approx_values`` hash is therefore exempt; ``approx_support`` stays
   exact, and ``test_kinship_matrices`` checks every retained new value against
   ``pair_kinship`` bits.
+* Issue #25 made ``mean_kinship_by_generation`` genome-node: MZ co-twins are
+  one genome and contribute one representative row, where 0.7.1 kept both and
+  counted that genome's pairs with the rest of the cohort twice.  0.7.1 is a
+  frozen record of that convention, not an independent oracle for it, so on
+  fixtures with MZ twins the ``per_gen_mean_kinship`` hash is expected to
+  differ.  Thirteen of the seventeen small fixtures carry no MZ twin and still
+  compare in full.  Within the four that do, the kinship values themselves did
+  not move — only which pairs are averaged — so any cohort holding no MZ twin
+  must still match 0.7.1 exactly; that check is thin where twins reach every
+  cohort (none of ``small_pedigree``'s three, one of ``random_1k``'s seven).
+  What pins the new convention is not this gate but the hand-computed
+  expectations in ``test_generation_kinship_summary``.
 """
 
 from __future__ import annotations
@@ -49,6 +61,7 @@ FIXTURES = MANIFEST["fixtures"]
 SMALL = sorted(name for name, entry in FIXTURES.items() if "file" in entry)
 
 MZ_AWARE_F = "inbreeding"
+MZ_AWARE_THETA = "per_gen_mean_kinship"
 FLOAT32_PAIR_KINSHIP = frozenset({"deep_inbred_60g"})
 CORRECTED_APPROXIMATE_MATRIX_VALUE = "approx_values"
 
@@ -155,7 +168,7 @@ def test_small_fixture_matches_the_frozen_baseline(name):
     has_twins = bool((fx["twin"] >= 0).any())
     exempt = {CORRECTED_APPROXIMATE_MATRIX_VALUE}
     if has_twins:
-        exempt.add(MZ_AWARE_F)
+        exempt |= {MZ_AWARE_F, MZ_AWARE_THETA}
     if name in FLOAT32_PAIR_KINSHIP:
         exempt |= {key for key in entry["hashes"] if key.startswith("pair_kinship/")}
     problems = _compare_hashes(
@@ -175,8 +188,15 @@ def test_small_fixture_matches_the_frozen_baseline(name):
     assert not problems, "0.7.1 parity broken:\n  " + "\n  ".join(problems)
 
     if has_twins:
-        unaffected = ~_mz_affected_rows(build(fx))
+        graph = build(fx)
+        unaffected = ~_mz_affected_rows(graph)
         np.testing.assert_array_equal(captured["inbreeding"][unaffected], stored["inbreeding"][unaffected])
+        # These fixtures carry no supplied labels, so a cohort is a depth, and
+        # co-twins share a depth.  Only a depth holding an MZ twin can move.
+        depth = np.asarray(graph.depth)
+        twinned = np.zeros(captured[MZ_AWARE_THETA].shape[0], dtype=bool)
+        twinned[depth[np.asarray(graph.twin_rows) >= 0]] = True
+        np.testing.assert_array_equal(captured[MZ_AWARE_THETA][~twinned], stored[MZ_AWARE_THETA][~twinned])
     if name in FLOAT32_PAIR_KINSHIP:
         _assert_pair_kinship_within_envelope(stored, captured)
 
@@ -234,7 +254,7 @@ def test_random_30k_matches_the_frozen_baseline():
     assert summary["counts"] == entry["counts"]
     assert summary["subsample"]["counts"] == entry["subsample"]["counts"]
     assert summary["subsample"]["hashes"] == entry["subsample"]["hashes"]
-    exempt = {MZ_AWARE_F, CORRECTED_APPROXIMATE_MATRIX_VALUE}
+    exempt = {MZ_AWARE_F, MZ_AWARE_THETA, CORRECTED_APPROXIMATE_MATRIX_VALUE}
     assert {k: v for k, v in summary["hashes"].items() if k not in exempt} == {
         k: v for k, v in entry["hashes"].items() if k not in exempt
     }

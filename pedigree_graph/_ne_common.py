@@ -33,6 +33,55 @@ def _genome_of(pg: PedigreeGraph) -> np.ndarray:
     return np.where((twin >= 0) & (twin < rows), twin, rows)
 
 
+def _genome_node_labels(pg: PedigreeGraph) -> np.ndarray:
+    """Cohort labels with every non-canonical MZ co-twin masked to ``-1``.
+
+    The labels the cohort grouping uses — the supplied generation labels,
+    else structural depth — with one row of each MZ pair set to ``-1``.  One
+    genome then contributes one representative to its cohort, which is the
+    genome-node collapse of ADR 0008 written as a row mask, and a ``-1``
+    here means either an unknown supplied label or a collapsed co-twin.
+
+    The surviving row is chosen on the data and not on an identifier: the
+    co-twin that carries a label beats one that does not, and between two
+    labelled co-twins the earlier label wins, so a genome enters at the
+    earliest cohort claimed for it.  Only when both rows agree does the row
+    index settle it, and that choice is unobservable — co-twins are one
+    genome, so they carry identical kinship to every other row and identical
+    ``F``, and dropping either leaves the same pairs in the same cohort.
+
+    It is deliberately **not** :func:`_genome_of`'s lower row index, nor the
+    lower :attr:`ids`.  Co-twins may carry different labels — the MZ codes in
+    ``_errors.py`` check reciprocity, parents and sex, and there is no label
+    one — and the mask then decides *which cohort keeps the genome*.  Keying
+    that on a row or an id would make a scientific result depend on input
+    order or on arbitrary id numbering; keying it on the label does not.
+
+    Args:
+        pg: Pedigree graph.
+
+    Returns:
+        int32 of length ``pg.n_individuals``.
+    """
+    labels = pg.generation_labels
+    base = np.array(pg.depth if labels is None else labels, dtype=np.int32, copy=True)
+    twin = np.asarray(pg.twin_rows, dtype=np.intp)
+    rows = np.arange(pg.n_individuals, dtype=np.intp)
+    paired = twin >= 0
+    partner = twin[paired]
+    unknown = (base < 0).astype(np.int8)
+    mine = (unknown[paired], base[paired], rows[paired])
+    theirs = (unknown[partner], base[partner], partner)
+    keep = np.ones(pg.n_individuals, dtype=bool)
+    keep[paired] = (
+        (mine[0] < theirs[0])
+        | ((mine[0] == theirs[0]) & (mine[1] < theirs[1]))
+        | ((mine[0] == theirs[0]) & (mine[1] == theirs[1]) & (mine[2] < theirs[2]))
+    )
+    base[~keep] = -1
+    return base
+
+
 def _harmonic_mean(values: np.ndarray) -> float:
     """Harmonic mean over finite, strictly positive entries; ``nan`` if none."""
     finite = np.isfinite(values) & (values > 0)

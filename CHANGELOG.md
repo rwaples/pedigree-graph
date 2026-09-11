@@ -236,6 +236,64 @@ live on the corresponding GitHub release pages.
   `PedigreeGraph.relationship_counts` is unchanged, having validated the
   selector all along.
 
+- **Fixed: `mean_kinship_by_generation` counts MZ co-twins as one genome**
+  (issue #25).  It used a third convention that was neither row-based nor
+  genome-node: `_finalize_summary` dropped the MZ pair from both the numerator
+  and the denominator, but nothing removed the duplicate co-twin row, so that
+  genome's relationships with the rest of the cohort were counted twice.  On
+  the issue's fixture a cohort of `{4, 5, 6}` with `4`/`5` co-twins reported 2
+  pairs where row-based is 3 and genome-node is 1.  It is now genome-node
+  (ADR 0008), matching `kinship_matrix`, which already returns
+  `K[4,5] == K[4,4] == 0.5`, and matching the `ne_group_coancestry` of issue
+  #15.  Both estimators now share one convention and one memoised summary, so
+  a pedigree with MZ twins pays one DP pass rather than two.
+
+  The direction was measured before the convention was chosen, because the
+  issue asked for it and the answer is not what a bias correction looks like:
+  over 30 seeds per twin fraction the change in `ne_coancestry` has **no
+  consistent sign**, a median of −0.37% to −1.17% with individual replicates
+  from −6.0% to +6.7%, positive in 8/30, 8/30 and 14/30 of replicates at 10%,
+  20% and 40% twinning.  Double-counting one genome over-weights it, and
+  whether that raises or lowers mean θ depends on whether that genome happens
+  to be more or less related than its cohort average.  `small_pedigree` is the
+  golden's only twin-bearing fixture and moves `ne_coancestry` from
+  811.4589907 to 809.9403738 (−0.187%); the other five are byte-identical.
+
+  `unlabelled_individual_count` keeps its meaning.  The collapse is a row mask
+  and a masked row lands in the same sentinel bucket an unlabelled row does,
+  which would have tallied collapsed co-twins as unlabelled; the count still
+  reports only rows whose *supplied* label is unknown.
+
+  Making the summary genome-node also required the collapse itself to become
+  row-order invariant, which it was not.  `_genome_node_labels` chose the
+  representative by lower row index, following `_genome_of`.  That is harmless
+  for kinship and inbreeding, where both co-twins report identical values
+  whichever is canonical, but here it decides *which cohort keeps the genome*,
+  and co-twins may carry different generation labels.  Reversing the row order
+  of a pedigree whose co-twins straddle two cohorts moved the unreleased
+  `ne_group_coancestry` from `n_genomes_per_gen` `[6, 3, 1]` to `[6, 1, 3]` and
+  its `ne` from 0.979 to `None`.
+
+  The representative is chosen on the data, not on an identifier: the co-twin
+  carrying a label beats one that does not, and between two labelled co-twins
+  the earlier label wins, so a genome enters at the earliest cohort claimed for
+  it.  Only when both rows agree does the row index settle it, and that is
+  unobservable — co-twins are one genome, so they carry identical kinship to
+  every other row and identical `F`, and dropping either leaves the same pairs
+  in the same cohort.  Keying the choice on the `ids` instead was tried and
+  rejected: an id is as arbitrary as a row, and two pedigrees identical in
+  structure, sex, labels and row order but differing in which co-twin held the
+  smaller id gave `ne` 1.233 against `None`.  `tests/test_row_order.py` gains
+  regression tests over five row permutations and three id renumberings; four
+  of the five and two of the three fail under the respective old rules.
+
+  The frozen 0.7.1 parity baseline records the old convention rather than
+  independently attesting it — rebuilding that convention from the dense
+  kinship matrix reproduces the stored `per_gen_mean_kinship` exactly — so it
+  joins `inbreeding` (ADR 0008) and the `deep_inbred_60g` pair kinship
+  (ADR 0009) as a documented divergence rather than being regenerated.  The
+  thirteen small fixtures with no MZ twin still compare in full.
+
 ## v0.8.4
 
 - **Fixed: the transient adjacency matrices are released on the failure path.**

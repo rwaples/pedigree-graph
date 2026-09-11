@@ -38,6 +38,7 @@ from pedigree_graph._kinship_kernel import (
     _finalize_summary,
 )
 from pedigree_graph._ne_common import (
+    _genome_node_labels,
     _scalar_ne_from_log_regression,
     _transition_ne,
 )
@@ -46,12 +47,12 @@ from pedigree_graph._ne_results import (
     NeInbreedingResult,
     NeIndividualDeltaFResult,
 )
+from pedigree_graph.summaries import GenerationKinshipSummary
 
 if TYPE_CHECKING:
     import scipy.sparse as sp
 
     from pedigree_graph._core import PedigreeGraph
-    from pedigree_graph.summaries import GenerationKinshipSummary
 
 
 logger = logging.getLogger(__name__)
@@ -135,11 +136,21 @@ def _generation_kinship_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
     cached = pg._generation_kinship_summary
     if cached is not None:
         return cached
-    labels = pg.generation_labels
-    if labels is None:
-        labels = pg.depth
     t0 = time.perf_counter()
-    summary = _kinship_summary_for_labels(pg, labels)
+    summary = _kinship_summary_for_labels(pg, _genome_node_labels(pg))
+    supplied = pg.generation_labels
+    n_unlabelled = 0 if supplied is None else int(np.count_nonzero(np.asarray(supplied) < 0))
+    if n_unlabelled != summary.unlabelled_individual_count:
+        # The mask sends collapsed co-twins to the sentinel bucket, which would
+        # tally them as unlabelled.  They are not: a co-twin carries its
+        # cohort's label and is folded into its genome, so the reported count
+        # stays the number of rows whose supplied label is unknown.
+        summary = GenerationKinshipSummary(
+            generations=summary.generations,
+            mean_kinship=summary.mean_kinship,
+            pair_counts=summary.pair_counts,
+            unlabelled_individual_count=n_unlabelled,
+        )
     pg._generation_kinship_summary = summary
     logger.info(
         "mean_kinship_by_generation: n=%d, groups=%d, unlabelled=%d, %.2fs",
@@ -189,9 +200,18 @@ def ne_inbreeding(pg: PedigreeGraph) -> NeInbreedingResult:
 
 
 def _coancestry_from(cohorts: ObservedCohorts, summary: GenerationKinshipSummary) -> NeCoancestryResult:
-    if not np.array_equal(summary.generations, cohorts.generations):
+    # Co-twins with differing generation labels are constructible: the MZ codes
+    # in _errors.py's VALIDATION_CODES cover reciprocity, parents and sex, and
+    # there is no label one.  The genome-node mask can therefore empty a cohort
+    # out of the summary entirely, so the summary's cohorts are a subset of the
+    # estimator's and its means scatter into cohort space.
+    summary_generations = np.asarray(summary.generations)
+    if not np.all(np.isin(summary_generations, cohorts.generations)):
         raise ValueError("generation kinship summary does not describe the estimator's observed cohorts")
-    mean_theta = np.asarray(summary.mean_kinship, dtype=np.float64)
+    mean_theta = np.full(cohorts.k, np.nan, dtype=np.float64)
+    mean_theta[np.searchsorted(cohorts.generations, summary_generations)] = np.asarray(
+        summary.mean_kinship, dtype=np.float64
+    )
     ne_scalar, slope, n_used = _scalar_ne_from_log_regression(mean_theta, cohorts.generations)
     return NeCoancestryResult(
         ne=ne_scalar,
@@ -209,8 +229,9 @@ def ne_coancestry(pg: PedigreeGraph) -> NeCoancestryResult:
     """Coancestry-rate Ne (Ne_C).
 
     Same regression form as Ne_I but on the per-cohort mean kinship θ over
-    within-cohort unordered pairs (excluding the diagonal and MZ twin
-    pairs) that :meth:`PedigreeGraph.mean_kinship_by_generation` reports.
+    within-cohort unordered pairs of distinct genomes (excluding the
+    diagonal, and counting MZ co-twins once) that
+    :meth:`PedigreeGraph.mean_kinship_by_generation` reports.
     The summary is streamed from the DP without materializing K, or walked
     from a complete kinship matrix the graph already caches.
     """

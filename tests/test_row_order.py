@@ -22,7 +22,7 @@ from conftest import parity_columns, parity_fixtures
 from relationship_predicates import AncestorWalk
 
 from pedigree_graph import RELATIONSHIPS, MissingMetadataError, PedigreeGraph
-from pedigree_graph.effective_size import eligible_cohort_range, estimate_effective_sizes
+from pedigree_graph.effective_size import eligible_cohort_range, estimate_effective_sizes, ne_group_coancestry
 
 if TYPE_CHECKING:
     from pedigree_graph import PedigreeView
@@ -499,3 +499,78 @@ def test_generation_labels_do_not_drive_structure(name, labelling):
     np.testing.assert_array_equal(expected_k.indptr, actual_k.indptr)
     np.testing.assert_array_equal(expected_k.indices, actual_k.indices)
     assert actual_k.data.tobytes() == expected_k.data.tobytes()
+
+
+# Two MZ pairs whose co-twins carry different generation labels.  The genome-node
+# collapse must keep the same genome in the same cohort whatever order the rows
+# arrive in; picking the representative by row index did not, and silently moved
+# both `mean_kinship_by_generation` and `ne_group_coancestry` (issue #25).
+_SPLIT_TWIN_ROWS = [
+    {"id": 0, "sex": 0, "generation": 0},
+    {"id": 1, "sex": 1, "generation": 0},
+    {"id": 2, "sex": 0, "generation": 0},
+    {"id": 3, "sex": 1, "generation": 0},
+    {"id": 4, "sex": 0, "generation": 0},
+    {"id": 5, "sex": 1, "generation": 0},
+    {"id": 6, "sex": 1, "generation": 1, "mother": 1, "father": 0, "twin": 8},
+    {"id": 7, "sex": 0, "generation": 1, "mother": 3, "father": 2, "twin": 9},
+    {"id": 8, "sex": 1, "generation": 2, "mother": 1, "father": 0, "twin": 6},
+    {"id": 9, "sex": 0, "generation": 2, "mother": 3, "father": 2, "twin": 7},
+    {"id": 10, "sex": 1, "generation": 1, "mother": 5, "father": 4},
+    {"id": 11, "sex": 0, "generation": 2, "mother": 5, "father": 4},
+]
+_SPLIT_TWIN_COLUMNS = ("id", "mother", "father", "twin", "sex", "generation")
+_ID_COLUMNS = frozenset({"id", "mother", "father", "twin"})
+
+
+def _split_twin_columns(order: np.ndarray, renumber: dict[int, int] | None = None) -> dict[str, np.ndarray]:
+    rows = _SPLIT_TWIN_ROWS
+    if renumber is not None:
+        rows = [
+            {key: renumber.get(value, value) if key in _ID_COLUMNS else value for key, value in row.items()}
+            for row in rows
+        ]
+    table = {key: np.array([row.get(key, -1) for row in rows], dtype=np.int64) for key in _SPLIT_TWIN_COLUMNS}
+    return {key: value[order] for key, value in table.items()}
+
+
+# Swapping the two co-twins' ids leaves the pedigree identical in structure, sex,
+# labels and row order.  Keying the collapse on the id rather than the label made
+# this change `ne`, which permuting rows cannot detect.
+@pytest.mark.parametrize("renumber", [{6: 8, 8: 6}, {7: 9, 9: 7}, {6: 60, 8: 61}])
+def test_co_twins_in_different_cohorts_collapse_the_same_way_under_renumbering(renumber):
+    n = len(_SPLIT_TWIN_ROWS)
+    reference = PedigreeGraph.from_frame(_split_twin_columns(np.arange(n)))
+    renumbered = PedigreeGraph.from_frame(_split_twin_columns(np.arange(n), renumber))
+
+    expected, actual = reference.mean_kinship_by_generation(), renumbered.mean_kinship_by_generation()
+    np.testing.assert_array_equal(actual.generations, expected.generations)
+    np.testing.assert_array_equal(actual.pair_counts, expected.pair_counts)
+    np.testing.assert_allclose(actual.mean_kinship, expected.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
+
+    expected_ne, actual_ne = ne_group_coancestry(reference), ne_group_coancestry(renumbered)
+    np.testing.assert_array_equal(actual_ne.n_genomes_per_gen, expected_ne.n_genomes_per_gen)
+    assert actual_ne.ne == expected_ne.ne
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3, 4])
+def test_co_twins_in_different_cohorts_collapse_the_same_way_in_any_row_order(seed):
+    n = len(_SPLIT_TWIN_ROWS)
+    reference = PedigreeGraph.from_frame(_split_twin_columns(np.arange(n)))
+    permuted = PedigreeGraph.from_frame(_split_twin_columns(np.random.default_rng(seed).permutation(n)))
+
+    expected, actual = reference.mean_kinship_by_generation(), permuted.mean_kinship_by_generation()
+    np.testing.assert_array_equal(actual.generations, expected.generations)
+    np.testing.assert_array_equal(actual.pair_counts, expected.pair_counts)
+    np.testing.assert_allclose(actual.mean_kinship, expected.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
+
+    expected_ne, actual_ne = ne_group_coancestry(reference), ne_group_coancestry(permuted)
+    np.testing.assert_array_equal(actual_ne.n_genomes_per_gen, expected_ne.n_genomes_per_gen)
+    np.testing.assert_allclose(
+        actual_ne.mean_group_coancestry_per_gen,
+        expected_ne.mean_group_coancestry_per_gen,
+        rtol=0,
+        atol=1e-12,
+        equal_nan=True,
+    )
+    assert actual_ne.ne == expected_ne.ne

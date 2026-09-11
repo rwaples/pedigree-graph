@@ -263,10 +263,19 @@ Applied:
   `tests/analysis/test_effective_size.py::test_ne_ltc_expectation_matches_simulator_mc`,
   which reads `sum_c_squared` so that it gates the relation under the pinned
   0.8 as well as 0.9.
-* `ne_group_coancestry` and `ne_coancestry` use different MZ conventions until
+* ~~`ne_group_coancestry` and `ne_coancestry` use different MZ conventions until
   the `mean_kinship_by_generation` inconsistency is fixed separately (issue
   #25): that function drops the MZ pair but keeps both co-twins' pairs with
-  everyone else, so it is neither row-based nor genome-node.
+  everyone else, so it is neither row-based nor genome-node.~~ **Resolved by
+  issue #25.** `mean_kinship_by_generation` is now genome-node, so both
+  estimators share one convention and one memoised summary. Measured before
+  choosing: the old convention's error on `ne_coancestry` has no consistent
+  sign — over 30 seeds per twin fraction it runs a median of −0.37% to −1.17%
+  with individual replicates from −6.0% to +6.7%, positive in 8/30, 8/30 and
+  14/30 of replicates at 10%, 20% and 40% twinning. It was a correctness
+  defect, not a bias with a direction. The golden's only twin-bearing fixture,
+  `small_pedigree`, moves `ne_coancestry` 811.4589907 to 809.9403738 (−0.187%);
+  the other five fixtures are byte-identical.
 
 ## Rejected
 

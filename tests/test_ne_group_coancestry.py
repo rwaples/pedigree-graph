@@ -210,38 +210,24 @@ def test_collapsing_an_mz_pair_equals_deleting_the_co_twin_row():
     assert collapsed.ne == deleted.ne
 
 
-def test_a_twin_free_pedigree_reuses_the_memoised_kinship_summary():
-    """The mask is a no-op without MZ twins, so the graph's own summary serves it.
+@pytest.mark.parametrize("twins", [0, 2])
+def test_the_kinship_summary_is_shared_with_ne_coancestry(twins):
+    """One genome-node summary serves both estimators, twins or not (issue #25).
 
     ``_generation_kinship_summary`` is the sole writer of the graph memo, so
-    its presence afterwards is the evidence that a twin-free pedigree paid
-    for one DP pass and not a second private one.
+    its presence afterwards is the evidence that the pedigree paid for one DP
+    pass and not a second private one.  Before #25 a pedigree with MZ twins
+    paid twice, because the two estimators disagreed on the MZ convention.
     """
-    pg = PedigreeGraph.from_frame(_random_mating(20, 4, 5))
+    frame = _random_mating(20, 4, 5)
+    pg = PedigreeGraph.from_frame(frame if twins == 0 else _with_mz_pair(frame, twins))
     assert pg._generation_kinship_summary is None
 
     ne_group_coancestry(pg)
 
     assert pg._generation_kinship_summary is not None
     assert pg._generation_kinship_summary is pg.mean_kinship_by_generation()
-
-
-def test_masked_labels_never_overwrite_the_shared_kinship_memo():
-    """A pedigree with an MZ pair summarises its masked labels privately.
-
-    ``ne_coancestry`` reads that memo and keeps both co-twins' pairs with
-    everyone else (issue #25), so writing the genome-node summary into it
-    would silently change a different estimator's contract.
-    """
-    pg = PedigreeGraph.from_frame(_with_mz_pair(_random_mating(20, 4, 5), 2))
-
-    ne_group_coancestry(pg)
-
-    assert pg._generation_kinship_summary is None
-
-    theta = ne_coancestry(pg)
-    assert pg._generation_kinship_summary is not None
-    assert theta.mean_theta_per_gen[2] == pytest.approx(
+    assert ne_coancestry(pg).mean_theta_per_gen[2] == pytest.approx(
         float(pg.mean_kinship_by_generation().mean_kinship[2]), rel=1e-12
     )
 

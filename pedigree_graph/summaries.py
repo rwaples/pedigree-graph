@@ -21,13 +21,17 @@ __all__ = ["GenerationKinshipSummary"]
 class GenerationKinshipSummary:
     """Mean pedigree-expected kinship within each observed generation.
 
-    One row per generation label that at least one individual carries, in
-    ascending label order.  ``mean_kinship[g]`` averages the kinship
-    coefficient over the unordered pairs of distinct individuals in group
-    ``g``, excluding MZ twin pairs whose two co-twins are both in ``g``.
-    ``pair_counts[g]`` is that pair count; ``mean_kinship[g]`` is NaN where
-    it is zero.  Individuals whose label is unknown (``-1``) belong to no
-    group and are tallied in ``unlabelled_individual_count``.
+    One row per generation label that at least one *genome* is represented
+    under, in ascending label order.  A label borne only by collapsed MZ
+    co-twins holds no genome and does not appear, so these labels can be a
+    strict subset of the distinct labels supplied.  ``mean_kinship[g]`` averages the kinship
+    coefficient over the unordered pairs of distinct *genomes* in group
+    ``g``: MZ co-twins are one genome (ADR 0008) and contribute one
+    representative row between them, so a pair of co-twins is never counted
+    and neither is either co-twin counted twice.  ``pair_counts[g]`` is that
+    pair count; ``mean_kinship[g]`` is NaN where it is zero.  Individuals
+    whose supplied label is unknown (``-1``) belong to no group and are
+    tallied in ``unlabelled_individual_count``; a collapsed co-twin is not.
 
     Attributes:
         generations: Observed labels, int32, ascending.

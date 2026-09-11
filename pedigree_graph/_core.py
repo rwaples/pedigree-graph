@@ -725,13 +725,19 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
 
         Groups rows by the supplied generation labels, or by structural
         :attr:`depth` when none were supplied, and averages the ADR 0009
-        kinship over the unordered pairs of distinct individuals in each
-        group.  An MZ twin pair is left out of a group's sum and denominator
-        only when both co-twins are in that group; a twin whose partner is
-        unlabelled or elsewhere is an ordinary member.  Rows whose label is
-        ``-1`` join no group and are reported in
-        ``unlabelled_individual_count``, never assigned a depth.  Only labels
-        some row carries appear, ascending.
+        kinship over the unordered pairs of distinct *genomes* in each group.
+        MZ co-twins are one genome (ADR 0008), so one row of the pair
+        represents it and the other joins no group: the co-twin carrying a
+        label, or the earlier label of the two when both carry one, so a
+        genome enters at the earliest cohort claimed for it.  That choice is
+        made on the labels, never on a row index or an id, so the grouping
+        moves with neither.  Rows whose supplied label is ``-1`` join
+        no group and are reported in ``unlabelled_individual_count``, never
+        assigned a depth; a collapsed co-twin is not tallied there.  Labels
+        appear ascending, and only those some *representative* row carries: a
+        label borne solely by collapsed co-twins holds no genome and is absent
+        from the result, so the labels here can be a strict subset of the
+        distinct labels supplied.
 
         The kinship is streamed from the retiring DP without materializing
         the kinship matrix, unless the complete matrix is already cached, in
