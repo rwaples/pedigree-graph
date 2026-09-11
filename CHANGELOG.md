@@ -6,6 +6,12 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Removed: `RelationshipCountResult.from_pairs`** (issue #16).  Callers
+  that already hold a `RelationshipPairs` result can count its requested
+  blocks directly; callers that do not need pair arrays should use the
+  row-streaming `relationship_counts` API.  simACE migrated its existing-pairs
+  consumer in companion issue rwaples/simACE#17.
+
 - **Breaking: `ne_caballero_toro` is replaced by `ne_group_coancestry`**
   (issue #15, ADR 0012).  The departing estimator averaged descendant
   self-coancestry `(1 + F)/2` within each founder genome's reachable set,

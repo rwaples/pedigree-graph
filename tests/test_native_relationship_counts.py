@@ -79,13 +79,6 @@ def test_view_counts_equal_view_pair_block_lengths(name, seed):
         _assert_counts_match(view, **selector)
 
 
-def test_from_pairs_agrees_with_the_engine(small_pedigree):
-    graph = PedigreeGraph.from_frame(small_pedigree)
-    assert RelationshipCountResult.from_pairs(graph.relationship_pairs(max_degree=3)) == graph.relationship_counts(
-        max_degree=3
-    )
-
-
 def test_count_result_copies_and_freezes_its_mapping(small_pedigree):
     graph = PedigreeGraph.from_frame(small_pedigree)
     original = graph.relationship_counts(max_degree=3)
