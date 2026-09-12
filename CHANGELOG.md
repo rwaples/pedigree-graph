@@ -236,6 +236,27 @@ live on the corresponding GitHub release pages.
   `PedigreeGraph.relationship_counts` is unchanged, having validated the
   selector all along.
 
+- **Changed: the effective-size orchestrator dispatches through a registry**
+  (issue #19).  `_compute`'s chain of `if name == ...` branches with
+  membership-set guard tests is replaced by `_REGISTRY`, one row per estimator
+  naming its metadata guards and its build.  The guards are a function of the
+  graph because `ne_hill_overlapping` is the one estimator whose requirements
+  depend on it, its birth-year branch reading no generation label.  The
+  per-call memo's single `dict[str, Any]` is split so prerequisites and
+  completed results no longer share a namespace, every prerequisite accessor
+  carries a return type, and the equivalent-complete-generations array joins
+  the memo instead of being computed inline.
+
+  The issue's stated prerequisite, that the batch and standalone paths apply
+  the same guards in a different order, is **not** the case.
+  `ObservedCohorts.for_graph` runs `_require_complete_generation_labels`
+  before it densifies, so the standalone path's "cohorts first" already is
+  "labels first"; both paths refuse in the order labels, sex, then the
+  estimator's own guard.  Measured over a 14-graph by 8-estimator matrix
+  comparing refusal code, emitted warnings and result value, all 112 cells
+  agree, and `TestPathEquivalence` now holds them there.  No behaviour
+  changes.
+
 - **Documented: the depth-versus-label contract on the structural consumers**
   (issue #22).  Structural results derive from structural depth in the parent
   DAG, and a supplied generation label never enters them; cohort-indexed

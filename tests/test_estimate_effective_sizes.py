@@ -316,6 +316,10 @@ class TestPrerequisiteClosure:
                 "ne_variance_family_size",
                 {"observed_cohorts", "generation_family_table", "ne_variance_family_size"},
             ),
+            (
+                "ne_individual_delta_f",
+                {"observed_cohorts", "inbreeding", "eqg", "ne_individual_delta_f"},
+            ),
         ],
     )
     def test_a_single_selection_builds_exactly_its_closure(self, prerequisites, name, expected):
@@ -385,6 +389,47 @@ class TestDirectParity:
         value = estimate_effective_sizes(_empty_graph())[name]
         assert not isinstance(value, UnavailableEffectiveSize)
         assert value.ne is None
+
+
+_LABELS = ("_require_complete_generation_labels",)
+_LABELS_AND_SEX = (*_LABELS, "_require_complete_sex", "_warn_if_uniform_sex")
+
+_DOCUMENTED_GUARDS = {
+    "ne_inbreeding": _LABELS,
+    "ne_coancestry": _LABELS,
+    "ne_variance_family_size": _LABELS_AND_SEX,
+    "ne_sex_ratio": _LABELS_AND_SEX,
+    "ne_individual_delta_f": _LABELS,
+    "ne_long_term_contributions": (*_LABELS, "_require_closed_parentage"),
+    "ne_hill_overlapping": _LABELS_AND_SEX,
+    "ne_group_coancestry": _LABELS,
+}
+
+
+class TestRegistryCoverage:
+    """The registry is the dispatch, so its rows are worth reading directly."""
+
+    def test_every_estimator_name_has_exactly_one_row(self):
+        assert tuple(ne_estimate._REGISTRY) == ALL_EFFECTIVE_SIZE_ESTIMATORS
+
+    def test_the_empty_graph_delegate_covers_the_same_names(self):
+        assert tuple(ne_estimate._DIRECT) == ALL_EFFECTIVE_SIZE_ESTIMATORS
+
+    @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
+    def test_each_row_declares_the_documented_guards(self, name):
+        """The rows restate the metadata dependency matrix on ``effective_size``.
+
+        Prose and table can drift apart; this is the one place they are read
+        side by side.  Hill appears here under its collapse branch, which
+        inherits Ne_V's requirements; its birth-year branch is below.
+        """
+        guards = ne_estimate._REGISTRY[name].guards(_graph())
+        assert tuple(guard.__name__ for guard in guards) == _DOCUMENTED_GUARDS[name]
+
+    def test_hills_birth_year_branch_drops_the_generation_labels(self):
+        """It groups by birth year and never reads a label, so it must not refuse one."""
+        guards = ne_estimate._REGISTRY["ne_hill_overlapping"].guards(_graph(birth_year=_BIRTH))
+        assert tuple(guard.__name__ for guard in guards) == ("_require_complete_sex",)
 
 
 class TestPathEquivalence:
