@@ -39,7 +39,7 @@ from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
 from pedigree_graph._properties import PedigreeProperties
 from pedigree_graph._relationship_counts import relationship_counts as _relationship_counts
 from pedigree_graph._selection import RelationshipSelection
-from pedigree_graph._streaming_counter import estimate_relationship_counts as _estimate_relationship_counts
+from pedigree_graph._streaming_counter import close_relative_counts as _close_relative_counts
 from pedigree_graph._threads import thread_budget
 from pedigree_graph._topology import build_topology, readonly
 from pedigree_graph._view import CoordinateToken, _build_view
@@ -49,7 +49,6 @@ if TYPE_CHECKING:
 
     from pedigree_graph._frames import FrameLike
     from pedigree_graph._kinship_pairwise import _PairMemo
-    from pedigree_graph._streaming_counter import CachedEstimate
     from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
@@ -153,8 +152,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         self._pair_memo_limit: int = _MEMO_RETAIN_LIMIT
         # mean_kinship_by_generation() is threshold-free: one summary per graph.
         self._generation_kinship_summary: GenerationKinshipSummary | None = None
-        # Keyed by max_degree; a hit is silent even if the entry clamped.
-        self._estimate_cache: dict[int, CachedEstimate] = {}
+        self._close_relative_counts_cache: RelationshipCountResult | None = None
         self._inbreeding: np.ndarray | None = None
         # Lineage memos (_lineage.py).
         self._distinct_ancestor_counts: np.ndarray | None = None
@@ -665,60 +663,29 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         """
         return _relationship_counts(self, RelationshipSelection.parse(max_degree, categories))
 
-    def estimate_relationship_counts(self, *, max_degree: int) -> RelationshipCountResult:
-        """Estimate the number of pairs in every category up to *max_degree*.
+    def close_relative_counts(self) -> RelationshipCountResult:
+        """Return exact MZ, MO, FO, FS, MHS and PHS pair counts.
 
-        Memory-bounded scalar arithmetic (per-anchor ``C(k, 2)`` sums and
-        lineal-edge ``.nnz`` reads): no pair arrays are built, so peak memory
-        is O(N).  Since 0.8.3 :meth:`relationship_counts` is exact in O(N)
-        memory too; prefer it unless its wall time is the constraint.
-        Full-graph only; a view has no estimate.
+        This full-graph-only scalar method counts parent edges and sibling
+        groups without building pair lists or adjacency powers. Peak memory
+        is O(N). Half-sib pairs claimed by parent-offspring categories are
+        subtracted, so every count equals :meth:`relationship_counts` under
+        closest-category precedence, including on inbred pedigrees.
 
-        Precision (source of truth: ``REL_PLAN.estimate_exact`` in
-        ``_registry``, ADR 0011).  MZ, MO, FO, FS, MHS, and PHS equal
-        :meth:`relationship_counts` on every input and are in
-        ``result.exact``; the half-sib pairs a parent-offspring category
-        claims under the precedence fold are subtracted.  Every other
-        requested code is in ``result.approximate``.  GP, GGP, GGGP, and
-        G3GP are raw ancestor-path counts; they over-count a pair also
-        related at a shorter depth, as a half-sib, or as a closer
-        collateral.  The cousin / collateral formulas assume a full
-        complement of known ancestors and diverge on shallow, inbred, or
-        twin-having pedigrees; on deep, lightly inbred pedigrees they are
-        within about 1% of exact.  Four of them (``H1C``, ``1C1R``,
-        ``1C2R``, ``H1C1R``) are inclusion-exclusion residuals; when one
-        underflows it is floored at ``0`` and listed in ``result.clamped``,
-        and that ``0`` is not a true absence.
+        The six codes come from ``REL_PLAN.estimate_exact``. This is not a
+        degree cutoff: grandparents and avuncular pairs are not included.
+        Use :meth:`relationship_counts` for other categories or view counts.
 
-        Warning and cache rule: the result for each cutoff is computed once
-        per graph and the same frozen object is returned afterwards.  The
-        computation, and only the computation, emits one ``RuntimeWarning``
-        naming the clamped codes when ``clamped`` is non-empty, before the
-        result is cached; a cached retrieval is silent, and a different
-        cutoff computes and warns on its own.  Python's default warning
-        filter shows one identical warning per call site; the ``clamped``
-        set is the reliable signal.
-
-        Threads: the call commits the package thread budget
-        (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation,
-        so reconfiguring to a different value afterwards raises.  The scalar
-        counter itself runs single-threaded numpy / scipy, and the integer
-        results are the same under any budget.  The transient adjacency
-        powers are released on return.
-
-        Args:
-            max_degree: Degree cutoff in ``[0, 5]``; categories whose registry
-                degree is at or below it are requested.
+        The same immutable result is returned on subsequent calls. Each call
+        commits the package thread budget, but the scalar calculation is
+        single-threaded and its integer results do not depend on that budget.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipCountResult`
-            over all 23 codes, ``None`` above the cutoff, with ``requested``,
-            ``exact``, ``approximate``, and ``clamped`` filled in.
-
-        Raises:
-            PedigreeValidationError: ``max_degree_out_of_range``.
+            over all 23 registry codes. ``requested`` and ``exact`` contain
+            the six close categories; every other code maps to ``None``.
         """
-        return _estimate_relationship_counts(self, max_degree=max_degree)
+        return _close_relative_counts(self)
 
     # ------------------------------------------------------------------
     # Sparse kinship, inbreeding, and exact pair kinship

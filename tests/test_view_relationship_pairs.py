@@ -279,8 +279,8 @@ class TestCounts:
         counts = receiver.relationship_counts(max_degree=2)
         assert counts.requested == frozenset(code for code in CODES if RELATIONSHIPS[code].degree <= 2)
         assert counts.exact == counts.requested
-        assert counts.approximate == frozenset()
-        assert counts.clamped == frozenset()
+        assert not hasattr(counts, "approximate")
+        assert not hasattr(counts, "clamped")
 
     def test_iterates_all_codes_in_registry_order(self, receiver):
         counts = receiver.relationship_counts(categories=())

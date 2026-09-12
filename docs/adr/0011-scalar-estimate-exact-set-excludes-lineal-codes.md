@@ -4,6 +4,36 @@
 **Date:** 2026-09-05
 **Context:** refines the `relationship_counts` / `estimate_relationship_counts` contract of ADR 0006 (slice 4c of the 0.8.0 plan)
 
+## Amendment: issue #17, six exact counts only
+
+The scalar API is now `close_relative_counts()`, replacing
+`estimate_relationship_counts(*, max_degree)` without an alias. It always
+computes MZ, MO, FO, FS, MHS and PHS. Its mapping retains all registry keys,
+with `None` for every other category, and `requested == exact` is the six-code
+set. It accepts no degree or category selector and remains full-graph only.
+
+The exact set and parent-offspring correction below are unchanged.
+`REL_PLAN.estimate_exact` and `estimate_exact_codes()` retain their internal
+names and remain the source of truth. The approximate lineal, cousin and
+collateral formulas, clamps, warning and adjacency-power release are removed.
+The reduced implementation needs only parent/twin arrays and sibling-group
+sums and caches one immutable result per graph.
+
+`RelationshipCountResult.approximate` and `.clamped` are removed, including
+from exact graph/view results. Keeping permanently empty fields would preserve
+compatibility but misrepresent an API that no longer computes approximations.
+The breaking change is deliberate and documented in the changelog.
+
+`relationship_counts` now supplies all categories exactly in linear memory
+through the Rust engine of ADR 0010. The scalar method remains for callers
+who need only close relatives and want to avoid classifying more distant
+pairs. Consumers needing all 23 counts must migrate to `relationship_counts`,
+not the renamed six-code method. The pedsum migration is tracked in
+[pedsum#2](https://github.com/rwaples/pedsum/issues/2) and must precede its
+relock to this breaking release.
+
+The original decision and measurements below describe the former estimator.
+
 ## Context
 
 ADR 0006 replaces `count_pairs_streaming` with `estimate_relationship_counts`,

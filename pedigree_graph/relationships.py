@@ -136,21 +136,17 @@ class RelationshipCountResult(Mapping[str, int | None]):
     """Immutable mapping from every registry code to its pair count, or ``None``.
 
     Iteration follows :data:`RELATIONSHIPS` order and always yields all 23
-    codes; a category the selector did not name maps to ``None``.
+    codes; a category the operation did not compute maps to ``None``.
 
     Attributes:
-        requested: Codes the selector named.
+        requested: Codes selected explicitly, or the fixed six codes of
+            ``close_relative_counts``.
         exact: Requested codes whose count is exact.
-        approximate: Requested codes whose count is an estimate.
-        clamped: Requested codes whose inclusion-exclusion residual underflowed
-            and was floored at 0; that 0 is not a true absence.
     """
 
     _counts: Mapping[str, int | None]
     requested: frozenset[str]
     exact: frozenset[str]
-    approximate: frozenset[str]
-    clamped: frozenset[str]
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "_counts", _frozen_registry_mapping(self._counts, type(self).__name__))

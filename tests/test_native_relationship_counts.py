@@ -43,8 +43,8 @@ def _assert_counts_match(receiver, **selector) -> None:
     assert dict(counts) == _pair_lengths(receiver, **selector)
     assert counts.requested == frozenset(code for code, value in counts.items() if value is not None)
     assert counts.exact == counts.requested
-    assert counts.approximate == frozenset()
-    assert counts.clamped == frozenset()
+    assert not hasattr(counts, "approximate")
+    assert not hasattr(counts, "clamped")
 
 
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
@@ -87,8 +87,6 @@ def test_count_result_copies_and_freezes_its_mapping(small_pedigree):
         counts,
         original.requested,
         original.exact,
-        original.approximate,
-        original.clamped,
     )
     counts["MZ"] = 999
     assert result["MZ"] == original["MZ"]
@@ -109,8 +107,6 @@ def test_count_result_rejects_invalid_registry_shape(small_pedigree, malformed):
             counts,
             original.requested,
             original.exact,
-            original.approximate,
-            original.clamped,
         )
 
 

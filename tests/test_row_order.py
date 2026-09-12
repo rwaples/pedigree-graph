@@ -349,7 +349,7 @@ class _Snapshot:
         self.relationship_pairs = _relationship_pair_sets(graph, ids)
 
         self.relationship_counts = dict(graph.relationship_counts(max_degree=MAX_DEGREE))
-        self.estimated_counts = dict(graph.estimate_relationship_counts(max_degree=MAX_DEGREE))
+        self.close_counts = dict(graph.close_relative_counts())
 
         self.complete_kinship = _matrix_by_id(graph.kinship_matrix(), ids)
         self.approx_kinship = _matrix_by_id(
@@ -394,7 +394,7 @@ def test_every_operation_is_invariant_under_row_order(name, constructor, capsys)
         )
 
         assert actual.relationship_counts == reference.relationship_counts, f"{where}: relationship_counts changed"
-        assert actual.estimated_counts == reference.estimated_counts, f"{where}: estimated counts changed"
+        assert actual.close_counts == reference.close_counts, f"{where}: close-relative counts changed"
 
         depths = reference.depth_by_id
         worst["ulp_matrix_0.0"] = max(

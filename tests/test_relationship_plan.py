@@ -1,14 +1,12 @@
 """Tests for the relationship plan layer (PGQ-004).
 
 The plan (``REL_PLAN`` + helpers in ``_registry``) is the single source of
-truth for per-code engine semantics — the scalar estimate's exactness — that
-previously lived only in separate docstrings.  These tests pin that source and
-assert both engines agree on the registry key set.
+truth for scalar close-relative coverage. These tests pin the six-code set
+and assert the counting methods agree on the registry key set.
 """
 
 import numpy as np
 import polars as pl
-import pytest
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._registry import (
@@ -19,8 +17,8 @@ from pedigree_graph._registry import (
 
 
 def test_estimate_exact_codes_are_the_documented_six():
-    # ADR 0011: the scalar estimate equals relationship_counts only for
-    # MZ, parent-offspring, and the sibling codes.
+    # Amended ADR 0011: the scalar method computes only MZ, parent-offspring
+    # and sibling counts; the internal registry/helper names are retained.
     assert estimate_exact_codes() == {"MZ", "MO", "FO", "FS", "MHS", "PHS"}
     assert all(REL_PLAN[code].estimate_exact == (code in estimate_exact_codes()) for code in RELATIONSHIPS)
 
@@ -44,7 +42,6 @@ class TestAllEnginesReturnRegistryKeySet:
         pg = PedigreeGraph.from_frame(self._pedigree())
         assert set(pg.relationship_counts(max_degree=5)) == set(RELATIONSHIPS)
 
-    @pytest.mark.filterwarnings("ignore::RuntimeWarning")
-    def test_estimate_engine(self):
+    def test_close_relative_counts(self):
         pg = PedigreeGraph.from_frame(self._pedigree())
-        assert set(pg.estimate_relationship_counts(max_degree=5)) == set(RELATIONSHIPS)
+        assert set(pg.close_relative_counts()) == set(RELATIONSHIPS)
