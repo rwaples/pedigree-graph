@@ -16,7 +16,7 @@ from types import MappingProxyType
 import numpy as np
 import pytest
 
-from pedigree_graph import PedigreeGraph, _threads, configure_threads
+from pedigree_graph import MissingMetadataError, PedigreeGraph, _threads, configure_threads
 from pedigree_graph import _ne_estimate as ne_estimate
 from pedigree_graph import _ne_rates as ne_rates
 from pedigree_graph import effective_size as es
@@ -34,6 +34,26 @@ _SEX = np.array([0, 1, 0, 1, 0, 1, 0, 1])
 _GEN = np.array([0, 0, 1, 1, 2, 2, 3, 3])
 _BIRTH = np.array([1900, 1900, 1920, 1920, 1940, 1940, 1960, 1960])
 _ONE_PARENT_FATHER = np.array([-1, -1, 1, 1, 3, -1, 5, 5])
+_PARTIAL_GEN = np.array([0, 0, 1, 1, -1, 2, 3, 3])
+_PARTIAL_SEX = np.array([0, 1, 0, 1, -1, 1, 0, 1])
+_UNIFORM_SEX = np.zeros(len(_IDS), dtype=np.int64)
+
+_DEGENERATE = {
+    "clean": {},
+    "partial_labels": {"generation": _PARTIAL_GEN},
+    "absent_sex": {"sex": None},
+    "partial_sex": {"sex": _PARTIAL_SEX},
+    "uniform_sex": {"sex": _UNIFORM_SEX},
+    "one_parent": {"father": _ONE_PARENT_FATHER},
+    "labels+sex": {"generation": _PARTIAL_GEN, "sex": None},
+    "labels+parentage": {"generation": _PARTIAL_GEN, "father": _ONE_PARENT_FATHER},
+    "sex+parentage": {"sex": None, "father": _ONE_PARENT_FATHER},
+    "labels+sex+parentage": {"generation": _PARTIAL_GEN, "sex": None, "father": _ONE_PARENT_FATHER},
+    "clean+birth": {"birth_year": _BIRTH},
+    "labels+birth": {"generation": _PARTIAL_GEN, "birth_year": _BIRTH},
+    "labels+sex+birth": {"generation": _PARTIAL_GEN, "sex": None, "birth_year": _BIRTH},
+    "uniform_sex+birth": {"sex": _UNIFORM_SEX, "birth_year": _BIRTH},
+}
 
 _DIRECT = {name: getattr(es, name) for name in ALL_EFFECTIVE_SIZE_ESTIMATORS}
 _NEEDS_PARENTAGE = ("ne_long_term_contributions",)
@@ -48,6 +68,32 @@ def _graph(**overrides):
 
 def _empty_graph():
     return PedigreeGraph.from_frame({"id": [], "mother": [], "father": []})
+
+
+def _refusal(code, fields):
+    return ("missing_metadata", code, tuple(sorted(fields.items())))
+
+
+def _outcome(call):
+    """``(outcome, warnings)`` for one estimator call, on either path.
+
+    The two paths report a refusal differently, the standalone function
+    raising where the orchestrator returns a sentinel, so both normalize to
+    one tuple here.  What is compared is then the refusal itself rather than
+    the shape it arrived in.
+    """
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            value = call()
+        except MissingMetadataError as error:
+            outcome = _refusal(error.code, error.fields)
+        else:
+            if isinstance(value, UnavailableEffectiveSize):
+                outcome = _refusal(value.code, value.fields)
+            else:
+                outcome = ("value", value)
+    return outcome, tuple(sorted(str(record.message) for record in caught))
 
 
 def _without(*names):
@@ -339,6 +385,38 @@ class TestDirectParity:
         value = estimate_effective_sizes(_empty_graph())[name]
         assert not isinstance(value, UnavailableEffectiveSize)
         assert value.ne is None
+
+
+class TestPathEquivalence:
+    """The batch and standalone paths agree on every degenerate graph.
+
+    Each estimator is reachable two ways, and each way wires its own guards
+    and prerequisites: the standalone function does it inline, the
+    orchestrator does it in ``_Prerequisites``.  A graph that fails more than
+    one guard is where two wirings would part company, since only the first
+    guard to run gets to name the refusal.
+
+    Issue #19 asserted they already have.  They have not.  The standalone path
+    reaches its guards through
+    :meth:`~pedigree_graph._cohorts.ObservedCohorts.for_graph`, which runs
+    ``_require_complete_generation_labels`` before it densifies, so building
+    cohorts first *is* checking labels first.  Both paths refuse in the order
+    labels, sex, then the estimator's own guard.
+
+    This pins that agreement rather than the order itself, so a reshape of
+    either wiring has to keep the two in step without freezing which guard
+    happens to be checked where.  Swapping the two guards in ``_compute``
+    moves eight of these cells, which is what makes the pin worth its
+    runtime.
+    """
+
+    @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
+    @pytest.mark.parametrize("case", list(_DEGENERATE), ids=list(_DEGENERATE))
+    def test_both_paths_refuse_alike_and_warn_alike(self, name, case):
+        overrides = _DEGENERATE[case]
+        direct = _outcome(lambda: _DIRECT[name](_graph(**overrides)))
+        orchestrated = _outcome(lambda: estimate_effective_sizes(_graph(**overrides), [name])[name])
+        assert orchestrated == direct
 
 
 class TestSerialization:
