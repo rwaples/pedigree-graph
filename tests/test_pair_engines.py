@@ -1,13 +1,9 @@
 """Focused tests for the decomposed pair engines and shared utilities (PGQ-003).
 
-Covers the newly-isolated pure helpers in ``_pair_utils`` and the read-only
-contract of the two engine collaborators (``MatrixPairExtractor``,
-``StreamingPairCounter``) established in ADR 0002: the engines compute and
-return results but never write the graph's estimate cache — the public
-wrappers do.
+Covers the pure helpers in ``_pair_utils`` and the read-only contract of
+``MatrixPairExtractor`` and ``_count_close_relatives`` from ADR 0002.
+The counting helper returns results; its public wrapper owns the cache.
 """
-
-import warnings
 
 import numpy as np
 import pytest
@@ -20,7 +16,7 @@ from pedigree_graph._pair_utils import (
     pairs_from_groups,
     subtract_pairs,
 )
-from pedigree_graph._streaming_counter import StreamingPairCounter
+from pedigree_graph._streaming_counter import _count_close_relatives
 
 
 class TestPairUtils:
@@ -76,22 +72,18 @@ class TestEngineReadOnlyContract:
         assert counts["FS"] > 0
         assert all(counts[code] == 0 for code in RELATIONSHIPS if code not in codes)
 
-    def test_streaming_counter_does_not_write_the_estimate_cache(self, small_pedigree):
+    def test_scalar_counter_does_not_write_the_cache(self, small_pedigree):
         pg = PedigreeGraph.from_frame(small_pedigree)
-        raw, overlaps, clamped = StreamingPairCounter(pg).count(2)
-        # The engine must not touch the graph's result cache — that's the wrapper's job.
-        assert pg._estimate_cache == {}
-        assert isinstance(raw, dict)
-        assert set(overlaps) == set(raw)
-        assert clamped == frozenset()
-        assert raw["MZ"] >= 0
+        counts = _count_close_relatives(pg)
+        assert pg._close_relative_counts_cache is None
+        assert isinstance(counts, dict)
+        assert counts["MZ"] >= 0
 
-        # The wrapper folds the parent-offspring overlap out and caches the result.
-        pg2 = PedigreeGraph.from_frame(small_pedigree)
-        estimate = pg2.estimate_relationship_counts(max_degree=2)
-        assert 2 in pg2._estimate_cache
-        for code in estimate.requested:
-            assert estimate[code] == raw[code] - overlaps[code], code
+        result = pg.close_relative_counts()
+        assert pg._close_relative_counts_cache is result
+        assert set(counts) == result.requested
+        for code in result.requested:
+            assert result[code] == counts[code], code
 
 
 RESIDENT_MATRICES = ("_A", "_A2", "_A3", "_A4", "_A5", "_A2_shared", "_full_sib_matrix", "_half_sib_matrix")
@@ -102,7 +94,7 @@ def _resident(pg) -> list[str]:
 
 
 class TestMatrixReleaseIsExceptionSafe:
-    """Both wrappers release the adjacency powers on the failure path too (issue #4)."""
+    """Pair extraction releases adjacency powers on failure too, per issue #4."""
 
     def test_relationship_pairs_releases_when_extraction_raises(self, small_pedigree, monkeypatch):
         pg = PedigreeGraph.from_frame(small_pedigree)
@@ -113,19 +105,4 @@ class TestMatrixReleaseIsExceptionSafe:
         monkeypatch.setattr(PedigreeGraph, "_mz_twin_pairs", boom)
         with pytest.raises(MemoryError):
             pg.relationship_pairs(max_degree=3)
-        assert _resident(pg) == []
-
-    def test_estimate_releases_when_its_own_warning_is_an_error(self, small_pedigree, monkeypatch):
-        pg = PedigreeGraph.from_frame(small_pedigree)
-        real = StreamingPairCounter.count
-
-        def always_clamped(self, max_degree):
-            raw, overlaps, _ = real(self, max_degree)
-            return raw, overlaps, frozenset({"H1C"})
-
-        monkeypatch.setattr(StreamingPairCounter, "count", always_clamped)
-        with warnings.catch_warnings():
-            warnings.simplefilter("error", RuntimeWarning)
-            with pytest.raises(RuntimeWarning):
-                pg.estimate_relationship_counts(max_degree=3)
         assert _resident(pg) == []

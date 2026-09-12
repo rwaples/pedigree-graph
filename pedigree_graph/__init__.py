@@ -16,12 +16,10 @@ Public API:
         first_rows / second_rows in the category's role orientation, the
         roles, requested, len, and (first, second) unpacking
     RelationshipCountResult — what graph.relationship_counts(...),
-        view.relationship_counts(...), or the memory-bounded
-        graph.estimate_relationship_counts(max_degree=...) returns: an
-        immutable mapping over all 23 codes to int | None, plus the
-        requested / exact / approximate / clamped code sets (clamped:
-        requested codes whose inclusion-exclusion residual underflowed and
-        was floored at 0; that 0 is not a true absence)
+        view.relationship_counts(...), or graph.close_relative_counts()
+        returns: an immutable mapping over all 23 codes to int | None,
+        plus the requested / exact code sets. Close-relative counts compute
+        only MZ, MO, FO, FS, MHS and PHS; every other code maps to None.
     PedigreeView         — ordered view of a graph's rows, built with
         graph.view(ids=...) or graph.view(rows=...); exposes read-only ids,
         graph_rows, n_individuals, len, relationship_pairs /

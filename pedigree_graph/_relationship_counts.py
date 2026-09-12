@@ -58,4 +58,4 @@ def _count(
             selected=selected,
         )
         values.update({code: counted[code] for code in requested})
-    return RelationshipCountResult(values, requested, requested, frozenset(), frozenset())
+    return RelationshipCountResult(values, requested, requested)

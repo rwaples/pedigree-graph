@@ -1,13 +1,10 @@
 """Property-based cross-engine tests for relationship-pair counting.
 
-The matrix engine is the exact reference. Per REL_PLAN, estimate_relationship_counts
-is bit-identical to it only for estimate_exact_codes(). Also checks pairs<->counts
-agreement and degree-gating.
+The scalar close-relative counts match the exact reference on all six codes
+in estimate_exact_codes(). Also checks pairs<->counts agreement and degree-gating.
 """
 
 from __future__ import annotations
-
-import warnings
 
 from conftest import pedigree_arrays, random_pedigree
 from hypothesis import given, settings
@@ -19,20 +16,14 @@ _SETTINGS = settings(deadline=None, max_examples=40)
 _HEAVY = settings(deadline=None, max_examples=25)
 
 
-def _estimate(pg, max_degree=5):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        return pg.estimate_relationship_counts(max_degree=max_degree)
-
-
 @_SETTINGS
 @given(pg=random_pedigree())
-def test_estimate_matches_matrix_on_exact_codes(pg):
-    matrix = pg.relationship_counts(max_degree=5)
-    estimate = _estimate(pg, 5)
-    assert estimate.exact == estimate_exact_codes()
-    for code in sorted(estimate.exact):
-        assert estimate[code] == matrix[code], code
+def test_close_relative_counts_match_exact_counts(pg):
+    exact = pg.relationship_counts(max_degree=5)
+    close = pg.close_relative_counts()
+    assert close.requested == close.exact == estimate_exact_codes()
+    for code in RELATIONSHIPS:
+        assert close[code] == (exact[code] if code in close.requested else None), code
 
 
 @_SETTINGS

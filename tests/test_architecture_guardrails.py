@@ -108,13 +108,15 @@ REMOVED_NAMES = (
     "streaming_exact",
 )
 
-# Names 0.9 deleted with the Caballero-Toro estimator (issue #15, ADR 0012).
-# It was replaced rather than renamed, so any of these reappearing as code
-# would reintroduce a statistic whose cited paper does not contain it, or a
-# record field describing the founder-reach weighting that went with it.
+# Names 0.9 deleted with the Caballero-Toro estimator (issue #15, ADR 0012)
+# and the approximate relationship counter (issue #17, amended ADR 0011).
+# The Caballero-Toro names must not reintroduce the unsupported statistic or
+# its founder-reach weighting fields. The relationship estimator was replaced
+# by exact close-relative counts without an old-name alias.
 # String literals are prose to the sweep, so a test asserting the old key is
 # absent from ``ALL_EFFECTIVE_SIZE_ESTIMATORS`` still reads naturally.
 REMOVED_NAMES_0_9 = (
+    "estimate_relationship_counts",
     "ne_caballero_toro",
     "NeCaballeroToroResult",
     "CTAccumulators",

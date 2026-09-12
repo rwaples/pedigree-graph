@@ -84,6 +84,13 @@ far from the ancestor(s), so `up` counts meioses from `first` up, `down` counts
 them from the ancestor(s) down to `second`, and `up >= down` always holds.
 _Avoid_: relationship type (when the code is meant), kind, n_ancestors
 
+**Close relative**:
+For relationship-count reporting, an MZ co-twin, mother, father, full sibling,
+maternal half sibling or paternal half sibling. This fixed set excludes
+grandparents and avuncular relatives despite their sharing degree 2 with
+half siblings.
+_Avoid_: degree-2 relatives, first-degree relatives
+
 **Degree**:
 The kinship distance of a relationship category — `0` for MZ twins, `1` for
 parent-offspring and full sibs, and so on. A degree cutoff includes relationship

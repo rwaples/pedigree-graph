@@ -6,6 +6,18 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Removed: `estimate_relationship_counts(*, max_degree)`**, replaced by
+  `close_relative_counts()` with no selector, per issue #17. It computes only
+  MZ, MO, FO, FS, MHS and PHS, exactly under closest-category precedence.
+  The result still has all 23 registry keys, with `None` for the other 17.
+  Use `relationship_counts(max_degree=5)` for all categories. The scalar
+  lineal, cousin and collateral formulas, residual clamps, warning and
+  adjacency-power release are deleted. There is no old-name alias.
+- **Removed: `RelationshipCountResult.approximate` and `.clamped`** from all
+  count results, including exact graph/view counts. `requested` and `exact`
+  remain. Consumers must stop reading the removed attributes. The pedsum
+  migration is tracked in [pedsum#2](https://github.com/rwaples/pedsum/issues/2).
+
 - **Removed: `RelationshipCountResult.from_pairs`** (issue #16).  Callers
   that already hold a `RelationshipPairs` result can count its requested
   blocks directly; callers that do not need pair arrays should use the

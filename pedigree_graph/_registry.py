@@ -212,24 +212,23 @@ def select_categories(codes: Iterable[str]) -> tuple[RelationshipCategory, ...]:
 class EngineSupport(NamedTuple):
     """Per-code engine handling, beyond the structural :class:`RelationshipCategory`.
 
-    The matrix engine (``relationship_counts`` / ``relationship_pairs``) is the
-    reference: it counts *paths* through shared ancestors and is exact for
-    every code on every input.  This record captures where the scalar
-    estimator deviates, so the divergence lives in one place instead of being
-    re-stated in each docstring (PGQ-004).
+    ``relationship_counts`` and ``relationship_pairs`` apply closest-category
+    precedence for every code. This record names the six codes also available
+    through scalar ``close_relative_counts``.
     """
 
     estimate_exact: bool
-    """``estimate_relationship_counts`` equals ``relationship_counts`` for
-    this code on every input (ADR 0011): the MZ, parent-offspring, and
-    sibling codes.  ``False`` → the code is reported in the result's
-    ``approximate`` set."""
+    """Whether ``close_relative_counts`` computes this code, exactly.
+
+    The name is retained from the former estimator. False means the scalar
+    method returns None for this code, not an approximation. See ADR 0011.
+    """
 
 
 # Keyed by relationship code; covers exactly the RELATIONSHIPS key set (asserted
-# below and in tests).  Matrix engine is the exact paths-counting reference.
+# below and in tests). All public counts use closest-category precedence.
 REL_PLAN: dict[str, EngineSupport] = {
-    # --- degree 0 / 1: lineal + sibling, exact everywhere ---
+    # --- the six scalar close-relative codes, degrees 0 through 2 ---
     "MZ": EngineSupport(estimate_exact=True),
     "MO": EngineSupport(estimate_exact=True),
     "FO": EngineSupport(estimate_exact=True),
@@ -263,5 +262,5 @@ assert REL_PLAN.keys() == _RELATIONSHIPS.keys(), "REL_PLAN and RELATIONSHIPS cov
 
 
 def estimate_exact_codes() -> frozenset[str]:
-    """Codes for which ``estimate_relationship_counts`` equals ``relationship_counts``."""
+    """The six exact codes returned by ``close_relative_counts``; legacy helper name."""
     return frozenset(code for code, plan in REL_PLAN.items() if plan.estimate_exact)

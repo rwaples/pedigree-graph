@@ -88,6 +88,11 @@ kin_fs = pg.pair_kinship(first, second)
 # Exact counts in O(N) memory (no pair lists), and the three kinship-matrix families
 counts = pg.relationship_counts(max_degree=3)
 K = pg.kinship_matrix()  # complete, CSC float32
+
+# Scalar counts for MZ, MO, FO, FS, MHS and PHS only, also exact
+close = pg.close_relative_counts()  # no degree/category selector
+assert close["FS"] == counts["FS"]
+assert close["GP"] is None  # not computed, not zero
 ```
 
 Absent optional columns read as absent: there is no sex default and no
@@ -95,6 +100,13 @@ generation fallback.  Effective-size estimators live in
 `pedigree_graph.effective_size`; the `FrameLike` protocol in
 `pedigree_graph.typing`.  Migrating from 0.7.1: see the old-to-new table in
 `CHANGELOG.md`.
+
+`close_relative_counts()` is full-graph only. Its `requested` and `exact`
+sets contain the six codes above; all other registry keys map to `None`.
+It counts parent edges and sibling groups without pair lists or adjacency
+powers. For grandparents, avuncular pairs, cousins, or a pedigree view, use
+`relationship_counts()` instead. The former `estimate_relationship_counts`
+method and the result fields `approximate` and `clamped` have been removed.
 
 ## Relationship registry
 
@@ -120,8 +132,8 @@ carries `code`, `label`, `degree`, `nominal_kinship`, `up`, `down`,
 ## Architecture
 
 For contributors: [`docs/architecture.md`](docs/architecture.md) maps the
-module layout and the hidden contracts (coordinate space, exact vs
-approximate counts, sparse-ID handling, default sex), each with its source
+module layout and the hidden contracts (coordinate space, exact count
+coverage, sparse-ID handling, default sex), each with its source
 of truth and regression test.
 The relationship/coordinate vocabulary is in [`CONTEXT.md`](CONTEXT.md);
 design decisions are in [`docs/adr/`](docs/adr/).

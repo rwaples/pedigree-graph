@@ -1,8 +1,8 @@
 # Limitations
 
 Current scaling and correctness limitations of the relationship-pair
-engines.  Read before reaching for `extract_pairs` / `count_pairs` on
-pair-dense pedigrees.
+engines. Read before choosing between `relationship_pairs`,
+`relationship_counts` and `close_relative_counts` on pair-dense pedigrees.
 
 ## Pair *lists* are O(answer size); pair *counts* are O(N)
 
@@ -43,41 +43,32 @@ list, even on 30 GB hosts, in ``A_f @ A_f.T`` (the PHS sparse product).
    returning stub values for the 23 relationship counts (``pairs: {}``
    and ``relationship_summary.computed: false``).
 
-2. ``PedigreeGraph.count_pairs_streaming()`` — pure-scalar per-anchor
-   arithmetic, O(N) memory, exact on 10 simple codes, approximate
-   within ~1% on 13 cousin / collateral codes for deep low-inbreeding
-   pedigrees.  See the precision contract below.
+2. ``PedigreeGraph.relationship_counts(max_degree=5)`` counts all 23
+   categories exactly without materialising pair lists. Use this when
+   counts, rather than pair coordinates, are the goal.
 
-## ``count_pairs_streaming`` precision contract
+3. ``PedigreeGraph.close_relative_counts()`` uses scalar sibling-group
+   arithmetic and parent-edge counts for six exact categories only.
+   See the coverage contract below.
 
-The scalar path is **full-graph only** — ``scope='subsample'`` raises
-``NotImplementedError`` on graphs constructed via ``from_subsample``.
-Use ``count_pairs`` for subsample-restricted counts.
+## ``close_relative_counts`` precision and coverage
 
-- **Exact** on 10 codes (bit-identical to ``count_pairs`` on every
-  input):
-  ``MZ``, ``MO``, ``FO``, ``FS``, ``MHS``, ``PHS``,
-  ``GP``, ``GGP``, ``GGGP``, ``G3GP``.
+The scalar path is full-graph only and accepts no selector. It computes
+``MZ``, ``MO``, ``FO``, ``FS``, ``MHS`` and ``PHS`` exactly, including on
+inbred pedigrees. Half-sib pairs also related as parent-offspring are
+subtracted to match the package's closest-category precedence.
 
-- **Approximate** on 13 cousin / collateral codes:
-  ``Av``, ``1C``, ``H1C``, ``HAv``, ``GAv``, ``GGAv``, ``G3Av``,
-  ``HGAv``, ``HGGAv``, ``1C1R``, ``H1C1R``, ``1C2R``, ``2C``.
+The result retains all 23 registry keys. The six computed codes are in
+both ``requested`` and ``exact``; all other values are ``None``, not zero.
+There are no approximate counts, clamps or warning, and the shared
+``RelationshipCountResult`` no longer has ``approximate`` or ``clamped``
+fields. The old ``estimate_relationship_counts`` method is removed.
 
-  Scalar formulas assume each individual has the full complement of
-  known grandparents at the relevant depth, so constants like
-  ``4*FS`` in the ``H1C`` correction over-subtract on shallow
-  pedigrees; ``H1C`` may clamp to ``0`` on depth ≤ 3.  Twin parents
-  and sib-mating offspring also push the formulas off bit-identity
-  because the inclusion-exclusion terms assume neither pattern.
-
-  On the synthetic ``small_pedigree`` fixture (3000 rows, depth 3,
-  ~0.5% sib-mating, 10 twin pairs): ``Av`` off by 3, ``HAv`` off by
-  11, ``1C`` off by 30, ``H1C`` clamped to 0.  On deep livestock
-  pedigrees (depth ≥ 5, low inbreeding) the formulas are accurate to
-  better than 1%.
-
-The horse-pedigree benchmark (N=783K, mean F=0.007) completes in
-~5 seconds with peak RSS ~730 MB.
+"Close" is not a degree-2 cutoff: grandparents and avuncular pairs are
+not included. Use ``relationship_counts`` for those categories and for
+counts restricted to a ``PedigreeView``. Both counting methods use O(N)
+memory; the scalar method needs no adjacency powers or pair arrays.
+See the amendment to ADR 0011 for the API decision.
 
 ## ``compute_n_ancestors`` memory scales with ``sum_i n_ancestors[i]``
 
@@ -107,21 +98,19 @@ This matches the standard convention but can surprise callers who
 expect half-founders to contribute to half-sib counts on the
 "missing" side.  They don't.
 
-## Subsample-restricted counts are O(full pair count)
+## View pair lists still enumerate the full graph
 
-``PedigreeGraph.from_subsample(...)`` builds a graph that returns
-subsample-filtered pair arrays from ``extract_pairs``, but the
-underlying enumeration runs over the FULL pedigree first (raw counts
-saved, then sample mask applied).  Memory is bounded by full-pedigree
-pair counts, not the subsample.
+``PedigreeView.relationship_pairs`` extracts full-graph pairs before
+projecting them onto the view. A small view therefore does not protect
+pair-list extraction from full-pedigree memory costs.
 
-For a 10% subsample of a stallion-heavy pedigree, this is still
-OOM-prone because the full-pedigree intermediate doesn't shrink.
+Use ``PedigreeView.relationship_counts`` when only counts are needed.
+It passes a row mask to the Rust engine and builds no pair list.
 
 ## What this file does NOT cover
 
-- Lineal-code counting limitations (none significant — ``_A^k.nnz`` is
-  O(N · depth) and tractable to N=10M+).
+- Historical scalar lineal-count performance. Those formulas are removed;
+  current lineal counts use ``relationship_counts``.
 - F (inbreeding coefficient) scaling — covered by
   ``pedigree_graph._kinship_kernel`` and its own row-retirement
   optimisation work.
@@ -130,6 +119,9 @@ OOM-prone because the full-pedigree intermediate doesn't shrink.
   knob.
 
 ## Last updated
+
+Issue #17: replace the scalar estimator with six exact close-relative
+counts, remove approximate/clamped metadata, and update view-count guidance.
 
 2026-09-10 — the experimental Python relationship counter is gone
 (issue #7), and with it the cousin-code divergence and ``int8``
