@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
@@ -162,6 +163,9 @@ def _sex_specific_family_table(
     return out
 
 
+_PACKAGE_DIR = str(Path(__file__).parent)
+
+
 def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
     """RuntimeWarning when ``pg.sex`` is uniform — usually a missing ``sex=``.
 
@@ -171,6 +175,11 @@ def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
     supplied by the caller.  Estimators still return ``ne=None`` (matching
     a legitimately single-sex pedigree), so the warning is the only
     diagnostic.
+
+    Attributed to the first frame outside the package rather than to a fixed
+    ``stacklevel``.  Every estimator that fires this is reachable both
+    directly and through ``estimate_effective_sizes``, whose memo adds frames,
+    so no one constant can name the caller on both paths.
     """
     if pg.n_individuals == 0:
         return
@@ -179,7 +188,7 @@ def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
         warnings.warn(
             f"{caller}: pg.sex is uniform (all {int(sex[0])}); estimator is degenerate and will return ne=None",
             RuntimeWarning,
-            stacklevel=3,
+            skip_file_prefixes=(_PACKAGE_DIR,),
         )
 
 

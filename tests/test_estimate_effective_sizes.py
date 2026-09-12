@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import warnings
 from collections.abc import Mapping
+from pathlib import Path
 from types import MappingProxyType
 
 import numpy as np
@@ -523,6 +524,32 @@ class TestThreadBudget:
 def test_injected_keywords_are_rejected(kwargs):
     with pytest.raises(TypeError):
         estimate_effective_sizes(_graph(), **kwargs)
+
+
+class TestWarningAttribution:
+    """The uniform-sex notice names the caller, on whichever path fired it.
+
+    ``_warn_if_uniform_sex`` sits at different call depths on the two paths,
+    the orchestrator's memo adding frames the standalone call does not have,
+    so a fixed ``stacklevel`` can only ever be right for one of them.  It used
+    to be right for the standalone path and blame ``_Prerequisites.result``
+    for the other, which tells a caller nothing about their own code.
+    """
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            es.ne_sex_ratio,
+            lambda pg: estimate_effective_sizes(pg, ["ne_sex_ratio"]),
+        ],
+        ids=["direct", "orchestrated"],
+    )
+    def test_the_uniform_sex_notice_points_outside_the_package(self, call):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            call(_graph(sex=_UNIFORM_SEX))
+        [record] = [r for r in caught if "pg.sex is uniform" in str(r.message)]
+        assert Path(record.filename) == Path(__file__)
 
 
 class TestHillFallbackWarningScope:

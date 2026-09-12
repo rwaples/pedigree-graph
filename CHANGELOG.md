@@ -236,6 +236,14 @@ live on the corresponding GitHub release pages.
   `PedigreeGraph.relationship_counts` is unchanged, having validated the
   selector all along.
 
+- **Fixed: the uniform-sex warning names the caller on both paths** (issue #19).
+  `_warn_if_uniform_sex` used a fixed `stacklevel` tuned for a direct
+  `ne_sex_ratio` / `ne_variance_family_size` call, so the same notice raised
+  through `estimate_effective_sizes` was attributed to the orchestrator's own
+  memo (`_ne_estimate.py`, the `result()` thunk) rather than to the caller's
+  line.  It now skips frames inside the package, which is correct at either
+  call depth.  `TestWarningAttribution` covers both paths.
+
 - **Changed: the effective-size orchestrator dispatches through a registry**
   (issue #19).  `_compute`'s chain of `if name == ...` branches with
   membership-set guard tests is replaced by `_REGISTRY`, one row per estimator
