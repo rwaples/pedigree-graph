@@ -316,15 +316,13 @@ class MatrixPairExtractor:
             return code in codes
 
         needs_degree1_plus = any(RELATIONSHIPS[code].degree >= 1 for code in codes)
-        needs_degree2_plus = any(RELATIONSHIPS[code].degree >= 2 for code in codes)
         needs_degree3_plus = any(RELATIONSHIPS[code].degree >= 3 for code in codes)
         needs_degree4_plus = any(RELATIONSHIPS[code].degree >= 4 for code in codes)
         needs_degree5 = any(RELATIONSHIPS[code].degree >= 5 for code in codes)
 
-        # Build _A2 up front for every degree-2+ selection, including the ones
-        # that never read it (MHS and PHS come from sibling_pairs).  Narrowing
-        # this to the codes that use it is issue #24.
-        if needs_degree2_plus:
+        # GP is the first code in the dependency closure that consumes _A2.
+        # Keep its build timing unchanged without charging MHS/PHS-only queries.
+        if _needed("GP"):
             _ = pg._A2
 
         if _needed("MZ"):

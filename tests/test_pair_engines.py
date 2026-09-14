@@ -10,7 +10,7 @@ import pytest
 import scipy.sparse as sp
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
-from pedigree_graph._pair_extractor import MatrixPairExtractor
+from pedigree_graph._pair_extractor import MatrixPairExtractor, dependency_closure
 from pedigree_graph._pair_utils import (
     oriented_pairs_from_sparse,
     pairs_from_groups,
@@ -71,6 +71,18 @@ class TestEngineReadOnlyContract:
         counts = {code: len(block[0]) for code, block in pairs.items()}
         assert counts["FS"] > 0
         assert all(counts[code] == 0 for code in RELATIONSHIPS if code not in codes)
+
+    @pytest.mark.parametrize(
+        ("requested", "expects_a2"),
+        [("MHS", False), ("PHS", False), ("GP", True)],
+    )
+    def test_matrix_extractor_builds_a2_only_when_the_selection_consumes_it(
+        self, small_pedigree, requested, expects_a2
+    ):
+        pg = PedigreeGraph.from_frame(small_pedigree)
+        codes = dependency_closure(frozenset({requested}))
+        MatrixPairExtractor(pg, max_workers=1).extract(codes)
+        assert ("_A2" in pg.__dict__) is expects_a2
 
     def test_scalar_counter_does_not_write_the_cache(self, small_pedigree):
         pg = PedigreeGraph.from_frame(small_pedigree)

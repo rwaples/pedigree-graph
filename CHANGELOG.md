@@ -235,6 +235,15 @@ live on the corresponding GitHub release pages.
   recorded fitACE reaching into `_Am`/`_Af`, and a sweep of the five family
   repositories found no reader left.
 
+- **Changed: MHS/PHS-only pair queries no longer build the unused `_A2`**
+  (issue #24).  The eager trigger now starts at GP, the first code in the
+  dependency closure that consumes the 2-hop parent adjacency, so GP and higher
+  selections keep their existing build order.  On `random_300k`, an MHS-only
+  query drops from 216.84 to 203.29 MiB median peak RSS and from 0.379 to 0.335
+  seconds over five interleaved repetitions, with disjoint ranges and identical
+  result checksums (`benchmarks/bench_relationship_a2.md`).  No public API or
+  relationship result changes.
+
 - **Fixed: `_native.relationship_counts` rejects an out-of-range `max_degree`
   instead of clamping it** (issue #20).  The Rust engine applied
   `max_degree.min(5)`, so the native binding accepted `6`, `9` or `255` and
