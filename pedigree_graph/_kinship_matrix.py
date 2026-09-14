@@ -453,6 +453,9 @@ def relationship_kinship_matrix(graph: PedigreeGraph, selection: RelationshipSel
     started = time.perf_counter()
     pairs = relationship_pairs(graph, selection)
     matrix = _support_from_relationships(graph, pairs)
+    # Pair chunks suit sparse relationship support, not dense support generally.
+    # The measured max-degree-5 case spans about 4 chunks versus 26 for the
+    # dense candidate case; see benchmarks/matrix_exactification.md.
     _exactify_support(graph, matrix)
     matrix = _freeze_csc(matrix)
     graph._relationship_kinship_cache[key] = matrix
