@@ -70,20 +70,28 @@ counts restricted to a ``PedigreeView``. Both counting methods use O(N)
 memory; the scalar method needs no adjacency powers or pair arrays.
 See the amendment to ADR 0011 for the API decision.
 
-## ``compute_n_ancestors`` memory scales with ``sum_i n_ancestors[i]``
+## ``distinct_ancestor_counts`` memory follows its live parent frontier
 
-``PedigreeGraph.compute_n_ancestors`` is a sparse boolean transitive
-closure of the parent graph (``_lineage_kernel._compute_n_ancestors``).
-Memory scales with ``sum_i n_ancestors[i]``, so very deep / very wide
-pedigrees can hit RAM limits:
+``PedigreeGraph.distinct_ancestor_counts`` keeps a sorted closed ancestor set
+for each row that still has an unprocessed direct child. It reuses that row's
+power-of-two storage slot after the last child. This removes the old complete
+sparse closure, but it does not guarantee memory proportional to one generation:
+a parent with a late last child remains live, and a pathological pedigree can
+keep much of its historical ancestry in the frontier.
 
-- N=100K, G=10, random mating → 2.2 s, peak RSS ~0.5 GB.
-- N=10M with saturated ancestry → extrapolates beyond commodity hardware.
+The committed A/B benchmark in ``benchmarks/bench_distinct_ancestors.py``
+measured the retiring DP against the removed closure:
 
-A retirement-style DP (analogous to the F kernel's row-retirement
-optimisation in ``_kinship_kernel``) would bound peak memory to the
-live frontier rather than the cumulative ancestor set. Deferred until
-a user hits the wall.
+- `random_30k`: 0.257 s and 173 MiB became 0.043 s and 178 MiB;
+- `random_300k`: 3.42 s and 586 MiB became 0.45 s and 269 MiB;
+- a closed 60-generation pedigree: 31.68 s and 532 MiB became 0.16 s and 183 MiB.
+
+The DP itself allocated less memory on every fixture. In a fresh process,
+loading the Numba runtime adds about 42 MiB before the timed call, so total peak
+RSS is higher on small inputs even though their timed RSS growth is lower. The
+package uses one implementation rather than dispatching at a measured size or
+depth threshold. Full results, allocator telemetry, and the environment are in
+``benchmarks/bench_distinct_ancestors.md``.
 
 ## Half-founders and missing parents
 
@@ -123,12 +131,14 @@ It passes a row mask to the Rust engine and builds no pair list.
 Issue #17: replace the scalar estimator with six exact close-relative
 counts, remove approximate/clamped metadata, and update view-count guidance.
 
+2026-09-16 — replace the ``distinct_ancestor_counts`` sparse closure with the
+retiring sorted-set DP; record the A/B benchmark and the fixed Numba runtime
+cost.
+
 2026-09-10 — the experimental Python relationship counter is gone
 (issue #7), and with it the cousin-code divergence and ``int8``
 overflow sections; the Rust engine of 0.8.3 is the one
 relationship-counting implementation.
-
-2026-05-20 — ``compute_n_ancestors`` scalability section added.
 
 2026-05-19 — ``count_pairs_streaming`` precision contract
 reconciled; ``Av`` documented as approximate; stale

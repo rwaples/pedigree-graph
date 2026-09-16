@@ -26,15 +26,18 @@ if TYPE_CHECKING:
 def distinct_ancestor_counts(pg: PedigreeGraph) -> np.ndarray:
     """Distinct strict ancestors of every row, int32, read-only, memoised.
 
-    An ancestor reachable through several paths is counted once.  The
-    boolean transitive closure is order-free, so the graph arrays are used
-    directly.
+    An ancestor reachable through several paths is counted once. The retiring
+    ancestor-set sweep needs parents before children, so it uses the private
+    topological order when the graph rows are not already ordered that way.
     """
     cached = pg._distinct_ancestor_counts
     if cached is None:
-        cached = readonly(
-            _compute_n_ancestors(pg.mother_rows, pg.father_rows, pg.n_individuals).astype(np.int32, copy=False)
-        )
+        if pg._rows_are_topological:
+            counts = _compute_n_ancestors(pg.mother_rows, pg.father_rows, pg.n_individuals)
+        else:
+            m_idx, f_idx, _ = pg._topological_parents
+            counts = pg._topology.per_row_to_graph(_compute_n_ancestors(m_idx, f_idx, pg.n_individuals))
+        cached = readonly(np.ascontiguousarray(counts, dtype=np.int32))
         pg._distinct_ancestor_counts = cached
     return cached
 

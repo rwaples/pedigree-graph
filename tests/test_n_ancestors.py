@@ -6,16 +6,36 @@ count is 1, not the number of paths.
 """
 
 import numpy as np
+import pytest
+from conftest import parity_columns, parity_fixtures
 
 from pedigree_graph import PedigreeGraph
+from pedigree_graph._lineage_kernel import _compute_n_ancestors, _compute_n_ancestors_profiled
 
 
-def _pg(ids, mothers, fathers):
+def _pg(ids, mothers, fathers) -> PedigreeGraph:
     return PedigreeGraph.from_arrays(
         ids=np.asarray(ids),
         mother_ids=np.asarray(mothers),
         father_ids=np.asarray(fathers),
     )
+
+
+def _set_oracle(pg: PedigreeGraph) -> np.ndarray:
+    """Independent Python-set ancestor counts, returned in graph-space rows."""
+    mother, father, _ = pg._topological_parents
+    closed: list[set[int]] = []
+    counts = np.zeros(pg.n_individuals, dtype=np.int32)
+    for i, (m, f) in enumerate(zip(mother, father, strict=True)):
+        ancestors: set[int] = set()
+        if m >= 0:
+            ancestors.update(closed[m])
+        if f >= 0:
+            ancestors.update(closed[f])
+        counts[i] = len(ancestors)
+        ancestors.add(i)
+        closed.append(ancestors)
+    return pg._topology.per_row_to_graph(counts)
 
 
 def test_founders_have_zero_ancestors():
@@ -72,3 +92,57 @@ def test_returns_int32_and_caches():
     assert first.dtype == np.int32
     second = pg.distinct_ancestor_counts()
     assert first is second
+
+
+@pytest.mark.parametrize(
+    ("ids", "mothers", "fathers", "expected"),
+    [
+        ([], [], [], []),
+        ([0, 1, 2], [-1, -1, 0], [-1, -1, 1], [0, 0, 2]),
+        ([0, 1], [-1, 0], [-1, -1], [0, 1]),
+        ([0, 1, 2, 3, 4], [-1, -1, 0, 0, 2], [-1, -1, 1, 1, 3], [0, 0, 2, 2, 4]),
+        ([0, 1, 2, 3], [-1, -1, 0, 2], [-1, -1, 1, 1], [0, 0, 2, 3]),
+    ],
+)
+def test_retiring_dp_edge_cases(ids, mothers, fathers, expected):
+    pg = _pg(ids, mothers, fathers)
+    np.testing.assert_array_equal(pg.distinct_ancestor_counts(), expected)
+
+
+def test_retiring_dp_handles_the_same_parent_in_both_roles():
+    mother = np.array([-1, 0], dtype=np.int32)
+    father = np.array([-1, 0], dtype=np.int32)
+    np.testing.assert_array_equal(_compute_n_ancestors(mother, father, 2), [0, 1])
+
+
+@pytest.mark.parametrize("name", ["random_1k", "deep_inbred_60g"])
+def test_retiring_dp_matches_set_oracle_on_parity_fixtures(name):
+    pg = PedigreeGraph.from_frame(parity_columns(parity_fixtures(name)[name]))
+    np.testing.assert_array_equal(pg.distinct_ancestor_counts(), _set_oracle(pg))
+
+
+def test_retiring_dp_maps_shuffled_rows_back_to_graph_space():
+    columns = {
+        "id": np.array([4, 1, 3, 0, 2]),
+        "mother": np.array([2, -1, 2, -1, 0]),
+        "father": np.array([3, -1, 1, -1, 1]),
+    }
+    pg = PedigreeGraph.from_frame(columns)
+    assert not pg._rows_are_topological
+    np.testing.assert_array_equal(pg.distinct_ancestor_counts(), _set_oracle(pg))
+
+
+def test_retiring_dp_reports_reused_storage():
+    pg = _pg(
+        list(range(10)),
+        [-1, -1, 0, 1, 2, 3, 4, 5, 6, 7],
+        [-1] * 10,
+    )
+    mother, father, _ = pg._topological_parents
+    counts, peak_live, highwater, allocated, scanned, reused = _compute_n_ancestors_profiled(
+        mother, father, pg.n_individuals
+    )
+    np.testing.assert_array_equal(counts, _set_oracle(pg))
+    assert 0 < peak_live <= highwater <= allocated
+    assert scanned > 0
+    assert reused > 0

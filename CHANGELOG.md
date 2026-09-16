@@ -6,6 +6,19 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: `distinct_ancestor_counts()` now uses one retiring Numba DP.**
+  The old implementation repeatedly multiplied a sparse boolean transitive
+  closure and retained every ancestor link. The replacement makes one
+  topological pass, merges sorted closed ancestor sets, and reuses a
+  power-of-two slot after its row's last direct child. Returned int32 values,
+  graph-space order, read-only memoisation, and distinct-path semantics are
+  unchanged. On the committed benchmark, the 60-generation stress fixture
+  drops from 31.68 s and 532 MiB peak RSS to 0.16 s and 183 MiB; `random_300k`
+  drops from 3.42 s and 586 MiB to 0.45 s and 269 MiB. A fresh process pays
+  about 42 MiB to load the Numba runtime, so small fixtures have higher total
+  peak RSS despite lower operation-specific allocation. The one-method design
+  accepts that fixed cost rather than dispatching between implementations.
+
 - **Removed: `estimate_relationship_counts(*, max_degree)`**, replaced by
   `close_relative_counts()` with no selector, per issue #17. It computes only
   MZ, MO, FO, FS, MHS and PHS, exactly under closest-category precedence.
