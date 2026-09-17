@@ -15,5 +15,6 @@
 pub mod alloc;
 pub mod error;
 pub mod graph;
+pub mod pool;
 pub mod relationships;
 pub mod topology;

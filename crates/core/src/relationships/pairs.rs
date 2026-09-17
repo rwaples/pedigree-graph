@@ -28,11 +28,13 @@ use crate::error::Error;
 use rayon::prelude::*;
 use std::sync::Mutex;
 
-/// The pairs of one category, aligned `first[k]` / `second[k]`, in the receiver's rows.
+/// The pairs of one category, aligned `first[k]` / `second[k]`, in the
+/// receiver's rows.  Rows are `i32`, the host's row dtype, so a block moves
+/// into a NumPy array without a copy; every row is non-negative.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PairBlock {
-    pub first: Vec<u32>,
-    pub second: Vec<u32>,
+    pub first: Vec<i32>,
+    pub second: Vec<i32>,
 }
 
 impl PairBlock {
@@ -46,8 +48,8 @@ impl PairBlock {
 
     /// Append one pair to a task chunk.
     fn push(&mut self, a: u32, b: u32) -> Result<(), Error> {
-        alloc::push(&mut self.first, a, Family::TaskChunk, "int32")?;
-        alloc::push(&mut self.second, b, Family::TaskChunk, "int32")
+        alloc::push(&mut self.first, a as i32, Family::TaskChunk, "int32")?;
+        alloc::push(&mut self.second, b as i32, Family::TaskChunk, "int32")
     }
 
     fn reserve_exact(&mut self, additional: usize) -> Result<(), Error> {
@@ -73,8 +75,8 @@ impl PairBlock {
             .enumerate()
             .fold(0u64, |h, (k, (&a, &b))| {
                 let term = K1
-                    .wrapping_mul(u64::from(a))
-                    .wrapping_add(K2.wrapping_mul(u64::from(b)))
+                    .wrapping_mul(a as u64)
+                    .wrapping_add(K2.wrapping_mul(b as u64))
                     .wrapping_add(K3);
                 h.wrapping_add((k as u64 + 1).wrapping_mul(term))
             })
@@ -276,7 +278,7 @@ fn buffered(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
 }
 
 /// Cut `buf` into consecutive slices of the given sizes.
-fn split_sizes(mut buf: &mut [u32], sizes: impl Iterator<Item = usize>) -> Vec<&mut [u32]> {
+fn split_sizes(mut buf: &mut [i32], sizes: impl Iterator<Item = usize>) -> Vec<&mut [i32]> {
     sizes
         .map(|size| {
             let (head, tail) = std::mem::take(&mut buf).split_at_mut(size);
@@ -297,7 +299,7 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
         out.0[i].second.resize(total, 0);
     }
     // Every task owns one disjoint slice of every block.
-    let mut slots: Vec<Vec<(&mut [u32], &mut [u32])>> = (0..ranges.len())
+    let mut slots: Vec<Vec<(&mut [i32], &mut [i32])>> = (0..ranges.len())
         .map(|_| Vec::with_capacity(N_CATEGORIES))
         .collect();
     for (i, block) in out.0.iter_mut().enumerate() {
@@ -314,8 +316,8 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
             let mut cursor = [0usize; N_CATEGORIES];
             query.run(range, |cat, a, b| {
                 let i = cat.index();
-                slot[i].0[cursor[i]] = a;
-                slot[i].1[cursor[i]] = b;
+                slot[i].0[cursor[i]] = a as i32;
+                slot[i].1[cursor[i]] = b as i32;
                 cursor[i] += 1;
                 Ok(())
             })?;
@@ -339,13 +341,13 @@ fn sort_by_view_key(block: &mut PairBlock, n: u64) -> Result<(), Error> {
     }
     let mut packed: Vec<u64> = alloc::with_capacity(len, Family::ViewSortScratch, "uint64")?;
     packed.extend(block.first.iter().zip(&block.second).map(|(&a, &b)| {
-        let (lo, hi) = (a.min(b), a.max(b));
-        ((u64::from(lo) * n + u64::from(hi)) << 1) | u64::from(a > b)
+        let (lo, hi) = (a.min(b) as u64, a.max(b) as u64);
+        ((lo * n + hi) << 1) | u64::from(a > b)
     }));
     packed.par_sort_unstable();
     for (k, p) in packed.iter().enumerate() {
         let key = p >> 1;
-        let (lo, hi) = ((key / n) as u32, (key % n) as u32);
+        let (lo, hi) = ((key / n) as i32, (key % n) as i32);
         let swapped = p & 1 == 1;
         block.first[k] = if swapped { hi } else { lo };
         block.second[k] = if swapped { lo } else { hi };
@@ -376,7 +378,7 @@ mod tests {
         blocks.into_iter().next().unwrap()
     }
 
-    fn pairs(blocks: &PairBlocks, cat: Category) -> Vec<(u32, u32)> {
+    fn pairs(blocks: &PairBlocks, cat: Category) -> Vec<(i32, i32)> {
         let b = blocks.get(cat);
         b.first
             .iter()
@@ -564,7 +566,7 @@ mod tests {
         for cat in Category::ALL {
             let keys: Vec<u64> = pairs(&got, cat)
                 .iter()
-                .map(|&(a, b)| u64::from(a.min(b)) * n + u64::from(a.max(b)))
+                .map(|&(a, b)| a.min(b) as u64 * n + a.max(b) as u64)
                 .collect();
             assert!(
                 keys.windows(2).all(|w| w[0] < w[1]),

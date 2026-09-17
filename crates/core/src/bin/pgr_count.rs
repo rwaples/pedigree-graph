@@ -51,10 +51,10 @@ fn main() {
         t_read.elapsed().as_secs_f64()
     );
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()
-        .expect("thread pool");
+    let pool = pedigree_graph_core::pool::configure(
+        std::num::NonZeroUsize::new(threads).expect("threads must be at least 1"),
+    )
+    .unwrap_or_else(|e| panic!("{e}"));
     let t0 = Instant::now();
     let counts = pool
         .install(|| {

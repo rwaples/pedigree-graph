@@ -73,6 +73,22 @@ def _own(values: np.ndarray, dtype: type) -> np.ndarray:
     return out
 
 
+def _own_native(values: np.ndarray, dtype: type) -> np.ndarray:
+    """Return *values*, an array the native core just handed over, frozen in place.
+
+    The counterpart of :func:`_own` for arrays that already belong to the
+    package: the core moved them out without a copy, and their ``base`` is
+    the Rust allocation that owns the memory rather than another array, so
+    freezing is enough.  The checks are the invariants of that hand-over,
+    not user validation; a failure is a binding bug.
+    """
+    aliases_an_array = isinstance(values.base, np.ndarray)
+    if values.dtype != dtype or values.ndim != 1 or not values.flags.c_contiguous or aliases_an_array:
+        raise TypeError(f"native array must be an owned, contiguous 1-D {np.dtype(dtype).name}, got {values!r}")
+    values.setflags(write=False)
+    return values
+
+
 def _invalid_integer(field: str, position: int, value: object) -> PedigreeValidationError:
     return PedigreeValidationError(
         "invalid_integer_value",

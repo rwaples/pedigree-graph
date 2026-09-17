@@ -7,13 +7,16 @@
 //! rebuilt from `Error::fields`.  A usage error crosses as a plain `ValueError`.
 
 use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1};
+use pedigree_graph_core::alloc::{self, Family};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
-use pedigree_graph_core::relationships::{self, Category, Pedigree};
+use pedigree_graph_core::pool;
+use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyTuple};
+use std::num::NonZeroUsize;
 
 /// `(order, inverse)` intp arrays of a depth-major permutation.
 type Permutation<'py> = (Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>);
@@ -237,14 +240,66 @@ fn build_pedigree<'py>(
     })
 }
 
+/// The package Rayon pool, built on first use with `threads` workers (ADR 0007).
+///
+/// Calling again with the same value is a no-op; a different value raises
+/// `ValueError`, as does `threads == 0`.  Returns the pool's size.
+#[pyfunction]
+fn configure_pool(py: Python<'_>, threads: usize) -> PyResult<usize> {
+    Ok(checked_pool(py, threads)?.current_num_threads())
+}
+
+fn checked_pool(py: Python<'_>, threads: usize) -> PyResult<&'static rayon::ThreadPool> {
+    let threads = NonZeroUsize::new(threads)
+        .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
+    pool::configure(threads).map_err(|e| to_pyerr(py, e))
+}
+
+/// A graph's engine columns, borrowed from its [`BuiltPedigree`] for one call.
+struct EngineColumns<'py> {
+    mother_rows: PyReadonlyArray1<'py, i32>,
+    father_rows: PyReadonlyArray1<'py, i32>,
+    twin_rows: PyReadonlyArray1<'py, i32>,
+    mother_ids: PyReadonlyArray1<'py, i64>,
+    father_ids: PyReadonlyArray1<'py, i64>,
+}
+
+impl<'py> EngineColumns<'py> {
+    fn borrow(py: Python<'py>, pedigree: &BuiltPedigree) -> EngineColumns<'py> {
+        EngineColumns {
+            mother_rows: pedigree.mother_rows.bind(py).readonly(),
+            father_rows: pedigree.father_rows.bind(py).readonly(),
+            twin_rows: pedigree.twin_rows.bind(py).readonly(),
+            mother_ids: pedigree.mother_ids.bind(py).readonly(),
+            father_ids: pedigree.father_ids.bind(py).readonly(),
+        }
+    }
+
+    /// The columns as checked engine input; `build_pedigree` validated them,
+    /// and the core rechecks its own preconditions as it borrows.
+    fn pedigree(&self, py: Python<'py>) -> PyResult<Pedigree<'_>> {
+        Pedigree::try_new(
+            self.mother_rows.as_slice()?,
+            self.father_rows.as_slice()?,
+            self.twin_rows.as_slice()?,
+            self.mother_ids.as_slice()?,
+            self.father_ids.as_slice()?,
+        )
+        .map_err(|e| to_pyerr(py, e))
+    }
+}
+
+fn checked_max_degree(py: Python<'_>, max_degree: u8) -> PyResult<relationships::MaxDegree> {
+    relationships::MaxDegree::try_new(max_degree).map_err(|e| to_pyerr(py, e))
+}
+
 /// Exact closest-category pair counts, keyed by registry code in registry order.
 ///
-/// `pedigree` is the graph's own [`BuiltPedigree`], whose columns
-/// `build_pedigree` already validated; the core rechecks the engine's
-/// preconditions as it borrows them.  With `selected`, a bool per row, only
-/// pairs whose two rows are both selected are counted (the view contract).
-/// `threads` sizes a Rayon pool for this call; the counts are the same for
-/// every value.  The GIL is released while counting.
+/// `pedigree` is the graph's own [`BuiltPedigree`].  With `selected`, a bool
+/// per row, only pairs whose two rows are both selected are counted (the
+/// view contract).  `threads` configures the package pool (see
+/// `configure_pool`); the counts are the same for every value.  The GIL is
+/// released while counting.
 #[pyfunction]
 #[pyo3(signature = (pedigree, *, max_degree, threads, selected=None))]
 fn relationship_counts<'py>(
@@ -254,20 +309,9 @@ fn relationship_counts<'py>(
     threads: usize,
     selected: Option<PyReadonlyArray1<'py, bool>>,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let mother_rows = pedigree.mother_rows.bind(py).readonly();
-    let father_rows = pedigree.father_rows.bind(py).readonly();
-    let twin_rows = pedigree.twin_rows.bind(py).readonly();
-    let mother_ids = pedigree.mother_ids.bind(py).readonly();
-    let father_ids = pedigree.father_ids.bind(py).readonly();
-    let ped = Pedigree::try_new(
-        mother_rows.as_slice()?,
-        father_rows.as_slice()?,
-        twin_rows.as_slice()?,
-        mother_ids.as_slice()?,
-        father_ids.as_slice()?,
-    )
-    .map_err(|e| to_pyerr(py, e))?;
-    let max_degree = relationships::MaxDegree::try_new(max_degree).map_err(|e| to_pyerr(py, e))?;
+    let columns = EngineColumns::borrow(py, pedigree);
+    let ped = columns.pedigree(py)?;
+    let max_degree = checked_max_degree(py, max_degree)?;
     let mask = match &selected {
         Some(array) => {
             let mask = array.as_slice()?;
@@ -276,23 +320,92 @@ fn relationship_counts<'py>(
         }
         None => None,
     };
-    if threads == 0 {
-        return Err(PyValueError::new_err("threads must be at least 1"));
-    }
+    let pool = checked_pool(py, threads)?;
     let counts = py
-        .detach(|| {
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(threads)
-                .build()
-                .map_err(|e| PyValueError::new_err(format!("thread pool: {e}")))?;
-            Ok::<_, PyErr>(pool.install(|| relationships::count_pairs(&ped, max_degree, mask)))
-        })?
+        .detach(|| pool.install(|| relationships::count_pairs(&ped, max_degree, mask)))
         .map_err(|e| to_pyerr(py, e))?;
     let values = PyDict::new(py);
     for &cat in Category::ALL.iter() {
         values.set_item(cat.code(), counts.get(cat) as i64)?;
     }
     Ok(values)
+}
+
+/// The oriented pairs of the `requested` categories, keyed by registry code
+/// in registry order, each an `(first, second)` pair of owned int32 arrays.
+///
+/// Every category up to `max_degree` is classified; only the requested
+/// blocks are filled, the rest are empty.  With `view_rows`, the int32 view
+/// row of every graph row (`-1` unselected), blocks are in view rows and
+/// sorted by the view-space key; without it they are graph rows in
+/// canonical-key order.  `execution` is `"speed"` or `"memory"` (ADR 0006
+/// as amended) and changes resource use only.  The arrays are moved out of
+/// the core without a copy and retain nothing else.  The GIL is released
+/// while classifying and assembling.
+#[pyfunction]
+#[pyo3(signature = (pedigree, *, max_degree, requested, threads, execution, view_rows=None))]
+fn relationship_pairs<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    max_degree: u8,
+    requested: Vec<String>,
+    threads: usize,
+    execution: &str,
+    view_rows: Option<PyReadonlyArray1<'py, i32>>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let columns = EngineColumns::borrow(py, pedigree);
+    let ped = columns.pedigree(py)?;
+    let max_degree = checked_max_degree(py, max_degree)?;
+    let mut categories = CategorySet::EMPTY;
+    for code in &requested {
+        let cat = Category::parse(code)
+            .ok_or_else(|| PyValueError::new_err(format!("unknown relationship code {code:?}")))?;
+        categories.insert(cat);
+    }
+    let execution = Execution::parse(execution).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "execution must be \"speed\" or \"memory\", got {execution:?}"
+        ))
+    })?;
+    let view = match &view_rows {
+        Some(array) => {
+            let map = array.as_slice()?;
+            check_same_length("view_rows", map.len(), ped.len())?;
+            Some(map)
+        }
+        None => None,
+    };
+    let pool = checked_pool(py, threads)?;
+    let blocks = py
+        .detach(|| {
+            pool.install(|| {
+                relationships::pair_blocks(&ped, max_degree, categories, view, execution)
+            })
+        })
+        .map_err(|e| to_pyerr(py, e))?;
+    let values = PyDict::new(py);
+    for (cat, block) in Category::ALL.iter().zip(blocks.0) {
+        let first = block.first.into_pyarray(py);
+        let second = block.second.into_pyarray(py);
+        values.set_item(cat.code(), PyTuple::new(py, [first, second])?)?;
+    }
+    Ok(values)
+}
+
+/// Test seam: make the next reservation of the named allocation family fail
+/// with `ResourceError("allocation_failed")`, or clear the plant with `None`.
+#[pyfunction]
+#[pyo3(signature = (family))]
+fn fail_next_allocation(family: Option<&str>) -> PyResult<()> {
+    let family =
+        match family {
+            None => None,
+            Some(name) => Some(Family::parse(name).ok_or_else(|| {
+                PyValueError::new_err(format!("unknown allocation family {name:?}"))
+            })?),
+        };
+    alloc::fail_next(family);
+    Ok(())
 }
 
 /// Sorted-id lookup over a graph's unique ids, for repeated id selections.
@@ -335,7 +448,10 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(depth_major_order, m)?)?;
     m.add_function(wrap_pyfunction!(validate_acyclic, m)?)?;
     m.add_function(wrap_pyfunction!(build_pedigree, m)?)?;
+    m.add_function(wrap_pyfunction!(configure_pool, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(relationship_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(fail_next_allocation, m)?)?;
     m.add_class::<BuiltPedigree>()?;
     m.add_class::<PyIdIndex>()?;
     Ok(())

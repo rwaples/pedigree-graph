@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 import tracemalloc
 import warnings
@@ -13,7 +15,7 @@ from test_relationship_pairs import FIXTURE_NAMES, _columns, _graph
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, RelationshipCountResult, _streaming_counter
 from pedigree_graph._registry import estimate_exact_codes
-from pedigree_graph._threads import _reset_thread_state, configure_threads
+from pedigree_graph._threads import _reset_thread_state, configure_threads, thread_budget
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
 
@@ -137,34 +139,56 @@ def test_old_api_and_selectors_are_removed(small_graph):
 
 
 class TestThreads:
+    """The Python budget commits on the first public call and the native pool follows it.
+
+    The pool is built once per process (ADR 0007), so a comparison across
+    budgets runs each budget in a fresh interpreter, and the in-process test
+    reconfigures only to the value this process already runs.
+    """
+
     @pytest.fixture(autouse=True)
     def reset_thread_state(self):
         _reset_thread_state()
         yield
         _reset_thread_state()
 
-    def test_budget_of_four_matches_one_thread(self, monkeypatch):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
-        configure_threads(1)
-        reference = _graph("random_1k").close_relative_counts()
-        _reset_thread_state()
-        configure_threads(4)
-        result = _graph("random_1k").close_relative_counts()
-        assert dict(result) == dict(reference)
-        assert result.exact == reference.exact
+    def test_budget_of_four_matches_one_thread(self):
+        script = (
+            "import sys\n"
+            "sys.path.insert(0, sys.argv[1])\n"
+            "from conftest import parity_columns, parity_fixtures\n"
+            "from pedigree_graph import PedigreeGraph\n"
+            "fx = parity_fixtures('random_1k')['random_1k']\n"
+            "print(dict(PedigreeGraph.from_frame(parity_columns(fx)).close_relative_counts()))\n"
+        )
+        outputs = []
+        for threads in ("1", "4"):
+            env = {**os.environ, "PEDIGREE_GRAPH_THREADS": threads}
+            result = subprocess.run(
+                [sys.executable, "-c", script, str(Path(__file__).parent)],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert result.returncode == 0, result.stderr
+            outputs.append(result.stdout)
+        assert outputs[0] == outputs[1]
+        assert "'FS'" in outputs[0]
 
     @pytest.mark.parametrize("cached", [False, True])
-    def test_public_call_commits_budget(self, monkeypatch, cached):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
+    def test_public_call_commits_budget(self, cached):
+        budget = thread_budget()
+        _reset_thread_state()
         graph = _graph("random_1k")
         if cached:
             graph.close_relative_counts()
             _reset_thread_state()
-        configure_threads(2)
+        configure_threads(budget)
         graph.close_relative_counts()
-        configure_threads(2)
+        configure_threads(budget)
         with pytest.raises(RuntimeError):
-            configure_threads(3)
+            configure_threads(budget + 1)
 
 
 @pytest.mark.slow

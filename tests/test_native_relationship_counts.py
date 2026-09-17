@@ -8,6 +8,11 @@ row order, and every view, without building a pair list.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 from conftest import parity_columns, parity_fixtures
@@ -15,9 +20,10 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, _native
-from pedigree_graph._threads import _reset_thread_state, configure_threads
+from pedigree_graph._threads import thread_budget
 from pedigree_graph.relationships import RelationshipCountResult
 
+SMALL_PEDIGREE = Path(__file__).parent / "data" / "small_pedigree.parquet"
 FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 FIXTURE_NAMES = sorted(FIXTURES)
 SELECTORS = (
@@ -191,17 +197,37 @@ class TestSelectorsAndErrors:
         assert counts["FS"] is not None
         assert counts["MO"] is None
 
-    def test_counts_are_the_same_under_every_thread_budget(self, small_pedigree):
+    def test_counts_are_the_same_under_every_thread_budget(self):
+        """The package pool is built once per process, so each budget runs in its own interpreter."""
+        script = (
+            "import polars as pl\n"
+            "from pedigree_graph import PedigreeGraph, _native\n"
+            "from pedigree_graph._threads import thread_budget\n"
+            f"graph = PedigreeGraph.from_frame(pl.read_parquet({str(SMALL_PEDIGREE)!r}))\n"
+            "print(thread_budget(), _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget()))\n"
+        )
+        outputs = {}
+        for threads in ("1", "4"):
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                env={**os.environ, "PEDIGREE_GRAPH_THREADS": threads},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert result.returncode == 0, result.stderr
+            budget, counts = result.stdout.split(" ", 1)
+            assert budget == threads
+            outputs[threads] = counts
+        assert outputs["1"] == outputs["4"]
+
+    def test_the_binding_configures_the_package_pool_from_its_threads_argument(self, small_pedigree):
         graph = PedigreeGraph.from_frame(small_pedigree)
-        one = _native.relationship_counts(graph._built, max_degree=5, threads=1)
-        four = _native.relationship_counts(graph._built, max_degree=5, threads=4)
-        assert one == four
-        _reset_thread_state()
-        try:
-            configure_threads(3)
-            assert dict(graph.relationship_counts(max_degree=5)) == one
-        finally:
-            _reset_thread_state()
+        budget = thread_budget()
+        assert _native.configure_pool(budget) == budget
+        _native.relationship_counts(graph._built, max_degree=2, threads=budget)
+        with pytest.raises(ValueError, match="already configured"):
+            _native.relationship_counts(graph._built, max_degree=2, threads=budget + 1)
 
     def test_the_binding_keys_its_counts_by_code_in_registry_order(self, small_pedigree):
         """A reordering of the Rust ``Category::ALL`` must not silently repermute the counts.
@@ -209,7 +235,7 @@ class TestSelectorsAndErrors:
         The positional return this replaced could only be checked for length.
         """
         graph = PedigreeGraph.from_frame(small_pedigree)
-        counted = _native.relationship_counts(graph._built, max_degree=5, threads=1)
+        counted = _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget())
         assert tuple(counted) == tuple(RELATIONSHIPS)
 
     def test_a_built_pedigree_cannot_be_constructed_from_python(self):
@@ -225,7 +251,7 @@ class TestSelectorsAndErrors:
         """
         graph = PedigreeGraph.from_frame(small_pedigree)
         with pytest.raises(ValueError, match="selected"):
-            _native.relationship_counts(graph._built, max_degree=5, threads=1, selected=np.array([True]))
+            _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget(), selected=np.array([True]))
         with pytest.raises(ValueError, match="threads"):
             _native.relationship_counts(graph._built, max_degree=5, threads=0)
 
@@ -238,7 +264,7 @@ class TestSelectorsAndErrors:
         """
         graph = PedigreeGraph.from_frame(small_pedigree)
         with pytest.raises(PedigreeValidationError) as info:
-            _native.relationship_counts(graph._built, max_degree=max_degree, threads=1)
+            _native.relationship_counts(graph._built, max_degree=max_degree, threads=thread_budget())
         assert info.value.code == "max_degree_out_of_range"
         assert info.value.fields == {"value": max_degree, "minimum": 0, "maximum": 5}
 
@@ -257,4 +283,4 @@ class TestSelectorsAndErrors:
         )
         built.mother_rows[0] = graph.n_individuals
         with pytest.raises(PedigreeValidationError):
-            _native.relationship_counts(built, max_degree=5, threads=1)
+            _native.relationship_counts(built, max_degree=5, threads=thread_budget())

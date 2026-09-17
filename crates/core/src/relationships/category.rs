@@ -87,6 +87,11 @@ impl Category {
         }
     }
 
+    /// The category by its registry code.
+    pub fn parse(code: &str) -> Option<Category> {
+        Category::ALL.into_iter().find(|cat| cat.code() == code)
+    }
+
     /// Kinship degree: 0 for MZ, 1 for parent-offspring and full sibs, up to 5.
     pub fn degree(self) -> u8 {
         match self {

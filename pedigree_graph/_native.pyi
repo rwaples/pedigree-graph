@@ -37,6 +37,7 @@ def build_pedigree(
     sex_encoding: str,
     max_rows: int | None = None,
 ) -> BuiltPedigree: ...
+def configure_pool(threads: int, /) -> int: ...
 def relationship_counts(
     pedigree: BuiltPedigree,
     /,
@@ -45,6 +46,17 @@ def relationship_counts(
     threads: int,
     selected: NDArray[np.bool_] | None = None,
 ) -> dict[str, int]: ...
+def relationship_pairs(
+    pedigree: BuiltPedigree,
+    /,
+    *,
+    max_degree: int,
+    requested: list[str],
+    threads: int,
+    execution: str,
+    view_rows: NDArray[np.int32] | None = None,
+) -> dict[str, tuple[NDArray[np.int32], NDArray[np.int32]]]: ...
+def fail_next_allocation(family: str | None, /) -> None: ...
 
 class IdIndex:
     def __init__(self, ids: NDArray[np.int64], /) -> None: ...

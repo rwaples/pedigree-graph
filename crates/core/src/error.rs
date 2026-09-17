@@ -193,6 +193,18 @@ pub enum Error {
         /// The element type, in NumPy spelling, e.g. `"int32"`.
         dtype: &'static str,
     },
+    /// The package thread pool is already configured with another size.
+    ThreadPoolConflict {
+        /// The size the pool was built with.
+        configured: usize,
+        /// The size now requested.
+        requested: usize,
+    },
+    /// The operating system refused to start the pool's worker threads.
+    ThreadPoolUnavailable {
+        /// The builder's message.
+        reason: String,
+    },
     /// The caller asked for a relationship degree outside the supported range.
     MaxDegreeOutOfRange {
         /// The degree as given.
@@ -226,6 +238,9 @@ impl Error {
             | Error::MaxDegreeOutOfRange { .. } => ErrorClass::Validation,
             Error::PedigreeTooLarge { .. } => ErrorClass::Resource,
             Error::AllocationFailed { .. } => ErrorClass::Resource,
+            Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => {
+                ErrorClass::Usage
+            }
             Error::UnknownSexEncoding { .. } => ErrorClass::Usage,
         }
     }
@@ -247,6 +262,7 @@ impl Error {
             Error::BirthYearTopology { .. } => "birth_year_topology",
             Error::PedigreeTooLarge { .. } => "pedigree_too_large",
             Error::AllocationFailed { .. } => "allocation_failed",
+            Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => "",
             Error::MaxDegreeOutOfRange { .. } => "max_degree_out_of_range",
             Error::UnknownSexEncoding { .. } => "",
         }
@@ -370,6 +386,7 @@ impl Error {
                 ("requested_elements", int(*requested_elements)),
                 ("dtype", Str(dtype)),
             ],
+            Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => vec![],
             Error::MaxDegreeOutOfRange {
                 value,
                 minimum,
@@ -521,6 +538,16 @@ impl std::fmt::Display for Error {
                 "could not allocate {} {dtype} elements for {operation}",
                 grouped(*requested_elements)
             ),
+            Error::ThreadPoolConflict {
+                configured,
+                requested,
+            } => write!(
+                f,
+                "the thread pool is already configured with {configured} threads and cannot be changed to {requested}"
+            ),
+            Error::ThreadPoolUnavailable { reason } => {
+                write!(f, "could not start the thread pool: {reason}")
+            }
             Error::MaxDegreeOutOfRange {
                 value,
                 minimum,
