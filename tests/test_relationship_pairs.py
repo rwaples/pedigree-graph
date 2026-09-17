@@ -18,12 +18,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from oracle.relationship_pairs import check_exclusive, dependency_closure
 from relationship_predicates import AncestorWalk
 
-import pedigree_graph._pair_extractor as pair_extractor
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelationshipPairs
-from pedigree_graph._pair_extractor import check_exclusive, dependency_closure
-from pedigree_graph._threads import _reset_thread_state, configure_threads
 from pedigree_graph._view import CoordinateToken
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
@@ -394,30 +392,6 @@ class TestCheckExclusive:
         with pytest.raises(AssertionError, match="not strictly sorted"):
             check_exclusive(RelationshipPairs(blocks))
 
-    def test_env_var_runs_the_check_at_runtime(self, monkeypatch):
-        calls: list[RelationshipPairs] = []
-        monkeypatch.setattr(pair_extractor, "check_exclusive", calls.append)
-        monkeypatch.delenv("PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY", raising=False)
-        _graph("nuclear_full_sibs").relationship_pairs(max_degree=1)
-        assert calls == []
-        monkeypatch.setenv("PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY", "1")
-        result = _graph("nuclear_full_sibs").relationship_pairs(max_degree=1)
-        assert calls == [result]
-
-    def test_env_var_surfaces_a_corrupted_engine_result(self, monkeypatch):
-        monkeypatch.setenv("PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY", "1")
-        original = pair_extractor.MatrixPairExtractor.extract
-
-        def unsorted(self, codes):
-            pairs = original(self, codes)
-            first, second = pairs["MO"]
-            pairs["MO"] = (first[::-1].copy(), second[::-1].copy())
-            return pairs
-
-        monkeypatch.setattr(pair_extractor.MatrixPairExtractor, "extract", unsorted)
-        with pytest.raises(AssertionError, match="MO"):
-            _graph("nuclear_full_sibs").relationship_pairs(max_degree=1)
-
 
 BLOCK_DIGEST_SCRIPT = """
 import hashlib, sys
@@ -437,11 +411,7 @@ print(digest.hexdigest())
 
 
 class TestThreads:
-    @pytest.fixture(autouse=True)
-    def reset_thread_state(self):
-        _reset_thread_state()
-        yield
-        _reset_thread_state()
+    """The blocks are the same for every thread budget; each budget runs in a fresh interpreter."""
 
     @staticmethod
     def _digest_in_fresh_process(threads: int) -> str:
@@ -453,15 +423,6 @@ class TestThreads:
 
     def test_thread_budget_does_not_change_the_blocks(self):
         assert self._digest_in_fresh_process(1) == self._digest_in_fresh_process(4)
-
-    def test_in_process_budget_of_four_matches_the_one_thread_result(self, full_results, monkeypatch):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
-        configure_threads(4)
-        result = _graph("random_1k").relationship_pairs(max_degree=5)
-        reference = full_results["random_1k"]
-        for code in CODES:
-            np.testing.assert_array_equal(result[code].first_rows, reference[code].first_rows)
-            np.testing.assert_array_equal(result[code].second_rows, reference[code].second_rows)
 
 
 def _digest(result: RelationshipPairs) -> str:

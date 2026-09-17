@@ -1,53 +1,444 @@
-"""Exact relationship-pair extraction via sparse matrix products.
+"""The retired SciPy matrix pair extractor, kept as the differential oracle for the Rust engine.
 
-``MatrixPairExtractor`` is a read-only collaborator over a
-:class:`~pedigree_graph._core.PedigreeGraph`: it holds a ``pg`` reference,
-reads the graph's cached adjacency powers / sibling matrices, and returns
-graph-space relationship pairs in the semantic orientation of each
-:class:`~pedigree_graph._registry.RelationshipCategory`.  It never writes the
-graph's result cache and never releases the transient matrices; its callers
-(``relationship_pairs`` here) own that.
-See ADR 0002 and ADR 0006.
+Test code only (ADR 0007): ``pedigree_graph`` never imports this, and it is
+not a fallback.  It is the 0.8 production engine moved here verbatim when
+slice 12 put ``relationship_pairs`` on the row-streaming Rust engine, so it
+reaches the frozen ADR 0006 pair contract through a different algorithm:
+global sparse products, path-multiplicity thresholds, per-category
+subtraction lists, then a whole-block precedence fold.  :class:`_Matrices`
+stands in for the graph attributes the extractor used to read.
 
-One extractor instance spans a single ``extract()`` call, so degree-gated
-run-state (the half-1C pairs found at degree 3 and consumed at degree 4)
-lives as instance state and cannot leak between calls.
+Use :func:`oracle_pairs` and :func:`oracle_view_pairs` for the folded,
+sorted blocks of a selector, :func:`check_exclusive` for the block
+invariants, and :func:`sibling_pairs` for the three sibling categories on
+their own.  The array helpers (:func:`canonical_keys`, :func:`subtract_pairs`,
+:func:`oriented_pairs_from_sparse`, :func:`pairs_from_groups`,
+:func:`project_pairs`) are the former ``_pair_utils``.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
+from functools import cached_property, partial
 from typing import TYPE_CHECKING
 
 import numpy as np
 import scipy.sparse as sp
 
-from pedigree_graph._input import _own
-from pedigree_graph._pair_utils import (
-    canonical_keys,
-    oriented_pairs_from_sparse,
-    pairs_from_groups,
-    project_pairs,
-    sort_by_canonical_key,
-)
 from pedigree_graph._registry import RELATIONSHIPS
-from pedigree_graph._threads import thread_budget
-from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
+from pedigree_graph._selection import RelationshipSelection
 
 if TYPE_CHECKING:
-    from pedigree_graph._core import PedigreeGraph
-    from pedigree_graph._selection import RelationshipSelection
-    from pedigree_graph._view import CoordinateToken, PedigreeView
+    from collections.abc import Iterable
+
+    from pedigree_graph import PedigreeGraph, PedigreeView, RelationshipPairs
 
 logger = logging.getLogger(__name__)
 
+_PairArrays = tuple[np.ndarray, np.ndarray]
+
 # A per-code extraction thunk: returns one relationship's (first, second) arrays.
 _Thunk = Callable[[], tuple[np.ndarray, np.ndarray]]
+
+
+def canonical_keys(a: np.ndarray, b: np.ndarray, n: int) -> np.ndarray:
+    """Return the canonical unordered int64 key ``min(a, b) * n + max(a, b)`` per pair.
+
+    Args:
+        a: First member of each pair, any orientation.
+        b: Second member of each pair, any orientation.
+        n: Key base, at least ``max(a, b) + 1``; ``n`` is bounded by the int32
+            row capacity so the product fits int64.
+
+    Returns:
+        One int64 key per pair, equal for the two orientations of a pair.
+    """
+    return np.minimum(a, b).astype(np.int64) * n + np.maximum(a, b).astype(np.int64)
+
+
+def sort_by_canonical_key(a: np.ndarray, b: np.ndarray, n: int) -> _PairArrays:
+    """Return ``(a, b)`` reordered by :func:`canonical_keys`, orientation kept."""
+    if len(a) == 0:
+        return a, b
+    order = np.argsort(canonical_keys(a, b, n), kind="stable")
+    return a[order], b[order]
+
+
+def subtract_pairs(keep: _PairArrays, remove: list[_PairArrays]) -> _PairArrays:
+    """Drop from *keep* every unordered pair that occurs in any of *remove*.
+
+    Membership is decided on the canonical unordered key ``min * m + max``, so
+    the inputs may be in any orientation and *keep* comes back in the
+    orientation it arrived in (ADR 0006 pair contract 3).
+
+    Args:
+        keep: ``(a, b)`` candidate pair arrays.
+        remove: Pair arrays whose unordered pairs are dropped from *keep*.
+
+    Returns:
+        The surviving ``(a, b)`` rows of *keep*, order preserved.
+    """
+    a, b = keep
+    parts = [pair for pair in remove if len(pair[0]) > 0]
+    if len(a) == 0 or not parts:
+        return keep
+    rm_a = np.concatenate([pair[0] for pair in parts])
+    rm_b = np.concatenate([pair[1] for pair in parts])
+    m = int(max(a.max(), b.max(), rm_a.max(), rm_b.max())) + 1
+    # Membership only: sorting the raw remove keys plus searchsorted beats
+    # np.unique + np.isin at scale, and duplicate remove keys are harmless.
+    rm_keys = np.sort(canonical_keys(rm_a, rm_b, m))
+    keys = canonical_keys(a, b, m)
+    pos = np.searchsorted(rm_keys, keys)
+    hit = pos < rm_keys.size
+    hit[hit] = rm_keys[pos[hit]] == keys[hit]
+    return a[~hit], b[~hit]
+
+
+def oriented_pairs_from_sparse(
+    M: sp.spmatrix,
+    *,
+    row_is_first: bool,
+    subtract: list[_PairArrays] | None = None,
+) -> _PairArrays:
+    """Read an asymmetric relationship product as oriented ``(first, second)`` pairs.
+
+    Each nonzero ``M[r, c]`` is one pair; *row_is_first* says which side of
+    the product holds the ``first`` role.  A pair valid in both orientations
+    (both ``M[a, b]`` and ``M[b, a]`` nonzero, through different paths of an
+    inbred pedigree) is kept once with the lower row as ``first`` (ADR 0006
+    pair contract 5).  Mutates *M* in place (zeroes the diagonal).
+
+    Args:
+        M: Square sparse product whose nonzeros are the candidate pairs.
+        row_is_first: ``True`` when the row index carries the ``first`` role.
+        subtract: Closer-category pairs to drop, in any orientation.
+
+    Returns:
+        Oriented intp ``(first, second)`` arrays, one entry per unordered
+        pair, sorted by canonical key.
+    """
+    M.setdiag(0)  # ty: ignore[unresolved-attribute]
+    M.eliminate_zeros()  # ty: ignore[unresolved-attribute]
+    if M.nnz == 0:  # ty: ignore[unresolved-attribute]
+        return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
+    rows, cols = M.nonzero()  # ty: ignore[unresolved-attribute]
+    first, second = (rows, cols) if row_is_first else (cols, rows)
+    first = first.astype(np.intp)
+    second = second.astype(np.intp)
+    keys = canonical_keys(first, second, M.shape[0])
+    order = np.lexsort((first, keys))
+    sorted_keys = keys[order]
+    unique = np.ones(order.size, dtype=bool)
+    unique[1:] = sorted_keys[1:] != sorted_keys[:-1]
+    kept = order[unique]
+    first, second = first[kept], second[kept]
+    if subtract:
+        first, second = subtract_pairs((first, second), subtract)
+    return first, second
+
+
+def pairs_from_groups(indices: np.ndarray, group_key: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Generate all (i < j) pairs of indices within each group.
+
+    Uses batch-by-size triu_indices for vectorized pair generation.
+    """
+    if len(indices) == 0:
+        return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
+
+    sort_idx = np.argsort(group_key, kind="mergesort")
+    sorted_keys = group_key[sort_idx]
+    sorted_indices = indices[sort_idx]
+
+    # sorted_keys is already sorted; diff-based run detection avoids
+    # np.unique re-sorting/hashing the array it was just handed.
+    starts = np.concatenate(([0], np.flatnonzero(sorted_keys[1:] != sorted_keys[:-1]) + 1))
+    counts = np.diff(np.append(starts, len(sorted_keys)))
+
+    multi = counts >= 2
+    starts = starts[multi]
+    counts = counts[multi]
+
+    if len(starts) == 0:
+        return np.array([], dtype=np.intp), np.array([], dtype=np.intp)
+
+    pair_i_parts = []
+    pair_j_parts = []
+    for size in np.unique(counts):
+        gs = starts[counts == size]
+        ii, jj = np.triu_indices(size, k=1)
+        all_i = (gs[:, np.newaxis] + ii[np.newaxis, :]).ravel()
+        all_j = (gs[:, np.newaxis] + jj[np.newaxis, :]).ravel()
+        pair_i_parts.append(sorted_indices[all_i])
+        pair_j_parts.append(sorted_indices[all_j])
+
+    p1 = np.concatenate(pair_i_parts)
+    p2 = np.concatenate(pair_j_parts)
+
+    lo = np.minimum(p1, p2)
+    hi = np.maximum(p1, p2)
+    return lo.astype(np.intp), hi.astype(np.intp)
+
+
+def project_pairs(first: np.ndarray, second: np.ndarray, graph_to_view: np.ndarray) -> _PairArrays:
+    """Keep the pairs with both members selected, relabelled into view rows.
+
+    Args:
+        first: Graph rows of the first member of each pair.
+        second: Graph rows of the second member of each pair.
+        graph_to_view: View row of each graph row, ``-1`` where unselected.
+
+    Returns:
+        Intp ``(first, second)`` view rows of the retained pairs, orientation
+        and order preserved.
+    """
+    view_first = graph_to_view[first]
+    view_second = graph_to_view[second]
+    keep = (view_first >= 0) & (view_second >= 0)
+    return view_first[keep].astype(np.intp), view_second[keep].astype(np.intp)
+
+
+class _Matrices:
+    """The adjacency powers and sibling matrices of one graph, as the extractor reads them.
+
+    Built from the graph's public columns; nothing here touches the graph's
+    caches.  The methods are the former ``PedigreeGraph`` privates.
+    """
+
+    def __init__(self, graph: PedigreeGraph) -> None:
+        self.n_individuals = graph.n_individuals
+        self.mother_rows = graph.mother_rows
+        self.father_rows = graph.father_rows
+        self.twin_rows = graph.twin_rows
+        self.mother_ids = graph.mother_ids
+        self.father_ids = graph.father_ids
+
+    @cached_property
+    def _A(self):
+        """Child → both parents adjacency matrix, from one pass over both edge lists.
+
+        Assembled as a single COO rather than as a CSR per parent that are then
+        summed.  The two agree entry for entry: ``check_same_parent``
+        (``crates/core/src/graph.rs:244``) rejects a row naming one id in both
+        roles, so no ``(child, parent)`` pair can appear twice and every stored
+        value is ``1``.  Building the halves eagerly cost every graph two
+        matrices no other production reader consumed (issue #18).
+
+        Every edge is used, so a partial pedigree still contributes whichever
+        side it knows.
+        """
+        t0 = time.perf_counter()
+        n = self.n_individuals
+        has_mother = self.mother_rows >= 0
+        has_father = self.father_rows >= 0
+        # Not ``np.where``, whose index is ``intp``: scipy widens the whole COO
+        # to its widest input, which cost more transient memory than the eager
+        # two-matrix build this replaces.
+        rows = np.arange(n, dtype=self.mother_rows.dtype)
+        children = np.concatenate((rows[has_mother], rows[has_father]))
+        parents = np.concatenate((self.mother_rows[has_mother], self.father_rows[has_father]))
+        result = sp.csr_matrix(
+            (np.ones(len(children), dtype=np.int32), (children, parents)),
+            shape=(n, n),
+        )
+        logger.debug("_A built from %d parent edges in %.3fs", len(children), time.perf_counter() - t0)
+        return result
+
+    @cached_property
+    def _A2(self):
+        """2-hop parent reach (grandparents): A @ A."""
+        t0 = time.perf_counter()
+        result = self._A @ self._A
+        logger.debug("_A2 = A @ A computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
+        return result
+
+    @cached_property
+    def _A2_shared(self):
+        """Shared-grandparent matrix: A² @ (A²).T.
+
+        Only needed when 2nd cousin extraction is enabled.
+        """
+        t0 = time.perf_counter()
+        result = self._A2 @ self._A2.T
+        logger.debug("_A2_shared = A2 @ A2.T computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
+        return result
+
+    @cached_property
+    def _A3(self):
+        """3-hop parent reach (great-grandparents): A² @ A."""
+        t0 = time.perf_counter()
+        result = self._A2 @ self._A
+        logger.debug("_A3 = A2 @ A computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
+        return result
+
+    @cached_property
+    def _A4(self):
+        """4-hop parent reach (great²-grandparents): A³ @ A."""
+        t0 = time.perf_counter()
+        result = self._A3 @ self._A
+        logger.debug("_A4 = A3 @ A computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
+        return result
+
+    @cached_property
+    def _A5(self):
+        """5-hop parent reach (great³-grandparents): A⁴ @ A."""
+        t0 = time.perf_counter()
+        result = self._A4 @ self._A
+        logger.debug("_A5 = A4 @ A computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
+        return result
+
+    def _get_Ak(self, k: int) -> sp.spmatrix:
+        """Return the k-hop parent-reach matrix (k=0 returns identity)."""
+        if k == 0:
+            return sp.eye(self.n_individuals, format="csr")
+        if k == 1:
+            return self._A
+        return getattr(self, f"_A{k}")
+
+    def _ensure_sibling_matrices(self) -> None:
+        """Ensure _full_sib_matrix and _half_sib_matrix are computed."""
+        if hasattr(self, "_full_sib_matrix"):
+            return
+        # Trigger sibling extraction which sets _full_sib_matrix
+        self._sibling_pairs()
+
+    def _build_half_sib_matrix(
+        self,
+        mat_hs: tuple[np.ndarray, np.ndarray],
+        pat_hs: tuple[np.ndarray, np.ndarray],
+    ) -> None:
+        """Build and cache _half_sib_matrix from extracted half-sib pairs."""
+        hs1 = np.concatenate([mat_hs[0], pat_hs[0]])
+        hs2 = np.concatenate([mat_hs[1], pat_hs[1]])
+        if len(hs1) > 0:
+            ones = np.ones(len(hs1), dtype=np.int32)
+            H = sp.csr_matrix((ones, (hs1, hs2)), shape=(self.n_individuals, self.n_individuals))
+            self._half_sib_matrix = H + H.T
+        else:
+            self._half_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
+
+    # ------------------------------------------------------------------
+    # Relationship extraction
+    # ------------------------------------------------------------------
+
+    def _mz_twin_pairs(self) -> tuple[np.ndarray, np.ndarray]:
+        """MZ twin pairs: twin != -1, deduplicated with id < twin_id."""
+        has_twin = self.twin_rows >= 0
+        ids = np.where(has_twin)[0]
+        partners = self.twin_rows[has_twin]
+        mask = ids < partners
+        return ids[mask], partners[mask].astype(np.intp)
+
+    def _parent_offspring_pairs(
+        self,
+    ) -> tuple[
+        tuple[np.ndarray, np.ndarray],
+        tuple[np.ndarray, np.ndarray],
+    ]:
+        """Mother-offspring and Father-offspring pairs.
+
+        Each parent link is reported independently, so a child with only
+        one parent in the sample still contributes a PO pair.  Graph-data
+        accessor read by the matrix pair extractor.
+        """
+        m_mask = self.mother_rows >= 0
+        m_children = np.where(m_mask)[0]
+
+        f_mask = self.father_rows >= 0
+        f_children = np.where(f_mask)[0]
+
+        return (m_children, self.mother_rows[m_children].astype(np.intp)), (
+            f_children,
+            self.father_rows[f_children].astype(np.intp),
+        )
+
+    def _sibling_pairs(
+        self,
+    ) -> tuple[
+        tuple[np.ndarray, np.ndarray],
+        tuple[np.ndarray, np.ndarray],
+        tuple[np.ndarray, np.ndarray],
+    ]:
+        """Full sib, maternal half sib, and paternal half sib pairs.
+
+        Uses numpy sort+group for direct enumeration — faster than sparse
+        matmul for 1-hop relationships since it avoids materializing N×N
+        shared-parent matrices.
+
+        Groups by ORIGINAL pedigree parent IDs (not remapped row indices)
+        so that siblings are correctly detected even when parents are absent
+        from a subsampled dataset.
+
+        Individuals with only one known parent can participate in half-sib
+        detection through that parent (but not full-sib detection, which
+        requires both parents known).
+
+        Twin individuals are excluded entirely (matching legacy semantics).
+        Returns (full_sib, maternal_hs, paternal_hs) tuples of (idx1, idx2).
+        """
+        empty = np.array([], dtype=np.intp), np.array([], dtype=np.intp)
+
+        # Non-twin individuals with at least one known parent
+        has_parent = (self.mother_ids >= 0) | (self.father_ids >= 0)
+        nt_mask = has_parent & (self.twin_rows < 0)
+        nt_idx = np.where(nt_mask)[0]
+
+        if len(nt_idx) < 2:
+            self._full_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
+            self._half_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
+            return empty, empty, empty
+
+        nt_mother = self.mother_ids[nt_idx]
+        nt_father = self.father_ids[nt_idx]
+
+        # --- Full sibs: same KNOWN mother AND same KNOWN father ---
+        both_known = (nt_mother >= 0) & (nt_father >= 0)
+        bk_idx = nt_idx[both_known]
+        bk_mother = nt_mother[both_known]
+        bk_father = nt_father[both_known]
+
+        if len(bk_idx) >= 2:
+            max_parent = max(int(bk_mother.max()), int(bk_father.max())) + 1
+            # int64 cast required: max_id² overflows int32
+            family_key = bk_mother.astype(np.int64) * max_parent + bk_father.astype(np.int64)
+            full_sib = pairs_from_groups(bk_idx, family_key)
+        else:
+            full_sib = empty
+
+        # --- Maternal half sibs: all pairs sharing known mother, minus full-sib pairs ---
+        has_mother = nt_mother >= 0
+        m_idx = nt_idx[has_mother]
+        m_mother = nt_mother[has_mother]
+        if len(m_idx) >= 2:
+            mat_all = pairs_from_groups(m_idx, m_mother)
+            mat_hs = subtract_pairs(mat_all, [full_sib])
+        else:
+            mat_hs = empty
+
+        # --- Paternal half sibs: all pairs sharing known father, minus full-sib pairs ---
+        has_father = nt_father >= 0
+        f_idx = nt_idx[has_father]
+        f_father = nt_father[has_father]
+        if len(f_idx) >= 2:
+            pat_all = pairs_from_groups(f_idx, f_father)
+            pat_hs = subtract_pairs(pat_all, [full_sib])
+        else:
+            pat_hs = empty
+
+        # Build full-sib sparse matrix for _avuncular_pairs and collateral methods
+        sib1, sib2 = full_sib
+        if len(sib1) > 0:
+            ones = np.ones(len(sib1), dtype=np.int32)
+            F = sp.csr_matrix((ones, (sib1, sib2)), shape=(self.n_individuals, self.n_individuals))
+            self._full_sib_matrix = F + F.T
+        else:
+            self._full_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
+
+        return full_sib, mat_hs, pat_hs
+
 
 _REGISTRY_INDEX = {code: index for index, code in enumerate(RELATIONSHIPS)}
 
@@ -535,93 +926,6 @@ class MatrixPairExtractor:
         return pairs
 
 
-# ----------------------------------------------------------------------
-# Public assembly: PedigreeGraph.relationship_pairs and PedigreeView.relationship_pairs
-# ----------------------------------------------------------------------
-
-_DEBUG_EXCLUSIVITY_ENV = "PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY"
-
-_PairArrays = tuple[np.ndarray, np.ndarray]
-
-
-def _classify(graph: PedigreeGraph, requested: frozenset[str]) -> dict[str, _PairArrays]:
-    """Return the closest-category graph-row pairs of every code *requested* depends on."""
-    computed = dependency_closure(requested)
-    try:
-        pairs = MatrixPairExtractor(graph, max_workers=thread_budget()).extract(computed)
-    finally:
-        graph._release_pair_matrices()
-    _fold_precedence(pairs, [code for code in RELATIONSHIPS if code in computed], graph.n_individuals)
-    return pairs
-
-
-def _build_result(
-    pairs: dict[str, _PairArrays], requested: frozenset[str], token: CoordinateToken
-) -> RelationshipPairs:
-    """Wrap the requested codes of *pairs* as owned int32 blocks carrying *token*."""
-    empty = np.array([], dtype=np.int32)
-    blocks = {}
-    for code, category in RELATIONSHIPS.items():
-        first, second = pairs[code] if code in requested else (empty, empty)
-        blocks[code] = RelationshipPairBlock(
-            category,
-            _own(first, np.int32),
-            _own(second, np.int32),
-            code in requested,
-            token,
-        )
-    result = RelationshipPairs(blocks)
-    if os.environ.get(_DEBUG_EXCLUSIVITY_ENV) == "1":
-        check_exclusive(result)
-    return result
-
-
-def relationship_pairs(graph: PedigreeGraph, selection: RelationshipSelection) -> RelationshipPairs:
-    """Build the :class:`RelationshipPairs` of *graph* for a parsed *selection*.
-
-    Args:
-        graph: The receiver; results are in its graph rows.
-        selection: The resolved selector, parsed at the public boundary.
-
-    Returns:
-        All 23 blocks; the unselected ones are empty and unrequested.
-    """
-    requested = selection.codes
-    return _build_result(_classify(graph, requested), requested, graph._coordinate_token)
-
-
-def view_relationship_pairs(view: PedigreeView, selection: RelationshipSelection) -> RelationshipPairs:
-    """Build the :class:`RelationshipPairs` of *view* for a parsed *selection*.
-
-    Classification runs over the full graph; a pair is kept when both
-    endpoints are selected and is relabelled into view rows.  Asymmetric
-    blocks keep the graph-space role orientation, symmetric blocks are
-    re-canonicalised to ``first < second`` in view rows, and every block is
-    re-sorted by the canonical view-row key (ADR 0006 pair contract 6).
-
-    Args:
-        view: The receiver; results are in its view rows.
-        selection: The resolved selector, parsed at the public boundary.
-
-    Returns:
-        All 23 blocks carrying the view's token; the unselected ones are
-        empty and unrequested.
-    """
-    requested = selection.codes
-    n = len(view)
-    empty = np.array([], dtype=np.intp)
-    pairs: dict[str, _PairArrays] = dict.fromkeys(requested, (empty, empty))
-    if n >= 2:
-        graph_pairs = _classify(view._graph, requested)
-        graph_to_view = view._graph_to_view()
-        for code in requested:
-            first, second = project_pairs(*graph_pairs[code], graph_to_view)
-            if RELATIONSHIPS[code].symmetric:
-                first, second = np.minimum(first, second), np.maximum(first, second)
-            pairs[code] = sort_by_canonical_key(first, second, n)
-    return _build_result(pairs, requested, view._coordinate_token)
-
-
 def _fold_precedence(pairs: dict[str, tuple[np.ndarray, np.ndarray]], order: list[str], n: int) -> None:
     """Drop every pair already claimed by an earlier code of *order*, in place.
 
@@ -674,3 +978,46 @@ def check_exclusive(pairs: RelationshipPairs) -> None:
         ):
             other = seen.setdefault(key, code)
             assert other == code, f"pair ({first}, {second}) appears in both {other} and {code}"
+
+
+def sibling_pairs(graph: PedigreeGraph) -> tuple[_PairArrays, _PairArrays, _PairArrays]:
+    """``(full_sib, maternal_hs, paternal_hs)`` graph-row pairs, ``lo < hi``, unfolded."""
+    return _Matrices(graph)._sibling_pairs()
+
+
+def _classify(graph: PedigreeGraph, requested: frozenset[str]) -> dict[str, _PairArrays]:
+    """The closest-category graph-row pairs of every code *requested* depends on."""
+    computed = dependency_closure(requested)
+    pairs = MatrixPairExtractor(_Matrices(graph), max_workers=1).extract(computed)
+    _fold_precedence(pairs, [code for code in RELATIONSHIPS if code in computed], graph.n_individuals)
+    return pairs
+
+
+def oracle_pairs(
+    graph: PedigreeGraph, *, max_degree: int | None = None, categories: Iterable[str] | None = None
+) -> dict[str, _PairArrays]:
+    """``{code: (first, second)}`` intp graph rows for the selector, every code present, unrequested empty."""
+    selection = RelationshipSelection.parse(max_degree, categories)
+    pairs = _classify(graph, selection.codes)
+    empty = np.array([], dtype=np.intp)
+    return {code: pairs[code] if code in selection.codes else (empty, empty) for code in RELATIONSHIPS}
+
+
+def oracle_view_pairs(
+    view: PedigreeView, *, max_degree: int | None = None, categories: Iterable[str] | None = None
+) -> dict[str, _PairArrays]:
+    """As :func:`oracle_pairs`, in view rows: both endpoints selected, symmetric re-canonicalised, view-key sorted."""
+    selection = RelationshipSelection.parse(max_degree, categories)
+    n = len(view)
+    empty = np.array([], dtype=np.intp)
+    pairs: dict[str, _PairArrays] = dict.fromkeys(RELATIONSHIPS, (empty, empty))
+    if n < 2:
+        return pairs
+    graph_pairs = _classify(view._graph, selection.codes)
+    graph_to_view = view._graph_to_view()
+    for code in selection.codes:
+        first, second = project_pairs(*graph_pairs[code], graph_to_view)
+        if RELATIONSHIPS[code].symmetric:
+            first, second = np.minimum(first, second), np.maximum(first, second)
+        pairs[code] = sort_by_canonical_key(first, second, n)
+    return pairs

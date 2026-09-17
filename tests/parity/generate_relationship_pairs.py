@@ -26,6 +26,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))
 import pedigrees  # noqa: E402
 
 MAX_DEGREE = 5
@@ -47,7 +48,7 @@ def _columns(fx: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
 
 def _capture(pg_mod, fx: dict[str, np.ndarray], *, full_arrays: bool) -> tuple[dict, dict]:
     """Return ``(arrays, summary)``; ``arrays`` is empty when ``full_arrays`` is False."""
-    from pedigree_graph._pair_extractor import check_exclusive
+    from oracle.relationship_pairs import check_exclusive
 
     graph = pg_mod.PedigreeGraph.from_frame(_columns(fx))
     result = graph.relationship_pairs(max_degree=MAX_DEGREE)

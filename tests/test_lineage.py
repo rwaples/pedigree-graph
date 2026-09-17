@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from conftest import parity_columns, parity_fixtures
+from oracle.relationship_pairs import _Matrices
 from scipy.sparse.csgraph import connected_components
 
 from pedigree_graph import PedigreeGraph
@@ -110,7 +111,7 @@ def _scipy_founder_family_ids(pg: PedigreeGraph) -> np.ndarray:
     It is kept because an independent implementation is what makes the
     comparison worth running, not because anyone still writes it this way.
     """
-    _, labels = connected_components(pg._A, directed=False)
+    _, labels = connected_components(_Matrices(pg)._A, directed=False)
     comp_min = np.full(int(labels.max()) + 1, np.iinfo(np.int64).max, dtype=np.int64)
     np.minimum.at(comp_min, labels, pg.ids)
     return comp_min[labels].astype(np.int64)

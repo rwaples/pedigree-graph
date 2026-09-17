@@ -238,45 +238,6 @@ class TestEntryPointEquivalence:
         assert from_arrays.sex is None
 
 
-class TestParentAdjacencyIsLazy:
-    """Construction builds no adjacency, and ``_A`` rebuilds itself on demand (issue #18)."""
-
-    def test_construction_caches_no_adjacency(self):
-        graph = PedigreeGraph.from_frame(_trio())
-        assert "_A" not in graph.__dict__
-
-    def test_the_adjacency_marks_every_known_parent(self):
-        # Row 2 has both parents, row 3 only a mother; rows 0 and 1 are founders.
-        graph = PedigreeGraph.from_frame(_trio(id=[0, 1, 2, 3], mother=[-1, -1, 0, 0], father=[-1, -1, 1, -1]))
-        np.testing.assert_array_equal(
-            graph._A.toarray(),
-            [
-                [0, 0, 0, 0],
-                [0, 0, 0, 0],
-                [1, 1, 0, 0],
-                [1, 0, 0, 0],
-            ],
-        )
-
-    def test_no_entry_is_written_twice(self):
-        """``check_same_parent`` forbids one id in both roles, so the COO never sums a duplicate.
-
-        The validator itself is covered by ``test_input.py``; this is the
-        consequence the one-COO assembly relies on.
-        """
-        graph = PedigreeGraph.from_frame(_trio())
-        assert set(graph._A.data.tolist()) == {1}
-        assert graph._A.has_canonical_format
-
-    def test_the_adjacency_rebuilds_after_a_release(self):
-        """``_streaming_counter`` reads ``_A`` after a pair extraction has released it."""
-        graph = PedigreeGraph.from_frame(_trio())
-        before = graph._A.toarray()
-        graph._release_pair_matrices()
-        assert "_A" not in graph.__dict__
-        np.testing.assert_array_equal(graph._A.toarray(), before)
-
-
 class TestStructuredErrorsReachEveryEntryPoint:
     @pytest.mark.parametrize("build", ENTRY_POINTS)
     def test_duplicate_id(self, build):

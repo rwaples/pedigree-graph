@@ -1,21 +1,22 @@
-"""Focused tests for the decomposed pair engines and shared utilities (PGQ-003).
+"""Focused tests for the pair-array helpers of the test oracle and the close-relative counter.
 
-Covers the pure helpers in ``_pair_utils`` and the read-only contract of
-``MatrixPairExtractor`` and ``_count_close_relatives`` from ADR 0002.
-The counting helper returns results; its public wrapper owns the cache.
+The array helpers moved with the matrix engine to ``tests/oracle`` in slice
+12; they stay tested because the oracle is the differential check of the
+Rust engine.  ``_count_close_relatives`` returns results; its public wrapper
+owns the cache (ADR 0002).
 """
 
 import numpy as np
-import pytest
 import scipy.sparse as sp
-
-from pedigree_graph import RELATIONSHIPS, PedigreeGraph
-from pedigree_graph._pair_extractor import MatrixPairExtractor, dependency_closure
-from pedigree_graph._pair_utils import (
+from oracle.relationship_pairs import (
+    MatrixPairExtractor,
+    _Matrices,
     oriented_pairs_from_sparse,
     pairs_from_groups,
     subtract_pairs,
 )
+
+from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 from pedigree_graph._streaming_counter import _count_close_relatives
 
 
@@ -63,26 +64,14 @@ class TestPairUtils:
 class TestEngineReadOnlyContract:
     """Engines compute results but never persist them (ADR 0002)."""
 
-    def test_matrix_extractor_returns_every_code_with_only_the_requested_populated(self, small_pedigree):
+    def test_matrix_oracle_returns_every_code_with_only_the_requested_populated(self, small_pedigree):
         pg = PedigreeGraph.from_frame(small_pedigree)
         codes = frozenset(code for code, category in RELATIONSHIPS.items() if category.degree <= 2)
-        pairs = MatrixPairExtractor(pg, max_workers=1).extract(codes)
+        pairs = MatrixPairExtractor(_Matrices(pg), max_workers=1).extract(codes)
         assert list(pairs) == list(RELATIONSHIPS)
         counts = {code: len(block[0]) for code, block in pairs.items()}
         assert counts["FS"] > 0
         assert all(counts[code] == 0 for code in RELATIONSHIPS if code not in codes)
-
-    @pytest.mark.parametrize(
-        ("requested", "expects_a2"),
-        [("MHS", False), ("PHS", False), ("GP", True)],
-    )
-    def test_matrix_extractor_builds_a2_only_when_the_selection_consumes_it(
-        self, small_pedigree, requested, expects_a2
-    ):
-        pg = PedigreeGraph.from_frame(small_pedigree)
-        codes = dependency_closure(frozenset({requested}))
-        MatrixPairExtractor(pg, max_workers=1).extract(codes)
-        assert ("_A2" in pg.__dict__) is expects_a2
 
     def test_scalar_counter_does_not_write_the_cache(self, small_pedigree):
         pg = PedigreeGraph.from_frame(small_pedigree)
@@ -96,25 +85,3 @@ class TestEngineReadOnlyContract:
         assert set(counts) == result.requested
         for code in result.requested:
             assert result[code] == counts[code], code
-
-
-RESIDENT_MATRICES = ("_A", "_A2", "_A3", "_A4", "_A5", "_A2_shared", "_full_sib_matrix", "_half_sib_matrix")
-
-
-def _resident(pg) -> list[str]:
-    return sorted(name for name in RESIDENT_MATRICES if name in pg.__dict__)
-
-
-class TestMatrixReleaseIsExceptionSafe:
-    """Pair extraction releases adjacency powers on failure too, per issue #4."""
-
-    def test_relationship_pairs_releases_when_extraction_raises(self, small_pedigree, monkeypatch):
-        pg = PedigreeGraph.from_frame(small_pedigree)
-
-        def boom(self):
-            raise MemoryError("simulated failure inside extract()")
-
-        monkeypatch.setattr(PedigreeGraph, "_mz_twin_pairs", boom)
-        with pytest.raises(MemoryError):
-            pg.relationship_pairs(max_degree=3)
-        assert _resident(pg) == []

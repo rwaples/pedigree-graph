@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 from conftest import parity_columns, parity_fixtures
+from oracle.relationship_pairs import sibling_pairs
 from relationship_predicates import AncestorWalk
 
 from pedigree_graph import RELATIONSHIPS, MissingMetadataError, PedigreeGraph
@@ -344,7 +345,7 @@ class _Snapshot:
             for code, (first, second) in pairs.items()
             for a, b, value in zip(ids[first], ids[second], kinship[code], strict=True)
         }
-        full_sib, maternal, paternal = graph._sibling_pairs()
+        full_sib, maternal, paternal = sibling_pairs(graph)
         self.sibling_pairs = _unordered_pair_sets({"FS": full_sib, "MHS": maternal, "PHS": paternal}, ids)
         self.relationship_pairs = _relationship_pair_sets(graph, ids)
 

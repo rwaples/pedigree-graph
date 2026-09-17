@@ -1,9 +1,10 @@
 """``relationship_counts`` through the Rust engine equals the block lengths of ``relationship_pairs``.
 
-The matrix engine in ``_pair_extractor.py`` is the live oracle: it builds the
-pair lists and folds precedence in Python.  The Rust engine (ADR 0010, as
-amended) must give the same counts on every fixture, every selector, every
-row order, and every view, without building a pair list.
+Since slice 12 ``relationship_pairs`` runs on the same Rust engine, so this
+is a self-consistency check between its two consumers: the counts must equal
+the block lengths on every fixture, every selector, every row order, and
+every view, without building a pair list.  The independent oracle for both
+is the matrix engine in ``tests/oracle/relationship_pairs.py``.
 """
 
 from __future__ import annotations

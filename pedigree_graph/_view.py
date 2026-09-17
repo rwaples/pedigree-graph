@@ -31,8 +31,8 @@ from pedigree_graph._input import (
     _own,
 )
 from pedigree_graph._kinship_pairwise import view_pair_kinship
-from pedigree_graph._pair_extractor import view_relationship_pairs
 from pedigree_graph._relationship_counts import view_relationship_counts
+from pedigree_graph._relationship_pairs import check_execution, view_relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
 
 if TYPE_CHECKING:
@@ -199,6 +199,7 @@ class PedigreeView:
         *,
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
+        execution: str = "speed",
     ) -> RelationshipPairs:
         """Return every relationship pair of the selected categories, in view rows.
 
@@ -219,6 +220,8 @@ class PedigreeView:
                 Exclusive with *categories*.
             categories: Registry codes to select, any order.  Exclusive with
                 *max_degree*.
+            execution: ``"speed"`` (default) or ``"memory"``, as for
+                :meth:`pedigree_graph.PedigreeGraph.relationship_pairs`.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipPairs` over all
@@ -227,10 +230,15 @@ class PedigreeView:
         Raises:
             TypeError: Both selectors, neither, or a bare ``str`` for
                 *categories*.
+            ValueError: *execution* is not ``"speed"`` or ``"memory"``.
             PedigreeValidationError: ``max_degree_out_of_range`` or
                 ``unknown_relationship_category``.
+            ResourceError: ``allocation_failed`` when the engine or the
+                result cannot be allocated.
         """
-        return view_relationship_pairs(self, RelationshipSelection.parse(max_degree, categories))
+        return view_relationship_pairs(
+            self, RelationshipSelection.parse(max_degree, categories), check_execution(execution)
+        )
 
     def relationship_counts(
         self,

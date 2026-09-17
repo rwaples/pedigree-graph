@@ -14,9 +14,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from oracle.relationship_pairs import check_exclusive
 
 import pedigree_graph
-from pedigree_graph._pair_extractor import check_exclusive
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
 

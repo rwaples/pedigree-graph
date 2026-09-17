@@ -35,7 +35,7 @@ import scipy.sparse as sp
 from pedigree_graph._errors import ResourceError
 from pedigree_graph._kinship_dp import _build_kinship_csc, _fill_candidate_kinship_values
 from pedigree_graph._kinship_pairwise import memoised_kinship
-from pedigree_graph._pair_extractor import relationship_pairs
+from pedigree_graph._relationship_pairs import relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._threads import thread_budget
 
@@ -451,7 +451,7 @@ def relationship_kinship_matrix(graph: PedigreeGraph, selection: RelationshipSel
         return cached
 
     started = time.perf_counter()
-    pairs = relationship_pairs(graph, selection)
+    pairs = relationship_pairs(graph, selection, "speed")
     matrix = _support_from_relationships(graph, pairs)
     # Pair chunks suit sparse relationship support, not dense support generally.
     # The measured max-degree-5 case spans about 4 chunks versus 26 for the

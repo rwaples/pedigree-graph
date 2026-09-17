@@ -24,8 +24,7 @@ Prefer adding a **new** focused module over extending an oversized one (see
 | `_registry.py` | `RelationshipCategory` and the immutable ordered `RELATIONSHIPS` mapping, the internal selectors, and `REL_PLAN` + helpers (per-code engine semantics). **Single source of truth** for codes, kinship, degree range, and scalar count coverage. |
 | `relationships.py` | The public relationship vocabulary and result types: re-exports `RELATIONSHIPS` / `RelationshipCategory` from `_registry.py` and defines `RelationshipPairBlock` (owned read-only int32 `first_rows` / `second_rows`, roles, `requested`, private receiver token), the immutable 23-key `RelationshipPairs` mapping, and the frozen 23-key `RelationshipCountResult` mapping with its `requested` / `exact` code sets (ADR [0006](adr/0006-public-api-and-coordinate-semantics.md)). |
 | `_selection.py` | `RelationshipSelection`: the resolved form of the one-of-two `max_degree=` / `categories=` selector the general relationship endpoints take; `close_relative_counts()` has no selector. The selection is parsed once at the public boundary by `RelationshipSelection.parse` and passed to the pair, count, and matrix engines. Carries the requested `codes`, their registry-`ordered` tuple (the canonical cache key, so a cutoff and the code list it names are one selection), and `top_degree` (`None` exactly when empty — the cutoff the row-streaming counter runs at). Parsing once also means a one-shot `categories` iterable is consumed exactly once, so no engine has to materialise it defensively. Private: no consumer constructs one. |
-| `_pair_utils.py` | Free functions shared by the pair engines: `canonical_keys` / `sort_by_canonical_key` (the unordered `min * n + max` key), `subtract_pairs` (the one canonical-key membership subtraction), `oriented_pairs_from_sparse` (oriented, dual-valid-deduplicated read of an asymmetric product), `pairs_from_groups`, and `project_pairs` (keep both-endpoints-selected pairs, relabelled through a graph-to-view table). |
-| `_pair_extractor.py` | `MatrixPairExtractor` — exact, path-counting matrix pair extraction returning oriented graph-space blocks for a dependency-closed code set — plus the assembly steps shared by both receivers (`_classify` = `dependency_closure` + thread budget + registry-order precedence fold, `_build_result` block construction), `relationship_pairs` (graph rows) and `view_relationship_pairs` (projection, symmetric re-canonicalisation, view-key re-sort), and the `check_exclusive` invariant checker (tests, or `PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY=1`). |
+| `_relationship_pairs.py` | `relationship_pairs` (graph rows) and `view_relationship_pairs` (view rows, as the int32 view row of every graph row): the `_selection.py` selection parsed at the boundary, one call into `_native.relationship_pairs` on the package pool at the selection's `top_degree` with the requested codes and the `execution` mode, and the owned read-only blocks wrapped without a copy by `_input._own_native`. Classification, orientation, closest-category precedence, view projection and ordering all happen in the Rust engine (ADR 0010 as amended); the retired SciPy matrix engine lives on as the differential oracle in `tests/oracle/relationship_pairs.py`. |
 | `_relationship_counts.py` | `relationship_counts` (graph) and `view_relationship_counts` (view, as a boolean row mask): the `_selection.py` selection parsed at the boundary, the thread budget, one call into `_native.relationship_counts` passing the graph's own `BuiltPedigree` at the selection's `top_degree`, and the typed exact `RelationshipCountResult` keyed by the codes the binding returns. No pair list, no native state retained (ADR [0010](adr/0010-row-streaming-relationship-engine.md) as amended). |
 | `_streaming_counter.py` | `close_relative_counts` commits the thread budget and caches one immutable `RelationshipCountResult` per graph. `_count_close_relatives` reads parent/twin arrays and sums sibling-group combinations, subtracting MHS/PHS pairs claimed by parent-offspring categories. The six computed codes come from `estimate_exact_codes()`; every other registry key is `None`. No approximation, clamp, warning, pair list or adjacency-power access/release. |
 | `_kinship_kernel.py` | Facade re-exporting the numba kinship kernel, split into `_kinship_depth` (EqG and retirement depth only), `_kinship_allocator`, `_kinship_csc`, `_kinship_dp` (DP orchestration + driver + theta), `_kinship_dp_depth` (one-depth recurrence, MZ fill, and candidate capture), and `_inbreeding_kernel`. |
@@ -36,10 +35,12 @@ Prefer adding a **new** focused module over extending an oversized one (see
 | `_lineage.py`, `_lineage_kernel.py`, `_cohort_utils.py` | Lineage surfaces and kernels: `distinct_ancestor_counts` merges sorted closed ancestor sets in stable topological order and reuses power-of-two slots after each row's last direct child; `descendant_path_counts` is the reverse topological scalar sweep; `connected_component_ids` owns the SciPy component labelling and minimum-ID policy; `_cohort_utils` owns cohort-eligibility windows. |
 | `crates/core/src/` | Rust `pedigree-graph-core`: `topology` (depth, depth-major order, cycle witness), `error` (structured codes), and `relationships`, the row-streaming exact relationship engine (category definitions, then the per-row closest-category fold, then the count or the row mask) with the `pgr-count` CLI. `Pedigree`'s slices are private: `Pedigree::try_new` and `PedigreeColumns::try_borrow` are the only ways in, and they check the column lengths and row ranges the engine indexes by without bounds checks, so the PyO3 binding no longer carries its own copy of that validation (ADR [0010](adr/0010-row-streaming-relationship-engine.md), as amended). Parity fixture inputs under `crates/core/tests/fixtures/` come from the frozen `tests/parity/dump_relationship_inputs.py`; their `.counts.json` oracles from `tests/parity/dump_relationship_counts.py` (`relationship_counts(max_degree=5)` on a graph rebuilt from each TSV). |
 
-The pair engines are **read-only collaborators** of `PedigreeGraph`: they
-hold a reference, read private matrices/accessors, and return results; the
-graph owns caches and matrix lifetimes (ADR
-[0002](adr/0002-pair-engines-read-only-collaborators.md)).
+The relationship engines are **read-only collaborators** of `PedigreeGraph`:
+they receive the graph's `BuiltPedigree` (or, for the pure-Python counter,
+its parent and twin arrays), compute, and return results; the graph owns
+its caches (ADR [0002](adr/0002-pair-engines-read-only-collaborators.md)).
+No production module builds adjacency powers or sibling matrices any more;
+the one place that still does is the test oracle.
 
 ## Hidden contracts
 
@@ -59,7 +60,10 @@ one call site. Each has a documented source of truth and a regression test.
 Statistical-correctness gotchas (booleanise-after-multiplicity, ≥2 shared
 ancestors for full/half, `_get_Ak(0)` = identity, pair-key int64 overflow,
 degree-gating cache side effects) are catalogued in the umbrella
-`CLAUDE.md`; touch the relevant module's tests when changing that code.
+`CLAUDE.md`; since slice 12 the matrix code they describe is the test oracle
+in `tests/oracle/relationship_pairs.py`, and the production engine's own
+invariants (saturated multiplicity, the `EXCLUSIONS` table, the per-row
+precedence fold, first-arm orientation) are stated in ADR 0010.
 
 ## Guardrails
 

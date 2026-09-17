@@ -6,6 +6,40 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: `relationship_pairs` runs on the Rust row-streaming engine**
+  (slice 12; ADR 0006, 0007 and 0010 as amended). Graph and view results
+  are element for element what the 0.8.4 SciPy matrix engine returned:
+  the same 23 blocks, roles, closest-category precedence, canonical-key
+  order, coordinate tokens and read-only int32 arrays. The arrays are now
+  the core's own allocations handed over without a copy. On `random_300k`
+  at degree 5 the call is 0.29x the 0.8.4 wall time on six threads and
+  0.19x its peak memory; on a 20M-row pedigree it completes degree 5
+  (2.12 billion pairs) in 18.1 GiB, which the matrix engine could not do
+  in 30 GiB. Measurements: `benchmarks/bench_pair_emitters.md`.
+- **Added: `relationship_pairs(..., execution="speed" | "memory")`** on
+  graphs and views. `"speed"` (the default) is the fastest exact assembly
+  at about 2.3 times the result in peak memory; `"memory"` holds no copy
+  of the result (the result plus engine state) at roughly twice the wall
+  time. The blocks are identical either way; any other value is a
+  `ValueError`.
+- **Added: `ResourceError("allocation_failed")`** with fields `operation`,
+  `requested_elements` and `dtype`, raised by `relationship_pairs` and
+  `relationship_counts` when the engine, a workspace, a row set, a task
+  buffer, a result block or the view-sort scratch cannot be allocated,
+  instead of aborting the process.
+- **Changed: one package-wide Rayon pool.** The native engine builds one
+  thread pool per process from the committed `configure_threads` /
+  `PEDIGREE_GRAPH_THREADS` budget (ADR 0007). Results do not depend on the
+  budget. `_reset_thread_state()` remains test-only and cannot resize the
+  native pool; tests that compare budgets run each in a fresh interpreter.
+- **Removed (private): the SciPy matrix pair extractor** (`_pair_extractor`,
+  `_pair_utils`, the graph's lazily cached adjacency powers `_A` to `_A5`,
+  `_A2_shared`, `_get_Ak`, the sibling matrices and `_release_pair_matrices`)
+  and the `PEDIGREE_GRAPH_DEBUG_EXCLUSIVITY` environment variable. The
+  extractor lives on unchanged as the differential test oracle in
+  `tests/oracle/relationship_pairs.py`. SciPy remains a dependency for the
+  kinship matrices, lineage and effective-size modules.
+
 - **Changed: `distinct_ancestor_counts()` now uses one retiring Numba DP.**
   The old implementation repeatedly multiplied a sparse boolean transitive
   closure and retained every ancestor link. The replacement makes one

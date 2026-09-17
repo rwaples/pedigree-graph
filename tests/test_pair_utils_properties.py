@@ -1,4 +1,4 @@
-"""Property-based tests for the pure pair-array utilities in _pair_utils.
+"""Property-based tests for the pure pair-array utilities of the test oracle.
 
 These operate on plain index arrays (no pedigree), so they are fast and exercise
 within-group enumeration, the oriented read of an asymmetric product matrix
@@ -14,8 +14,7 @@ import numpy as np
 import scipy.sparse as sp
 from hypothesis import given, settings
 from hypothesis import strategies as st
-
-from pedigree_graph._pair_utils import (
+from oracle.relationship_pairs import (
     oriented_pairs_from_sparse,
     pairs_from_groups,
     project_pairs,

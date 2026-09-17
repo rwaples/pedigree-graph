@@ -39,8 +39,8 @@ Regeneration must reproduce every hash in `manifest.json`. Bump
 - `extract_pairs(max_degree=5)` in 0.7.1 orientation, sorted by `(first, second)`.
   0.7.1 reported a pair under every category it satisfied; the 0.8
   `relationship_pairs` keeps one category per pair (ADR 0006), so the capture
-  reads the matrix engine's blocks before that precedence fold through the
-  private `MatrixPairExtractor` and folds the ten collateral asymmetric codes
+  reads the matrix oracle's blocks before that precedence fold through
+  `tests/oracle/relationship_pairs.MatrixPairExtractor` and folds the ten collateral asymmetric codes
   back to `(min, max)`.
 - `compute_pair_kinship` (float64) aligned to those pairs: `pair_kinship`
   widened from float32.

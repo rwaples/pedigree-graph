@@ -15,12 +15,10 @@ from __future__ import annotations
 __all__ = ["PedigreeGraph"]
 
 import logging
-import time
 from functools import cached_property
 from typing import TYPE_CHECKING, Literal, overload
 
 import numpy as np
-import scipy.sparse as sp
 
 from pedigree_graph import _native
 from pedigree_graph._cohort_utils import generation_interval as _generation_interval
@@ -34,10 +32,10 @@ from pedigree_graph._lineage import connected_component_ids as _connected_compon
 from pedigree_graph._lineage import descendant_path_counts as _descendant_path_counts
 from pedigree_graph._lineage import distinct_ancestor_counts as _distinct_ancestor_counts
 from pedigree_graph._ne_rates import _generation_kinship_summary
-from pedigree_graph._pair_extractor import relationship_pairs as _relationship_pairs
-from pedigree_graph._pair_utils import pairs_from_groups, subtract_pairs
 from pedigree_graph._properties import PedigreeProperties
 from pedigree_graph._relationship_counts import relationship_counts as _relationship_counts
+from pedigree_graph._relationship_pairs import check_execution
+from pedigree_graph._relationship_pairs import relationship_pairs as _relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._streaming_counter import close_relative_counts as _close_relative_counts
 from pedigree_graph._threads import thread_budget
@@ -46,6 +44,8 @@ from pedigree_graph._view import CoordinateToken, _build_view
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
+
+    import scipy.sparse as sp
 
     from pedigree_graph._frames import FrameLike
     from pedigree_graph._kinship_pairwise import _PairMemo
@@ -237,243 +237,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         """
         return _generation_interval(self)
 
-    # ------------------------------------------------------------------
-    # Lazy sparse products (computed on first access)
-    # ------------------------------------------------------------------
-
-    @cached_property
-    def _A(self):
-        """Child → both parents adjacency matrix, from one pass over both edge lists.
-
-        Assembled as a single COO rather than as a CSR per parent that are then
-        summed.  The two agree entry for entry: ``check_same_parent``
-        (``crates/core/src/graph.rs:244``) rejects a row naming one id in both
-        roles, so no ``(child, parent)`` pair can appear twice and every stored
-        value is ``1``.  Building the halves eagerly cost every graph two
-        matrices no other production reader consumed (issue #18).
-
-        Every edge is used, so a partial pedigree still contributes whichever
-        side it knows.
-        """
-        t0 = time.perf_counter()
-        n = self.n_individuals
-        has_mother = self.mother_rows >= 0
-        has_father = self.father_rows >= 0
-        # Not ``np.where``, whose index is ``intp``: scipy widens the whole COO
-        # to its widest input, which cost more transient memory than the eager
-        # two-matrix build this replaces.
-        rows = np.arange(n, dtype=self.mother_rows.dtype)
-        children = np.concatenate((rows[has_mother], rows[has_father]))
-        parents = np.concatenate((self.mother_rows[has_mother], self.father_rows[has_father]))
-        result = sp.csr_matrix(
-            (np.ones(len(children), dtype=np.int32), (children, parents)),
-            shape=(n, n),
-        )
-        logger.debug("_A built from %d parent edges in %.3fs", len(children), time.perf_counter() - t0)
-        return result
-
-    @cached_property
-    def _A2(self):
-        """2-hop parent reach (grandparents): A @ A."""
-        t0 = time.perf_counter()
-        result = self._A @ self._A
-        logger.debug("_A2 = A @ A computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
-        return result
-
-    @cached_property
-    def _A2_shared(self):
-        """Shared-grandparent matrix: A² @ (A²).T.
-
-        Only needed when 2nd cousin extraction is enabled.
-        """
-        t0 = time.perf_counter()
-        result = self._A2 @ self._A2.T
-        logger.debug("_A2_shared = A2 @ A2.T computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
-        return result
-
-    @cached_property
-    def _A3(self):
-        """3-hop parent reach (great-grandparents): A² @ A."""
-        t0 = time.perf_counter()
-        result = self._A2 @ self._A
-        logger.debug("_A3 = A2 @ A computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
-        return result
-
-    @cached_property
-    def _A4(self):
-        """4-hop parent reach (great²-grandparents): A³ @ A."""
-        t0 = time.perf_counter()
-        result = self._A3 @ self._A
-        logger.debug("_A4 = A3 @ A computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
-        return result
-
-    @cached_property
-    def _A5(self):
-        """5-hop parent reach (great³-grandparents): A⁴ @ A."""
-        t0 = time.perf_counter()
-        result = self._A4 @ self._A
-        logger.debug("_A5 = A4 @ A computed in %.3fs (nnz=%d)", time.perf_counter() - t0, result.nnz)
-        return result
-
-    def _get_Ak(self, k: int) -> sp.spmatrix:
-        """Return the k-hop parent-reach matrix (k=0 returns identity)."""
-        if k == 0:
-            return sp.eye(self.n_individuals, format="csr")
-        if k == 1:
-            return self._A
-        return getattr(self, f"_A{k}")
-
-    def _ensure_sibling_matrices(self) -> None:
-        """Ensure _full_sib_matrix and _half_sib_matrix are computed."""
-        if hasattr(self, "_full_sib_matrix"):
-            return
-        # Trigger sibling extraction which sets _full_sib_matrix
-        self._sibling_pairs()
-
-    def _build_half_sib_matrix(
-        self,
-        mat_hs: tuple[np.ndarray, np.ndarray],
-        pat_hs: tuple[np.ndarray, np.ndarray],
-    ) -> None:
-        """Build and cache _half_sib_matrix from extracted half-sib pairs."""
-        hs1 = np.concatenate([mat_hs[0], pat_hs[0]])
-        hs2 = np.concatenate([mat_hs[1], pat_hs[1]])
-        if len(hs1) > 0:
-            ones = np.ones(len(hs1), dtype=np.int32)
-            H = sp.csr_matrix((ones, (hs1, hs2)), shape=(self.n_individuals, self.n_individuals))
-            self._half_sib_matrix = H + H.T
-        else:
-            self._half_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
-
-    # ------------------------------------------------------------------
-    # Relationship extraction
-    # ------------------------------------------------------------------
-
-    def _mz_twin_pairs(self) -> tuple[np.ndarray, np.ndarray]:
-        """MZ twin pairs: twin != -1, deduplicated with id < twin_id."""
-        has_twin = self.twin_rows >= 0
-        ids = np.where(has_twin)[0]
-        partners = self.twin_rows[has_twin]
-        mask = ids < partners
-        return ids[mask], partners[mask].astype(np.intp)
-
-    def _parent_offspring_pairs(
-        self,
-    ) -> tuple[
-        tuple[np.ndarray, np.ndarray],
-        tuple[np.ndarray, np.ndarray],
-    ]:
-        """Mother-offspring and Father-offspring pairs.
-
-        Each parent link is reported independently, so a child with only
-        one parent in the sample still contributes a PO pair.  Graph-data
-        accessor read by the matrix pair extractor.
-        """
-        m_mask = self.mother_rows >= 0
-        m_children = np.where(m_mask)[0]
-
-        f_mask = self.father_rows >= 0
-        f_children = np.where(f_mask)[0]
-
-        return (m_children, self.mother_rows[m_children].astype(np.intp)), (
-            f_children,
-            self.father_rows[f_children].astype(np.intp),
-        )
-
-    def _sibling_pairs(
-        self,
-    ) -> tuple[
-        tuple[np.ndarray, np.ndarray],
-        tuple[np.ndarray, np.ndarray],
-        tuple[np.ndarray, np.ndarray],
-    ]:
-        """Full sib, maternal half sib, and paternal half sib pairs.
-
-        Uses numpy sort+group for direct enumeration — faster than sparse
-        matmul for 1-hop relationships since it avoids materializing N×N
-        shared-parent matrices.
-
-        Groups by ORIGINAL pedigree parent IDs (not remapped row indices)
-        so that siblings are correctly detected even when parents are absent
-        from a subsampled dataset.
-
-        Individuals with only one known parent can participate in half-sib
-        detection through that parent (but not full-sib detection, which
-        requires both parents known).
-
-        Twin individuals are excluded entirely (matching legacy semantics).
-        Returns (full_sib, maternal_hs, paternal_hs) tuples of (idx1, idx2).
-        """
-        empty = np.array([], dtype=np.intp), np.array([], dtype=np.intp)
-
-        # Non-twin individuals with at least one known parent
-        has_parent = (self.mother_ids >= 0) | (self.father_ids >= 0)
-        nt_mask = has_parent & (self.twin_rows < 0)
-        nt_idx = np.where(nt_mask)[0]
-
-        if len(nt_idx) < 2:
-            self._full_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
-            self._half_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
-            return empty, empty, empty
-
-        nt_mother = self.mother_ids[nt_idx]
-        nt_father = self.father_ids[nt_idx]
-
-        # --- Full sibs: same KNOWN mother AND same KNOWN father ---
-        both_known = (nt_mother >= 0) & (nt_father >= 0)
-        bk_idx = nt_idx[both_known]
-        bk_mother = nt_mother[both_known]
-        bk_father = nt_father[both_known]
-
-        if len(bk_idx) >= 2:
-            max_parent = max(int(bk_mother.max()), int(bk_father.max())) + 1
-            # int64 cast required: max_id² overflows int32
-            family_key = bk_mother.astype(np.int64) * max_parent + bk_father.astype(np.int64)
-            full_sib = pairs_from_groups(bk_idx, family_key)
-        else:
-            full_sib = empty
-
-        # --- Maternal half sibs: all pairs sharing known mother, minus full-sib pairs ---
-        has_mother = nt_mother >= 0
-        m_idx = nt_idx[has_mother]
-        m_mother = nt_mother[has_mother]
-        if len(m_idx) >= 2:
-            mat_all = pairs_from_groups(m_idx, m_mother)
-            mat_hs = subtract_pairs(mat_all, [full_sib])
-        else:
-            mat_hs = empty
-
-        # --- Paternal half sibs: all pairs sharing known father, minus full-sib pairs ---
-        has_father = nt_father >= 0
-        f_idx = nt_idx[has_father]
-        f_father = nt_father[has_father]
-        if len(f_idx) >= 2:
-            pat_all = pairs_from_groups(f_idx, f_father)
-            pat_hs = subtract_pairs(pat_all, [full_sib])
-        else:
-            pat_hs = empty
-
-        # Build full-sib sparse matrix for _avuncular_pairs and collateral methods
-        sib1, sib2 = full_sib
-        if len(sib1) > 0:
-            ones = np.ones(len(sib1), dtype=np.int32)
-            F = sp.csr_matrix((ones, (sib1, sib2)), shape=(self.n_individuals, self.n_individuals))
-            self._full_sib_matrix = F + F.T
-        else:
-            self._full_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
-
-        return full_sib, mat_hs, pat_hs
-
-    def _release_pair_matrices(self) -> None:
-        """Drop the transient adjacency / sibling matrices built for pair work.
-
-        Only the pair arrays and count caches are needed after an
-        extraction; the cached sparse matrices can be large, so they are
-        released here.  Idempotent — missing attributes are ignored.
-        """
-        for attr in ("_A", "_A2", "_A3", "_A4", "_A5", "_A2_shared", "_full_sib_matrix", "_half_sib_matrix"):
-            self.__dict__.pop(attr, None)
-
     def _release_kinship_matrices(self) -> None:
         """Drop every cached kinship matrix held by this graph, and the pair memo.
 
@@ -601,6 +364,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         *,
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
+        execution: str = "speed",
     ) -> RelationshipPairs:
         """Return every relationship pair of the selected categories, in graph rows.
 
@@ -610,13 +374,21 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         then registry order) whichever categories were named.  Degree and
         category are read from represented parent edges, so they derive from
         structural depth and supplied generation labels never enter the
-        classification.
+        classification.  Classification runs on the Rust row-streaming
+        engine under the package thread budget
+        (:func:`~pedigree_graph.configure_threads`); the result is the same
+        for every budget.
 
         Args:
             max_degree: Select every category at or below this degree (0-5).
                 Exclusive with *categories*.
             categories: Registry codes to select, any order.  Exclusive with
                 *max_degree*.
+            execution: ``"speed"`` (default) for the fastest exact assembly,
+                whose peak memory is about 2.3 times the result, or
+                ``"memory"`` for the lowest-peak one, the result plus engine
+                state, at roughly twice the wall time.  The blocks are
+                identical either way.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipPairs` over all
@@ -630,10 +402,15 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         Raises:
             TypeError: Both selectors, neither, or a bare ``str`` for
                 *categories*.
+            ValueError: *execution* is not ``"speed"`` or ``"memory"``.
             PedigreeValidationError: ``max_degree_out_of_range`` or
                 ``unknown_relationship_category``.
+            ResourceError: ``allocation_failed`` when the engine or the
+                result cannot be allocated.
         """
-        return _relationship_pairs(self, RelationshipSelection.parse(max_degree, categories))
+        return _relationship_pairs(
+            self, RelationshipSelection.parse(max_degree, categories), check_execution(execution)
+        )
 
     def relationship_counts(
         self,

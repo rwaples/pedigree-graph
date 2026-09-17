@@ -75,7 +75,9 @@ pg = PedigreeGraph.from_frame(
 # pg = PedigreeGraph.from_frame(df)
 
 # Pairs by relationship category, up to a given degree; each block holds
-# read-only int32 first_rows / second_rows in the category's role orientation
+# read-only int32 first_rows / second_rows in the category's role orientation.
+# execution="memory" returns the same blocks at the lowest peak memory
+# (the result plus engine state) for about twice the wall time.
 pairs = pg.relationship_pairs(max_degree=3)
 first, second = pairs["FS"]  # full sibs
 print(len(pairs["1C"]))  # 1st cousins (degree 3)

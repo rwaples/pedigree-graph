@@ -113,15 +113,13 @@ class TestCache:
         assert small_graph.close_relative_counts().requested == estimate_exact_codes()
 
 
-def test_does_not_build_pairs_or_access_or_release_matrices(small_graph, monkeypatch):
+def test_does_not_build_pairs(small_graph, monkeypatch):
     reference = small_graph.relationship_counts(max_degree=5)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("close counts must use only parent/twin arrays")
 
-    for name in ("_A", "_A2", "_A3", "_A4", "_A5"):
-        monkeypatch.setattr(PedigreeGraph, name, property(forbidden))
-    for name in ("relationship_pairs", "relationship_counts", "_mz_twin_pairs", "_release_pair_matrices"):
+    for name in ("relationship_pairs", "relationship_counts"):
         monkeypatch.setattr(PedigreeGraph, name, forbidden)
     result = small_graph.close_relative_counts()
     assert all(result[code] == reference[code] for code in result.requested)

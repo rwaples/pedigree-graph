@@ -48,10 +48,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pedigrees
 from generate_baseline import APPROX_THRESHOLD, MAX_DEGREE, SUBSAMPLE_SEED, _sha, _sorted_pairs, _upper_coo
+from oracle.relationship_pairs import MatrixPairExtractor, _Matrices, dependency_closure, project_pairs
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
-from pedigree_graph._pair_extractor import MatrixPairExtractor, dependency_closure
-from pedigree_graph._pair_utils import project_pairs
 from pedigree_graph._registry import categories_up_to_degree
 
 if TYPE_CHECKING:
@@ -78,9 +77,7 @@ def build(fx: dict[str, np.ndarray]) -> PedigreeGraph:
 def _engine_pairs(graph: PedigreeGraph) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """Every degree-5 block as the engine emits it, before the precedence fold."""
     codes = dependency_closure(frozenset(category.code for category in categories_up_to_degree(MAX_DEGREE)))
-    pairs = MatrixPairExtractor(graph, max_workers=1).extract(codes)
-    graph._release_pair_matrices()
-    return pairs
+    return MatrixPairExtractor(_Matrices(graph), max_workers=1).extract(codes)
 
 
 def _folded(

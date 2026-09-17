@@ -9,24 +9,27 @@ view canonical key.  Fixtures and predicates are those of
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import zlib
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from oracle.relationship_pairs import canonical_keys, check_exclusive
 from relationship_predicates import AncestorWalk
 from test_relationship_pairs import ASYMMETRIC, CODES, FIXTURE_NAMES, FIXTURES, SYMMETRIC, _graph
 
 import pedigree_graph
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelationshipCountResult
-from pedigree_graph._pair_extractor import check_exclusive
-from pedigree_graph._pair_utils import canonical_keys
-from pedigree_graph._threads import _reset_thread_state, configure_threads
 from pedigree_graph._view import CoordinateToken
 
 if TYPE_CHECKING:
     from pedigree_graph import PedigreeView, RelationshipPairs
 
+PARITY_DIR = Path(__file__).resolve().parent / "parity"
 SELECTIONS = ("identity", "reversed", "shuffled_half", "every_other_id", "single_row", "empty")
 
 
@@ -242,23 +245,39 @@ class TestSelectorErrors:
 
 
 class TestThreads:
-    @pytest.fixture(autouse=True)
-    def reset_thread_state(self):
-        _reset_thread_state()
-        yield
-        _reset_thread_state()
+    """The view result is the same for every thread budget.
 
-    def test_in_process_budget_of_four_matches_the_one_thread_result(self, monkeypatch):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
-        graph = _graph("random_1k")
-        rows = np.random.default_rng(4).permutation(graph.n_individuals)[:500]
-        reference = graph.view(rows=rows).relationship_pairs(max_degree=5)
-        _reset_thread_state()
-        configure_threads(4)
-        result = _graph("random_1k").view(rows=rows).relationship_pairs(max_degree=5)
-        for code in CODES:
-            assert result[code].first_rows.tobytes() == reference[code].first_rows.tobytes(), code
-            assert result[code].second_rows.tobytes() == reference[code].second_rows.tobytes(), code
+    The package pool is built once per process, so each budget runs in a
+    fresh interpreter.
+    """
+
+    def test_budget_of_four_matches_the_one_thread_result(self):
+        script = (
+            "import hashlib, sys\n"
+            f"sys.path.insert(0, {str(PARITY_DIR)!r})\n"
+            "import numpy as np, pedigrees\n"
+            "from pedigree_graph import PedigreeGraph\n"
+            "fx = pedigrees.build_random('random_1k', pedigrees.RANDOM_FIXTURES['random_1k'])\n"
+            "graph = PedigreeGraph.from_frame({'id': fx['ids'], 'mother': fx['mother'], 'father': fx['father'],"
+            " 'twin': fx['twin'], 'sex': fx['sex']})\n"
+            "rows = np.random.default_rng(4).permutation(graph.n_individuals)[:500]\n"
+            "digest = hashlib.sha256()\n"
+            "for code, block in graph.view(rows=rows).relationship_pairs(max_degree=5).items():\n"
+            "    digest.update(block.first_rows.tobytes()); digest.update(block.second_rows.tobytes())\n"
+            "print(digest.hexdigest())\n"
+        )
+        digests = []
+        for threads in ("1", "4"):
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                env={**os.environ, "PEDIGREE_GRAPH_THREADS": threads},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert result.returncode == 0, result.stderr
+            digests.append(result.stdout.strip())
+        assert digests[0] == digests[1]
 
 
 class TestCounts:
