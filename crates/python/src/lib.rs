@@ -279,13 +279,15 @@ fn relationship_counts<'py>(
     if threads == 0 {
         return Err(PyValueError::new_err("threads must be at least 1"));
     }
-    let counts = py.detach(|| {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .map_err(|e| PyValueError::new_err(format!("thread pool: {e}")))?;
-        Ok::<_, PyErr>(pool.install(|| relationships::count_pairs(&ped, max_degree, mask)))
-    })?;
+    let counts = py
+        .detach(|| {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .map_err(|e| PyValueError::new_err(format!("thread pool: {e}")))?;
+            Ok::<_, PyErr>(pool.install(|| relationships::count_pairs(&ped, max_degree, mask)))
+        })?
+        .map_err(|e| to_pyerr(py, e))?;
     let values = PyDict::new(py);
     for &cat in Category::ALL.iter() {
         values.set_item(cat.code(), counts.get(cat) as i64)?;

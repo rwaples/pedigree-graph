@@ -13,7 +13,7 @@ mod testing;
 pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
 pub use engine::{Engine, Workspace, EXCLUSIONS};
 pub use multiplicity::Mult;
-pub use pairs::{pair_blocks, Emitter, PairBlock, PairBlocks};
+pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};
 
 use crate::error::Error;
 use rayon::prelude::*;
@@ -214,8 +214,8 @@ const ROWS_PER_TASK: usize = 2048;
 
 /// Exact closest-category pair counts up to `max_degree`, using the current Rayon pool.
 ///
-/// Infallible by construction: [`Pedigree`] and [`MaxDegree`] are both checked
-/// where they are built, so there is nothing left here to report.
+/// [`Pedigree`] and [`MaxDegree`] are checked where they are built; the one
+/// thing left to report is an allocation the pedigree size reaches.
 ///
 /// With `selected`, only pairs whose two rows are both selected are counted;
 /// classification still runs through every row, so unselected relatives keep
@@ -225,33 +225,44 @@ const ROWS_PER_TASK: usize = 2048;
 /// borrows a [`Workspace`] from a pool that never holds more workspaces than
 /// there are threads.  Counts are integers summed in any order, so the result
 /// is bit-identical for every thread count.
-pub fn count_pairs(ped: &Pedigree, max_degree: MaxDegree, selected: Option<&[bool]>) -> Counts {
-    let engine = Engine::new(ped, max_degree);
+///
+/// # Errors
+///
+/// [`Error::AllocationFailed`] from the engine, a workspace, or a row set.
+pub fn count_pairs(
+    ped: &Pedigree,
+    max_degree: MaxDegree,
+    selected: Option<&[bool]>,
+) -> Result<Counts, Error> {
+    let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
     let pool: Mutex<Vec<Workspace>> = Mutex::new(Vec::new());
-    let ranges: Vec<(usize, usize)> = (0..n)
-        .step_by(ROWS_PER_TASK)
-        .map(|s| (s, (s + ROWS_PER_TASK).min(n)))
-        .collect();
-    ranges
+    task_ranges(n)
         .into_par_iter()
         .map(|(start, end)| {
-            let mut ws = pool
-                .lock()
-                .unwrap()
-                .pop()
-                .unwrap_or_else(|| Workspace::new(n));
+            let mut ws = match pool.lock().unwrap().pop() {
+                Some(ws) => ws,
+                None => Workspace::new(n)?,
+            };
             let mut counts = Counts::default();
             for row in start..end {
                 if selected.is_some_and(|s| !s[row]) {
                     continue;
                 }
-                engine.count_row(row, selected, &mut ws, &mut counts);
+                engine.count_row(row, selected, &mut ws, &mut counts)?;
             }
             pool.lock().unwrap().push(ws);
-            counts
+            Ok(counts)
         })
-        .reduce(Counts::default, Counts::merge)
+        .try_reduce(Counts::default, |a, b| Ok(a.merge(b)))
+}
+
+/// Consecutive row ranges of [`ROWS_PER_TASK`] rows covering `0..n`.
+fn task_ranges(n: usize) -> Vec<(usize, usize)> {
+    (0..n)
+        .step_by(ROWS_PER_TASK)
+        .map(|s| (s, (s + ROWS_PER_TASK).min(n)))
+        .collect()
 }
 
 #[cfg(test)]

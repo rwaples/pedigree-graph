@@ -52,7 +52,9 @@ fn run_all(threads: usize) {
         let name = tsv.file_stem().unwrap().to_string_lossy().to_string();
         let expected = read_counts(&tsv.with_extension("counts.json"));
         let ped = PedigreeColumns::read_tsv(tsv).unwrap();
-        let got = pool.install(|| count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None));
+        let got = pool
+            .install(|| count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None))
+            .unwrap();
         for cat in Category::ALL {
             if got.get(cat) != expected.get(cat) {
                 failures.push(format!(

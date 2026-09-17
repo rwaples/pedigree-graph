@@ -56,13 +56,15 @@ fn main() {
         .build()
         .expect("thread pool");
     let t0 = Instant::now();
-    let counts = pool.install(|| {
-        count_pairs(
-            &ped.try_borrow().expect("pedigree columns"),
-            max_degree,
-            None,
-        )
-    });
+    let counts = pool
+        .install(|| {
+            count_pairs(
+                &ped.try_borrow().expect("pedigree columns"),
+                max_degree,
+                None,
+            )
+        })
+        .unwrap_or_else(|e| panic!("{e}"));
     let seconds = t0.elapsed().as_secs_f64();
     eprintln!("counted in {seconds:.3}s on {threads} thread(s)");
 

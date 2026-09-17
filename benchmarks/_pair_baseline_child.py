@@ -51,7 +51,7 @@ def main() -> None:
     write_json(
         {
             "n": n,
-            "emitter": "python_0.8.4",
+            "execution": "python_0.8.4",
             "threads": args.threads,
             "max_degree": args.degree,
             "view": args.receiver == "view",

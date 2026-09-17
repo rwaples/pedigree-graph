@@ -6,6 +6,9 @@
 //! parent id take part.  Ids are grouped lexicographically as structured
 //! keys, never arithmetic-packed.
 
+use crate::alloc::{self, Family};
+use crate::error::Error;
+
 /// Rows grouped by a key; `group_of[row] == -1` when the row has no key.
 #[derive(Debug)]
 struct Groups {
@@ -15,12 +18,16 @@ struct Groups {
 }
 
 impl Groups {
-    fn build<K: Ord + Copy>(n: usize, keyed: impl Iterator<Item = (K, u32)>) -> Groups {
-        let mut pairs: Vec<(K, u32)> = keyed.collect();
+    fn build<K: Ord + Copy>(
+        n: usize,
+        keyed: impl Iterator<Item = (K, u32)>,
+    ) -> Result<Groups, Error> {
+        let mut pairs: Vec<(K, u32)> = alloc::collect(keyed, Family::SiblingIndex, "int64")?;
         pairs.sort_unstable();
-        let mut group_of = vec![-1i32; n];
-        let mut indptr = vec![0usize];
-        let mut members = Vec::with_capacity(pairs.len());
+        let mut group_of = alloc::filled(-1i32, n, Family::SiblingIndex, "int32")?;
+        let mut indptr = alloc::with_capacity(n + 1, Family::SiblingIndex, "intp")?;
+        indptr.push(0usize);
+        let mut members = alloc::with_capacity(pairs.len(), Family::SiblingIndex, "int32")?;
         let mut k = 0;
         while k < pairs.len() {
             let key = pairs[k].0;
@@ -32,11 +39,11 @@ impl Groups {
             }
             indptr.push(members.len());
         }
-        Groups {
+        Ok(Groups {
             group_of,
             indptr,
             members,
-        }
+        })
     }
 
     #[inline]
@@ -57,73 +64,86 @@ pub struct SiblingIndex {
 }
 
 impl SiblingIndex {
-    pub fn build(twin: &[i32], orig_mother: &[i64], orig_father: &[i64]) -> SiblingIndex {
+    pub fn build(
+        twin: &[i32],
+        orig_mother: &[i64],
+        orig_father: &[i64],
+    ) -> Result<SiblingIndex, Error> {
         let n = twin.len();
         let takes_part = |i: usize| twin[i] < 0 && (orig_mother[i] >= 0 || orig_father[i] >= 0);
         let rows = || (0..n).filter(|&i| takes_part(i));
-        SiblingIndex {
+        Ok(SiblingIndex {
             family: Groups::build(
                 n,
                 rows()
                     .filter(|&i| orig_mother[i] >= 0 && orig_father[i] >= 0)
                     .map(|i| ((orig_mother[i], orig_father[i]), i as u32)),
-            ),
+            )?,
             by_mother: Groups::build(
                 n,
                 rows()
                     .filter(|&i| orig_mother[i] >= 0)
                     .map(|i| (orig_mother[i], i as u32)),
-            ),
+            )?,
             by_father: Groups::build(
                 n,
                 rows()
                     .filter(|&i| orig_father[i] >= 0)
                     .map(|i| (orig_father[i], i as u32)),
-            ),
-        }
+            )?,
+        })
     }
 
     /// Full sibs of `row` (same known mother and father ids), sorted, excluding `row`.
-    pub fn full_sibs(&self, row: usize, out: &mut Vec<u32>) {
+    pub fn full_sibs(&self, row: usize, out: &mut Vec<u32>) -> Result<(), Error> {
         out.clear();
-        out.extend(
+        alloc::extend(
+            out,
             self.family
                 .members(row)
                 .iter()
                 .copied()
                 .filter(|&j| j as usize != row),
-        );
+            Family::RowSet,
+            "int32",
+        )
     }
 
     /// Rows sharing `row`'s known mother id but not both parents, sorted, excluding `row`.
-    pub fn maternal_half_sibs(&self, row: usize, out: &mut Vec<u32>) {
+    pub fn maternal_half_sibs(&self, row: usize, out: &mut Vec<u32>) -> Result<(), Error> {
         Self::minus(
             self.by_mother.members(row),
             self.family.members(row),
             row,
             out,
-        );
+        )
     }
 
     /// Rows sharing `row`'s known father id but not both parents, sorted, excluding `row`.
-    pub fn paternal_half_sibs(&self, row: usize, out: &mut Vec<u32>) {
+    pub fn paternal_half_sibs(&self, row: usize, out: &mut Vec<u32>) -> Result<(), Error> {
         Self::minus(
             self.by_father.members(row),
             self.family.members(row),
             row,
             out,
-        );
+        )
     }
 
     /// Maternal and paternal half sibs together, sorted, excluding `row`.
-    pub fn half_sibs(&self, row: usize, scratch: &mut Vec<u32>, out: &mut Vec<u32>) {
-        self.maternal_half_sibs(row, out);
-        self.paternal_half_sibs(row, scratch);
-        super::sets::union_into(out, scratch);
+    pub fn half_sibs(
+        &self,
+        row: usize,
+        scratch: &mut Vec<u32>,
+        out: &mut Vec<u32>,
+    ) -> Result<(), Error> {
+        self.maternal_half_sibs(row, out)?;
+        self.paternal_half_sibs(row, scratch)?;
+        super::sets::union_into(out, scratch)
     }
 
-    fn minus(all: &[u32], remove: &[u32], row: usize, out: &mut Vec<u32>) {
+    fn minus(all: &[u32], remove: &[u32], row: usize, out: &mut Vec<u32>) -> Result<(), Error> {
         out.clear();
+        alloc::reserve(out, all.len(), Family::RowSet, "int32")?;
         let mut r = 0;
         for &j in all {
             while r < remove.len() && remove[r] < j {
@@ -134,5 +154,6 @@ impl SiblingIndex {
                 out.push(j);
             }
         }
+        Ok(())
     }
 }

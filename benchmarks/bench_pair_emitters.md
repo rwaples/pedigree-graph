@@ -234,3 +234,31 @@ with 18 GiB available before the run.  It completed.
 
 The 20M degree-5 pair query is therefore served in memory mode within the
 30 GiB box; `buffered` would need about 36 GiB and cannot.
+
+# Commit 3 gate: fallible engine against the prototype
+
+Measured 2026-09-17 on `random_300k`, graph, degree 5, three interleaved
+fresh processes per arm: the prototype binary built from `fff2e04` against
+the fallible engine with `bounded_wave` removed and the arms renamed
+`speed` (was `buffered`) and `memory` (was `two_pass`).  Digests identical
+across all sixteen runs of each thread count.
+
+| threads | arm | wall median (s) | wall range | engine RSS median (MiB) |
+|---|---|---|---|---|
+| 1 | old buffered | 13.898 | 13.850 to 13.996 | 529.7 |
+| 1 | new speed | 14.422 | 14.216 to 14.513 | 529.6 |
+| 1 | old two_pass | 26.301 | 26.153 to 26.598 | 261.2 |
+| 1 | new memory | 26.916 | 26.915 to 27.235 | 257.6 |
+| 6 | old buffered | 3.030 | 3.020 to 3.032 | 536.3 |
+| 6 | new speed | 3.099 | 3.094 to 3.126 | 535.9 |
+| 6 | old two_pass | 5.533 | 5.530 to 5.557 | 264.8 |
+| 6 | new memory | 5.646 | 5.587 to 5.768 | 265.2 |
+
+Wall ratios new over old: speed 1.038 and 1.023, memory 1.023 and 1.020;
+RSS ratios 0.986 to 1.002.  The wall cost is the `Result` plumbing and the
+per-reservation check through every row set, chunk push, and block; it
+stays under the ADR 0007 five percent rule.  A first cut that pushed
+element by element in `alloc::extend` measured 1.020 to 1.048 and was
+replaced by a bulk path for exact-size iterators before this record.
+The benchmark drivers now spell the arms `speed` and `memory`; the stage A
+and B tables above keep the prototype names they were measured under.

@@ -1,6 +1,8 @@
 //! Compressed sparse rows over int32 row coordinates with saturated multiplicity.
 
 use super::multiplicity::Mult;
+use crate::alloc::{self, Family};
+use crate::error::Error;
 
 /// A square sparse matrix stored by rows; column indices are sorted within a row.
 #[derive(Clone, Debug)]
@@ -13,11 +15,11 @@ pub struct Csr {
 
 impl Csr {
     /// Build from `(row, col)` edges; repeated edges add their multiplicity.
-    pub fn from_edges(n: usize, mut edges: Vec<(u32, u32)>) -> Csr {
+    pub fn from_edges(n: usize, mut edges: Vec<(u32, u32)>) -> Result<Csr, Error> {
         edges.sort_unstable();
-        let mut indptr = vec![0usize; n + 1];
-        let mut indices = Vec::with_capacity(edges.len());
-        let mut data = Vec::with_capacity(edges.len());
+        let mut indptr = alloc::filled(0usize, n + 1, Family::Csr, "intp")?;
+        let mut indices = alloc::with_capacity(edges.len(), Family::Csr, "int32")?;
+        let mut data = alloc::with_capacity(edges.len(), Family::Csr, "uint8")?;
         let mut k = 0;
         while k < edges.len() {
             let (r, c) = edges[k];
@@ -33,12 +35,12 @@ impl Csr {
         for i in 0..n {
             indptr[i + 1] += indptr[i];
         }
-        Csr {
+        Ok(Csr {
             n,
             indptr,
             indices,
             data,
-        }
+        })
     }
 
     #[inline]
@@ -47,18 +49,18 @@ impl Csr {
         (&self.indices[s..e], &self.data[s..e])
     }
 
-    pub fn transpose(&self) -> Csr {
+    pub fn transpose(&self) -> Result<Csr, Error> {
         let n = self.n;
-        let mut indptr = vec![0usize; n + 1];
+        let mut indptr = alloc::filled(0usize, n + 1, Family::Csr, "intp")?;
         for &j in &self.indices {
             indptr[j as usize + 1] += 1;
         }
         for i in 0..n {
             indptr[i + 1] += indptr[i];
         }
-        let mut next = indptr.clone();
-        let mut indices = vec![0u32; self.indices.len()];
-        let mut data = vec![Mult::ZERO; self.indices.len()];
+        let mut next = alloc::cloned(&indptr, Family::Csr, "intp")?;
+        let mut indices = alloc::filled(0u32, self.indices.len(), Family::Csr, "int32")?;
+        let mut data = alloc::filled(Mult::ZERO, self.indices.len(), Family::Csr, "uint8")?;
         for i in 0..n {
             let (cols, vals) = self.row(i);
             for (&j, &v) in cols.iter().zip(vals) {
@@ -68,11 +70,11 @@ impl Csr {
                 next[j as usize] += 1;
             }
         }
-        Csr {
+        Ok(Csr {
             n,
             indptr,
             indices,
             data,
-        }
+        })
     }
 }

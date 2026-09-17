@@ -12,6 +12,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod alloc;
 pub mod error;
 pub mod graph;
 pub mod relationships;

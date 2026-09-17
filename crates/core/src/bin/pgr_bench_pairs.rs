@@ -1,8 +1,8 @@
-//! Screening benchmark for the slice 12 pair emitters.  Internal; prints
+//! Benchmark driver for the slice 12 pair executions.  Internal; prints
 //! digests, never pairs.
 //!
-//! Usage: `pgr-bench-pairs <inputs.tsv> --emitter buffered|two_pass|bounded_wave
-//! [--max-degree D] [--threads T] [--view <view.tsv>] [--wave-tasks K] [--dump <dir>]`
+//! Usage: `pgr-bench-pairs <inputs.tsv> --execution speed|memory
+//! [--max-degree D] [--threads T] [--view <view.tsv>] [--dump <dir>]`
 //!
 //! `inputs.tsv` is the engine dump of `PedigreeColumns::read_tsv`.  `view.tsv`
 //! holds one int32 view row per graph row, `-1` unselected, no header.
@@ -13,7 +13,7 @@
 //! for an element-for-element comparison by the qualification driver.
 
 use pedigree_graph_core::relationships::{
-    pair_blocks, Category, CategorySet, Emitter, MaxDegree, PedigreeColumns,
+    pair_blocks, Category, CategorySet, Execution, MaxDegree, PedigreeColumns,
 };
 use std::path::Path;
 use std::time::Instant;
@@ -42,11 +42,10 @@ fn read_view(path: &Path) -> Vec<i32> {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut path = None;
-    let mut emitter = None;
+    let mut execution = None;
     let mut max_degree = MaxDegree::MAX;
     let mut threads: usize = 1;
     let mut view_path = None;
-    let mut wave_tasks: usize = 4;
     let mut dump = None;
     let mut i = 1;
     while i < args.len() {
@@ -55,8 +54,8 @@ fn main() {
                 .unwrap_or_else(|| panic!("{} needs a value", args[i]))
         };
         match args[i].as_str() {
-            "--emitter" => {
-                emitter = Some(value(i).clone());
+            "--execution" => {
+                execution = Some(value(i).clone());
                 i += 2;
             }
             "--max-degree" => {
@@ -72,10 +71,6 @@ fn main() {
                 view_path = Some(value(i).clone());
                 i += 2;
             }
-            "--wave-tasks" => {
-                wave_tasks = value(i).parse().expect("--wave-tasks");
-                i += 2;
-            }
             "--dump" => {
                 dump = Some(value(i).clone());
                 i += 2;
@@ -86,15 +81,10 @@ fn main() {
             }
         }
     }
-    let path = path.expect("usage: pgr-bench-pairs <inputs.tsv> --emitter E [...]");
-    let emitter = match emitter.as_deref().expect("--emitter is required") {
-        "buffered" => Emitter::Buffered,
-        "two_pass" => Emitter::TwoPass,
-        "bounded_wave" => Emitter::BoundedWave {
-            tasks_per_thread: wave_tasks,
-        },
-        other => panic!("unknown emitter {other}"),
-    };
+    let path = path.expect("usage: pgr-bench-pairs <inputs.tsv> --execution E [...]");
+    let execution = execution.as_deref().expect("--execution is required");
+    let execution =
+        Execution::parse(execution).unwrap_or_else(|| panic!("unknown execution {execution}"));
 
     let ped = PedigreeColumns::read_tsv(Path::new(&path)).unwrap_or_else(|e| panic!("{e}"));
     let view = view_path.map(|p| read_view(Path::new(&p)));
@@ -113,7 +103,7 @@ fn main() {
                 max_degree,
                 requested,
                 view.as_deref(),
-                emitter,
+                execution,
             )
         })
         .unwrap_or_else(|e| panic!("{e}"));
@@ -130,7 +120,8 @@ fn main() {
             let b = blocks.get(cat);
             for (side, values) in [("first", &b.first), ("second", &b.second)] {
                 let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
-                std::fs::write(dir.join(format!("{}.{side}.u32", cat.code())), bytes).expect("dump");
+                std::fs::write(dir.join(format!("{}.{side}.u32", cat.code())), bytes)
+                    .expect("dump");
             }
         }
     }
@@ -142,19 +133,11 @@ fn main() {
         })
         .collect();
     println!(
-        "{{\"n\": {n}, \"emitter\": \"{}\", \"threads\": {threads}, \"max_degree\": {}, \"view\": {}, \"seconds\": {seconds:.3}, \"baseline_rss_mib\": {baseline_mib:.1}, \"peak_rss_mib\": {peak_mib:.1}, \"pairs\": {}, \"blocks\": {{{}}}}}",
-        emitter_name(emitter),
+        "{{\"n\": {n}, \"execution\": \"{}\", \"threads\": {threads}, \"max_degree\": {}, \"view\": {}, \"seconds\": {seconds:.3}, \"baseline_rss_mib\": {baseline_mib:.1}, \"peak_rss_mib\": {peak_mib:.1}, \"pairs\": {}, \"blocks\": {{{}}}}}",
+        execution.name(),
         max_degree.get(),
         view.is_some(),
         blocks.total(),
         body.join(", ")
     );
-}
-
-fn emitter_name(e: Emitter) -> &'static str {
-    match e {
-        Emitter::Buffered => "buffered",
-        Emitter::TwoPass => "two_pass",
-        Emitter::BoundedWave { .. } => "bounded_wave",
-    }
 }

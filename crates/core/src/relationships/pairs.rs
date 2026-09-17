@@ -1,28 +1,29 @@
 //! Pair emission on the row-streaming engine.
 //!
 //! [`Engine::emit_row`] hands out the oriented pairs one row owns; this
-//! module assembles them into per-category blocks.  Three assemblies are
-//! implemented for the slice 12 screening benchmark and differ only in how
-//! task output reaches the final arrays:
+//! module assembles them into per-category blocks.  The two public
+//! [`Execution`] modes differ only in how task output reaches the final
+//! arrays, and were chosen by the slice 12 benchmarks
+//! (`benchmarks/bench_pair_emitters.md`):
 //!
-//! * [`Emitter::Buffered`]: every task returns its chunks, then blocks are
+//! * [`Execution::Speed`]: every task returns its chunks, then blocks are
 //!   assembled category by category.  One classification pass; temporary
-//!   memory is all chunks plus the block being copied.
-//! * [`Emitter::TwoPass`]: a counting pass sizes each block exactly and
+//!   memory is all chunks plus the block being copied, about 2.3 times the
+//!   payload.
+//! * [`Execution::Memory`]: a counting pass sizes each block exactly and
 //!   assigns every task a disjoint slice of it; a second classification pass
 //!   fills the slices in place.  No copy of the result, twice the
 //!   classification work.
-//! * [`Emitter::BoundedWave`]: tasks run in bounded waves whose chunks are
-//!   appended to growing blocks and released before the next wave.
 //!
-//! All three produce byte-identical blocks: graph blocks arrive in
-//! canonical-key order because the owner row rises across ordered task
-//! ranges and each row's members are sorted, and view blocks are sorted by the
-//! view-space key afterwards.
+//! Both produce byte-identical blocks: graph blocks arrive in canonical-key
+//! order because the owner row rises across ordered task ranges and each
+//! row's members are sorted, and view blocks are sorted by the view-space
+//! key afterwards.
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, Workspace};
-use super::{MaxDegree, Pedigree, ROWS_PER_TASK};
+use super::{task_ranges, MaxDegree, Pedigree};
+use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
 use std::sync::Mutex;
@@ -43,21 +44,14 @@ impl PairBlock {
         self.first.is_empty()
     }
 
-    fn try_reserve_exact(&mut self, additional: usize) -> Result<(), Error> {
-        let total = self.len() + additional;
-        self.first
-            .try_reserve_exact(additional)
-            .and_then(|_| self.second.try_reserve_exact(additional))
-            .map_err(|_| allocation_failed("pair_block", total))
+    fn push(&mut self, a: u32, b: u32, family: Family) -> Result<(), Error> {
+        alloc::push(&mut self.first, a, family, "int32")?;
+        alloc::push(&mut self.second, b, family, "int32")
     }
 
-    /// Amortised growth, for the wave assembly.
-    fn try_reserve(&mut self, additional: usize) -> Result<(), Error> {
-        let total = self.len() + additional;
-        self.first
-            .try_reserve(additional)
-            .and_then(|_| self.second.try_reserve(additional))
-            .map_err(|_| allocation_failed("pair_block", total))
+    fn reserve_exact(&mut self, additional: usize) -> Result<(), Error> {
+        alloc::reserve_exact(&mut self.first, additional, Family::PairBlock, "int32")?;
+        alloc::reserve_exact(&mut self.second, additional, Family::PairBlock, "int32")
     }
 
     fn extend_from(&mut self, other: &PairBlock) {
@@ -105,23 +99,32 @@ impl PairBlocks {
     }
 }
 
-/// How task output is assembled into blocks.  A benchmark selector for the
-/// slice 12 screening, not a public execution mode.
+/// How task output is assembled into blocks; the `execution` keyword of the
+/// public API (ADR 0006 as amended).  Changes resource use, never results.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Emitter {
-    Buffered,
-    TwoPass,
-    /// `tasks_per_thread` row-range tasks per pool thread run between appends.
-    BoundedWave {
-        tasks_per_thread: usize,
-    },
+pub enum Execution {
+    /// Fastest: buffered chunks, then one copy into exact blocks.
+    Speed,
+    /// Lowest peak: count, then fill exact blocks in place.
+    Memory,
 }
 
-fn allocation_failed(operation: &'static str, requested_elements: usize) -> Error {
-    Error::AllocationFailed {
-        operation,
-        requested_elements,
-        dtype: "int32",
+impl Execution {
+    /// The public spelling, as the Python keyword accepts it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Execution::Speed => "speed",
+            Execution::Memory => "memory",
+        }
+    }
+
+    /// The mode by its public spelling.
+    pub fn parse(name: &str) -> Option<Execution> {
+        match name {
+            "speed" => Some(Execution::Speed),
+            "memory" => Some(Execution::Memory),
+            _ => None,
+        }
     }
 }
 
@@ -132,19 +135,11 @@ struct WorkspacePool {
 }
 
 impl WorkspacePool {
-    fn new(n: usize) -> WorkspacePool {
-        WorkspacePool {
-            n,
-            free: Mutex::new(Vec::new()),
+    fn take(&self) -> Result<Workspace, Error> {
+        match self.free.lock().unwrap().pop() {
+            Some(ws) => Ok(ws),
+            None => Workspace::for_pairs(self.n),
         }
-    }
-
-    fn take(&self) -> Workspace {
-        self.free
-            .lock()
-            .unwrap()
-            .pop()
-            .unwrap_or_else(|| Workspace::for_pairs(self.n))
     }
 
     fn give(&self, ws: Workspace) {
@@ -162,42 +157,41 @@ struct Query<'a> {
 
 impl Query<'_> {
     /// Run `sink` over every owned pair of the rows in `range`.
-    fn run(&self, range: (usize, usize), mut sink: impl FnMut(Category, u32, u32)) {
-        let mut ws = self.pool.take();
+    fn run(
+        &self,
+        range: (usize, usize),
+        mut sink: impl FnMut(Category, u32, u32) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        let mut ws = self.pool.take()?;
         for row in range.0..range.1 {
             if self.view.is_some_and(|map| map[row] < 0) {
                 continue;
             }
             self.engine
-                .emit_row(row, &self.requested, self.view, &mut ws, &mut sink);
+                .emit_row(row, &self.requested, self.view, &mut ws, &mut sink)?;
         }
         self.pool.give(ws);
+        Ok(())
     }
 
     /// The pairs of one task, one chunk per category.
-    fn chunk(&self, range: (usize, usize)) -> PairBlocks {
+    fn chunk(&self, range: (usize, usize)) -> Result<PairBlocks, Error> {
         let mut chunk = PairBlocks::empty();
         self.run(range, |cat, a, b| {
-            let block = &mut chunk.0[cat.index()];
-            block.first.push(a);
-            block.second.push(b);
-        });
-        chunk
+            chunk.0[cat.index()].push(a, b, Family::TaskChunk)
+        })?;
+        Ok(chunk)
     }
 
     /// The pair count of one task per category.
-    fn count(&self, range: (usize, usize)) -> [usize; N_CATEGORIES] {
+    fn count(&self, range: (usize, usize)) -> Result<[usize; N_CATEGORIES], Error> {
         let mut counts = [0usize; N_CATEGORIES];
-        self.run(range, |cat, _, _| counts[cat.index()] += 1);
-        counts
+        self.run(range, |cat, _, _| {
+            counts[cat.index()] += 1;
+            Ok(())
+        })?;
+        Ok(counts)
     }
-}
-
-fn task_ranges(n: usize) -> Vec<(usize, usize)> {
-    (0..n)
-        .step_by(ROWS_PER_TASK)
-        .map(|s| (s, (s + ROWS_PER_TASK).min(n)))
-        .collect()
 }
 
 /// The oriented pairs of every requested category, using the current Rayon pool.
@@ -211,16 +205,22 @@ fn task_ranges(n: usize) -> Vec<(usize, usize)> {
 ///
 /// # Errors
 ///
-/// [`Error::AllocationFailed`] when a final block or the view-sort scratch
-/// cannot be allocated.
+/// [`Error::AllocationFailed`] from any buffer the pedigree or its pairs
+/// size: the engine, a workspace, a row set, a task chunk or table, a final
+/// block, or the view-sort scratch.
+///
+/// # Panics
+///
+/// If `view` does not have one entry per graph row; the host binding checks
+/// that before calling.
 pub fn pair_blocks(
     ped: &Pedigree,
     max_degree: MaxDegree,
     requested: CategorySet,
     view: Option<&[i32]>,
-    emitter: Emitter,
+    execution: Execution,
 ) -> Result<PairBlocks, Error> {
-    let engine = Engine::new(ped, max_degree);
+    let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
     if let Some(map) = view {
         assert_eq!(map.len(), n, "view map must have one entry per graph row");
@@ -229,15 +229,15 @@ pub fn pair_blocks(
         engine,
         requested,
         view,
-        pool: WorkspacePool::new(n),
+        pool: WorkspacePool {
+            n,
+            free: Mutex::new(Vec::new()),
+        },
     };
     let ranges = task_ranges(n);
-    let mut blocks = match emitter {
-        Emitter::Buffered => buffered(&query, &ranges)?,
-        Emitter::TwoPass => two_pass(&query, &ranges)?,
-        Emitter::BoundedWave { tasks_per_thread } => {
-            bounded_wave(&query, &ranges, tasks_per_thread)?
-        }
+    let mut blocks = match execution {
+        Execution::Speed => buffered(&query, &ranges)?,
+        Execution::Memory => two_pass(&query, &ranges)?,
     };
     if let Some(map) = view {
         let n_view = map.iter().copied().max().map_or(0, |m| m as u64 + 1);
@@ -248,13 +248,26 @@ pub fn pair_blocks(
     Ok(blocks)
 }
 
+/// Gather every task's result into a table, in task order.
+fn task_table<T: Send>(
+    ranges: &[(usize, usize)],
+    task: impl Fn((usize, usize)) -> Result<T, Error> + Sync,
+) -> Result<Vec<T>, Error> {
+    let mut table = alloc::with_capacity(ranges.len(), Family::TaskTable, "object")?;
+    ranges
+        .par_iter()
+        .map(|&r| task(r))
+        .collect_into_vec(&mut table);
+    table.into_iter().collect()
+}
+
 fn buffered(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Error> {
-    let mut chunks: Vec<PairBlocks> = ranges.par_iter().map(|&r| query.chunk(r)).collect();
+    let mut chunks = task_table(ranges, |r| query.chunk(r))?;
     let mut out = PairBlocks::empty();
     for cat in query.requested.iter() {
         let i = cat.index();
         let total: usize = chunks.iter().map(|c| c.0[i].len()).sum();
-        out.0[i].try_reserve_exact(total)?;
+        out.0[i].reserve_exact(total)?;
         for chunk in &mut chunks {
             let part = std::mem::take(&mut chunk.0[i]);
             out.0[i].extend_from(&part);
@@ -275,12 +288,12 @@ fn split_sizes(mut buf: &mut [u32], sizes: impl Iterator<Item = usize>) -> Vec<&
 }
 
 fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Error> {
-    let counts: Vec<[usize; N_CATEGORIES]> = ranges.par_iter().map(|&r| query.count(r)).collect();
+    let counts = task_table(ranges, |r| query.count(r))?;
     let mut out = PairBlocks::empty();
     for cat in query.requested.iter() {
         let i = cat.index();
         let total: usize = counts.iter().map(|c| c[i]).sum();
-        out.0[i].try_reserve_exact(total)?;
+        out.0[i].reserve_exact(total)?;
         out.0[i].first.resize(total, 0);
         out.0[i].second.resize(total, 0);
     }
@@ -298,38 +311,20 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
     slots
         .into_par_iter()
         .zip(ranges.par_iter())
-        .for_each(|(mut slot, &range)| {
+        .try_for_each(|(mut slot, &range)| {
             let mut cursor = [0usize; N_CATEGORIES];
             query.run(range, |cat, a, b| {
                 let i = cat.index();
                 slot[i].0[cursor[i]] = a;
                 slot[i].1[cursor[i]] = b;
                 cursor[i] += 1;
-            });
+                Ok(())
+            })?;
             for (i, (first, _)) in slot.iter().enumerate() {
                 assert_eq!(cursor[i], first.len(), "pass two disagrees with pass one");
             }
-        });
-    Ok(out)
-}
-
-fn bounded_wave(
-    query: &Query,
-    ranges: &[(usize, usize)],
-    tasks_per_thread: usize,
-) -> Result<PairBlocks, Error> {
-    let wave = (rayon::current_num_threads() * tasks_per_thread).max(1);
-    let mut out = PairBlocks::empty();
-    for group in ranges.chunks(wave) {
-        let chunks: Vec<PairBlocks> = group.par_iter().map(|&r| query.chunk(r)).collect();
-        for chunk in chunks {
-            for cat in query.requested.iter() {
-                let i = cat.index();
-                out.0[i].try_reserve(chunk.0[i].len())?;
-                out.0[i].extend_from(&chunk.0[i]);
-            }
-        }
-    }
+            Ok(())
+        })?;
     Ok(out)
 }
 
@@ -343,14 +338,7 @@ fn sort_by_view_key(block: &mut PairBlock, n: u64) -> Result<(), Error> {
     if len < 2 {
         return Ok(());
     }
-    let mut packed: Vec<u64> = Vec::new();
-    packed
-        .try_reserve_exact(len)
-        .map_err(|_| Error::AllocationFailed {
-            operation: "view_sort_scratch",
-            requested_elements: len,
-            dtype: "uint64",
-        })?;
+    let mut packed: Vec<u64> = alloc::with_capacity(len, Family::ViewSortScratch, "uint64")?;
     packed.extend(block.first.iter().zip(&block.second).map(|(&a, &b)| {
         let (lo, hi) = (a.min(b), a.max(b));
         ((u64::from(lo) * n + u64::from(hi)) << 1) | u64::from(a > b)
@@ -372,23 +360,20 @@ mod tests {
     use super::super::{count_pairs, MaxDegree, PedigreeColumns};
     use super::*;
 
-    const EMITTERS: [Emitter; 3] = [
-        Emitter::Buffered,
-        Emitter::TwoPass,
-        Emitter::BoundedWave {
-            tasks_per_thread: 1,
-        },
-    ];
+    const EXECUTIONS: [Execution; 2] = [Execution::Speed, Execution::Memory];
 
     fn all(cols: &PedigreeColumns, view: Option<&[i32]>) -> PairBlocks {
         let ped = cols.try_borrow().unwrap();
-        let blocks: Vec<PairBlocks> = EMITTERS
+        let blocks: Vec<PairBlocks> = EXECUTIONS
             .iter()
             .map(|&e| {
                 pair_blocks(&ped, MaxDegree::MAX, CategorySet::up_to_degree(5), view, e).unwrap()
             })
             .collect();
-        assert!(blocks.iter().all(|b| *b == blocks[0]), "emitters disagree");
+        assert!(
+            blocks.iter().all(|b| *b == blocks[0]),
+            "executions disagree"
+        );
         blocks.into_iter().next().unwrap()
     }
 
@@ -595,12 +580,12 @@ mod tests {
         let cols = crate::relationships::testing::random_pedigree(400, 7);
         let ped = cols.try_borrow().unwrap();
         let got = all(&cols, None);
-        let counts = count_pairs(&ped, MaxDegree::MAX, None);
+        let counts = count_pairs(&ped, MaxDegree::MAX, None).unwrap();
         for cat in Category::ALL {
             assert_eq!(got.get(cat).len() as u64, counts.get(cat), "{}", cat.code());
         }
         let only: CategorySet = [Category::C1, Category::Av].into_iter().collect();
-        let some = pair_blocks(&ped, MaxDegree::MAX, only, None, Emitter::Buffered).unwrap();
+        let some = pair_blocks(&ped, MaxDegree::MAX, only, None, Execution::Speed).unwrap();
         for cat in Category::ALL {
             if only.contains(cat) {
                 assert_eq!(some.get(cat), got.get(cat));
@@ -629,7 +614,7 @@ mod tests {
                 .num_threads(threads)
                 .build()
                 .unwrap();
-            for emitter in EMITTERS {
+            for execution in EXECUTIONS {
                 for v in [None, Some(view.as_slice())] {
                     let blocks = pool
                         .install(|| {
@@ -638,7 +623,7 @@ mod tests {
                                 MaxDegree::MAX,
                                 CategorySet::up_to_degree(5),
                                 v,
-                                emitter,
+                                execution,
                             )
                         })
                         .unwrap();
@@ -651,5 +636,96 @@ mod tests {
             assert_eq!(blocks, reference);
         }
         assert!(seen[1].1.total() > 0 && seen[1].1.total() < seen[0].1.total());
+    }
+
+    #[test]
+    fn a_dual_valid_half_avuncular_pair_keeps_the_lower_row_first() {
+        // From tests/test_relationship_pairs.py: 4's mother 2 is a paternal
+        // half sib of 5 (father 0), and 5's mother 3 is a paternal half sib
+        // of 4 (father 1), so (4, 5) is HAv both ways.
+        let cols = pedigree(&[(-1, -1), (-1, -1), (-1, 0), (-1, 1), (2, 1), (3, 0)], &[]);
+        let got = all(&cols, None);
+        assert_eq!(pairs(&got, Category::HAv), vec![(4, 5)]);
+    }
+
+    /// Every allocation family reports `allocation_failed` for counts and
+    /// for both executions, on a graph and a view, instead of aborting.
+    ///
+    /// The seam is process-wide, so each case runs [`seam_child`] in a fresh
+    /// copy of this test binary where nothing else can consume the plant.
+    #[test]
+    fn a_refused_allocation_of_any_family_is_an_error() {
+        use crate::alloc::Family;
+        let exe = std::env::current_exe().unwrap();
+        for family in Family::ALL {
+            for mode in ["count", "speed", "memory", "speed_view", "memory_view"] {
+                if family == Family::ViewSortScratch && !mode.ends_with("view") {
+                    continue;
+                }
+                if family == Family::TaskChunk && !mode.starts_with("speed") {
+                    continue;
+                }
+                if family == Family::TaskTable && mode == "count" {
+                    continue;
+                }
+                if family == Family::PairBlock && mode == "count" {
+                    continue;
+                }
+                let out = std::process::Command::new(&exe)
+                    .args([
+                        "--exact",
+                        "relationships::pairs::tests::seam_child",
+                        "--nocapture",
+                    ])
+                    .env("PG_SEAM_FAMILY", family.name())
+                    .env("PG_SEAM_MODE", mode)
+                    .output()
+                    .unwrap();
+                assert!(
+                    out.status.success(),
+                    "{}/{mode}:\n{}",
+                    family.name(),
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+        }
+    }
+
+    /// The body of one seam case; a no-op unless `PG_SEAM_FAMILY` is set.
+    #[test]
+    fn seam_child() {
+        use crate::alloc::{fail_next, Family};
+        let Ok(name) = std::env::var("PG_SEAM_FAMILY") else {
+            return;
+        };
+        let family = Family::parse(&name).unwrap();
+        let mode = std::env::var("PG_SEAM_MODE").unwrap();
+        let cols = crate::relationships::testing::random_pedigree(300, 5);
+        let ped = cols.try_borrow().unwrap();
+        let view: Vec<i32> = (0..300)
+            .map(|r| if r % 2 == 0 { r / 2 } else { -1 })
+            .collect();
+        let all_cats = CategorySet::up_to_degree(5);
+        fail_next(Some(family));
+        let result = match mode.as_str() {
+            "count" => {
+                count_pairs(&ped, MaxDegree::MAX, None).map(|c| c.get(Category::FS) as usize)
+            }
+            _ => {
+                let execution = if mode.starts_with("speed") {
+                    Execution::Speed
+                } else {
+                    Execution::Memory
+                };
+                let v = mode.ends_with("view").then_some(view.as_slice());
+                pair_blocks(&ped, MaxDegree::MAX, all_cats, v, execution).map(|b| b.total())
+            }
+        };
+        match result {
+            Err(Error::AllocationFailed { operation, .. }) => assert_eq!(operation, family.name()),
+            other => panic!("{name}/{mode} gave {other:?}"),
+        }
+        fail_next(None);
+        assert!(pair_blocks(&ped, MaxDegree::MAX, all_cats, None, Execution::Speed).is_ok());
     }
 }

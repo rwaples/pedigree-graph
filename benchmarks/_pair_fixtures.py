@@ -25,7 +25,7 @@ from conftest import parity_columns  # noqa: E402
 from pedigree_graph import PedigreeGraph  # noqa: E402
 
 BINARY = REPO / "target" / "release" / "pgr-bench-pairs"
-EMITTERS = ("buffered", "two_pass", "bounded_wave")
+EXECUTIONS = ("speed", "memory")
 
 
 def fixture_params(name: str) -> dict:

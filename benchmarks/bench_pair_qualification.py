@@ -1,12 +1,12 @@
-r"""Slice 12 stage B: qualify the surviving pair emitters against the PyPI 0.8.4 matrix engine.
+r"""Slice 12 stage B: qualify the surviving pair executions against the PyPI 0.8.4 matrix engine.
 
 Cells are fixture x receiver (graph, seeded reordered half view) x degree
-(3, 5) x threads (1, 6); arms are the three Rust emitters through
+(3, 5) x threads (1, 6); arms are the three Rust executions through
 ``target/release/pgr-bench-pairs`` and ``relationship_pairs`` on the 0.8.4
 wheel through ``_pair_baseline_child.py`` under ``--baseline-python``.
 Every arm runs in a fresh process, repetitions interleaved so host drift
 lands on every arm alike.  Before any timing, each cell's blocks from every
-Rust emitter are compared element for element with the baseline's dump; a
+Rust execution are compared element for element with the baseline's dump; a
 difference aborts the run.
 
     pixi run cargo build --release
@@ -15,7 +15,7 @@ difference aborts the run.
         --out benchmarks/reports/pair_qualification.json
 
 Peak RSS is each process's ``VmHWM`` after the call minus before it, so the
-baseline is charged for its sparse products and the emitters for their
+baseline is charged for its sparse products and the executions for their
 chunks and blocks, and neither for building the graph.
 """
 
@@ -31,7 +31,7 @@ from pathlib import Path
 import numpy as np
 from _harness import Environment
 from _pair_common import CODES, load_dump
-from _pair_fixtures import BINARY, EMITTERS, HERE, Inputs
+from _pair_fixtures import BINARY, EXECUTIONS, HERE, Inputs
 
 BASELINE = "python_0.8.4"
 
@@ -46,7 +46,7 @@ def run_arm(
             "--receiver", receiver, "--degree", str(degree), "--threads", str(threads),
         ]  # fmt: skip
     else:
-        cmd = [str(BINARY), str(inputs.tsv), "--emitter", arm, "--threads", str(threads), "--max-degree", str(degree)]
+        cmd = [str(BINARY), str(inputs.tsv), "--execution", arm, "--threads", str(threads), "--max-degree", str(degree)]
         if receiver == "view":
             cmd += ["--view", str(inputs.view)]
     if dump is not None:
@@ -60,13 +60,13 @@ def run_arm(
 
 
 def check_elementwise(name: str, inputs: Inputs, receiver: str, degree: int, baseline_python: Path, work: Path) -> int:
-    """Every emitter's dump must equal the baseline's, block by block; return the pair count."""
+    """Every execution's dump must equal the baseline's, block by block; return the pair count."""
     base_dir = work / "dump" / name / receiver / str(degree) / BASELINE
     base_record = run_arm(BASELINE, inputs, receiver, degree, 2, baseline_python, base_dir)
     base = load_dump(base_dir)
-    for emitter in EMITTERS:
-        out_dir = work / "dump" / name / receiver / str(degree) / emitter
-        run_arm(emitter, inputs, receiver, degree, 2, baseline_python, out_dir)
+    for execution in EXECUTIONS:
+        out_dir = work / "dump" / name / receiver / str(degree) / execution
+        run_arm(execution, inputs, receiver, degree, 2, baseline_python, out_dir)
         got = load_dump(out_dir)
         bad = [
             code
@@ -74,7 +74,7 @@ def check_elementwise(name: str, inputs: Inputs, receiver: str, degree: int, bas
             if not (np.array_equal(got[code][0], base[code][0]) and np.array_equal(got[code][1], base[code][1]))
         ]
         if bad:
-            raise SystemExit(f"{name}/{receiver}/degree {degree}/{emitter} differs from 0.8.4 in {bad}")
+            raise SystemExit(f"{name}/{receiver}/degree {degree}/{execution} differs from 0.8.4 in {bad}")
     print(f"element-for-element ok: {name}/{receiver}/degree {degree}, {base_record['pairs']:,} pairs", flush=True)
     return base_record["pairs"]
 
@@ -84,7 +84,7 @@ def summarise(runs: list[dict]) -> list[dict]:
     cells: dict[tuple, list[dict]] = {}
     for run in runs:
         cells.setdefault(
-            (run["fixture"], run["receiver"], run["max_degree"], run["threads"], run["emitter"]), []
+            (run["fixture"], run["receiver"], run["max_degree"], run["threads"], run["execution"]), []
         ).append(run)
     rows = []
     for (fixture, receiver, degree, threads, arm), group in sorted(cells.items()):
@@ -140,7 +140,7 @@ def main() -> None:
     ap.add_argument("--receivers", nargs="+", default=["graph", "view"], choices=["graph", "view"])
     ap.add_argument("--degrees", nargs="+", type=int, default=[3, 5])
     ap.add_argument("--threads", nargs="+", type=int, default=[1, 6])
-    ap.add_argument("--arms", nargs="+", default=[BASELINE, *EMITTERS])
+    ap.add_argument("--arms", nargs="+", default=[BASELINE, *EXECUTIONS])
     ap.add_argument("--work-dir", type=Path, default=None)
     args = ap.parse_args()
     if not BINARY.exists():
@@ -178,7 +178,7 @@ def main() -> None:
     for run in runs:
         key = (run["fixture"], run["receiver"], run["max_degree"])
         if key in digests and digests[key] != run["blocks"]:
-            raise SystemExit(f"digest mismatch within {key}: {run['emitter']} at {run['threads']} threads")
+            raise SystemExit(f"digest mismatch within {key}: {run['execution']} at {run['threads']} threads")
         digests.setdefault(key, run["blocks"])
 
     rows = summarise(runs)
