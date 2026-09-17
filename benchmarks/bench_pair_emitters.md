@@ -194,3 +194,43 @@ Extrapolating `two_pass` to the 20M degree-5 count of 2,124,650,324 pairs
 gives a 15.8 GiB payload plus engine state, within the 30 GiB box; `buffered`
 would need about 36 GiB and cannot serve degree 5 at 20M.  The degree-3
 capability gate and the degree-5 attempt remain to be run.
+
+# Stage C step 2: `pedsum_20M`, graph, degree 3, `two_pass`, six threads
+
+Measured 2026-09-17, one fresh process under `/usr/bin/time -v`, input
+dumped from `results/bench_pedsum/pedsum_20M/rep1/pedigree.full.parquet`
+(20,000,000 rows).  439,217,825 pairs; the 1C count of 47,215,037 equals
+the slice 11 count record for this pedigree.
+
+| quantity | value |
+|---|---|
+| engine wall | 70.9 s (77.9 s process, TSV read included) |
+| RSS before the call | 536 MiB |
+| process peak RSS | 5,711 MiB |
+| engine RSS above the columns | 5,175 MiB |
+| raw payload | 3,351 MiB |
+| engine RSS / payload | 1.54 |
+
+The 1.8 GiB above the payload is the engine's own state, which the slice
+11 count run put at 2.0 GiB single-threaded and 2.86 GiB at twelve threads
+on this pedigree; no copy of the output exists.  The gate (degree 3 in
+memory mode within 30 GiB) passes with room to spare.  The degree-5
+attempt would need the 15.8 GiB payload plus the same engine state, about
+18 GiB, and has not been run.
+
+# Stage C step 3: `pedsum_20M`, graph, degree 5, `two_pass`, six threads
+
+Measured 2026-09-17, one fresh process under `/usr/bin/time -v`, same input,
+with 18 GiB available before the run.  It completed.
+
+| quantity | value |
+|---|---|
+| pairs | 2,124,650,324 (equal to the slice 11 count record) |
+| engine wall | 291 s (302 s process) |
+| process peak RSS | 18.1 GiB |
+| raw payload | 15.8 GiB |
+| engine RSS above the columns | 17.6 GiB, 1.11x payload |
+| major page faults | 0 |
+
+The 20M degree-5 pair query is therefore served in memory mode within the
+30 GiB box; `buffered` would need about 36 GiB and cannot.
