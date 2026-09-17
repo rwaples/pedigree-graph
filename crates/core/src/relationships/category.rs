@@ -108,6 +108,71 @@ impl Category {
     pub fn index(self) -> usize {
         self as usize
     }
+
+    /// Whether the category has no roles, so a pair is stored `first < second`.
+    ///
+    /// The seven symmetric codes of the Python registry.  Every other category
+    /// names a `first_role` and a `second_role`.
+    pub fn symmetric(self) -> bool {
+        matches!(
+            self,
+            Category::MZ
+                | Category::FS
+                | Category::MHS
+                | Category::PHS
+                | Category::C1
+                | Category::H1C
+                | Category::C2
+        )
+    }
+}
+
+/// A set of categories, for the requested blocks of a pair query.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CategorySet([bool; N_CATEGORIES]);
+
+impl CategorySet {
+    pub const EMPTY: CategorySet = CategorySet([false; N_CATEGORIES]);
+
+    /// Every category up to and including `degree`.
+    pub fn up_to_degree(degree: u8) -> CategorySet {
+        let mut set = CategorySet::EMPTY;
+        for cat in Category::ALL {
+            if cat.degree() <= degree {
+                set.0[cat.index()] = true;
+            }
+        }
+        set
+    }
+
+    pub fn insert(&mut self, cat: Category) {
+        self.0[cat.index()] = true;
+    }
+
+    #[inline]
+    pub fn contains(&self, cat: Category) -> bool {
+        self.0[cat.index()]
+    }
+
+    /// The members in registry order.
+    pub fn iter(&self) -> impl Iterator<Item = Category> + '_ {
+        Category::ALL.into_iter().filter(|cat| self.contains(*cat))
+    }
+
+    /// The highest degree of any member, or `None` when empty.
+    pub fn top_degree(&self) -> Option<u8> {
+        self.iter().map(Category::degree).max()
+    }
+}
+
+impl FromIterator<Category> for CategorySet {
+    fn from_iter<I: IntoIterator<Item = Category>>(iter: I) -> CategorySet {
+        let mut set = CategorySet::EMPTY;
+        for cat in iter {
+            set.insert(cat);
+        }
+        set
+    }
 }
 
 /// Per-category pair counts, indexed by [`Category::index`].

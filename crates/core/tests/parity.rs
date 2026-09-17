@@ -15,20 +15,6 @@ fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
-fn read_tsv(path: &Path) -> PedigreeColumns {
-    let text = std::fs::read_to_string(path).unwrap();
-    let mut ped = PedigreeColumns::default();
-    for line in text.lines().skip(1) {
-        let v: Vec<i64> = line.split('\t').map(|s| s.parse().unwrap()).collect();
-        ped.mother.push(v[0] as i32);
-        ped.father.push(v[1] as i32);
-        ped.twin.push(v[2] as i32);
-        ped.orig_mother.push(v[3]);
-        ped.orig_father.push(v[4]);
-    }
-    ped
-}
-
 /// Pull `"<code>": <int>` pairs out of the counts JSON without a JSON crate.
 fn read_counts(path: &Path) -> Counts {
     let text = std::fs::read_to_string(path).unwrap();
@@ -65,7 +51,7 @@ fn run_all(threads: usize) {
     for tsv in &names {
         let name = tsv.file_stem().unwrap().to_string_lossy().to_string();
         let expected = read_counts(&tsv.with_extension("counts.json"));
-        let ped = read_tsv(tsv);
+        let ped = PedigreeColumns::read_tsv(tsv).unwrap();
         let got = pool.install(|| count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None));
         for cat in Category::ALL {
             if got.get(cat) != expected.get(cat) {

@@ -30,7 +30,7 @@
 //! under its closest category only, exactly as the Python `_fold_precedence`
 //! does on whole blocks.
 
-use super::category::{Category, Counts};
+use super::category::{Category, CategorySet, Counts};
 use super::csr::Csr;
 use super::multiplicity::Mult;
 use super::sets::{self, Accumulator, Weighted};
@@ -97,10 +97,26 @@ pub struct Workspace {
     grandchildren: Vec<Vec<u32>>,
     scratch: [Vec<u32>; 4],
     weighted: [Weighted; 3],
+    /// Per asymmetric category, the sorted members for whom the current row
+    /// carries `first_role`; captured after multiplicity filtering and before
+    /// the two arms of a product are unioned.  Only filled when `orient`.
+    first_arm: Vec<Vec<u32>>,
+    /// Whether this workspace records orientation, which only pair emission needs.
+    orient: bool,
 }
 
 impl Workspace {
+    /// A workspace for counting; orientation is never recorded.
     pub fn new(n: usize) -> Workspace {
+        Workspace::build(n, false)
+    }
+
+    /// A workspace for pair emission, which also records orientation.
+    pub fn for_pairs(n: usize) -> Workspace {
+        Workspace::build(n, true)
+    }
+
+    fn build(n: usize, orient: bool) -> Workspace {
         Workspace {
             acc: Accumulator::new(n),
             up: vec![Vec::new(); MaxDegree::MAX.get() as usize + 1],
@@ -110,6 +126,8 @@ impl Workspace {
             grandchildren: Vec::new(),
             scratch: Default::default(),
             weighted: Default::default(),
+            first_arm: vec![Vec::new(); super::category::N_CATEGORIES],
+            orient,
         }
     }
 }
@@ -175,6 +193,61 @@ impl<'p> Engine<'p> {
         }
     }
 
+    /// Classify `row`, fold precedence, and hand every pair `row` owns in a
+    /// requested category to `sink` in the category's semantic orientation.
+    ///
+    /// The owner is the lower graph row, so for a symmetric category the pair
+    /// arrives as `(row, j)`; for an asymmetric one `row` is `first` exactly
+    /// when `j` lies in the row's first arm.  A pair valid in both
+    /// orientations is in both arms, hence in the first arm, which reproduces
+    /// the Python lower-row tie break.  With `view`, the int32 view row of
+    /// every graph row (`-1` unselected), a pair is emitted only when both
+    /// rows are selected, relabelled, and a symmetric pair reordered to
+    /// `first < second` in view rows.  Without a view, the pairs of one row
+    /// arrive in canonical-key order.
+    pub fn emit_row(
+        &self,
+        row: usize,
+        requested: &CategorySet,
+        view: Option<&[i32]>,
+        ws: &mut Workspace,
+        mut sink: impl FnMut(Category, u32, u32),
+    ) {
+        assert!(ws.orient, "pair emission needs Workspace::for_pairs");
+        self.classify_row(row, ws);
+        self.fold_row(ws);
+        let r = row as u32;
+        for cat in Category::ALL {
+            if cat.degree() > self.max_degree.get() {
+                break;
+            }
+            if !requested.contains(cat) {
+                continue;
+            }
+            let set = &ws.sets[cat.index()];
+            let arm = &ws.first_arm[cat.index()];
+            let symmetric = cat.symmetric();
+            for &j in &set[set.partition_point(|&j| j <= r)..] {
+                let (mut a, mut b) = if symmetric || arm.binary_search(&j).is_ok() {
+                    (r, j)
+                } else {
+                    (j, r)
+                };
+                if let Some(map) = view {
+                    let (va, vb) = (map[a as usize], map[b as usize]);
+                    if va < 0 || vb < 0 {
+                        continue;
+                    }
+                    (a, b) = (va as u32, vb as u32);
+                    if symmetric && a > b {
+                        std::mem::swap(&mut a, &mut b);
+                    }
+                }
+                sink(cat, a, b);
+            }
+        }
+    }
+
     /// Keep each member of `ws.sets` only in its closest category.
     ///
     /// Categories are visited in registry order (degree ascending, then
@@ -219,6 +292,11 @@ impl<'p> Engine<'p> {
         let ped = &self.ped;
         ws.sets[MO.index()] = parent_role(row, ped.mother, &ws.down[1]);
         ws.sets[FO.index()] = parent_role(row, ped.father, &ws.down[1]);
+        if ws.orient {
+            // The row is the offspring, hence `first`, towards its own parent.
+            ws.first_arm[MO.index()] = parent_arm(ped.mother[row]);
+            ws.first_arm[FO.index()] = parent_arm(ped.father[row]);
+        }
         self.sibs.full_sibs(row, &mut ws.sets[FS.index()]);
         self.sibs.maternal_half_sibs(row, &mut ws.sets[MHS.index()]);
         self.sibs.paternal_half_sibs(row, &mut ws.sets[PHS.index()]);
@@ -227,14 +305,14 @@ impl<'p> Engine<'p> {
         }
 
         // Degree 2: GP is lineal (up[2] ∪ down[2] as an exclusion set); Av.
-        ws.sets[GP.index()] = both_ways(&ws.up[2], &ws.down[2]);
+        lineal(ws, GP, 2);
         self.collateral(row, ws, Av, SibKind::Full, 2);
         if deg < 3 {
             return;
         }
 
         // Degree 3.
-        ws.sets[GGP.index()] = both_ways(&ws.up[3], &ws.down[3]);
+        lineal(ws, GGP, 3);
         self.collateral(row, ws, HAv, SibKind::Half, 2);
         self.collateral(row, ws, GAv, SibKind::Full, 3);
         self.cousins(row, ws);
@@ -243,7 +321,7 @@ impl<'p> Engine<'p> {
         }
 
         // Degree 4.
-        ws.sets[GGGP.index()] = both_ways(&ws.up[4], &ws.down[4]);
+        lineal(ws, GGGP, 4);
         self.collateral(row, ws, HGAv, SibKind::Half, 3);
         self.collateral(row, ws, GGAv, SibKind::Full, 4);
         self.removed_cousins(row, ws, 2, 3, C1R1, |m| m.at_least_two());
@@ -252,7 +330,7 @@ impl<'p> Engine<'p> {
         }
 
         // Degree 5.
-        ws.sets[G3GP.index()] = both_ways(&ws.up[5], &ws.down[5]);
+        lineal(ws, G3GP, 5);
         self.collateral(row, ws, HGGAv, SibKind::Half, 4);
         self.collateral(row, ws, G3Av, SibKind::Full, 5);
         self.removed_cousins(row, ws, 2, 3, H1C1R, |m| m.is_one());
@@ -274,6 +352,10 @@ impl<'p> Engine<'p> {
         for &(p, _) in &ws.up[down - 1] {
             kind.sibs(&self.sibs, p as usize, tmp2, sib);
             sets::union_into(result, sib);
+        }
+        if ws.orient {
+            // Sibs of the row's ancestors: the row is the niece or nephew.
+            ws.first_arm[cat.index()] = result.clone();
         }
         kind.sibs(&self.sibs, row, tmp2, sib);
         for _ in 1..down {
@@ -337,7 +419,14 @@ impl<'p> Engine<'p> {
         self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp);
         self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp);
         let mut result = sets::select(forward, &keep);
-        sets::union_into(&mut result, &sets::select(backward, &keep));
+        let backward = sets::select(backward, &keep);
+        sets::union_into(&mut result, &backward);
+        if ws.orient {
+            // Through `backward` the row sits `b > a` meioses from the shared
+            // ancestor: it is the junior cousin, which the registry puts first
+            // (`_pair_extractor.py` reads these products with `row_is_first=False`).
+            ws.first_arm[cat.index()] = backward;
+        }
         sets::drop_self(&mut result, row);
         self.finalize(cat, &mut result, &ws.sets);
         ws.sets[cat.index()] = result;
@@ -392,11 +481,24 @@ impl SibKind {
     }
 }
 
-/// Lineal pairs in both orientations: ancestors at k hops and descendants at k hops.
-fn both_ways(up: &Weighted, down: &[u32]) -> Vec<u32> {
-    let mut set = sets::support(up);
-    sets::union_into(&mut set, down);
-    set
+/// Lineal pairs in both orientations: ancestors at k hops and descendants at
+/// k hops.  Towards an ancestor the row is the descendant, hence `first`.
+fn lineal(ws: &mut Workspace, cat: Category, k: usize) {
+    let mut set = sets::support(&ws.up[k]);
+    if ws.orient {
+        ws.first_arm[cat.index()] = set.clone();
+    }
+    sets::union_into(&mut set, &ws.down[k]);
+    ws.sets[cat.index()] = set;
+}
+
+/// The first arm of a parent role: the row's own parent, if any.
+fn parent_arm(parent: i32) -> Vec<u32> {
+    if parent >= 0 {
+        vec![parent as u32]
+    } else {
+        Vec::new()
+    }
 }
 
 /// One parent role in both orientations: `row`'s parent of that role, and
@@ -415,24 +517,8 @@ fn parent_role(row: usize, parent: &[i32], down1: &[u32]) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{count_pairs, Category, Counts, MaxDegree, PedigreeColumns};
-
-    /// Rows with parent rows; original ids equal rows, `-1` missing.
-    fn pedigree(parents: &[(i32, i32)], twins: &[(usize, usize)]) -> PedigreeColumns {
-        let n = parents.len();
-        let mut twin = vec![-1i32; n];
-        for &(a, b) in twins {
-            twin[a] = b as i32;
-            twin[b] = a as i32;
-        }
-        PedigreeColumns {
-            mother: parents.iter().map(|p| p.0).collect(),
-            father: parents.iter().map(|p| p.1).collect(),
-            twin,
-            orig_mother: parents.iter().map(|p| p.0 as i64).collect(),
-            orig_father: parents.iter().map(|p| p.1 as i64).collect(),
-        }
-    }
+    use super::super::testing::pedigree;
+    use super::super::{count_pairs, Category, Counts, MaxDegree};
 
     fn expect(pairs: &[(Category, u64)]) -> Counts {
         let mut counts = Counts::default();

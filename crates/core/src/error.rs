@@ -184,6 +184,15 @@ pub enum Error {
         /// The capacity that was exceeded, normally [`MAX_ROWS`].
         maximum: usize,
     },
+    /// A large allocation the input reaches was refused by the allocator.
+    AllocationFailed {
+        /// What the engine was building, e.g. `"pair_block"`.
+        operation: &'static str,
+        /// How many elements it asked for.
+        requested_elements: usize,
+        /// The element type, in NumPy spelling, e.g. `"int32"`.
+        dtype: &'static str,
+    },
     /// The caller asked for a relationship degree outside the supported range.
     MaxDegreeOutOfRange {
         /// The degree as given.
@@ -216,6 +225,7 @@ impl Error {
             | Error::BirthYearTopology { .. }
             | Error::MaxDegreeOutOfRange { .. } => ErrorClass::Validation,
             Error::PedigreeTooLarge { .. } => ErrorClass::Resource,
+            Error::AllocationFailed { .. } => ErrorClass::Resource,
             Error::UnknownSexEncoding { .. } => ErrorClass::Usage,
         }
     }
@@ -236,6 +246,7 @@ impl Error {
             Error::MzSexMismatch { .. } => "mz_sex_mismatch",
             Error::BirthYearTopology { .. } => "birth_year_topology",
             Error::PedigreeTooLarge { .. } => "pedigree_too_large",
+            Error::AllocationFailed { .. } => "allocation_failed",
             Error::MaxDegreeOutOfRange { .. } => "max_degree_out_of_range",
             Error::UnknownSexEncoding { .. } => "",
         }
@@ -349,6 +360,15 @@ impl Error {
             } => vec![
                 ("n_individuals", int(*n_individuals)),
                 ("maximum", int(*maximum)),
+            ],
+            Error::AllocationFailed {
+                operation,
+                requested_elements,
+                dtype,
+            } => vec![
+                ("operation", Str(operation)),
+                ("requested_elements", int(*requested_elements)),
+                ("dtype", Str(dtype)),
             ],
             Error::MaxDegreeOutOfRange {
                 value,
@@ -491,6 +511,15 @@ impl std::fmt::Display for Error {
                 f,
                 "pedigree has {} rows, exceeding the int32 row-coordinate capacity",
                 grouped(*n_individuals)
+            ),
+            Error::AllocationFailed {
+                operation,
+                requested_elements,
+                dtype,
+            } => write!(
+                f,
+                "could not allocate {} {dtype} elements for {operation}",
+                grouped(*requested_elements)
             ),
             Error::MaxDegreeOutOfRange {
                 value,

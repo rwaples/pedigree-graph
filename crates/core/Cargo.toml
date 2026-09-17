@@ -14,5 +14,9 @@ name = "pedigree_graph_core"
 name = "pgr-count"
 path = "src/bin/pgr_count.rs"
 
+[[bin]]
+name = "pgr-bench-pairs"
+path = "src/bin/pgr_bench_pairs.rs"
+
 [dependencies]
 rayon = "1.10"

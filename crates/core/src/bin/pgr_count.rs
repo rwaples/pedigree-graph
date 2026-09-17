@@ -8,34 +8,7 @@
 //! `n`, `threads`, `seconds`, and per-code `counts` to stdout.
 
 use pedigree_graph_core::relationships::{count_pairs, Category, MaxDegree, PedigreeColumns};
-use std::io::{BufRead, BufReader};
 use std::time::Instant;
-
-fn read_tsv(path: &str) -> PedigreeColumns {
-    let file = std::fs::File::open(path).unwrap_or_else(|e| panic!("open {path}: {e}"));
-    let mut ped = PedigreeColumns::default();
-    for (line_no, line) in BufReader::new(file).lines().enumerate() {
-        let line = line.expect("read line");
-        if line_no == 0 {
-            continue;
-        }
-        let mut fields = line.split('\t').map(|s| {
-            s.parse::<i64>()
-                .unwrap_or_else(|_| panic!("line {line_no}: {s:?}"))
-        });
-        let mut next = || {
-            fields
-                .next()
-                .unwrap_or_else(|| panic!("line {line_no}: too few columns"))
-        };
-        ped.mother.push(next() as i32);
-        ped.father.push(next() as i32);
-        ped.twin.push(next() as i32);
-        ped.orig_mother.push(next());
-        ped.orig_father.push(next());
-    }
-    ped
-}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -70,7 +43,8 @@ fn main() {
     let path = path.expect("usage: pgr-count <inputs.tsv> [--max-degree D] [--threads T]");
 
     let t_read = Instant::now();
-    let ped = read_tsv(&path);
+    let ped =
+        PedigreeColumns::read_tsv(std::path::Path::new(&path)).unwrap_or_else(|e| panic!("{e}"));
     eprintln!(
         "read {} rows in {:.3}s",
         ped.mother.len(),

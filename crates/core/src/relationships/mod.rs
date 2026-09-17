@@ -4,12 +4,16 @@ mod category;
 mod csr;
 mod engine;
 mod multiplicity;
+mod pairs;
 mod sets;
 mod sibling_index;
+#[cfg(test)]
+mod testing;
 
-pub use category::{Category, Counts, N_CATEGORIES};
+pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
 pub use engine::{Engine, Workspace, EXCLUSIONS};
 pub use multiplicity::Mult;
+pub use pairs::{pair_blocks, Emitter, PairBlock, PairBlocks};
 
 use crate::error::Error;
 use rayon::prelude::*;
@@ -158,6 +162,36 @@ pub struct PedigreeColumns {
 }
 
 impl PedigreeColumns {
+    /// Read the TSV `tests/parity/dump_relationship_inputs.py` writes: a
+    /// header line, then `mother father twin orig_mother orig_father` per row.
+    ///
+    /// # Errors
+    ///
+    /// The I/O error of opening or reading `path`, or an `InvalidData` error
+    /// naming the first line that does not hold five integers.
+    pub fn read_tsv(path: &std::path::Path) -> std::io::Result<PedigreeColumns> {
+        use std::io::{BufRead, BufReader, Error, ErrorKind};
+        let file = BufReader::new(std::fs::File::open(path)?);
+        let mut ped = PedigreeColumns::default();
+        for (line_no, line) in file.lines().enumerate().skip(1) {
+            let line = line?;
+            let bad = || {
+                Error::new(
+                    ErrorKind::InvalidData,
+                    format!("{}:{}: expected five integers", path.display(), line_no + 1),
+                )
+            };
+            let mut fields = line.split('\t').map(|s| s.trim().parse::<i64>());
+            let mut next = || fields.next().and_then(Result::ok).ok_or_else(bad);
+            ped.mother.push(next()? as i32);
+            ped.father.push(next()? as i32);
+            ped.twin.push(next()? as i32);
+            ped.orig_mother.push(next()?);
+            ped.orig_father.push(next()?);
+        }
+        Ok(ped)
+    }
+
     /// Borrow the columns as checked engine input.
     ///
     /// # Errors
