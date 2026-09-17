@@ -44,9 +44,10 @@ impl PairBlock {
         self.first.is_empty()
     }
 
-    fn push(&mut self, a: u32, b: u32, family: Family) -> Result<(), Error> {
-        alloc::push(&mut self.first, a, family, "int32")?;
-        alloc::push(&mut self.second, b, family, "int32")
+    /// Append one pair to a task chunk.
+    fn push(&mut self, a: u32, b: u32) -> Result<(), Error> {
+        alloc::push(&mut self.first, a, Family::TaskChunk, "int32")?;
+        alloc::push(&mut self.second, b, Family::TaskChunk, "int32")
     }
 
     fn reserve_exact(&mut self, additional: usize) -> Result<(), Error> {
@@ -177,9 +178,7 @@ impl Query<'_> {
     /// The pairs of one task, one chunk per category.
     fn chunk(&self, range: (usize, usize)) -> Result<PairBlocks, Error> {
         let mut chunk = PairBlocks::empty();
-        self.run(range, |cat, a, b| {
-            chunk.0[cat.index()].push(a, b, Family::TaskChunk)
-        })?;
+        self.run(range, |cat, a, b| chunk.0[cat.index()].push(a, b))?;
         Ok(chunk)
     }
 
@@ -658,17 +657,14 @@ mod tests {
         use crate::alloc::Family;
         let exe = std::env::current_exe().unwrap();
         for family in Family::ALL {
-            for mode in ["count", "speed", "memory", "speed_view", "memory_view"] {
-                if family == Family::ViewSortScratch && !mode.ends_with("view") {
-                    continue;
-                }
-                if family == Family::TaskChunk && !mode.starts_with("speed") {
-                    continue;
-                }
-                if family == Family::TaskTable && mode == "count" {
-                    continue;
-                }
-                if family == Family::PairBlock && mode == "count" {
+            for (mode, execution, view) in SEAM_MODES {
+                let reached = match family {
+                    Family::ViewSortScratch => view,
+                    Family::TaskChunk => execution == Some(Execution::Speed),
+                    Family::TaskTable | Family::PairBlock => execution.is_some(),
+                    _ => true,
+                };
+                if !reached {
                     continue;
                 }
                 let out = std::process::Command::new(&exe)
@@ -691,6 +687,16 @@ mod tests {
         }
     }
 
+    /// The seam cases: a mode name, the execution (`None` counts), and
+    /// whether a view is passed.
+    const SEAM_MODES: [(&str, Option<Execution>, bool); 5] = [
+        ("count", None, false),
+        ("speed", Some(Execution::Speed), false),
+        ("memory", Some(Execution::Memory), false),
+        ("speed_view", Some(Execution::Speed), true),
+        ("memory_view", Some(Execution::Memory), true),
+    ];
+
     /// The body of one seam case; a no-op unless `PG_SEAM_FAMILY` is set.
     #[test]
     fn seam_child() {
@@ -700,24 +706,18 @@ mod tests {
         };
         let family = Family::parse(&name).unwrap();
         let mode = std::env::var("PG_SEAM_MODE").unwrap();
+        let (_, execution, view) = SEAM_MODES.into_iter().find(|m| m.0 == mode).unwrap();
         let cols = crate::relationships::testing::random_pedigree(300, 5);
         let ped = cols.try_borrow().unwrap();
-        let view: Vec<i32> = (0..300)
+        let view_map: Vec<i32> = (0..300)
             .map(|r| if r % 2 == 0 { r / 2 } else { -1 })
             .collect();
         let all_cats = CategorySet::up_to_degree(5);
         fail_next(Some(family));
-        let result = match mode.as_str() {
-            "count" => {
-                count_pairs(&ped, MaxDegree::MAX, None).map(|c| c.get(Category::FS) as usize)
-            }
-            _ => {
-                let execution = if mode.starts_with("speed") {
-                    Execution::Speed
-                } else {
-                    Execution::Memory
-                };
-                let v = mode.ends_with("view").then_some(view.as_slice());
+        let result = match execution {
+            None => count_pairs(&ped, MaxDegree::MAX, None).map(|c| c.get(Category::FS) as usize),
+            Some(execution) => {
+                let v = view.then_some(view_map.as_slice());
                 pair_blocks(&ped, MaxDegree::MAX, all_cats, v, execution).map(|b| b.total())
             }
         };
