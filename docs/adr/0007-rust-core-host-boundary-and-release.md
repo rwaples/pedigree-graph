@@ -259,3 +259,54 @@ replaces, and passes the cross-repository release gate. In order:
   prototype that must pass the same gate as everything else.
 * **Ship a pure-Python fallback wheel** — rejected. Two production
   implementations per operation is the state this migration exists to end.
+
+## Amended 2026-09-17 (slice 12, pair emission ownership and the R milestone)
+
+**Ownership strategy for relationship pair blocks.** The benchmark this ADR
+required before choosing an ownership strategy for large relationship
+buffers has been run (`benchmarks/bench_pair_emitters.md`: screening on
+`random_30k` and `random_300k`, qualification against the PyPI 0.8.4 wheel
+on graph and reordered-view receivers at degrees 3 and 5 with five
+interleaved fresh processes, a 2M run, and the 20M capability runs). Three
+assemblies of the row-streaming engine's per-row output were measured, all
+producing identical blocks:
+
+* `buffered` (collect every task's chunks, then copy per category) is the
+  fastest at six threads on every graph cell of 300k rows and above and
+  peaks at about 2.3 times the raw `int32` payload. It backs
+  `execution="speed"`.
+* `two_pass` (count, size every block exactly, fill disjoint task slices in
+  place) holds no copy of the result and peaks at the payload plus engine
+  state (1.11 times the payload at 20M rows, degree 5), at 1.6 to 1.9 times
+  the wall of `buffered`. It backs `execution="memory"`, and it is what
+  serves the 20M degree-5 query (2.12 billion pairs, 18.1 GiB, 291 s on six
+  threads) within the 30 GiB target machine.
+* `bounded_wave` (append wave by wave) won neither wall nor peak and is not
+  kept.
+
+Either way the core hands the host two owned `Vec<u32>` per block in one
+transfer; the host marks them read-only without a copy and caches nothing.
+No Rust-side cache of pair results exists, in keeping with the "no unbounded
+caches" rule above.
+
+**Threads.** Slice 11 built a Rayon pool per relationship call as a
+temporary measure. Slice 12 restores the model this ADR states: one
+package-owned pool, sized from the committed Python `thread_budget()`, used
+by counts and pairs alike, with repeated initialisation at the same value
+allowed and a conflicting value an error. Integer outputs stay bit-identical
+across thread counts.
+
+**Allocation safety.** The shared relationship engine becomes fallible end
+to end: CSR construction and transpose, workspaces, set growth, task chunks
+and count tables, final blocks, and view-sort scratch all use fallible
+reservation and surface as one structured core error,
+`allocation_failed` (fields `operation`, `requested_elements`, `dtype`,
+class Resource), which Python maps to `ResourceError`. Subprocess tests
+force each allocation family to fail through a lowered private limit.
+
+**Versioning and the R milestone.** The release carrying this work is
+0.9.0, not a 0.8 patch, because the unreleased branch already removed
+`estimate_relationship_counts` (CHANGELOG). Step 9 of the migration
+sequence above therefore moves: the R package is the 0.10.0 milestone, and
+the "R 0.9.0" section and the `r/` line of the layout should be read as
+0.10.0. Nothing about the R surface itself changes.

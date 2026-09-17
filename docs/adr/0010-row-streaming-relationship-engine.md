@@ -137,3 +137,33 @@ parity fixtures under `crates/core/tests/fixtures` hold those 0.8 counts. The
 0.7.1 raw counts this ADR's evidence section cites remain historical evidence
 of the per-category sets; the engine no longer has a mode that returns them.
 The "unchanged until slice 4c" consequence above is superseded by slice 11.
+
+## Amended 2026-09-17 (slice 12, pair sinks and orientation provenance)
+
+The classifier is unchanged; it gained a second consumer. Where slice 11
+counted the members above the owner row after the precedence fold, slice 12
+can instead hand each owned pair to a sink in the category's semantic
+orientation. To do so the engine records, only in workspaces built for
+emission, a per-category *first arm*: the members for whom the owner row
+carries `first_role`, captured after multiplicity filtering and before the
+two arms of an asymmetric product are unioned.
+
+* Lineal codes: the up arm (the row is the descendant).
+* `MO` and `FO`: the row's own parent (the row is the offspring).
+* The avuncular family: the sibs-of-ancestors arm (the row is the niece or
+  nephew).
+* Removed cousins: the backward arm, in which the row sits the greater
+  number of meioses from the shared ancestor and is the junior cousin; the
+  Python matrix engine reads these products with `row_is_first=False`.
+
+A pair valid in both orientations is in both raw arms, hence in the first
+arm, so lower-row ownership reproduces ADR 0006's lower-row tie break.
+Exclusions and the precedence fold remove pairs; they never change a
+survivor's orientation. Because the owner row rises across ordered task
+ranges and every set is sorted, graph-receiver blocks arrive in canonical
+key order and are never sorted; view receivers are relabelled through the
+graph-to-view map and sorted by the view-space key. Emission and counting
+share one pool of workspaces, and emission is byte-identical across thread
+counts and across the output assemblies ADR 0007's amendment selects. The
+counting path never allocates or fills the first arms. The evidence is in
+`benchmarks/bench_pair_emitters.md`.

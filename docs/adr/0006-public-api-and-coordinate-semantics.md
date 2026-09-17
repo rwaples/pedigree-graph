@@ -236,3 +236,21 @@ requirements.
   rejected in favour of explicit per-category lists plus a global
   uniqueness/precedence check, so a missing exclusion is caught rather than
   hidden in table lookup.
+
+## Amended 2026-09-17 (slice 12, `execution` keyword on relationship pairs)
+
+`relationship_pairs` on a graph and on a view gains one keyword,
+`execution`, with exactly two accepted values:
+
+* `"speed"`, the default, uses the fastest benchmarked exact emitter;
+* `"memory"` uses the lowest-peak exact emitter.
+
+The keyword changes resource use only. Both modes return blocks that are
+equal element for element, in every field of every `RelationshipPairBlock`,
+so the eight pair contracts above hold identically under either. The
+selector rule is unchanged (exactly one of `max_degree` and `categories`),
+an unrecognised value raises the ordinary argument error, and there is no
+public memory-budget, auto-selection, or third mode. The names are
+semantic on purpose so the implementation behind each can change after a
+later benchmark without a public change. `execution` is a public API
+addition and ships in 0.9.0 (ADR 0007, as amended the same day).
