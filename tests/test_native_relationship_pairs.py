@@ -271,53 +271,74 @@ class TestProcessWidePool:
         assert out.count("conflict: the thread pool is already configured with 2 threads") == 2
 
 
-FAMILIES = (
-    "parent_edges",
-    "csr",
-    "sibling_index",
-    "accumulator",
-    "row_set",
-    "task_chunk",
-    "task_table",
-    "pair_block",
-    "view_sort_scratch",
-)
-COUNT_FAMILIES = FAMILIES[:5]
+#: The canonical list, read from the core so it cannot drift from ``Family::ALL``.
+FAMILIES = tuple(_native.allocation_families())
+
+#: The families the counting path reserves.  The test asserts both
+#: directions, so a family that starts or stops being reserved by counts
+#: fails here instead of silently losing its case.
+COUNT_FAMILIES = frozenset({"parent_edges", "csr", "sibling_index", "accumulator", "row_set"})
+
+#: The plant's size floor. Without one it fires on whichever reservation of
+#: the family comes first, which for a collected iterator is its zero lower
+#: bound, leaving ``requested_elements`` meaningless. One element is the
+#: largest floor every family clears on a fixture this size: a task table
+#: holds one entry per task range, so it is a handful of elements however
+#: many rows there are.
+SEAM_MIN_ELEMENTS = 1
+
+
+def test_the_family_list_covers_the_counting_families():
+    """``COUNT_FAMILIES`` names families the core still has."""
+    assert set(FAMILIES) >= COUNT_FAMILIES
+    assert len(FAMILIES) == len(set(FAMILIES))
 
 
 @pytest.mark.parametrize("family", FAMILIES)
 def test_a_refused_allocation_raises_a_resource_error(family):
     """Every allocation family surfaces as ``ResourceError("allocation_failed")`` in a fresh process.
 
-    The plant fires on the family's first reservation, which for a collected
-    iterator is its zero lower size bound, so ``requested_elements`` is only
-    required to be a count.
+    The plant carries a size floor, so it skips zero-sized reservations and
+    ``requested_elements`` is a real count. A call whose
+    path never reserves the family has to succeed: the plant is consumed
+    only by a reservation, so success is what proves the family unreached.
     """
     body = f"""
         from pedigree_graph import ResourceError
         family = {family!r}
+        floor = {SEAM_MIN_ELEMENTS}
         def pairs():
             return _native.relationship_pairs(
                 graph._built, max_degree=5, requested=["FS", "2C"], threads=1, execution="speed", view_rows=view
             )
         def counts():
             return _native.relationship_counts(graph._built, max_degree=5, threads=1)
-        calls = [("pairs", pairs)] + ([("counts", counts)] if family in {COUNT_FAMILIES!r} else [])
-        for label, call in calls:
-            _native.fail_next_allocation(family)
+        expect_failure = {{"pairs": True, "counts": family in {sorted(COUNT_FAMILIES)!r}}}
+        for label, call in (("pairs", pairs), ("counts", counts)):
+            _native.fail_next_allocation(family, floor)
             try:
                 call()
             except ResourceError as e:
-                print(label, e.code, e.fields["operation"], e.fields["dtype"], e.fields["requested_elements"] >= 0)
+                print(label, e.code, e.fields["operation"], e.fields["dtype"], e.fields["requested_elements"] >= floor)
             else:
                 print(label, "no error")
-        _native.fail_next_allocation(None)
+            _native.fail_next_allocation(None)
+            print(label, "expected", expect_failure[label])
         call()
         print("recovered")
     """
     lines = _run_child(CHILD_PRELUDE, body).strip().splitlines()
     assert lines[-1] == "recovered"
+    outcomes = {}
     for line in lines[:-1]:
-        _label, code, operation, dtype, counted = line.split()
+        parts = line.split()
+        if parts[1] == "expected":
+            assert outcomes[parts[0]] == (parts[2] == "True"), line
+            continue
+        if parts[1] == "no":
+            outcomes[parts[0]] = False
+            continue
+        label, code, operation, dtype, counted = parts
+        outcomes[label] = True
         assert (code, operation, counted) == ("allocation_failed", family, "True"), line
-        assert dtype in {"int32", "int64", "intp", "uint8", "uint64", "object"}
+        assert dtype in {"bool", "int32", "int64", "intp", "uint8", "uint64", "object"}

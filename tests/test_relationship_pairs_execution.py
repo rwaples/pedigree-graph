@@ -166,10 +166,12 @@ class TestHandOver:
             check=False,
         )
         assert result.returncode == 0, result.stderr
+        # The view family's first reservation is the map's permutation check,
+        # which precedes the packed sort keys.
         assert result.stdout.splitlines() == [
             "speed allocation_failed pair_block int32",
-            "speed allocation_failed view_sort_scratch uint64",
+            "speed allocation_failed view_sort_scratch bool",
             "memory allocation_failed pair_block int32",
-            "memory allocation_failed view_sort_scratch uint64",
+            "memory allocation_failed view_sort_scratch bool",
             "1",
         ]

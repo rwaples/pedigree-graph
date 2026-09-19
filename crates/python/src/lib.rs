@@ -398,11 +398,23 @@ fn relationship_pairs<'py>(
     Ok(values)
 }
 
+/// The allocation family names, in `Family::ALL` order.
+///
+/// The test seam's parametrisation reads this rather than keeping its own
+/// copy of the list, which cannot then drift from the core's.
+#[pyfunction]
+fn allocation_families() -> Vec<&'static str> {
+    Family::ALL.iter().map(|f| f.name()).collect()
+}
+
 /// The environment variable that unlocks [`fail_next_allocation`].
 const SEAM_ENV: &str = "PEDIGREE_GRAPH_ALLOW_TEST_SEAM";
 
 /// Test seam: make the next reservation of the named allocation family fail
 /// with `ResourceError("allocation_failed")`, or clear the plant with `None`.
+///
+/// `min_elements` aims the plant at a reservation of at least that size, so
+/// the error's `requested_elements` is the number the host would show.
 ///
 /// The plant is process-global and is consumed by whichever thread reserves
 /// that family next, so arming it from a released wheel would fail an
@@ -410,8 +422,8 @@ const SEAM_ENV: &str = "PEDIGREE_GRAPH_ALLOW_TEST_SEAM";
 /// `PEDIGREE_GRAPH_ALLOW_TEST_SEAM=1`, which the package's own child-process
 /// tests set.
 #[pyfunction]
-#[pyo3(signature = (family))]
-fn fail_next_allocation(family: Option<&str>) -> PyResult<()> {
+#[pyo3(signature = (family, min_elements = 0))]
+fn fail_next_allocation(family: Option<&str>, min_elements: usize) -> PyResult<()> {
     if std::env::var(SEAM_ENV).as_deref() != Ok("1") {
         return Err(PyRuntimeError::new_err(format!(
             "the allocation test seam is off; set {SEAM_ENV}=1 before starting the process"
@@ -424,7 +436,7 @@ fn fail_next_allocation(family: Option<&str>) -> PyResult<()> {
                 PyValueError::new_err(format!("unknown allocation family {name:?}"))
             })?),
         };
-    alloc::fail_next(family);
+    alloc::fail_next_above(family, min_elements);
     Ok(())
 }
 
@@ -471,6 +483,7 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(configure_pool, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_counts, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(allocation_families, m)?)?;
     m.add_function(wrap_pyfunction!(fail_next_allocation, m)?)?;
     m.add_class::<BuiltPedigree>()?;
     m.add_class::<PyIdIndex>()?;

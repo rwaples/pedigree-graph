@@ -10,7 +10,7 @@
 //! relaxed atomic load on the hot paths.
 
 use crate::error::Error;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 /// The allocation families of the relationship engine, each a distinct
 /// place a large buffer is sized by the input.
@@ -33,7 +33,8 @@ pub enum Family {
     TaskTable,
     /// A final pair block.
     PairBlock,
-    /// The packed keys a view block is sorted through.
+    /// The view projection's scratch: the map's permutation check, and the
+    /// packed keys a view block is sorted through.
     ViewSortScratch,
 }
 
@@ -78,19 +79,37 @@ impl Family {
 /// `0` for none, else `Family::code`.
 static FAIL_NEXT: AtomicU8 = AtomicU8::new(0);
 
+/// The smallest reservation the plant will fire on.
+static FAIL_MIN_ELEMENTS: AtomicUsize = AtomicUsize::new(0);
+
 /// Make the next reservation of `family` fail, or clear the plant with `None`.
 ///
 /// A test seam, process-wide; the plant is consumed by the first reservation
 /// of that family on any thread.
 #[doc(hidden)]
 pub fn fail_next(family: Option<Family>) {
+    fail_next_above(family, 0);
+}
+
+/// As [`fail_next`], firing only on a reservation of at least
+/// `min_elements` elements.
+///
+/// Without a floor the plant fires on whichever reservation of the family
+/// comes first, which for a collected iterator is its zero lower bound, and
+/// the reported `requested_elements` says nothing.  A floor aims the plant
+/// at a reservation whose size is the input's, so a test can assert the
+/// number the host would show a user.
+#[doc(hidden)]
+pub fn fail_next_above(family: Option<Family>, min_elements: usize) {
+    FAIL_MIN_ELEMENTS.store(min_elements, Ordering::SeqCst);
     FAIL_NEXT.store(family.map_or(0, Family::code), Ordering::SeqCst);
 }
 
 #[inline]
-fn planted(family: Family) -> bool {
+fn planted(family: Family, requested_elements: usize) -> bool {
     let code = family.code();
     FAIL_NEXT.load(Ordering::Relaxed) == code
+        && requested_elements >= FAIL_MIN_ELEMENTS.load(Ordering::Relaxed)
         && FAIL_NEXT
             .compare_exchange(code, 0, Ordering::SeqCst, Ordering::Relaxed)
             .is_ok()
@@ -113,7 +132,7 @@ pub(crate) fn reserve<T>(
     dtype: &'static str,
 ) -> Result<(), Error> {
     let total = vec.len().saturating_add(additional);
-    if planted(family) || vec.try_reserve(additional).is_err() {
+    if planted(family, total) || vec.try_reserve(additional).is_err() {
         return Err(failed(family, dtype, total));
     }
     Ok(())
@@ -128,7 +147,7 @@ pub(crate) fn reserve_exact<T>(
     dtype: &'static str,
 ) -> Result<(), Error> {
     let total = vec.len().saturating_add(additional);
-    if planted(family) || vec.try_reserve_exact(additional).is_err() {
+    if planted(family, total) || vec.try_reserve_exact(additional).is_err() {
         return Err(failed(family, dtype, total));
     }
     Ok(())
