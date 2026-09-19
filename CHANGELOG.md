@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.9.0
 
 - **Changed: `relationship_pairs` runs on the Rust row-streaming engine**
   (slice 12; ADR 0006, 0007 and 0010 as amended). Graph and view results
