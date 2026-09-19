@@ -8,33 +8,59 @@ use crate::error::Error;
 /// A sorted set of rows with a saturated multiplicity each.
 pub type Weighted = Vec<(u32, Mult)>;
 
-/// Merge `other` into `set` (both sorted, no duplicates).
+/// Merge `other` into `set` (both sorted, no duplicates), in place.
+///
+/// Counts the new members first, grows `set` once, then merges backwards
+/// from the end, so a set that is reused across rows keeps its buffer
+/// instead of allocating and freeing a replacement on every call.
 pub fn union_into(set: &mut Vec<u32>, other: &[u32]) -> Result<(), Error> {
     if other.is_empty() {
         return Ok(());
     }
-    let mut merged = alloc::with_capacity(set.len() + other.len(), Family::RowSet, "int32")?;
+    if set.is_empty() {
+        alloc::reserve(set, other.len(), Family::RowSet, "int32")?;
+        set.extend_from_slice(other);
+        return Ok(());
+    }
+
+    let mut added = other.len();
     let (mut a, mut b) = (0, 0);
     while a < set.len() && b < other.len() {
         match set[a].cmp(&other[b]) {
-            std::cmp::Ordering::Less => {
-                merged.push(set[a]);
-                a += 1;
-            }
-            std::cmp::Ordering::Greater => {
-                merged.push(other[b]);
-                b += 1;
-            }
+            std::cmp::Ordering::Less => a += 1,
+            std::cmp::Ordering::Greater => b += 1,
             std::cmp::Ordering::Equal => {
-                merged.push(set[a]);
+                added -= 1;
                 a += 1;
                 b += 1;
             }
         }
     }
-    merged.extend_from_slice(&set[a..]);
-    merged.extend_from_slice(&other[b..]);
-    *set = merged;
+    if added == 0 {
+        return Ok(());
+    }
+
+    let old_len = set.len();
+    alloc::reserve(set, added, Family::RowSet, "int32")?;
+    set.resize(old_len + added, 0);
+    // Backwards: the write head stays ahead of the read head by the number
+    // of `other` members still to place, so nothing is overwritten unread.
+    let (mut a, mut b, mut w) = (old_len, other.len(), old_len + added);
+    while b > 0 {
+        let take_other = a == 0 || set[a - 1] <= other[b - 1];
+        if take_other {
+            if a > 0 && set[a - 1] == other[b - 1] {
+                a -= 1;
+            }
+            w -= 1;
+            b -= 1;
+            set[w] = other[b];
+        } else {
+            w -= 1;
+            a -= 1;
+            set[w] = set[a];
+        }
+    }
     Ok(())
 }
 
@@ -68,9 +94,9 @@ pub fn count_above(set: &[u32], row: usize) -> u64 {
 ///
 /// `marker[j] == stamp` says `j` is live in the current expansion; `value[j]`
 /// holds its saturated multiplicity.  One workspace serves one thread.
-/// `touched` is the one buffer here that grows by plain `push`: it never
-/// exceeds one entry per row, so it is bounded by the marker array already
-/// reserved, and it sits inside the innermost loop.
+/// `touched` never exceeds one entry per row, so it is reserved to that bound
+/// once, fallibly, with the marker and value arrays.  Its `push` then sits in
+/// the innermost loop with nothing to check and no way to reallocate.
 pub struct Accumulator {
     stamp: u32,
     marker: Vec<u32>,
@@ -84,7 +110,7 @@ impl Accumulator {
             stamp: 0,
             marker: alloc::filled(0u32, n, Family::Accumulator, "int32")?,
             value: alloc::filled(Mult::ZERO, n, Family::Accumulator, "uint8")?,
-            touched: Vec::new(),
+            touched: alloc::with_capacity(n, Family::Accumulator, "int32")?,
         })
     }
 
@@ -103,6 +129,8 @@ impl Accumulator {
         if self.marker[idx] != self.stamp {
             self.marker[idx] = self.stamp;
             self.value[idx] = m;
+            // Reserved to one entry per row in `new`, so this cannot grow.
+            debug_assert!(self.touched.len() < self.touched.capacity());
             self.touched.push(j);
         } else {
             self.value[idx] = self.value[idx] + m;
@@ -175,14 +203,71 @@ impl Accumulator {
     }
 }
 
-pub fn support(w: &Weighted) -> Result<Vec<u32>, Error> {
-    alloc::collect(w.iter().map(|&(j, _)| j), Family::RowSet, "int32")
+/// The rows of a weighted set, into a buffer the caller reuses.
+pub fn support_into(w: &Weighted, out: &mut Vec<u32>) -> Result<(), Error> {
+    out.clear();
+    alloc::reserve(out, w.len(), Family::RowSet, "int32")?;
+    out.extend(w.iter().map(|&(j, _)| j));
+    Ok(())
 }
 
-pub fn select(w: &Weighted, keep: impl Fn(Mult) -> bool) -> Result<Vec<u32>, Error> {
-    alloc::collect(
-        w.iter().filter(|&&(_, m)| keep(m)).map(|&(j, _)| j),
-        Family::RowSet,
-        "int32",
-    )
+/// The rows whose multiplicity `keep` accepts, into a buffer the caller
+/// reuses.
+pub fn select_into(
+    w: &Weighted,
+    keep: impl Fn(Mult) -> bool,
+    out: &mut Vec<u32>,
+) -> Result<(), Error> {
+    out.clear();
+    alloc::reserve(out, w.len(), Family::RowSet, "int32")?;
+    out.extend(w.iter().filter(|&&(_, m)| keep(m)).map(|&(j, _)| j));
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The in-place merge against a naive reference, over every overlap
+    /// pattern of two small sorted sets, including the empty ones.
+    #[test]
+    fn union_into_matches_a_naive_merge() {
+        fn reference(set: &[u32], other: &[u32]) -> Vec<u32> {
+            let mut all: Vec<u32> = set.iter().chain(other).copied().collect();
+            all.sort_unstable();
+            all.dedup();
+            all
+        }
+        let universe: Vec<u32> = (0..6).collect();
+        for a_bits in 0u32..(1 << 6) {
+            for b_bits in 0u32..(1 << 6) {
+                let a: Vec<u32> = universe
+                    .iter()
+                    .filter(|&&j| a_bits >> j & 1 == 1)
+                    .copied()
+                    .collect();
+                let b: Vec<u32> = universe
+                    .iter()
+                    .filter(|&&j| b_bits >> j & 1 == 1)
+                    .copied()
+                    .collect();
+                let mut got = a.clone();
+                union_into(&mut got, &b).unwrap();
+                assert_eq!(got, reference(&a, &b), "{a:?} u {b:?}");
+            }
+        }
+    }
+
+    /// A reused set keeps its buffer: the capacity never falls, and a merge
+    /// that adds nothing does not reallocate.
+    #[test]
+    fn union_into_reuses_the_buffer() {
+        let mut set: Vec<u32> = (0..64).collect();
+        let capacity = set.capacity();
+        let pointer = set.as_ptr();
+        union_into(&mut set, &(0..64).collect::<Vec<u32>>()).unwrap();
+        assert_eq!(set.len(), 64);
+        assert_eq!(set.capacity(), capacity);
+        assert!(std::ptr::eq(set.as_ptr(), pointer));
+    }
 }

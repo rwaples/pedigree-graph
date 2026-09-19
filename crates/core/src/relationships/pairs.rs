@@ -21,12 +21,11 @@
 //! key afterwards.
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
-use super::engine::{Engine, Workspace};
+use super::engine::{Engine, WorkspacePool};
 use super::{task_ranges, MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
-use std::sync::Mutex;
 
 /// The pairs of one category, aligned `first[k]` / `second[k]`, in the
 /// receiver's rows.  Rows are `i32`, the host's row dtype, so a block moves
@@ -131,25 +130,6 @@ impl Execution {
     }
 }
 
-/// Emission workspaces shared by the tasks of one query, never more than there are threads.
-struct WorkspacePool {
-    n: usize,
-    free: Mutex<Vec<Workspace>>,
-}
-
-impl WorkspacePool {
-    fn take(&self) -> Result<Workspace, Error> {
-        match self.free.lock().unwrap().pop() {
-            Some(ws) => Ok(ws),
-            None => Workspace::for_pairs(self.n),
-        }
-    }
-
-    fn give(&self, ws: Workspace) {
-        self.free.lock().unwrap().push(ws);
-    }
-}
-
 /// One query's immutable inputs, shared by every task.
 struct Query<'a> {
     engine: Engine<'a>,
@@ -218,6 +198,11 @@ impl Query<'_> {
 /// size: the engine, a workspace, a row set, a task chunk or table, a final
 /// block, or the view-sort scratch.
 ///
+/// [`Error::InvalidViewMap`] when `view` is not a partial permutation: an
+/// entry outside `-1 .. n`, or two graph rows mapped to one view row.  The
+/// view-space sort relies on the keys being distinct, so a repeated view row
+/// would make the order depend on the thread count.
+///
 /// # Panics
 ///
 /// If `view` does not have one entry per graph row; the host binding checks
@@ -233,15 +218,13 @@ pub fn pair_blocks(
     let n = engine.len();
     if let Some(map) = view {
         assert_eq!(map.len(), n, "view map must have one entry per graph row");
+        check_view_map(map)?;
     }
     let query = Query {
         engine,
         requested,
         view,
-        pool: WorkspacePool {
-            n,
-            free: Mutex::new(Vec::new()),
-        },
+        pool: WorkspacePool::new(n, true),
     };
     let ranges = task_ranges(n);
     let mut blocks = match execution {
@@ -279,17 +262,32 @@ fn task_table<T: Send>(
 }
 
 fn buffered(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Error> {
-    let mut chunks = task_table(ranges, |r| query.chunk(r))?;
-    let mut out = PairBlocks::empty();
-    for cat in query.requested.iter() {
-        let i = cat.index();
-        let total: usize = chunks.iter().map(|c| c.0[i].len()).sum();
-        out.0[i].reserve_exact(total)?;
-        for chunk in &mut chunks {
-            let part = std::mem::take(&mut chunk.0[i]);
-            out.0[i].extend_from(&part);
+    let chunks = task_table(ranges, |r| query.chunk(r))?;
+    // Transpose the task-by-category table into one column per category.
+    // Only `Vec` handles move, so no pair is copied and nothing is freed.
+    let mut columns: Vec<Vec<PairBlock>> = (0..N_CATEGORIES).map(|_| Vec::new()).collect();
+    for chunk in chunks {
+        for (column, block) in columns.iter_mut().zip(chunk.0) {
+            column.push(block);
         }
     }
+    // Each category owns a disjoint block and a disjoint column, so the
+    // copies run together; every part is dropped as soon as it is copied.
+    let mut out = PairBlocks::empty();
+    out.0
+        .par_iter_mut()
+        .zip(columns)
+        .try_for_each(|(block, parts)| {
+            let total: usize = parts.iter().map(PairBlock::len).sum();
+            if total == 0 {
+                return Ok(());
+            }
+            block.reserve_exact(total)?;
+            for part in parts {
+                block.extend_from(&part);
+            }
+            Ok(())
+        })?;
     Ok(out)
 }
 
@@ -311,6 +309,11 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
         let i = cat.index();
         let total: usize = counts.iter().map(|c| c[i]).sum();
         out.0[i].reserve_exact(total)?;
+        // The fill pass writes every slot, so this zeroing is redundant.
+        // Skipping it would need `set_len` over uninitialised memory, and it
+        // is not worth that: the zero fill of both arrays at the 300k
+        // degree-5 payload measures 0.166 s, most of which is the page
+        // faults the fill pass would take anyway.
         out.0[i].first.resize(total, 0);
         out.0[i].second.resize(total, 0);
     }
@@ -343,6 +346,33 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
             Ok(())
         })?;
     Ok(out)
+}
+
+/// Reject a graph-to-view map that is not a partial permutation.
+///
+/// One pass, one byte per graph row.  Entries are `-1` for an unselected row,
+/// else the row's view index, each used once.
+fn check_view_map(map: &[i32]) -> Result<(), Error> {
+    let mut seen = alloc::filled(false, map.len(), Family::ViewSortScratch, "bool")?;
+    for (position, &value) in map.iter().enumerate() {
+        if value < 0 {
+            continue;
+        }
+        let view_row = value as usize;
+        let reason = if view_row >= map.len() {
+            "view rows run from 0 to one below the graph row count"
+        } else if std::mem::replace(&mut seen[view_row], true) {
+            "two graph rows map to this view row"
+        } else {
+            continue;
+        };
+        return Err(Error::InvalidViewMap {
+            position,
+            value: value as i64,
+            reason,
+        });
+    }
+    Ok(())
 }
 
 /// Sort a block by the canonical unordered key `min * n + max` in place.
@@ -665,6 +695,61 @@ mod tests {
         assert_eq!(pairs(&got, Category::HAv), vec![(4, 5)]);
     }
 
+    use crate::alloc::Family;
+
+    #[test]
+    fn a_view_map_that_repeats_or_overruns_a_row_is_rejected() {
+        let cols = crate::relationships::testing::random_pedigree(40, 3);
+        let ped = cols.try_borrow().unwrap();
+        let cats = CategorySet::up_to_degree(3);
+        let run = |map: Vec<i32>| {
+            pair_blocks(
+                &ped,
+                MaxDegree::MAX,
+                cats,
+                Some(map.as_slice()),
+                Execution::Speed,
+            )
+        };
+
+        // Two graph rows on one view row would give equal sort keys, and an
+        // unstable parallel sort would then order them by thread count.
+        let mut repeated: Vec<i32> = (0..40)
+            .map(|r| if r % 2 == 0 { r / 2 } else { -1 })
+            .collect();
+        repeated[2] = 0;
+        assert!(matches!(
+            run(repeated),
+            Err(Error::InvalidViewMap { position: 2, .. })
+        ));
+
+        let mut overrun: Vec<i32> = vec![-1; 40];
+        overrun[7] = 40;
+        assert!(matches!(
+            run(overrun),
+            Err(Error::InvalidViewMap { position: 7, .. })
+        ));
+
+        // Selecting nothing is legal and has no pairs.
+        assert_eq!(run(vec![-1; 40]).unwrap().total(), 0);
+    }
+
+    /// Which families each mode reserves.
+    ///
+    /// The table is checked in both directions: a family it calls reached
+    /// must fail the call, and one it calls unreached must leave the call
+    /// succeeding, since the plant is only ever consumed by a reservation.
+    /// A family that starts or stops being reserved therefore fails this
+    /// test instead of silently dropping a case.
+    fn seam_reaches(family: Family, execution: Option<Execution>, view: bool) -> bool {
+        match family {
+            Family::ViewSortScratch => view,
+            Family::TaskChunk => execution == Some(Execution::Speed),
+            Family::TaskTable | Family::PairBlock => execution.is_some(),
+            _ => true,
+        }
+    }
+
     /// Every allocation family reports `allocation_failed` for counts and
     /// for both executions, on a graph and a view, instead of aborting.
     ///
@@ -672,19 +757,14 @@ mod tests {
     /// copy of this test binary where nothing else can consume the plant.
     #[test]
     fn a_refused_allocation_of_any_family_is_an_error() {
-        use crate::alloc::Family;
         let exe = std::env::current_exe().unwrap();
         for family in Family::ALL {
             for (mode, execution, view) in SEAM_MODES {
-                let reached = match family {
-                    Family::ViewSortScratch => view,
-                    Family::TaskChunk => execution == Some(Execution::Speed),
-                    Family::TaskTable | Family::PairBlock => execution.is_some(),
-                    _ => true,
+                let expect = if seam_reaches(family, execution, view) {
+                    "fail"
+                } else {
+                    "pass"
                 };
-                if !reached {
-                    continue;
-                }
                 let out = std::process::Command::new(&exe)
                     .args([
                         "--exact",
@@ -693,11 +773,12 @@ mod tests {
                     ])
                     .env("PG_SEAM_FAMILY", family.name())
                     .env("PG_SEAM_MODE", mode)
+                    .env("PG_SEAM_EXPECT", expect)
                     .output()
                     .unwrap();
                 assert!(
                     out.status.success(),
-                    "{}/{mode}:\n{}",
+                    "{}/{mode} expected to {expect}:\n{}",
                     family.name(),
                     String::from_utf8_lossy(&out.stderr)
                 );
@@ -718,7 +799,7 @@ mod tests {
     /// The body of one seam case; a no-op unless `PG_SEAM_FAMILY` is set.
     #[test]
     fn seam_child() {
-        use crate::alloc::{fail_next, Family};
+        use crate::alloc::fail_next;
         let Ok(name) = std::env::var("PG_SEAM_FAMILY") else {
             return;
         };
@@ -739,9 +820,15 @@ mod tests {
                 pair_blocks(&ped, MaxDegree::MAX, all_cats, v, execution).map(|b| b.total())
             }
         };
-        match result {
-            Err(Error::AllocationFailed { operation, .. }) => assert_eq!(operation, family.name()),
-            other => panic!("{name}/{mode} gave {other:?}"),
+        let expect_failure = std::env::var("PG_SEAM_EXPECT").as_deref() == Ok("fail");
+        match (expect_failure, result) {
+            (true, Err(Error::AllocationFailed { operation, .. })) => {
+                assert_eq!(operation, family.name())
+            }
+            // The plant is consumed only by a reservation of its family, so a
+            // call that succeeds proves this mode never reserves it.
+            (false, Ok(_)) => {}
+            (_, other) => panic!("{name}/{mode} expecting {expect_failure} gave {other:?}"),
         }
         fail_next(None);
         assert!(pair_blocks(&ped, MaxDegree::MAX, all_cats, None, Execution::Speed).is_ok());

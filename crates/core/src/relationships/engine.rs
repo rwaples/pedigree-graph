@@ -38,6 +38,7 @@ use super::sibling_index::SiblingIndex;
 use super::{MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
+use std::sync::Mutex;
 
 /// Closer categories subtracted from each category's raw candidates
 /// (`_pair_extractor.py` subtract lists).  `MO, FO` together are the
@@ -131,6 +132,45 @@ impl Workspace {
             first_arm: vec![Vec::new(); super::category::N_CATEGORIES],
             orient,
         })
+    }
+}
+
+/// The workspaces the tasks of one sweep share, never more than there are
+/// threads: a task takes one and gives it back, and a task that finds none
+/// free builds its own.
+///
+/// Counting and emission both use it; `orient` is what a fresh workspace is
+/// built for, and is the only difference between the two.
+pub struct WorkspacePool {
+    n: usize,
+    orient: bool,
+    free: Mutex<Vec<Workspace>>,
+}
+
+impl WorkspacePool {
+    pub fn new(n: usize, orient: bool) -> WorkspacePool {
+        WorkspacePool {
+            n,
+            orient,
+            free: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// A free workspace, or a new one.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] when a new workspace cannot be built.
+    pub fn take(&self) -> Result<Workspace, Error> {
+        match self.free.lock().unwrap_or_else(|e| e.into_inner()).pop() {
+            Some(ws) => Ok(ws),
+            None => Workspace::build(self.n, self.orient),
+        }
+    }
+
+    /// Return a workspace for another task to reuse.
+    pub fn give(&self, ws: Workspace) {
+        self.free.lock().unwrap_or_else(|e| e.into_inner()).push(ws);
     }
 }
 
@@ -307,8 +347,12 @@ impl<'p> Engine<'p> {
             return Ok(());
         }
         let ped = &self.ped;
-        ws.sets[MO.index()] = parent_role(row, ped.mother, &ws.down[1])?;
-        ws.sets[FO.index()] = parent_role(row, ped.father, &ws.down[1])?;
+        let [mut mo, mut fo] = [MO, FO].map(|c| std::mem::take(&mut ws.sets[c.index()]));
+        let roles = parent_role(row, ped.mother, &ws.down[1], &mut mo)
+            .and_then(|()| parent_role(row, ped.father, &ws.down[1], &mut fo));
+        ws.sets[MO.index()] = mo;
+        ws.sets[FO.index()] = fo;
+        roles?;
         if ws.orient {
             // The row is the offspring, hence `first`, towards its own parent.
             ws.first_arm[MO.index()] = parent_arm(ped.mother[row]);
@@ -374,7 +418,11 @@ impl<'p> Engine<'p> {
         }
         if ws.orient {
             // Sibs of the row's ancestors: the row is the niece or nephew.
-            ws.first_arm[cat.index()] = alloc::cloned(result, Family::RowSet, "int32")?;
+            // Refilled in place so the buffer carries over between rows.
+            let arm = &mut ws.first_arm[cat.index()];
+            arm.clear();
+            alloc::reserve(arm, result.len(), Family::RowSet, "int32")?;
+            arm.extend_from_slice(result);
         }
         kind.sibs(&self.sibs, row, tmp2, sib)?;
         for _ in 1..down {
@@ -395,8 +443,12 @@ impl<'p> Engine<'p> {
         let [children, ..] = &mut ws.scratch;
         let [counted, ..] = &mut ws.weighted;
         let grandparents = ws.up[2].len();
-        ws.grandchildren.resize_with(grandparents, Vec::new);
-        for (&(g, _), grandchildren) in ws.up[2].iter().zip(&mut ws.grandchildren) {
+        // Grow to the high-water mark only.  Shrinking would free the inner
+        // buffers, and the next wider row would allocate them again.
+        if ws.grandchildren.len() < grandparents {
+            ws.grandchildren.resize_with(grandparents, Vec::new);
+        }
+        for (&(g, _), grandchildren) in ws.up[2].iter().zip(&mut ws.grandchildren[..grandparents]) {
             ws.acc.hop_support(&self.down, &[g], children)?;
             ws.acc.hop_support(&self.down, children, grandchildren)?;
         }
@@ -407,15 +459,15 @@ impl<'p> Engine<'p> {
             counted,
         )?;
         counted.retain(|&(j, _)| j as usize != row);
-        ws.shares_grandparent = sets::support(counted)?;
+        sets::support_into(counted, &mut ws.shares_grandparent)?;
         let shares_parent_id = |j: u32| {
             let j = j as usize;
             (ped.orig_mother[row] >= 0 && ped.orig_mother[row] == ped.orig_mother[j])
                 || (ped.orig_father[row] >= 0 && ped.orig_father[row] == ped.orig_father[j])
         };
-        ws.sets[C1.index()] = sets::select(counted, |m| m.at_least_two())?;
+        sets::select_into(counted, |m| m.at_least_two(), &mut ws.sets[C1.index()])?;
         ws.sets[C1.index()].retain(|&j| !shares_parent_id(j));
-        ws.sets[H1C.index()] = sets::select(counted, |m| m.is_one())?;
+        sets::select_into(counted, |m| m.is_one(), &mut ws.sets[H1C.index()])?;
         ws.sets[H1C.index()].retain(|&j| !shares_parent_id(j));
         Ok(())
     }
@@ -433,30 +485,40 @@ impl<'p> Engine<'p> {
         let [forward, backward, tmp] = &mut ws.weighted;
         self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp)?;
         self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp)?;
-        let mut result = sets::select(forward, &keep)?;
-        let backward = sets::select(backward, &keep)?;
-        sets::union_into(&mut result, &backward)?;
-        if ws.orient {
-            // Through `backward` the row sits `b > a` meioses from the shared
-            // ancestor: it is the junior cousin, which the registry puts first
-            // (`_pair_extractor.py` reads these products with `row_is_first=False`).
-            ws.first_arm[cat.index()] = backward;
+        // Both buffers are the ones this category used on the previous row.
+        let mut result = std::mem::take(&mut ws.sets[cat.index()]);
+        let mut junior = std::mem::take(&mut ws.first_arm[cat.index()]);
+        let built = (|| {
+            sets::select_into(forward, &keep, &mut result)?;
+            sets::select_into(backward, &keep, &mut junior)?;
+            sets::union_into(&mut result, &junior)
+        })();
+        if built.is_ok() {
+            sets::drop_self(&mut result, row);
+            self.finalize(cat, &mut result, &ws.sets);
         }
-        sets::drop_self(&mut result, row);
-        self.finalize(cat, &mut result, &ws.sets);
         ws.sets[cat.index()] = result;
-        Ok(())
+        // Through `junior` the row sits `b > a` meioses from the shared
+        // ancestor: it is the junior cousin, which the registry puts first
+        // (the matrix oracle reads these products with `row_is_first=False`).
+        // Kept whether or not orientation is wanted, so the buffer survives
+        // to the next row; the counting path never reads it.
+        ws.first_arm[cat.index()] = junior;
+        built
     }
 
     /// `A^3 @ (A^3)^T >= 2`, minus pairs sharing any grandparent.
     fn second_cousins(&self, row: usize, ws: &mut Workspace) -> Result<(), Error> {
         let [product, _, tmp] = &mut ws.weighted;
         self.chain_down(&mut ws.acc, &ws.up[3], 3, product, tmp)?;
-        let mut result = sets::select(product, |m| m.at_least_two())?;
-        sets::drop_self(&mut result, row);
-        sets::subtract(&mut result, &ws.shares_grandparent);
+        let mut result = std::mem::take(&mut ws.sets[Category::C2.index()]);
+        let built = sets::select_into(product, |m| m.at_least_two(), &mut result);
+        if built.is_ok() {
+            sets::drop_self(&mut result, row);
+            sets::subtract(&mut result, &ws.shares_grandparent);
+        }
         ws.sets[Category::C2.index()] = result;
-        Ok(())
+        built
     }
 
     /// `src @ (A^T)^k` with saturated path multiplicity.
@@ -509,13 +571,20 @@ impl SibKind {
 /// Lineal pairs in both orientations: ancestors at k hops and descendants at
 /// k hops.  Towards an ancestor the row is the descendant, hence `first`.
 fn lineal(ws: &mut Workspace, cat: Category, k: usize) -> Result<(), Error> {
-    let mut set = sets::support(&ws.up[k])?;
-    if ws.orient {
-        ws.first_arm[cat.index()] = alloc::cloned(&set, Family::RowSet, "int32")?;
-    }
-    sets::union_into(&mut set, &ws.down[k])?;
+    let mut set = std::mem::take(&mut ws.sets[cat.index()]);
+    let built = (|| {
+        sets::support_into(&ws.up[k], &mut set)?;
+        if ws.orient {
+            // The up arm alone: towards an ancestor the row is the descendant.
+            let arm = &mut ws.first_arm[cat.index()];
+            arm.clear();
+            alloc::reserve(arm, set.len(), Family::RowSet, "int32")?;
+            arm.extend_from_slice(&set);
+        }
+        sets::union_into(&mut set, &ws.down[k])
+    })();
     ws.sets[cat.index()] = set;
-    Ok(())
+    built
 }
 
 /// The first arm of a parent role: the row's own parent, if any.
@@ -529,8 +598,12 @@ fn parent_arm(parent: i32) -> Vec<u32> {
 
 /// One parent role in both orientations: `row`'s parent of that role, and
 /// the children (`down1`, sorted) for whom `row` fills that role.
-fn parent_role(row: usize, parent: &[i32], down1: &[u32]) -> Result<Vec<u32>, Error> {
-    let mut set = alloc::collect(
+///
+/// Fills `set` in place, so the category keeps one buffer across rows.
+fn parent_role(row: usize, parent: &[i32], down1: &[u32], set: &mut Vec<u32>) -> Result<(), Error> {
+    set.clear();
+    alloc::extend(
+        set,
         down1
             .iter()
             .copied()
@@ -539,9 +612,9 @@ fn parent_role(row: usize, parent: &[i32], down1: &[u32]) -> Result<Vec<u32>, Er
         "int32",
     )?;
     if parent[row] >= 0 {
-        sets::union_into(&mut set, &[parent[row] as u32])?;
+        sets::union_into(set, &[parent[row] as u32])?;
     }
-    Ok(set)
+    Ok(())
 }
 
 #[cfg(test)]

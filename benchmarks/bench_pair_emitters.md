@@ -265,3 +265,59 @@ element by element in `alloc::extend` measured 1.020 to 1.048 and was
 replaced by a bulk path for exact-size iterators before this record.
 The benchmark drivers now spell the arms `speed` and `memory`; the stage A
 and B tables above keep the prototype names they were measured under.
+
+# Review follow-up 2026-09-19: buffer reuse and the parallel assembly
+
+A code review of the slice 12 range raised five efficiency claims, none of
+them measured at the time.  Measured here on `random_300k`, graph, degree 5,
+`pgr-bench-pairs` in fresh interleaved processes, the machine at its 2.6 GHz
+base clock.  Every run of every arm produced identical blocks.
+
+**Per-row buffer reuse** (five repeats, plus nine on the single-thread
+`speed` cell, whose first pass was noisy).  The sorted-set union now merges
+in place, the lineal, parent-role, cousin and removed-cousin sets are refilled
+rather than replaced, the first-arm capture is refilled rather than cloned,
+and the grandchildren scratch keeps its high-water buffers instead of freeing
+them on a narrower row.
+
+| threads | execution | before | after | ratio |
+|---|---|---|---|---|
+| 1 | speed | 18.186 s | 17.010 s | 0.935 |
+| 1 | memory | 29.039 s | 27.805 s | 0.958 |
+| 6 | speed | 3.295 s | 3.104 s | 0.942 |
+| 6 | memory | 6.039 s | 5.715 s | 0.946 |
+
+Engine RSS is unchanged to within 0.5 MiB in every cell.
+
+**Parallel assembly of the `speed` blocks** (five repeats).  The task table is
+transposed into one column per category, which moves `Vec` handles only, and
+the columns are then copied into their blocks together.  Each part is still
+dropped as it is copied.
+
+| threads | before | after | ratio | RSS before | RSS after |
+|---|---|---|---|---|---|
+| 1 | 14.891 s | 14.951 s | 1.004 | 528.2 MiB | 528.4 MiB |
+| 6 | 3.229 s | 3.139 s | 0.972 | 537.2 MiB | 538.1 MiB |
+
+**Two claims were measured and left alone.**  The `memory` mode zero-fills
+each block before the fill pass overwrites it; at this payload that fill is
+0.166 s of a 27.8 s call, and most of it is the page faults the fill pass
+would take anyway, so it does not justify `set_len` over uninitialised
+memory.  The ancestor DP's profiling counters cost nothing: a counter-free
+copy measured 0.620 s against 0.584 s over five runs each on the same
+fixture, ranges overlapping.
+
+**Both changes together**, against the same binary the review started from,
+seven interleaved repeats of each of the four cells:
+
+| threads | execution | ratio |
+|---|---|---|
+| 1 | speed | 0.953 |
+| 1 | memory | 0.941 |
+| 6 | speed | 0.902 |
+| 6 | memory | 0.953 |
+
+This pass overlapped with a test run, so its absolute walls are higher than
+the tables above; the arms are interleaved, so both saw the same load and the
+ratios stand.  Engine RSS moved by at most 2.4 MiB in any cell.
+

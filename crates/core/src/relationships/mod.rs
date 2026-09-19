@@ -11,13 +11,12 @@ mod sibling_index;
 mod testing;
 
 pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
-pub use engine::{Engine, Workspace, EXCLUSIONS};
+pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};
 pub use multiplicity::Mult;
 pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};
 
 use crate::error::Error;
 use rayon::prelude::*;
-use std::sync::Mutex;
 
 /// A relationship degree the engine counts, checked once where it enters.
 ///
@@ -236,23 +235,27 @@ pub fn count_pairs(
 ) -> Result<Counts, Error> {
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
-    let pool: Mutex<Vec<Workspace>> = Mutex::new(Vec::new());
+    let pool = WorkspacePool::new(n, false);
     task_ranges(n)
         .into_par_iter()
         .map(|(start, end)| {
-            let mut ws = match pool.lock().unwrap().pop() {
-                Some(ws) => ws,
-                None => Workspace::new(n)?,
-            };
+            let mut ws = pool.take()?;
+            // Given back even when a row fails, so the tasks already
+            // dispatched reuse it rather than allocate under the pressure
+            // that failed this one.
             let mut counts = Counts::default();
+            let mut result = Ok(());
             for row in start..end {
                 if selected.is_some_and(|s| !s[row]) {
                     continue;
                 }
-                engine.count_row(row, selected, &mut ws, &mut counts)?;
+                result = engine.count_row(row, selected, &mut ws, &mut counts);
+                if result.is_err() {
+                    break;
+                }
             }
-            pool.lock().unwrap().push(ws);
-            Ok(counts)
+            pool.give(ws);
+            result.map(|()| counts)
         })
         .try_reduce(Counts::default, |a, b| Ok(a.merge(b)))
 }

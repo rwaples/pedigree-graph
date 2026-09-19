@@ -215,6 +215,15 @@ pub enum Error {
         maximum: i64,
     },
     /// The caller named a sex encoding the API does not define.
+    /// The graph-to-view map is not a partial permutation of view rows.
+    InvalidViewMap {
+        /// The graph row carrying the offending entry.
+        position: usize,
+        /// The offending view row.
+        value: i64,
+        /// Why it is rejected.
+        reason: &'static str,
+    },
     UnknownSexEncoding {
         /// The name as given.
         name: String,
@@ -241,7 +250,7 @@ impl Error {
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => {
                 ErrorClass::Usage
             }
-            Error::UnknownSexEncoding { .. } => ErrorClass::Usage,
+            Error::InvalidViewMap { .. } | Error::UnknownSexEncoding { .. } => ErrorClass::Usage,
         }
     }
 
@@ -264,7 +273,7 @@ impl Error {
             Error::AllocationFailed { .. } => "allocation_failed",
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => "",
             Error::MaxDegreeOutOfRange { .. } => "max_degree_out_of_range",
-            Error::UnknownSexEncoding { .. } => "",
+            Error::InvalidViewMap { .. } | Error::UnknownSexEncoding { .. } => "",
         }
     }
 
@@ -386,7 +395,9 @@ impl Error {
                 ("requested_elements", int(*requested_elements)),
                 ("dtype", Str(dtype)),
             ],
-            Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => vec![],
+            Error::ThreadPoolConflict { .. }
+            | Error::ThreadPoolUnavailable { .. }
+            | Error::InvalidViewMap { .. } => vec![],
             Error::MaxDegreeOutOfRange {
                 value,
                 minimum,
@@ -548,6 +559,14 @@ impl std::fmt::Display for Error {
             Error::ThreadPoolUnavailable { reason } => {
                 write!(f, "could not start the thread pool: {reason}")
             }
+            Error::InvalidViewMap {
+                position,
+                value,
+                reason,
+            } => write!(
+                f,
+                "view_rows[{position}] is {value}: {reason}"
+            ),
             Error::MaxDegreeOutOfRange {
                 value,
                 minimum,
