@@ -35,7 +35,7 @@ import scipy.sparse as sp
 from pedigree_graph._errors import ResourceError
 from pedigree_graph._kinship_dp import _build_kinship_csc, _fill_candidate_kinship_values
 from pedigree_graph._kinship_pairwise import memoised_kinship
-from pedigree_graph._relationship_pairs import relationship_pairs
+from pedigree_graph._relationship_pairs import check_execution, relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._threads import thread_budget
 
@@ -136,6 +136,7 @@ class PedigreeMatrixMethods:
         *,
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
+        execution: str = "speed",
     ) -> sp.csc_matrix:
         """Return kinship on selected closest-category pairs plus the diagonal.
 
@@ -151,6 +152,11 @@ class PedigreeMatrixMethods:
                 Exclusive with *categories*.
             categories: Registry codes to select, any order.  Exclusive with
                 *max_degree*.
+            execution: How the pair blocks this is built from are assembled,
+                as :meth:`relationship_pairs` defines it.  This method holds
+                the blocks and the support at once, so ``"memory"`` is worth
+                having on a large selection; the matrix is identical either
+                way, and so is the cache entry.
 
         Returns:
             A cached full-symmetric CSC matrix with read-only float32 data and
@@ -158,10 +164,13 @@ class PedigreeMatrixMethods:
 
         Raises:
             TypeError: Both selectors, neither, or malformed categories.
+            ValueError: *execution* is not ``"speed"`` or ``"memory"``.
             PedigreeValidationError: As :meth:`relationship_pairs`.
             ResourceError: If CSC or allocation capacity is exceeded.
         """
-        return relationship_kinship_matrix(self, RelationshipSelection.parse(max_degree, categories))
+        return relationship_kinship_matrix(
+            self, RelationshipSelection.parse(max_degree, categories), check_execution(execution)
+        )
 
     def approximate_kinship_matrix(
         self: PedigreeGraph,
@@ -439,11 +448,15 @@ def complete_kinship_matrix(graph: PedigreeGraph) -> sp.csc_matrix:
     return matrix
 
 
-def relationship_kinship_matrix(graph: PedigreeGraph, selection: RelationshipSelection) -> sp.csc_matrix:
+def relationship_kinship_matrix(
+    graph: PedigreeGraph, selection: RelationshipSelection, execution: str = "speed"
+) -> sp.csc_matrix:
     """Return the cached matrix on selected closest-category support.
 
     The cache is keyed by the selection's canonical code order, so a cutoff
-    and the explicit code list it names are one entry, not two.
+    and the explicit code list it names are one entry, not two.  *execution*
+    is not part of the key: it changes what the pair blocks cost to build,
+    never what they contain.
     """
     key = selection.ordered
     cached = graph._relationship_kinship_cache.get(key)
@@ -451,7 +464,7 @@ def relationship_kinship_matrix(graph: PedigreeGraph, selection: RelationshipSel
         return cached
 
     started = time.perf_counter()
-    pairs = relationship_pairs(graph, selection, "speed")
+    pairs = relationship_pairs(graph, selection, execution)
     matrix = _support_from_relationships(graph, pairs)
     # Pair chunks suit sparse relationship support, not dense support generally.
     # The measured max-degree-5 case spans about 4 chunks versus 26 for the

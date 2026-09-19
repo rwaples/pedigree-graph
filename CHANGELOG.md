@@ -49,6 +49,24 @@ live on the corresponding GitHub release pages.
   total and elapsed seconds. The matrix engine logged once per degree; a
   single native call cannot, so an operator watching a long run sees it
   enter and leave.
+- **Changed: the relationship engine reuses its per-row buffers.** The
+  sorted-set union merges in place, and the lineal, parent-role, cousin,
+  removed-cousin and first-arm sets are refilled rather than replaced, so a
+  row no longer frees and reallocates the buffers the previous row used.
+  The `speed` blocks are also assembled category by category in parallel.
+  On `random_300k` at degree 5 this is 0.94 of the previous wall on every
+  thread count and execution, with engine memory unchanged; blocks are
+  identical. Measurements: `benchmarks/bench_pair_emitters.md`.
+- **Fixed: a malformed view map is rejected instead of misread.** A map
+  with an entry outside `-1 .. n`, or with two graph rows on one view row,
+  raises `ValueError`. Repeated view rows would have given a block equal
+  sort keys, and the unstable parallel sort would then have ordered them by
+  thread count. Only the native call could supply one; a `PedigreeView`
+  always builds a valid map.
+- **Added: `relationship_kinship_matrix(..., execution=...)`.** The same
+  keyword `relationship_pairs` takes, for the package's heaviest pair
+  consumer: it holds the blocks and the support at once. The matrix and its
+  cache entry are identical either way.
 - **Fixed: a view that selects no rows no longer overflows.** The view-row
   count is taken over selected rows only; a map of all `-1` used to
   sign-extend to `u64::MAX` and wrap, which panicked in a debug build.
