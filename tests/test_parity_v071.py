@@ -29,13 +29,24 @@ Documented 0.8 divergences:
   counted that genome's pairs with the rest of the cohort twice.  0.7.1 is a
   frozen record of that convention, not an independent oracle for it, so on
   fixtures with MZ twins the ``per_gen_mean_kinship`` hash is expected to
-  differ.  Thirteen of the seventeen small fixtures carry no MZ twin and still
-  compare in full.  Within the four that do, the kinship values themselves did
-  not move — only which pairs are averaged — so any cohort holding no MZ twin
-  must still match 0.7.1 exactly; that check is thin where twins reach every
-  cohort (none of ``small_pedigree``'s three, one of ``random_1k``'s seven).
-  What pins the new convention is not this gate but the hand-computed
-  expectations in ``test_generation_kinship_summary``.
+  differ.  Twelve of the seventeen small fixtures carry no MZ twin; within the
+  five that do, the kinship values themselves did not move — only which pairs
+  are averaged — so any cohort holding no MZ twin must still match 0.7.1
+  exactly; that check is thin where twins reach every cohort (none of
+  ``small_pedigree``'s three, one of ``random_1k``'s seven).  What pins the new
+  convention is not this gate but the hand-computed expectations in
+  ``test_generation_kinship_summary``.
+
+Measured coverage, asserted by ``test_exemptions_are_values_only`` so that
+these numbers cannot rot into a general claim of tightness: across the
+seventeen small fixtures the manifest holds 883 structural keys — pair blocks
+in graph and in view rows, matrix supports, depth, ancestor and descendant
+counts — of which none is exempt, and 459 value keys, of which 50 are.  Every
+exemption above is a value the package deliberately redefined, so no fixture
+compares in full, and the structural oracle is untouched.  What pins the
+redefined values is the hand-computed expectations in
+``test_generation_kinship_summary``, ``test_inbreeding`` and
+``test_kinship_matrices``.
 """
 
 from __future__ import annotations
@@ -64,6 +75,7 @@ MZ_AWARE_F = "inbreeding"
 MZ_AWARE_THETA = "per_gen_mean_kinship"
 FLOAT32_PAIR_KINSHIP = frozenset({"deep_inbred_60g"})
 CORRECTED_APPROXIMATE_MATRIX_VALUE = "approx_values"
+VALUE_HASH_KEYS = frozenset({MZ_AWARE_F, MZ_AWARE_THETA, CORRECTED_APPROXIMATE_MATRIX_VALUE, "complete_values"})
 
 _PAIRED_ARRAYS = {
     "approx_support": ("approx/row", "approx/col"),
@@ -122,6 +134,27 @@ def _compare_hashes(
     ]
 
 
+def _is_value_key(key: str) -> bool:
+    """Whether a manifest hash key is a scientific value rather than structure.
+
+    Structure is membership and layout: which pairs exist, which cells the
+    matrices support, how deep a row sits, how many ancestors it has.  A value
+    is a number the package could decide to compute differently without the
+    pedigree changing.
+    """
+    return key.startswith("pair_kinship/") or key in VALUE_HASH_KEYS
+
+
+def _exempt_keys(name: str, entry: dict, *, has_twins: bool) -> frozenset[str]:
+    """The documented divergences of the module docstring that apply to *name*."""
+    exempt = {CORRECTED_APPROXIMATE_MATRIX_VALUE}
+    if has_twins:
+        exempt |= {MZ_AWARE_F, MZ_AWARE_THETA}
+    if name in FLOAT32_PAIR_KINSHIP:
+        exempt |= {key for key in entry["hashes"] if key.startswith("pair_kinship/")}
+    return frozenset(exempt)
+
+
 def _input_from_npz(entry: dict) -> dict[str, np.ndarray]:
     with np.load(DATA / entry["file"]) as npz:
         return {name.removeprefix("input/"): npz[name] for name in npz.files if name.startswith("input/")}
@@ -166,17 +199,12 @@ def test_small_fixture_matches_the_frozen_baseline(name):
     assert summary["subsample"]["counts"] == entry["subsample"]["counts"]
 
     has_twins = bool((fx["twin"] >= 0).any())
-    exempt = {CORRECTED_APPROXIMATE_MATRIX_VALUE}
-    if has_twins:
-        exempt |= {MZ_AWARE_F, MZ_AWARE_THETA}
-    if name in FLOAT32_PAIR_KINSHIP:
-        exempt |= {key for key in entry["hashes"] if key.startswith("pair_kinship/")}
     problems = _compare_hashes(
         entry["hashes"],
         summary["hashes"],
         stored,
         captured,
-        exempt=frozenset(exempt),
+        exempt=_exempt_keys(name, entry, has_twins=has_twins),
     )
     problems += _compare_hashes(
         entry["subsample"]["hashes"],
@@ -233,6 +261,34 @@ def _propagated_candidate_for_large_parity(graph):
     return sp.csc_matrix((data, indices, indptr), shape=(graph.n_individuals, graph.n_individuals))
 
 
+def test_exemptions_are_values_only():
+    """No structural key is ever exempt, and the split is what the docstring claims.
+
+    The counts are asserted, not merely reported, because the claim they back
+    is the one that rotted last time: a divergence that reached a pair block, a
+    matrix support or a depth would be a regression rather than a decision, and
+    a fixture added without revisiting the docstring would leave it overstating
+    the coverage again.
+    """
+    totals = dict.fromkeys(("structural", "value"), 0)
+    exempted = dict.fromkeys(("structural", "value"), 0)
+    for name in SMALL:
+        entry = FIXTURES[name]
+        has_twins = bool((_input_from_npz(entry)["twin"] >= 0).any())
+        exempt = _exempt_keys(name, entry, has_twins=has_twins)
+        assert exempt <= set(entry["hashes"]), name
+        for key in entry["hashes"]:
+            bucket = "value" if _is_value_key(key) else "structural"
+            totals[bucket] += 1
+            exempted[bucket] += key in exempt
+        # View-space pair blocks, exempt nowhere.
+        totals["structural"] += len(entry["subsample"]["hashes"])
+
+    assert exempted["structural"] == 0
+    assert totals == {"structural": 883, "value": 459}
+    assert exempted["value"] == 50
+
+
 def test_subsample_hash_key_mapping_covers_every_stored_array():
     entry = FIXTURES["random_1k"]
     stored = set(_stored_arrays(entry))
@@ -254,7 +310,7 @@ def test_random_30k_matches_the_frozen_baseline():
     assert summary["counts"] == entry["counts"]
     assert summary["subsample"]["counts"] == entry["subsample"]["counts"]
     assert summary["subsample"]["hashes"] == entry["subsample"]["hashes"]
-    exempt = {MZ_AWARE_F, MZ_AWARE_THETA, CORRECTED_APPROXIMATE_MATRIX_VALUE}
+    exempt = _exempt_keys(name, entry, has_twins=bool((fx["twin"] >= 0).any()))
     assert {k: v for k, v in summary["hashes"].items() if k not in exempt} == {
         k: v for k, v in entry["hashes"].items() if k not in exempt
     }
