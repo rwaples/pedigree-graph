@@ -64,3 +64,29 @@ Two boundary rules make the split work:
 - New engines (e.g. the experimental BFS counter reassessed in PGQ-009) should
   follow the same contract: read graph data, return results, let a wrapper
   persist them.
+
+## Amended 2026-09-19 (slice 12, the matrix collaborator is gone)
+
+Slice 12 moved `relationship_pairs` onto the Rust row-streaming engine and
+deleted `MatrixPairExtractor` (`_pair_extractor.py`), `_pair_utils.py`, and
+the graph's matrix `cached_property`s (`_A`, `_A2`, `_full_sib_matrix`, …)
+from the package. Boundary rule 1 above therefore describes a coupling that
+no longer exists: there are no private matrices on `PedigreeGraph` to read.
+The matrix engine survives only as the differential oracle in
+`tests/oracle/relationship_pairs.py`, where `_Matrices(graph)` builds the
+matrices it needs from the graph's public columns rather than off the graph.
+
+What still holds, and is the live rule for any new engine:
+
+* **Boundary rule 2 is unchanged.** An engine returns its result; the public
+  wrapper owns whatever is cached. `_count_close_relatives` and
+  `relationship_pairs` both work this way, and
+  `tests/test_pair_engines.py::TestEngineReadOnlyContract` still checks it.
+* **The registry stays the one source of relationship codes** (`_registry.py`),
+  and the engine reads the graph's public columns, not its internals.
+
+`_release_pair_matrices` is gone with the matrices; nothing needs to be freed
+because nothing is held. ADR 0003's remark that orientation rules "stay
+hand-written in `_pair_extractor.py`" now points at ADR 0010's amendment,
+which records them as the engine's first-arm provenance.
+

@@ -19,7 +19,9 @@ and several of its contracts are implicit or misleading:
   (`_kinship_dp.py:104-123`), so cohort metadata can change a structural
   computation. Structural depth is derived separately elsewhere.
 * Pair orientation for lineal categories is canonicalised during
-  view/subsample remap (`_pair_utils.py:124-153`), so which endpoint is the
+  view/subsample remap (`project_pairs` in `_pair_utils.py:124-153` when this was
+  written; since slice 12 the relabel and re-sort in
+  `crates/core/src/relationships/pairs.rs`), so which endpoint is the
   ancestor depends on the construction path.
 * `min_kinship` on the DP is propagation pruning, not a final-value filter
   (ADR 0005 records the inbred counterexample).

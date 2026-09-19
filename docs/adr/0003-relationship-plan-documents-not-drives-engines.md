@@ -25,7 +25,9 @@ three engines return exactly the registry key set.
 **The plan documents engine semantics; it deliberately does NOT drive engine
 control flow.** In particular, the matrix extractor's per-code subtract
 dependency lists (e.g. `1C1R` subtracts `[po, gp, GGP, Av, GAv, sib_all, 1C]`)
-stay hand-written in `_pair_extractor.py`, not encoded as plan data.
+stay hand-written in the engine, not encoded as plan data (since slice 12 that is the
+Rust row-streaming engine's first-arm provenance, ADR 0010 as amended; it was
+`_pair_extractor.py` when this was written).
 
 ## Considered options
 
