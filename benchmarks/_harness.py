@@ -141,6 +141,22 @@ class Verdict(StrEnum):
     INCONCLUSIVE = "inconclusive"
 
 
+_STATUS = Path("/proc/self/status")
+
+
+def status_field_mib(name: str) -> float:
+    """One ``/proc/self/status`` size field in MiB, e.g. ``"VmHWM:"`` or ``"VmRSS:"``.
+
+    Raises rather than returning a sentinel: a missing field means the read is
+    broken, and a benchmark that silently records a sentinel is worse than one
+    that stops.
+    """
+    for line in _STATUS.read_text().splitlines():
+        if line.startswith(name):
+            return int(line.split()[1]) / 1024.0
+    raise RuntimeError(f"{name} missing from /proc/self/status")
+
+
 class PeakRss:
     """Peak resident set size over one timed region, from the kernel.
 
@@ -155,7 +171,6 @@ class PeakRss:
     with no sampling and no dependence on the GIL.
     """
 
-    _STATUS = Path("/proc/self/status")
     _CLEAR_REFS = Path("/proc/self/clear_refs")
 
     def __init__(self) -> None:
@@ -166,10 +181,7 @@ class PeakRss:
 
     @classmethod
     def _field_mib(cls, name: str) -> float:
-        for line in cls._STATUS.read_text().splitlines():
-            if line.startswith(name):
-                return int(line.split()[1]) / 1024.0
-        raise RuntimeError(f"{name} missing from /proc/self/status")
+        return status_field_mib(name)
 
     def __enter__(self) -> PeakRss:
         self._CLEAR_REFS.write_text("5\n")  # CLEAR_REFS_MM_HIWATER_RSS

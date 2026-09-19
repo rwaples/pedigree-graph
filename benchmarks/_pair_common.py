@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
+from _harness import status_field_mib
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 VIEW_SEED = 12
 CODES = (
@@ -28,11 +32,13 @@ def half_view_rows(n: int) -> np.ndarray:
 
 
 def peak_rss_mib() -> float:
-    """This process's ``VmHWM`` in MiB."""
-    for line in Path("/proc/self/status").read_text().splitlines():
-        if line.startswith("VmHWM:"):
-            return int(line.split()[1]) / 1024.0
-    return float("nan")
+    """This process's ``VmHWM`` in MiB, through the harness's one reader.
+
+    The pair benchmarks take the high-water mark before and after the call and
+    report the difference, so they do not reset it the way
+    :class:`_harness.PeakRss` does around a region.
+    """
+    return status_field_mib("VmHWM:")
 
 
 def dump_blocks(pairs, directory: Path) -> None:

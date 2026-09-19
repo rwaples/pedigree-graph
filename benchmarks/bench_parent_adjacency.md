@@ -1,5 +1,11 @@
 # Issue #18: reaching the parent adjacency
 
+> **Retired in 0.9.0.** Slice 12 moved relationship pairs onto the Rust
+> row-streaming engine and deleted the parent adjacency from the package, so
+> `_A` no longer exists and neither arm of this benchmark can run. The driver
+> was removed with it; the measurements below stand as the record of the
+> question issue #18 asked, which the deletion settled.
+
 What it costs to build a graph and reach `_A`, before and after the eager
 `_Am`/`_Af` pair was replaced by one lazily assembled COO.
 

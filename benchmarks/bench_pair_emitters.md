@@ -191,8 +191,10 @@ Applying the plan's rule (fastest survivor is `speed`, lowest peak is
   measurement.
 
 Extrapolating `two_pass` to the 20M degree-5 count of 2,124,650,324 pairs
-gives a 15.8 GiB payload plus engine state, within the 30 GiB box; `buffered`
-would need about 36 GiB and cannot serve degree 5 at 20M.  The degree-3
+gives a 15.8 GiB payload plus engine state, within the 30 GiB box.  The same
+extrapolation puts `buffered` at about 36 GiB, over the box; that figure is
+the 2M ratio of 2.29 applied to the 15.8 GiB payload and was never measured,
+because the run was not attempted.  The degree-3
 capability gate and the degree-5 attempt remain to be run.
 
 # Stage C step 2: `pedsum_20M`, graph, degree 3, `two_pass`, six threads
@@ -233,7 +235,8 @@ with 18 GiB available before the run.  It completed.
 | major page faults | 0 |
 
 The 20M degree-5 pair query is therefore served in memory mode within the
-30 GiB box; `buffered` would need about 36 GiB and cannot.
+30 GiB box.  `buffered` was not attempted at this size; extrapolating its 2M
+ratio of 2.29 puts it near 36 GiB, which is an estimate, not a measurement.
 
 # Commit 3 gate: fallible engine against the prototype
 
