@@ -137,7 +137,8 @@ output, rather than make a sparse or dense matrix an obligatory intermediate.
 this interface: `_kinship_dp.py` computes per-generation summary values while
 streaming DP storage, and `_ne_rates.py` consumes those summaries. General
 matrix-vector products and grouped reductions still require callers to obtain a
-kinship matrix or issue pairwise queries.
+kinship matrix or issue pairwise queries. No current consumer in simACE, fitACE or
+pedsum forms such a product in Python; see the evaluation order below.
 
 #### Proposed interface
 
@@ -188,11 +189,12 @@ for the retained ancestral history rather than the original data set. See the
 
 #### Current seam
 
-`PedigreeView` owns graph-row to view-row coordinate maps, but
-`_pair_extractor.py::view_relationship_pairs` classifies relationships in the
-full graph and then `_pair_utils.py::project_pairs` discards pairs whose
-endpoints are not selected. A small view can therefore pay full-graph
-classification cost.
+`PedigreeView` owns graph-row to view-row coordinate maps, but the engine
+classifies relationships in the full graph and discards pairs whose endpoints
+are not selected. Since slice 12 both halves are in
+`crates/core/src/relationships/pairs.rs`: rows outside the view are skipped
+per row, and survivors are relabelled and re-sorted by the view-space key.
+A small view therefore still pays full-graph classification cost.
 
 #### Proposed module
 
@@ -349,11 +351,11 @@ pedigree-graph currently computes kinship in three materially different ways:
 1. **Requested pairs:** `_kinship_pairwise.py::_pairwise_kinship_core` performs
    an iterative, post-order Karigl recurrence over only the requested pairs and
    their pair-state dependencies. One open-addressing memo is shared across the
-   request (`pedigree_graph/_kinship_pairwise.py:214-352`).
+   request (`pedigree_graph/_kinship_pairwise.py:265-415`).
 2. **Matrices and selected support:** `_kinship_dp.py::_dp_kinship` processes
    the pedigree depth by depth, while `_kinship_dp_depth.py::_process_depth`
    merge-walks the two parent rows and writes symmetric child entries
-   (`pedigree_graph/_kinship_dp_depth.py:195-268`).
+   (`pedigree_graph/_kinship_dp_depth.py:191-315`).
 3. **Inbreeding only:** `_inbreeding_kernel.py::_compute_F_meuwissen_luo`
    performs the genome-node Meuwissen-Luo walk using the decomposition
    `A = T D T'` without constructing pairwise kinship
@@ -369,13 +371,13 @@ This is the strongest additional pairwise-kinship experiment.
 
 In stable topological order, a canonical pair state is `(lo, hi)`, and the
 production kernel decodes `lo` as `other` and `hi` as `peeled`
-(`pedigree_graph/_kinship_pairwise.py:275-279`). Every dependency has a
+(`pedigree_graph/_kinship_pairwise.py:339-343`). Every dependency has a
 strictly smaller maximum endpoint:
 
 - an ordinary state emits `(mother_hi, lo)` and `(father_hi, lo)`
-  (`pedigree_graph/_kinship_pairwise.py:311-316`); and
+  (`pedigree_graph/_kinship_pairwise.py:374-382`); and
 - a self or MZ-like state emits `(mother_hi, father_hi)`
-  (`pedigree_graph/_kinship_pairwise.py:296`).
+  (`pedigree_graph/_kinship_pairwise.py:360-363`).
 
 Both parents precede the peeled child, and `lo < hi` for a non-self state, so
 the recurrence DAG is naturally layered by `hi`. A bulk engine could exploit
@@ -391,7 +393,7 @@ that structure:
 A compact representation could use row offsets plus one `int32 lo` and one
 `float32` value per distinct state. The current global memo uses an `int64` key
 and `float32` value—12 bytes per slot—and grows at a 70% load threshold
-(`pedigree_graph/_kinship_pairwise.py:42`, `72-75`, `337-343`). At the maximum
+(`pedigree_graph/_kinship_pairwise.py:43`, `92-93`, `401`). At the maximum
 load that is about 17 bytes of slot storage per live entry before stack/output
 storage, and geometric growth temporarily retains both tables. ADR 0009
 measured the rehash copy at about 30% of peak RSS on the 536k-row case
@@ -428,7 +430,7 @@ which either wall time or peak memory improves materially.
 Before replacing the memo, measure whether its simplest implementation choices
 are a bottleneck. `_memo_slot` maps a canonical key directly with
 `idx = key & mask`, without mixing the key bits
-(`pedigree_graph/_kinship_pairwise.py:176-184`). Since the key is
+(`pedigree_graph/_kinship_pairwise.py:226-235`). Since the key is
 `lo * n + hi` and relatedness workloads often concentrate endpoints, poor
 low-bit distribution is plausible but unverified.
 
@@ -446,7 +448,7 @@ states-per-root ratio. Hash placement cannot change recurrence values because
 the original canonical key is still stored and compared.
 
 The current `_memo_grow` allocates a complete doubled table and rehashes every
-entry (`pedigree_graph/_kinship_pairwise.py:196-211`). Independently of key
+entry (`pedigree_graph/_kinship_pairwise.py:247-261`). Independently of key
 mixing, the Rust-core implementation should benchmark segmented growth or
 another no-predecessor-copy layout against the requirement already recorded in
 [ADR 0007](adr/0007-rust-core-host-boundary-and-release.md). A standard Rust
@@ -460,7 +462,7 @@ Opportunity 2 proposed a matrix-free API. The existing inbreeding calculation
 provides a concrete implementation path. `_compute_F_meuwissen_luo` already
 constructs the Mendelian-sampling diagonal `D` and traverses path coefficients
 from `T` on the genome-node pedigree
-(`pedigree_graph/_inbreeding_kernel.py:68-80`, `136-202`), but currently returns
+(`pedigree_graph/_inbreeding_kernel.py:136-150`, `196-201`), but currently returns
 only `F` (`pedigree_graph/_inbreeding_kernel.py:210`).
 
 In exact arithmetic, with numerator relationship matrix `A = T D T'` and
@@ -527,7 +529,7 @@ optimisation in this section.
 ### K5. Reuse parental merge templates within sibships
 
 `_process_depth` merge-walks the same two parent rows independently for every
-child (`pedigree_graph/_kinship_dp_depth.py:229-268`). Full siblings at the same
+child (`pedigree_graph/_kinship_dp_depth.py:249-300`). Full siblings at the same
 depth share the part of this calculation involving rows from earlier depths.
 A family-batched implementation could:
 
@@ -551,9 +553,9 @@ canonical parent pair.
 ### K6. Fuse propagated-support discovery with exact-value capture
 
 `approximate_kinship_matrix` currently runs a threshold-propagating DP to build
-candidate support (`pedigree_graph/_kinship_matrix.py:517-537`) and then a
+candidate support (`pedigree_graph/_kinship_matrix.py:495-503`) and then a
 complete retiring DP to capture exact values on that support
-(`pedigree_graph/_kinship_matrix.py:542`). A dual-state DP could carry:
+(`pedigree_graph/_kinship_matrix.py:520`). A dual-state DP could carry:
 
 - complete exact values used by the unpruned recurrence; and
 - propagated values or presence flags used solely to decide candidate support.
@@ -635,26 +637,50 @@ exact recurrence.
 
 ## Recommended evaluation order
 
+This order was revised on 2026-09-16 after checking the consumer trees and
+the benchmarks already recorded in this repository.
+
 1. Add benchmark-only probe and rehash telemetry to the existing pairwise memo;
    test key mixing and confirm the actual lookup bottleneck before redesigning
-   storage.
-2. Prototype the row-bucketed recurrence DAG against the current memo on sparse,
-   overlapping, and multi-million-pair requests.
-3. Extend the exactification benchmark to relationship-selected support and
-   determine whether a reliable pairwise/DP crossover exists.
-4. Identify one real simACE or fitACE matrix-vector workload and prototype the
-   `A = T D T'` operator against it, with numerical differences reported
-   explicitly.
+   storage (K2). This is the cheapest experiment and informs everything below.
+2. Implement the bulk-kinship planner for `relationship_kinship_matrix`
+   (opportunity 1). The crossover it asks for is already measured in
+   [`benchmarks/matrix_exactification.md`](../benchmarks/matrix_exactification.md):
+   on the 20,400-row fitACE pedigree, relationship support at `max_degree=5`
+   takes 26.86 s through the pair memo against 2.80 s for one complete
+   retiring DP at similar peak RSS, while on `random_30k` the DP wins on wall
+   time (52.46 s against 84.60 s at degree 3) but needs 6.3 GiB against
+   808 MiB. The switch is therefore a memory budget derived from row count and
+   depth profile, not a pair-density threshold. This path has production
+   consumers today: `fitace.kinship.kinship` calls
+   `relationship_kinship_matrix`, and fitACE exports, the TetraHer adapter and
+   pedsum's epimight emitter call `pair_kinship` on relationship-selected
+   pairs.
+3. Prototype the row-bucketed recurrence DAG against the current memo on
+   sparse, overlapping, and multi-million-pair requests (K1).
+4. Profile view queries by ancestor-closure size before designing a
+   simplification option (opportunity 3). Views are on the hot path in more
+   places than this note first assumed: fitACE Falconer and LTM statistics,
+   both PA-FGRS scoring scripts, and the simACE stats runner all call
+   `view(ids=...).relationship_pairs(...)`.
 5. Benchmark depth-span iteration and measure parental-row merge duplication;
-   pursue family templates only if sibship reuse is substantial.
-6. Profile view queries by ancestor-closure size before designing a public
-   simplification option.
-7. Implement pair and summary sinks as extensions of the accepted Rust row
-   engine, not as independent classifiers.
-8. Evaluate dual-state support/value fusion only after a larger profile shows
-   that support construction is worth its additional live state.
-9. Use the native-core migration to consolidate successful prototypes after
-   their algorithms and ownership requirements are measured.
+   pursue family templates only if sibship reuse is substantial (K4, K5).
+6. Implement pair and summary sinks as extensions of the accepted Rust row
+   engine, not as independent classifiers (opportunity 4). The engine still
+   exposes only count, fold, and classify row entry points; sequence this with
+   issue 21 (directional awareness), which touches the same traversal.
+7. Evaluate dual-state support/value fusion only after a larger profile shows
+   that support construction is worth its additional live state (K6).
+8. Use the native-core migration to consolidate successful prototypes after
+   their algorithms and ownership requirements are measured (opportunity 5).
+
+Deferred until a consumer exists: the matrix-free kinship operator
+(opportunity 2 and K3). Every current caller of `kinship_matrix()` needs an
+explicit sparse matrix: the iter_reml and sparseREML fits pass it to a C++
+binary with a GRM threshold and a METIS ordering, PA-FGRS uses it for
+conditional scoring, and `fitace.kinship.grm_io` writes it to disk. No Python
+code in simACE or fitACE forms a product with `K`. Revisit when a Python-side
+fitting method appears.
 
 ## Source snapshots reviewed
 
