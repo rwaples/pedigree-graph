@@ -43,7 +43,12 @@ SYMMETRIC = tuple(code for code, category in RELATIONSHIPS.items() if category.s
 
 def _fixtures() -> dict[str, dict[str, np.ndarray]]:
     fixtures = dict(pedigrees.motif_fixtures())
-    fixtures["random_1k"] = pedigrees.build_random("random_1k", pedigrees.RANDOM_FIXTURES["random_1k"])
+    # deep_inbred_60g is here for orientation, not for membership: sixty
+    # generations off eight founders is where a pair most easily reaches both
+    # arms of an asymmetric product, which is what decides whether the emitted
+    # role is discovered or arbitrary (issue #21).
+    for name in ("random_1k", "deep_inbred_60g"):
+        fixtures[name] = pedigrees.build_random(name, pedigrees.RANDOM_FIXTURES[name])
     return fixtures
 
 
