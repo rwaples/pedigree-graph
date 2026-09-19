@@ -166,15 +166,23 @@ impl Query<'_> {
         mut sink: impl FnMut(Category, u32, u32) -> Result<(), Error>,
     ) -> Result<(), Error> {
         let mut ws = self.pool.take()?;
+        // The workspace goes back even when a row fails, so that the sibling
+        // tasks Rayon has already dispatched reuse it instead of allocating
+        // another one under the memory pressure that failed this row.
+        let mut result = Ok(());
         for row in range.0..range.1 {
             if self.view.is_some_and(|map| map[row] < 0) {
                 continue;
             }
-            self.engine
-                .emit_row(row, &self.requested, self.view, &mut ws, &mut sink)?;
+            result = self
+                .engine
+                .emit_row(row, &self.requested, self.view, &mut ws, &mut sink);
+            if result.is_err() {
+                break;
+            }
         }
         self.pool.give(ws);
-        Ok(())
+        result
     }
 
     /// The pairs of one task, one chunk per category.
@@ -241,7 +249,15 @@ pub fn pair_blocks(
         Execution::Memory => two_pass(&query, &ranges)?,
     };
     if let Some(map) = view {
-        let n_view = map.iter().copied().max().map_or(0, |m| m as u64 + 1);
+        // Unselected rows carry -1, so the row count is one past the largest
+        // selected row.  A map that selects nothing has no rows at all; taking
+        // the maximum over the -1s instead would sign-extend to `u64::MAX`.
+        let n_view = map
+            .iter()
+            .copied()
+            .filter(|&m| m >= 0)
+            .max()
+            .map_or(0, |m| m as u64 + 1);
         for cat in requested.iter() {
             sort_by_view_key(&mut blocks.0[cat.index()], n_view)?;
         }

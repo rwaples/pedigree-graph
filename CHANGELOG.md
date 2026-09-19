@@ -22,6 +22,11 @@ live on the corresponding GitHub release pages.
   of the result (the result plus engine state) at roughly twice the wall
   time. The blocks are identical either way; any other value is a
   `ValueError`.
+- **Changed (private): the allocation test seam is off by default.**
+  `_native.fail_next_allocation` arms a process-global one-shot that the
+  next reservation of that family consumes, on whichever thread reaches it
+  first, so a released wheel refuses it unless the process was started with
+  `PEDIGREE_GRAPH_ALLOW_TEST_SEAM=1`. It was never public API.
 - **Added: `ResourceError("allocation_failed")`** with fields `operation`,
   `requested_elements` and `dtype`, raised by `relationship_pairs` and
   `relationship_counts` when the engine, a workspace, a row set, a task
@@ -30,8 +35,31 @@ live on the corresponding GitHub release pages.
 - **Changed: one package-wide Rayon pool.** The native engine builds one
   thread pool per process from the committed `configure_threads` /
   `PEDIGREE_GRAPH_THREADS` budget (ADR 0007). Results do not depend on the
-  budget. `_reset_thread_state()` remains test-only and cannot resize the
-  native pool; tests that compare budgets run each in a fresh interpreter.
+  budget. The pool is owned per process, not per address space: a `fork`
+  copies its memory but none of its worker threads, so a forked child
+  rebuilds its own pool on first use instead of blocking on a queue nobody
+  drains, and the inherited one is leaked rather than joined. Asking for a
+  second, different budget raises `RuntimeError`, the same class
+  `configure_threads` raises for the same reason.
+  `_reset_thread_state()` remains test-only and cannot resize the native
+  pool; tests that compare budgets run each in a fresh interpreter.
+- **Added: `relationship_pairs` and `relationship_counts` log at INFO.**
+  One line when the call starts, naming the degree, category count,
+  execution and thread budget, and one when it finishes with the pair
+  total and elapsed seconds. The matrix engine logged once per degree; a
+  single native call cannot, so an operator watching a long run sees it
+  enter and leave.
+- **Fixed: a view that selects no rows no longer overflows.** The view-row
+  count is taken over selected rows only; a map of all `-1` used to
+  sign-extend to `u64::MAX` and wrap, which panicked in a debug build.
+  Reachable only through the private native call, since a `PedigreeView`
+  of fewer than two rows short-circuits before the engine.
+- **Fixed: `distinct_ancestor_counts` checks its topological precondition.**
+  The retiring DP needs every parent row before its child row. Violating it
+  returned silently low counts and could hand a later row a retired,
+  unwritten slot; the kernel now raises `ValueError`. The public path was
+  and remains correct, since it reorders when the graph rows are not
+  already topological.
 - **Removed (private): the SciPy matrix pair extractor** (`_pair_extractor`,
   `_pair_utils`, the graph's lazily cached adjacency powers `_A` to `_A5`,
   `_A2_shared`, `_get_Ak`, the sibling matrices and `_release_pair_matrices`)

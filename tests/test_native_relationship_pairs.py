@@ -13,6 +13,7 @@ built once per process.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -135,20 +136,81 @@ class TestBoundary:
             _native.relationship_pairs(graph._built, **{**call, "threads": 0})
         with pytest.raises(PedigreeValidationError, match="max_degree"):
             _native.relationship_pairs(graph._built, **{**call, "max_degree": 6})
-        with pytest.raises(ValueError, match="unknown allocation family"):
+        with pytest.raises(RuntimeError, match="test seam is off"):
             _native.fail_next_allocation("heap")
+
+
+def test_a_forked_child_gets_its_own_pool():
+    """The pool is per process: a fork inherits its memory but none of its workers.
+
+    Before the slot recorded its process, the child pushed work onto a queue
+    with no live worker and blocked for ever.
+    """
+    script = textwrap.dedent(
+        """
+        import multiprocessing as mp
+        import numpy as np
+        from pedigree_graph import PedigreeGraph
+
+        def build():
+            return PedigreeGraph.from_arrays(
+                ids=np.arange(6),
+                mother_ids=np.array([-1, -1, 0, 0, 2, 2]),
+                father_ids=np.array([-1, -1, 1, 1, 3, 3]),
+            )
+
+        def child(q):
+            q.put(int(build().relationship_counts(max_degree=2)["FS"]))
+
+        if __name__ == "__main__":
+            parent = int(build().relationship_counts(max_degree=2)["FS"])
+            ctx = mp.get_context("fork")
+            q = ctx.Queue()
+            p = ctx.Process(target=child, args=(q,))
+            p.start()
+            p.join(60)
+            if p.is_alive():
+                p.kill()
+                raise SystemExit("the forked child blocked on the inherited pool")
+            print(parent, q.get())
+        """
+    )
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["2", "2"]
+
+
+def test_the_allocation_seam_is_off_unless_the_environment_unlocks_it():
+    """A released wheel refuses the plant; a process that opts in still validates the name."""
+    body = """
+        try:
+            _native.fail_next_allocation("heap")
+        except ValueError as e:
+            print("named:", e)
+        _native.fail_next_allocation(None)
+        print("cleared")
+    """
+    assert "named: unknown allocation family" in _run_child(CHILD_PRELUDE, body)
+
+    locked = subprocess.run(
+        [sys.executable, "-c", "from pedigree_graph import _native; _native.fail_next_allocation(None)"],
+        capture_output=True,
+        text=True,
+        env={k: v for k, v in os.environ.items() if k != "PEDIGREE_GRAPH_ALLOW_TEST_SEAM"},
+        check=False,
+    )
+    assert locked.returncode != 0
+    assert "test seam is off" in locked.stderr
 
 
 def _run_child(*parts: str, **env: str) -> str:
     """Run the dedented *parts* as one script in a fresh interpreter, returning its stdout."""
-    import os
-
     code = "\n".join(textwrap.dedent(part) for part in parts)
     result = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
-        env={**os.environ, **env},
+        env={**os.environ, "PEDIGREE_GRAPH_ALLOW_TEST_SEAM": "1", **env},
         check=False,
     )
     assert result.returncode == 0, result.stderr
@@ -196,12 +258,12 @@ class TestProcessWidePool:
             print(_native.configure_pool(2), _native.configure_pool(2))
             try:
                 _native.configure_pool(3)
-            except ValueError as e:
+            except RuntimeError as e:
                 print("conflict:", e)
             _native.relationship_counts(graph._built, max_degree=2, threads=2)
             try:
                 _native.relationship_counts(graph._built, max_degree=2, threads=5)
-            except ValueError as e:
+            except RuntimeError as e:
                 print("conflict:", e)
         """
         out = _run_child(CHILD_PRELUDE, body)

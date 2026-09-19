@@ -208,6 +208,15 @@ def _compute_n_ancestors_profiled(
         zero = np.int64(0)
         return counts, zero, zero, zero, zero, zero
 
+    # The sweep reads each parent's finished set, and retires a slot once its
+    # last represented child is done.  A parent that comes after its child
+    # would contribute an empty set (a silently low count) and could be
+    # retired while still unwritten, handing a later row a slot whose start is
+    # -1.  One pass rules both out; the DP that follows costs far more.
+    for i in range(n):
+        if m_idx[i] >= i or f_idx[i] >= i:
+            raise ValueError("distinct ancestor counts need every parent row before its child row")
+
     n_children = np.zeros(n, dtype=np.int32)
     for i in range(n):
         mother = m_idx[i]

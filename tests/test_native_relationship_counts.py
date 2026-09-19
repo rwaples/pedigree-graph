@@ -227,7 +227,8 @@ class TestSelectorsAndErrors:
         budget = thread_budget()
         assert _native.configure_pool(budget) == budget
         _native.relationship_counts(graph._built, max_degree=2, threads=budget)
-        with pytest.raises(ValueError, match="already configured"):
+        # The same class `configure_threads` raises for the same reason.
+        with pytest.raises(RuntimeError, match="already configured"):
             _native.relationship_counts(graph._built, max_degree=2, threads=budget + 1)
 
     def test_the_binding_keys_its_counts_by_code_in_registry_order(self, small_pedigree):

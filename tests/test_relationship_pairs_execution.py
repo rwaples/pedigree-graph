@@ -159,7 +159,11 @@ class TestHandOver:
             """
         )
         result = subprocess.run(
-            [sys.executable, "-c", script], capture_output=True, text=True, env=dict(os.environ), check=False
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PEDIGREE_GRAPH_ALLOW_TEST_SEAM": "1"},
+            check=False,
         )
         assert result.returncode == 0, result.stderr
         assert result.stdout.splitlines() == [

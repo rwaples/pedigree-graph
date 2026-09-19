@@ -13,7 +13,7 @@ use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
 use std::num::NonZeroUsize;
@@ -79,6 +79,12 @@ fn field_object<'py>(py: Python<'py>, value: FieldValue) -> PyResult<Bound<'py, 
 }
 
 fn to_pyerr(py: Python<'_>, err: Error) -> PyErr {
+    // A pool already built for a different budget is the native half of the
+    // rule `_threads.configure_threads` states, so it raises what that
+    // function raises rather than the `Usage` family's ValueError.
+    if matches!(err, Error::ThreadPoolConflict { .. }) {
+        return PyRuntimeError::new_err(err.to_string());
+    }
     let class_name = match err.class() {
         ErrorClass::Validation => "PedigreeValidationError",
         ErrorClass::Metadata => "MissingMetadataError",
@@ -392,11 +398,25 @@ fn relationship_pairs<'py>(
     Ok(values)
 }
 
+/// The environment variable that unlocks [`fail_next_allocation`].
+const SEAM_ENV: &str = "PEDIGREE_GRAPH_ALLOW_TEST_SEAM";
+
 /// Test seam: make the next reservation of the named allocation family fail
 /// with `ResourceError("allocation_failed")`, or clear the plant with `None`.
+///
+/// The plant is process-global and is consumed by whichever thread reserves
+/// that family next, so arming it from a released wheel would fail an
+/// unrelated call.  It is refused unless the process was started with
+/// `PEDIGREE_GRAPH_ALLOW_TEST_SEAM=1`, which the package's own child-process
+/// tests set.
 #[pyfunction]
 #[pyo3(signature = (family))]
 fn fail_next_allocation(family: Option<&str>) -> PyResult<()> {
+    if std::env::var(SEAM_ENV).as_deref() != Ok("1") {
+        return Err(PyRuntimeError::new_err(format!(
+            "the allocation test seam is off; set {SEAM_ENV}=1 before starting the process"
+        )));
+    }
     let family =
         match family {
             None => None,

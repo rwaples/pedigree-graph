@@ -56,6 +56,9 @@ def relationship_pairs(
     execution: str,
     view_rows: NDArray[np.int32] | None = None,
 ) -> dict[str, tuple[NDArray[np.int32], NDArray[np.int32]]]: ...
+
+# Test seam, not public API: refused unless the process was started with
+# PEDIGREE_GRAPH_ALLOW_TEST_SEAM=1.
 def fail_next_allocation(family: str | None, /) -> None: ...
 
 class IdIndex:

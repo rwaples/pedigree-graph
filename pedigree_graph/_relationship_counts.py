@@ -12,6 +12,8 @@ runs through the full graph, and a pair counts when both its rows are selected
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -20,6 +22,8 @@ from pedigree_graph import _native
 from pedigree_graph._registry import RELATIONSHIPS
 from pedigree_graph._threads import thread_budget
 from pedigree_graph.relationships import RelationshipCountResult
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
@@ -51,11 +55,15 @@ def _count(
     values: dict[str, int | None] = dict.fromkeys(RELATIONSHIPS, None)
     top = selection.top_degree
     if top is not None:
+        threads = thread_budget()
+        logger.info("relationship_counts: max_degree=%d, threads=%d", top, threads)
+        start = time.perf_counter()
         counted = _native.relationship_counts(
             graph._built,
             max_degree=top,
-            threads=thread_budget(),
+            threads=threads,
             selected=selected,
         )
+        logger.info("relationship_counts total: %.3fs", time.perf_counter() - start)
         values.update({code: counted[code] for code in requested})
     return RelationshipCountResult(values, requested, requested)

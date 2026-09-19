@@ -17,6 +17,8 @@ place.  Both return element-for-element identical results.
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -31,6 +33,8 @@ if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
     from pedigree_graph._selection import RelationshipSelection
     from pedigree_graph._view import CoordinateToken, PedigreeView
+
+logger = logging.getLogger(__name__)
 
 EXECUTIONS = ("speed", "memory")
 
@@ -71,14 +75,33 @@ def _native_blocks(
     threads = thread_budget()
     if selection.top_degree is None:
         return {}
-    return _native.relationship_pairs(
+    requested = list(selection.ordered)
+    # One native call covers every degree, so an operator watching a long run
+    # sees it start and finish rather than nothing at all; the matrix engine
+    # this replaced logged once per degree.
+    logger.info(
+        "relationship_pairs: max_degree=%d, %d categories, execution=%s, threads=%d%s",
+        selection.top_degree,
+        len(requested),
+        execution,
+        threads,
+        ", view" if view_rows is not None else "",
+    )
+    start = time.perf_counter()
+    blocks = _native.relationship_pairs(
         graph._built,
         max_degree=selection.top_degree,
-        requested=list(selection.ordered),
+        requested=requested,
         threads=threads,
         execution=execution,
         view_rows=view_rows,
     )
+    logger.info(
+        "relationship_pairs total: %d pairs in %.3fs",
+        sum(len(first) for first, _ in blocks.values()),
+        time.perf_counter() - start,
+    )
+    return blocks
 
 
 def _build_result(

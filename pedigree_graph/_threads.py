@@ -50,6 +50,8 @@ def configure_threads(n: int) -> None:
     Raises:
         ValueError: If ``n`` is not an ``int`` >= 1.
         RuntimeError: If the budget is already committed to a different value.
+            The native pool raises the same class for the same reason, so a
+            budget that reaches it late fails the same way.
     """
     if isinstance(n, bool) or not isinstance(n, int) or n < 1:
         raise ValueError(f"configure_threads(n) requires an int >= 1, got {n!r}")
@@ -104,6 +106,13 @@ def _budget_from_env() -> int:
 
 
 def _reset_thread_state() -> None:
-    """Clear the configured and committed budget.  For tests only."""
+    """Clear the configured and committed budget.  For tests only.
+
+    This resets the Python budget alone.  The native Rayon pool is built once
+    per process from the first committed budget and has no reset, so a test
+    that resets here, commits a *different* budget, and then reaches a native
+    relationship call gets ``RuntimeError`` from the pool.  Cross-budget tests
+    therefore run in a child process.
+    """
     _STATE.configured = None
     _STATE.committed = None
