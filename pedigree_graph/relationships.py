@@ -5,6 +5,8 @@
 precedence for closest-category classification.  See
 :class:`RelationshipCategory` for the ``first`` / ``second`` orientation rule
 and :data:`RelationshipRole` for the closed set of role names.
+:data:`MAX_DEGREE` is the deepest degree in the registry, and so the largest
+``max_degree`` the relationship APIs accept.
 
 :class:`RelationshipPairs` is what ``PedigreeGraph.relationship_pairs`` and
 ``PedigreeView.relationship_pairs`` return: an immutable mapping over all 23
@@ -18,6 +20,7 @@ obtained.
 from __future__ import annotations
 
 __all__ = [
+    "MAX_DEGREE",
     "RELATIONSHIPS",
     "RelationshipCategory",
     "RelationshipCountResult",
@@ -31,7 +34,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
-from pedigree_graph._registry import RELATIONSHIPS, RelationshipCategory, RelationshipRole
+from pedigree_graph._registry import MAX_DEGREE, RELATIONSHIPS, RelationshipCategory, RelationshipRole
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

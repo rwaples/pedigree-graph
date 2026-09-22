@@ -27,6 +27,12 @@ fn core_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// The deepest `max_degree` this build counts, derived from the category registry.
+#[pyfunction]
+fn max_degree_max() -> u8 {
+    relationships::MaxDegree::MAX.get()
+}
+
 fn check_parent_lengths(mother: &[i32], father: &[i32]) -> PyResult<()> {
     if mother.len() != father.len() {
         return Err(PyValueError::new_err(format!(
@@ -475,6 +481,7 @@ impl PyIdIndex {
 #[pymodule(name = "_native")]
 fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(core_version, m)?)?;
+    m.add_function(wrap_pyfunction!(max_degree_max, m)?)?;
     m.add_function(wrap_pyfunction!(is_topological, m)?)?;
     m.add_function(wrap_pyfunction!(structural_depth, m)?)?;
     m.add_function(wrap_pyfunction!(depth_major_order, m)?)?;

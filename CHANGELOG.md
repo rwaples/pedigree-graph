@@ -4,6 +4,14 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Added: `pedigree_graph.MAX_DEGREE` and `_native.max_degree_max()`**, the
+  deepest degree the relationship APIs accept. Both sides now derive that
+  ceiling from the category registry instead of naming a literal, and a test
+  pins the Python value equal to the Rust one across the binding (issue #23).
+  The value is unchanged at 5.
+
 ## v0.9.0
 
 - **Changed: `relationship_pairs` runs on the Rust row-streaming engine**

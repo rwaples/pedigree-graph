@@ -92,8 +92,8 @@ impl Category {
         Category::ALL.into_iter().find(|cat| cat.code() == code)
     }
 
-    /// Kinship degree: 0 for MZ, 1 for parent-offspring and full sibs, up to 5.
-    pub fn degree(self) -> u8 {
+    /// Kinship degree: 0 for MZ, 1 for parent-offspring and full sibs, and so on.
+    pub const fn degree(self) -> u8 {
         match self {
             Category::MZ => 0,
             Category::MO | Category::FO | Category::FS => 1,

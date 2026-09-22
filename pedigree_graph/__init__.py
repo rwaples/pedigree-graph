@@ -7,6 +7,8 @@ Public API:
     RELATIONSHIPS        — immutable ordered registry of the 23 relationship
         categories; iteration order is the same-degree precedence for
         closest-category classification
+    MAX_DEGREE           — the deepest degree the registry defines, and so
+        the largest max_degree the relationship APIs accept
     RelationshipCategory — one category: code, label, degree, nominal kinship,
         the up/down path shape, and the two positional roles
     RelationshipPairs    — what graph.relationship_pairs(max_degree=...) or
@@ -52,6 +54,7 @@ from pedigree_graph._errors import (
 from pedigree_graph._threads import configure_threads
 from pedigree_graph._view import PedigreeView
 from pedigree_graph.relationships import (
+    MAX_DEGREE,
     RELATIONSHIPS,
     RelationshipCategory,
     RelationshipCountResult,
@@ -60,6 +63,7 @@ from pedigree_graph.relationships import (
 )
 
 __all__ = [
+    "MAX_DEGREE",
     "RELATIONSHIPS",
     "MissingMetadataError",
     "PedigreeGraph",

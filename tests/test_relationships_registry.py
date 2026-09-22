@@ -16,7 +16,7 @@ import pytest
 
 import pedigree_graph
 import pedigree_graph.relationships
-from pedigree_graph import RELATIONSHIPS, PedigreeValidationError
+from pedigree_graph import MAX_DEGREE, RELATIONSHIPS, PedigreeValidationError, _native
 from pedigree_graph._registry import REL_PLAN, categories_up_to_degree, select_categories
 from pedigree_graph.relationships import RelationshipRole
 
@@ -207,8 +207,21 @@ class TestSelectors:
 
     def test_categories_up_to_degree_validates_the_cutoff(self):
         with pytest.raises(PedigreeValidationError) as excinfo:
-            categories_up_to_degree(6)
+            categories_up_to_degree(MAX_DEGREE + 1)
         assert excinfo.value.code == "max_degree_out_of_range"
+
+
+class TestMaxDegreeCeiling:
+    """The ceiling is derived from the registry on each side of the binding."""
+
+    def test_python_takes_the_ceiling_from_the_registry(self):
+        assert max(category.degree for category in RELATIONSHIPS.values()) == MAX_DEGREE
+
+    def test_the_native_ceiling_is_the_same_number(self):
+        assert _native.max_degree_max() == MAX_DEGREE
+
+    def test_the_ceiling_selects_every_category(self):
+        assert tuple(c.code for c in categories_up_to_degree(MAX_DEGREE)) == REGISTRY_ORDER
 
 
 def test_engine_plan_covers_exactly_the_registry():

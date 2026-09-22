@@ -185,9 +185,10 @@ eventual source.
 Root exports: `PedigreeGraph`, `PedigreeView`, `RelationshipCategory`,
 `RelationshipPairs`, `RelationshipPairBlock`, `RelationshipCountResult`,
 `RELATIONSHIPS`, `PedigreeValidationError`, `MissingMetadataError`,
-`ResourceError`, `configure_threads`. (`RelationshipCountResult` was added to
-this list when slice 7 froze the namespace: it is the return type of a root
-class's method, like `RelationshipPairs`.) `FrameLike` moves to
+`ResourceError`, `configure_threads`, `MAX_DEGREE`. (`RelationshipCountResult`
+was added to this list when slice 7 froze the namespace: it is the return type
+of a root class's method, like `RelationshipPairs`. `MAX_DEGREE`, the
+registry-derived degree ceiling, was added by issue #23.) `FrameLike` moves to
 `pedigree_graph.typing`.
 Effective-size functions, cohort utilities, and result classes move to public
 `pedigree_graph.effective_size`; `compute_all_ne` becomes

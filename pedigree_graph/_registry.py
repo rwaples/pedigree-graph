@@ -135,9 +135,10 @@ _RELATIONSHIPS: dict[str, RelationshipCategory] = {
 RELATIONSHIPS: Mapping[str, RelationshipCategory] = MappingProxyType(_RELATIONSHIPS)
 
 # Valid ``max_degree`` range for the public pair APIs.  Degree 0 = MZ only
-# (still a useful query — twins-only counts); degree 5 = full registry.
+# (still a useful query — twins-only counts); ``MAX_DEGREE`` is the deepest
+# degree the registry defines, so it always selects every category.
 _MAX_DEGREE_MIN = 0
-_MAX_DEGREE_MAX = 5
+MAX_DEGREE = max(category.degree for category in RELATIONSHIPS.values())
 
 
 def _validate_max_degree(max_degree: int) -> int:
@@ -145,13 +146,13 @@ def _validate_max_degree(max_degree: int) -> int:
     if isinstance(max_degree, bool):
         raise TypeError("max_degree must be an integer, not bool")
     md = operator.index(max_degree)
-    if md < _MAX_DEGREE_MIN or md > _MAX_DEGREE_MAX:
+    if md < _MAX_DEGREE_MIN or md > MAX_DEGREE:
         raise PedigreeValidationError(
             "max_degree_out_of_range",
-            f"max_degree must be in [{_MAX_DEGREE_MIN}, {_MAX_DEGREE_MAX}], got {max_degree!r}",
+            f"max_degree must be in [{_MAX_DEGREE_MIN}, {MAX_DEGREE}], got {max_degree!r}",
             value=max_degree,
             minimum=_MAX_DEGREE_MIN,
-            maximum=_MAX_DEGREE_MAX,
+            maximum=MAX_DEGREE,
         )
     return md
 

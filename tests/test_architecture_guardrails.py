@@ -73,6 +73,7 @@ def test_allowlist_entries_are_still_needed():
 # ---------------------------------------------------------------------------
 
 ROOT_EXPORTS = (
+    "MAX_DEGREE",
     "RELATIONSHIPS",
     "MissingMetadataError",
     "PedigreeGraph",

@@ -29,8 +29,20 @@ use rayon::prelude::*;
 pub struct MaxDegree(u8);
 
 impl MaxDegree {
-    /// The deepest degree the registry defines, second cousins at five meioses.
-    pub const MAX: MaxDegree = MaxDegree(5);
+    /// The deepest degree any [`Category`] carries, folded from the registry
+    /// rather than named, so the two cannot drift apart.
+    pub const MAX: MaxDegree = {
+        let mut deepest = 0u8;
+        let mut i = 0;
+        while i < Category::ALL.len() {
+            let degree = Category::ALL[i].degree();
+            if degree > deepest {
+                deepest = degree;
+            }
+            i += 1;
+        }
+        MaxDegree(deepest)
+    };
 
     /// Check that `degree` is one the engine counts.
     ///
