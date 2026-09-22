@@ -17,6 +17,7 @@ import time
 from importlib.metadata import version
 
 import numpy as np
+
 from pedigree_graph import PedigreeGraph
 
 
