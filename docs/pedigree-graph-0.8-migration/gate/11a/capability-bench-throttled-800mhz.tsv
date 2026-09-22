@@ -1,0 +1,4 @@
+version=0.8.3	call=exact	pedigree=pedigree.full	threads=1	n=2000000	count_s=187.4114	rss_before_mib=530.1	maxrss_mib=571.3	pairs=212626359	c1r1=15927760
+version=0.8.3	call=exact	pedigree=pedigree.full	threads=12	n=2000000	count_s=26.4883	rss_before_mib=561.3	maxrss_mib=679.1	pairs=212626359	c1r1=15927760
+version=0.8.3	call=estimate	pedigree=pedigree.full	threads=1	n=2000000	count_s=5.4774	rss_before_mib=570.9	maxrss_mib=1287.2	pairs=252020076	c1r1=19731270
+version=0.8.3	call=exact	pedigree=pedigree.full	threads=12	n=20000000	count_s=284.9872	rss_before_mib=2911.3	maxrss_mib=4224.2	pairs=2124650324	c1r1=159036654

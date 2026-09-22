@@ -1,0 +1,15 @@
+{
+  "ref": "v0.8",
+  "head": "c8c963a974f3113f83a16c357c58446f1b72f41a",
+  "version": "0.8.0",
+  "wheel": {
+    "file": "pedigree_graph-0.8.0-py3-none-any.whl",
+    "sha256": "42cf4d5331b7dc19923e0ea6626e8a74cf4c9431ef4f4b69948b3fd114e4fe28"
+  },
+  "sdist": {
+    "file": "pedigree_graph-0.8.0.tar.gz",
+    "sha256": "cf9a1db63051ed52b4b74fe9ec39e881a06e321052f499b923f2e50f2f2dbc8d"
+  },
+  "wheel_pytest_exit": 0,
+  "wheel_site": "/tmp/claude-1000/-data-Documents-simACE/d8a01ce2-8bf7-41d5-9297-896f393b6744/scratchpad/wheel9b/wheel-site"
+}

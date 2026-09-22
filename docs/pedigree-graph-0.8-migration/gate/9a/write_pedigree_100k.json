@@ -1,0 +1,16 @@
+{
+  "pedigree_graph_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+  "params": {
+    "seed": 100000,
+    "n_founders": 5000,
+    "n_generations": 8,
+    "per_generation": 12000
+  },
+  "n_rows": 101000,
+  "input_hash": "4e926f45fe64e61eea872e03522c39bf6e68fe4dbb95d46ccbf13f212c0f4c65",
+  "min_kinship": 0.001,
+  "wall_s": 293.9,
+  "peak_rss_mib": 21973.5,
+  "grm_bin_bytes": 2706499680,
+  "n_twin_links": 3784
+}

@@ -1,0 +1,167 @@
+{
+  "random_30k": {
+    "approx_matrix": {
+      "complete_entries_absent": 106933195,
+      "max_abs_diff_vs_complete_on_support": 0.001495361328125,
+      "support_sha": "9742306d86da4c5429effa3184b496a7603dfe44d0affb804264fc80504f9a96",
+      "threshold": 0.001,
+      "upper_nnz": 26924109,
+      "value_sum": 209238.76778411865
+    },
+    "complete_matrix": {
+      "upper_nnz": 133857304,
+      "value_sha": "c45e400fc06358f40e9f29cbe2999249794e435c4e9fe46329f4d93c92bc692c",
+      "value_sum": 260684.98456573486
+    },
+    "degree2_matrix": {
+      "support_sha": "cd63c07d70cf99bac4233df49f7d911f25e92fd94578979508aab2546f9f300a",
+      "upper_nnz": 251407,
+      "value_sum": 50232.8671875
+    },
+    "descendant_counts": {
+      "dtype": "int32",
+      "max": 3241,
+      "sum": 2191160
+    },
+    "estimate_deg5": {
+      "1C": 60,
+      "1C1R": 209906,
+      "1C2R": 327624,
+      "2C": 198639,
+      "Av": 67,
+      "FO": 27771,
+      "FS": 20,
+      "G3Av": 345,
+      "G3GP": 344489,
+      "GAv": 130,
+      "GGAv": 199,
+      "GGGP": 233738,
+      "GGP": 149813,
+      "GP": 92433,
+      "H1C": 185155,
+      "H1C1R": 205800,
+      "HAv": 206491,
+      "HGAv": 348815,
+      "HGGAv": 575769,
+      "MHS": 29721,
+      "MO": 27785,
+      "MZ": 608,
+      "PHS": 30091
+    },
+    "estimate_exact_codes": null,
+    "inbreeding": {
+      "max": 0.12646484375,
+      "n_positive": 6669,
+      "sum": 12.961029052734375
+    },
+    "input_hash": "f4d558a6957b9c12efe4a28778448a9b981769a5998c039849bbcec316d0b80d",
+    "n": 30300,
+    "pairs_deg3": {
+      "1C": 2017,
+      "1C1R": 0,
+      "1C2R": 0,
+      "2C": 0,
+      "Av": 67,
+      "FO": 27771,
+      "FS": 20,
+      "G3Av": 0,
+      "G3GP": 0,
+      "GAv": 130,
+      "GGAv": 0,
+      "GGGP": 0,
+      "GGP": 149813,
+      "GP": 92433,
+      "H1C": 0,
+      "H1C1R": 0,
+      "HAv": 206264,
+      "HGAv": 0,
+      "HGGAv": 0,
+      "MHS": 29721,
+      "MO": 27785,
+      "MZ": 608,
+      "PHS": 30091
+    }
+  },
+  "small_test_rep1_full": {
+    "approx_matrix": {
+      "complete_entries_absent": 273889,
+      "max_abs_diff_vs_complete_on_support": 0.00048828125,
+      "support_sha": "89aa3b99040e440e8979a65ffb2217ab4216ebdb1ceabb46959a8281ed862c04",
+      "threshold": 0.001,
+      "upper_nnz": 1387476,
+      "value_sum": 26669.03076171875
+    },
+    "complete_matrix": {
+      "upper_nnz": 1661365,
+      "value_sha": "9be82f062550a44b54a6560318e1130f53c2f31eb8ac9a689783bf3fae7dda0e",
+      "value_sum": 26921.234375
+    },
+    "degree2_matrix": {
+      "support_sha": "c44ff5214a081a51e939c8e5e71799e4407e8445f78f8b1cc18ce8b80518706f",
+      "upper_nnz": 53256,
+      "value_sum": 10705.2578125
+    },
+    "descendant_counts": {
+      "dtype": "int32",
+      "max": 427,
+      "sum": 114000
+    },
+    "estimate_deg5": {
+      "1C": 12461,
+      "1C1R": 45789,
+      "1C2R": 57836,
+      "2C": 78621,
+      "Av": 12350,
+      "FO": 5000,
+      "FS": 3915,
+      "G3Av": 25489,
+      "G3GP": 30936,
+      "GAv": 18468,
+      "GGAv": 24326,
+      "GGGP": 31493,
+      "GGP": 23833,
+      "GP": 15958,
+      "H1C": 8881,
+      "H1C1R": 69655,
+      "HAv": 13103,
+      "HGAv": 19584,
+      "HGGAv": 25740,
+      "MHS": 2313,
+      "MO": 5000,
+      "MZ": 32,
+      "PHS": 1868
+    },
+    "estimate_exact_codes": null,
+    "inbreeding": {
+      "max": 0.25,
+      "n_positive": 309,
+      "sum": 8.63671875
+    },
+    "n": 6000,
+    "pairs_deg3": {
+      "1C": 12503,
+      "1C1R": 0,
+      "1C2R": 0,
+      "2C": 0,
+      "Av": 12296,
+      "FO": 5000,
+      "FS": 3915,
+      "G3Av": 0,
+      "G3GP": 0,
+      "GAv": 18355,
+      "GGAv": 0,
+      "GGGP": 0,
+      "GGP": 23833,
+      "GP": 15958,
+      "H1C": 0,
+      "H1C1R": 0,
+      "HAv": 13061,
+      "HGAv": 0,
+      "HGGAv": 0,
+      "MHS": 2313,
+      "MO": 5000,
+      "MZ": 32,
+      "PHS": 1868
+    }
+  }
+}

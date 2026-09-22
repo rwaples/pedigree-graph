@@ -1,0 +1,109 @@
+{
+  "unit": "simACE",
+  "stage": "9a",
+  "routing": "source",
+  "cwd": ".",
+  "started": "2026-09-09T08:25:19",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.8,
+      "max_rss_mib": 105.0,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/simACE/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 42.7,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/simACE/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 43.0,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/simACE/format.log",
+      "tail": [
+        "324 files already formatted"
+      ]
+    },
+    {
+      "step": "test",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen test",
+      "exit": 0,
+      "wall_s": 50.9,
+      "max_rss_mib": 613.4,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/simACE/test.log",
+      "tail": [
+        "  /data/Documents/simACE/tests/core/test_parquet_properties.py:73: RuntimeWarning: overflow encountered in cast",
+        "    df[c].to_numpy().astype(np.float32),",
+        "",
+        "tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_runs_without_error",
+        "tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_runs_without_error",
+        "tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_both_nonzero_no_crash",
+        "tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_both_nonzero_no_crash",
+        "  /data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/seaborn/matrix.py:243: PendingDeprecationWarning: The set_bad function will be deprecated in a future version. Use cmap.with_extremes(bad=...) or Colormap(bad=...) instead.",
+        "    self.cmap.set_bad(bad)",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "================ 1470 passed, 3 skipped, 30 warnings in 49.69s ================="
+      ]
+    },
+    {
+      "step": "smoke",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen snakemake --cores 4 --forceall results/test/small_test/scenario.done results/test/small_test/validate.done results/test/small_test/stats.done results/test/small_test/effective_size.done",
+      "exit": 0,
+      "wall_s": 62.2,
+      "max_rss_mib": 445.5,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/simACE/smoke.log",
+      "tail": [
+        "localrule scenario:",
+        "    input: results/test/small_test/rep1/pedigree.parquet, results/test/small_test/rep1/trait.full.parquet, results/test/small_test/rep1/trait.parquet, results/test/small_test/rep1/report.yaml, results/test/small_test/rep1/plot_payload.yaml, results/test/small_test/rep2/pedigree.parquet, results/test/small_test/rep2/trait.full.parquet, results/test/small_test/rep2/trait.parquet, results/test/small_test/rep2/report.yaml, results/test/small_test/rep2/plot_payload.yaml, results/test/small_test/rep3/pedigree.parquet, results/test/small_test/rep3/trait.full.parquet, results/test/small_test/rep3/trait.parquet, results/test/small_test/rep3/report.yaml, results/test/small_test/rep3/plot_payload.yaml, results/test/small_test/plots/pedigree_counts.ped.png, results/test/small_test/plots/pedigree_counts.png, results/test/small_test/plots/family_structure.png, results/test/small_test/plots/mate_correlation.png, results/test/small_test/plots/cross_trait.png, results/test/small_test/plots/heritability.by_generation.png, results/test/small_test/plots/am_equilibrium.png, results/test/small_test/plots/ge_covariance.by_generation.png, results/test/small_test/plots/snp_like_h2.by_generation.png, results/test/small_test/plots/observed_h2.png, results/test/small_test/plots/liability_violin.phenotype.png, results/test/small_test/plots/liability_components.by_generation.png, results/test/small_test/plots/mortality.png, results/test/small_test/plots/age_at_onset_death.png, results/test/small_test/plots/censoring.png, results/test/small_test/plots/cumulative_incidence.phenotype.png, results/test/small_test/plots/cumulative_incidence_aj.phenotype.png, results/test/small_test/plots/cumulative_incidence.by_sex.png, results/test/small_test/plots/censoring_confusion.png, results/test/small_test/plots/censoring_cascade.png, results/test/small_test/plots/parent_offspring_liability.by_generation.png, results/test/small_test/plots/heritability.by_sex.by_generation.png, results/test/small_test/plots/liability_vs_aoo.png, results/test/small_test/plots/tetrachoric.phenotype.png, results/test/small_test/plots/tetrachoric.phenotype.by_sex.png, results/test/small_test/plots/cross_trait.phenotype.png, results/test/small_test/plots/cross_trait.phenotype.t2.png, results/test/small_test/plots/joint_affected.phenotype.png, results/test/small_test/plots/cross_trait_tetrachoric.png, results/test/small_test/plots/liability_violin.phenotype.by_generation.png, results/test/small_test/plots/liability_violin.phenotype.by_sex.by_generation.png, results/test/small_test/plots/cumulative_incidence.by_sex.by_generation.png, results/test/small_test/plots/tetrachoric.phenotype.by_generation.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.by_generation.png, results/test/small_test/plots/atlas.html, results/test/report_summary.tsv, results/test/plots/atlas.html",
+        "    output: results/test/small_test/scenario.done",
+        "    jobid: 27",
+        "    reason: Forced execution",
+        "    wildcards: folder=test, scenario=small_test",
+        "    resources: tmpdir=/tmp",
+        "Touching output file results/test/small_test/scenario.done.",
+        "[Wed Sep  9 08:27:12 2026]",
+        "Finished jobid: 27 (Rule: scenario)",
+        "35 of 35 steps (100%) done",
+        "Complete log(s): /data/Documents/simACE/.snakemake/log/2026-09-09T082613.392045.snakemake.log"
+      ]
+    },
+    {
+      "step": "atlas",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen snakemake --cores 4 -f results/test/small_test/plots/atlas.html",
+      "exit": 0,
+      "wall_s": 4.3,
+      "max_rss_mib": 237.6,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/simACE/atlas.log",
+      "tail": [
+        "    output: results/test/small_test/plots/atlas.html",
+        "    log: logs/test/small_test/assemble_atlas.log",
+        "    jobid: 0",
+        "    benchmark: benchmarks/test/small_test/assemble_atlas.tsv",
+        "    reason: Forced execution",
+        "    wildcards: folder=test, scenario=small_test",
+        "    resources: tmpdir=/tmp, runtime=5, mem_mb=1000, mem=1 GB, mem_mib=954",
+        "[small_test] INFO: HTML atlas saved to results/test/small_test/plots/atlas.html (35 plots)",
+        "[Wed Sep  9 08:27:18 2026]",
+        "Finished jobid: 0 (Rule: assemble_scenario_atlas)",
+        "1 of 1 steps (100%) done",
+        "Complete log(s): /data/Documents/simACE/.snakemake/log/2026-09-09T082715.473745.snakemake.log"
+      ]
+    }
+  ],
+  "ok": true
+}

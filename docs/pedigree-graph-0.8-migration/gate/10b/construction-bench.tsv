@@ -1,0 +1,21 @@
+run=1	venv=081	version=0.8.1	n=300000	build_s=0.7788	rss_before_mib=217.8	maxrss_mib=253.9	checksum=41318935668
+run=1	venv=10b	version=0.8.2	n=300000	build_s=0.3991	rss_before_mib=218.0	maxrss_mib=247.2	checksum=41318935668
+run=2	venv=081	version=0.8.1	n=300000	build_s=0.7690	rss_before_mib=217.9	maxrss_mib=253.9	checksum=41318935668
+run=2	venv=10b	version=0.8.2	n=300000	build_s=0.4135	rss_before_mib=217.9	maxrss_mib=247.2	checksum=41318935668
+run=3	venv=081	version=0.8.1	n=300000	build_s=0.7718	rss_before_mib=217.9	maxrss_mib=254.0	checksum=41318935668
+run=3	venv=10b	version=0.8.2	n=300000	build_s=0.4171	rss_before_mib=217.9	maxrss_mib=247.2	checksum=41318935668
+run=4	venv=081	version=0.8.1	n=300000	build_s=0.7980	rss_before_mib=218.0	maxrss_mib=254.1	checksum=41318935668
+run=4	venv=10b	version=0.8.2	n=300000	build_s=0.4184	rss_before_mib=218.1	maxrss_mib=247.3	checksum=41318935668
+run=5	venv=081	version=0.8.1	n=300000	build_s=0.7809	rss_before_mib=217.8	maxrss_mib=253.9	checksum=41318935668
+run=5	venv=10b	version=0.8.2	n=300000	build_s=0.4093	rss_before_mib=218.0	maxrss_mib=247.2	checksum=41318935668
+run=1	venv=081	version=0.8.1	n=20000000	build_s=90.9820	rss_before_mib=1890.3	maxrss_mib=3300.5	checksum=183296384217244
+run=1	venv=10b	version=0.8.2	n=20000000	build_s=82.0113	rss_before_mib=1890.2	maxrss_mib=2845.5	checksum=183296384217244
+run=2	venv=081	version=0.8.1	n=20000000	build_s=89.4661	rss_before_mib=1890.1	maxrss_mib=3300.2	checksum=183296384217244
+run=2	venv=10b	version=0.8.2	n=20000000	build_s=81.7845	rss_before_mib=1890.4	maxrss_mib=2845.9	checksum=183296384217244
+run=3	venv=081	version=0.8.1	n=20000000	build_s=88.4673	rss_before_mib=1890.1	maxrss_mib=3300.6	checksum=183296384217244
+run=3	venv=10b	version=0.8.2	n=20000000	build_s=80.4757	rss_before_mib=1890.3	maxrss_mib=2845.9	checksum=183296384217244
+run=4	venv=081	version=0.8.1	n=20000000	build_s=88.0580	rss_before_mib=1890.1	maxrss_mib=3300.6	checksum=183296384217244
+run=4	venv=10b	version=0.8.2	n=20000000	build_s=80.7952	rss_before_mib=1890.2	maxrss_mib=2846.0	checksum=183296384217244
+run=5	venv=081	version=0.8.1	n=20000000	build_s=88.9616	rss_before_mib=1890.3	maxrss_mib=3300.4	checksum=183296384217244
+run=5	venv=10b	version=0.8.2	n=20000000	build_s=81.4719	rss_before_mib=1890.0	maxrss_mib=2845.5	checksum=183296384217244
+exit=0

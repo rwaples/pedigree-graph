@@ -1,0 +1,14 @@
+{
+  "library": {
+    "file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+    "api": "0.8"
+  },
+  "argv": [
+    "snapshot",
+    "--out",
+    "docs/pedigree-graph-0.8-migration/migrated",
+    "--skip",
+    "pipeline",
+    "--source"
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "unit": "pedsum",
+  "stage": "10b",
+  "routing": "/tmp/claude-1000/-data-Documents-simACE/5305dd16-cff6-41a5-b202-49d4b8cfe5d9/scratchpad/10b/wheelgate/wheel-site",
+  "cwd": "external/pedsum",
+  "started": "2026-09-09T18:26:52",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/tmp/claude-1000/-data-Documents-simACE/5305dd16-cff6-41a5-b202-49d4b8cfe5d9/scratchpad/10b/wheelgate/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 2.1,
+      "max_rss_mib": 117.3,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10b/pedsum/routing.log",
+      "tail": [
+        "routed /tmp/claude-1000/-data-Documents-simACE/5305dd16-cff6-41a5-b202-49d4b8cfe5d9/scratchpad/10b/wheelgate/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 39.8,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10b/pedsum/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 39.8,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10b/pedsum/format.log",
+      "tail": [
+        "60 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 538.1,
+      "max_rss_mib": 322.3,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10b/pedsum/pytest.log",
+      "tail": [
+        ".....................................                                    [100%]",
+        "=============================== warnings summary ===============================",
+        "tests/test_pair_counting_modes.py::test_estimate_exact_code_set_is_the_six_pedsum_relies_on",
+        "  /data/Documents/simACE/external/pedsum/tests/test_pair_counting_modes.py:170: RuntimeWarning: estimate_relationship_counts(max_degree=5): the scalar residual for H1C underflowed and was clamped to 0, so those counts are unreliable rather than a true absence (typically inbreeding or complex mating); use relationship_counts for exact values",
+        "    assert set(pg.estimate_relationship_counts(max_degree=5).exact) == set(_EXACT_CODES)",
+        "",
+        "tests/test_pair_counting_modes.py::test_incest_fold_matches_per_individual_pair_lists",
+        "  /data/Documents/simACE/external/pedsum/tests/test_pair_counting_modes.py:199: RuntimeWarning: estimate_relationship_counts(max_degree=5): the scalar residual for H1C, H1C1R underflowed and was clamped to 0, so those counts are unreliable rather than a true absence (typically inbreeding or complex mating); use relationship_counts for exact values",
+        "    estimated = pg.estimate_relationship_counts(max_degree=5)",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "325 passed, 2 warnings in 535.76s (0:08:55)"
+      ]
+    },
+    {
+      "step": "tsv",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen python -c 'import polars as pl; pl.read_parquet('\"'\"'/data/Documents/simACE/results/test/small_test/rep1/pedigree.parquet'\"'\"').write_csv('\"'\"'/tmp/pg08-gate-gj52opvz/pedigree.tsv'\"'\"', separator='\"'\"'\\t'\"'\"')'",
+      "exit": 0,
+      "wall_s": 0.9,
+      "max_rss_mib": 54.6,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10b/pedsum/tsv.log",
+      "tail": []
+    },
+    {
+      "step": "cli-smoke",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen python pedigree_summary.py summarize --in /tmp/pg08-gate-gj52opvz/pedigree.tsv --out /tmp/pg08-gate-gj52opvz/pedsum-smoke",
+      "exit": 0,
+      "wall_s": 4.0,
+      "max_rss_mib": 220.1,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10b/pedsum/cli-smoke.log",
+      "tail": [
+        "18:35:56 INFO pedigree_summary: size+structure in 0.00s",
+        "18:35:56 INFO pedigree_summary: sibship sizes in 0.01s",
+        "18:35:56 INFO pedigree_summary: mating-pair summary in 0.01s",
+        "18:35:56 INFO pedigree_graph._streaming_counter: estimate_relationship_counts total: 0.017s",
+        "18:35:56 INFO pedigree_summary: relationship pair counts (estimate_relationship_counts) in 0.02s",
+        "18:35:57 INFO pedigree_summary: inbreeding (F + n_ancestors) in 0.61s",
+        "18:35:57 INFO pedigree_summary: descendants in 0.01s",
+        "18:35:57 INFO pedigree_summary: effective size (7 estimators) in 0.09s",
+        "18:35:57 INFO pedigree_summary: individual table built in 0.25s",
+        "18:35:57 INFO pedigree_summary: aggregate pedigree sections in 0.04s",
+        "18:35:57 INFO pedigree_summary: wrote /tmp/pg08-gate-gj52opvz/pedsum-smoke/{summary.yaml, summary.extra.yaml}",
+        "18:35:57 INFO pedigree_summary: wrote annotated.tsv.gz in 0.10s"
+      ]
+    }
+  ],
+  "ok": true
+}

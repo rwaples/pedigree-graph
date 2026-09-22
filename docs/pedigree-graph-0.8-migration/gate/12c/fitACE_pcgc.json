@@ -1,0 +1,43 @@
+{
+  "unit": "fitACE_pcgc",
+  "stage": "12c",
+  "routing": "locked",
+  "cwd": "fitACE",
+  "started": "2026-09-20T13:55:13",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml python -c 'import pedigree_graph as p, sys;ok = '\"'\"'.pixi/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 3.0,
+      "max_rss_mib": 105.5,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/fitACE_pcgc/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/fitACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml pytest -q -p no:cacheprovider fitACE_pcgc/tests",
+      "exit": 0,
+      "wall_s": 24.2,
+      "max_rss_mib": 352.5,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/fitACE_pcgc/pytest.log",
+      "tail": [
+        "    r_ref = fit_pcgc(**kw, backend=\"reference\")",
+        "",
+        "tests/test_cpp_parity.py::TestCppParityHermite::test_ae_tiny",
+        "  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:219: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.",
+        "    r_nb = fit_pcgc(**kw, backend=\"numba\")",
+        "",
+        "tests/test_cpp_parity.py::TestCppParityHermite::test_ae_tiny",
+        "  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:220: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.",
+        "    r_cpp = fit_pcgc(**kw, backend=\"cpp\", threads=1)",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "211 passed, 4 skipped, 53 warnings in 18.58s"
+      ]
+    }
+  ],
+  "ok": true
+}

@@ -1,0 +1,65 @@
+{
+  "unit": "pedigree-graph",
+  "stage": "12c",
+  "routing": "own-manifest",
+  "cwd": "external/pedigree-graph",
+  "started": "2026-09-20T12:05:09",
+  "steps": [
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml ruff check",
+      "exit": 0,
+      "wall_s": 0.5,
+      "max_rss_mib": 42.0,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedigree-graph/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml ruff format --check",
+      "exit": 0,
+      "wall_s": 0.3,
+      "max_rss_mib": 42.2,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedigree-graph/format.log",
+      "tail": [
+        "167 files already formatted"
+      ]
+    },
+    {
+      "step": "ty",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml ty check",
+      "exit": 0,
+      "wall_s": 2.5,
+      "max_rss_mib": 113.7,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedigree-graph/ty.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml pytest -q -p no:cacheprovider -m 'not slow' tests",
+      "exit": 0,
+      "wall_s": 526.8,
+      "max_rss_mib": 983.9,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedigree-graph/pytest.log",
+      "tail": [
+        "tests/test_row_order.py::test_every_operation_is_invariant_under_row_order[single_individual-dict]",
+        "tests/test_row_order.py::test_every_operation_is_invariant_under_row_order[single_individual-from_arrays]",
+        "  /data/Documents/simACE/external/pedigree-graph/tests/test_row_order.py:306: RuntimeWarning: ne_variance_family_size: pg.sex is uniform (all 0); estimator is degenerate and will return ne=None",
+        "    results = estimate_effective_sizes(graph).to_dict()",
+        "",
+        "tests/test_row_order.py::test_every_operation_is_invariant_under_row_order[single_individual-dict]",
+        "tests/test_row_order.py::test_every_operation_is_invariant_under_row_order[single_individual-from_arrays]",
+        "  /data/Documents/simACE/external/pedigree-graph/tests/test_row_order.py:306: RuntimeWarning: ne_sex_ratio: pg.sex is uniform (all 0); estimator is degenerate and will return ne=None",
+        "    results = estimate_effective_sizes(graph).to_dict()",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "2954 passed, 9 skipped, 9 deselected, 4 warnings in 521.57s (0:08:41)"
+      ]
+    }
+  ],
+  "ok": true
+}

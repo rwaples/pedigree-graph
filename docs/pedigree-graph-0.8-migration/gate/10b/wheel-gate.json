@@ -1,0 +1,15 @@
+{
+  "ref": "v0.8",
+  "head": "81e4bcb5dda8932061ba29b19cf794ebf8b9db0b",
+  "version": "0.8.2",
+  "wheel": {
+    "file": "pedigree_graph-0.8.2-cp313-abi3-linux_x86_64.whl",
+    "sha256": "609eac9bb51f41f06b1345a9bb5827f4bdc7f6793094a6c2962d19407f921aa8"
+  },
+  "sdist": {
+    "file": "pedigree_graph-0.8.2.tar.gz",
+    "sha256": "1257734127090e3f1490ea716b73bac67ed66ee03524811b38b76431a4672537"
+  },
+  "wheel_pytest_exit": 0,
+  "wheel_site": "/tmp/claude-1000/-data-Documents-simACE/5305dd16-cff6-41a5-b202-49d4b8cfe5d9/scratchpad/10b/wheelgate/wheel-site"
+}

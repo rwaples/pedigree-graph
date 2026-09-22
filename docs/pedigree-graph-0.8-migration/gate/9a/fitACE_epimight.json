@@ -1,0 +1,48 @@
+{
+  "unit": "fitACE_epimight",
+  "stage": "9a",
+  "routing": "source",
+  "cwd": "fitACE/fitACE_epimight",
+  "started": "2026-09-09T11:59:40",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 2.8,
+      "max_rss_mib": 105.6,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/fitACE_epimight/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 180.2,
+      "max_rss_mib": 741.8,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/fitACE_epimight/pytest.log",
+      "tail": [
+        "........................................................................ [ 28%]",
+        "........................................................................ [ 56%]",
+        "........................................................................ [ 84%]",
+        "........................................                                 [100%]",
+        "256 passed, 19 deselected in 174.80s (0:02:54)"
+      ]
+    },
+    {
+      "step": "pytest-slow",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider -m slow tests",
+      "exit": 0,
+      "wall_s": 172.0,
+      "max_rss_mib": 381.1,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/fitACE_epimight/pytest-slow.log",
+      "tail": [
+        "..................                                                       [100%]",
+        "18 passed, 257 deselected in 166.97s (0:02:46)"
+      ]
+    }
+  ],
+  "ok": true
+}

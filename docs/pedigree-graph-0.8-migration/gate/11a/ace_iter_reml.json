@@ -1,0 +1,132 @@
+{
+  "unit": "ace_iter_reml",
+  "stage": "11a",
+  "routing": "own-manifest",
+  "cwd": "fitACE/fitACE_iter_reml/ace_iter_reml",
+  "started": "2026-09-09T22:51:19",
+  "steps": [
+    {
+      "step": "fp32-test_laplace_primitives",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ./build-fp32/test_laplace_primitives",
+      "exit": 0,
+      "wall_s": 3.0,
+      "max_rss_mib": 105.2,
+      "log": "docs/pedigree-graph-0.8-migration/gate/11a/ace_iter_reml/fp32-test_laplace_primitives.log",
+      "tail": [
+        "compute_w_prime: checked 44 of 50 entries (rest hit w_floor)",
+        "[PASS] compute_w_prime FD match (max rel err < 1e-3)  max_rel_err=0.000000",
+        "diag(H\u207b\u00b9) vs dense: mean_rel_err=0.00350397  max_rel_err=0.0110182",
+        "[PASS] compute_diag_hinv Hutchinson matches dense (mean < 5%)  mean_rel=0.003504",
+        "[PASS] compute_diag_hinv Hutchinson matches dense (max < 25%)  max_rel=0.011018",
+        "",
+        "3 passed, 0 failed."
+      ]
+    },
+    {
+      "step": "fp32-test_mcem_step",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ./build-fp32/test_mcem_step",
+      "exit": 0,
+      "wall_s": 3.1,
+      "max_rss_mib": 103.2,
+      "log": "docs/pedigree-graph-0.8-migration/gate/11a/ace_iter_reml/fp32-test_mcem_step.log",
+      "tail": [
+        "[PASS] MCEM Louis SEs finite + positive  var=[1.03513,4.20436,0.712641]",
+        "[INF phenotype_layer t+0.0138453s] liability_mean layer: K=0.3000 tau=0.524 l_case=1.528 l_ctrl=-0.655 n_case=20 n_ctrl=20 emp_K=0.5000",
+        "[WRN phenotype_layer t+0.0138723s] empirical case fraction (0.5000) differs from supplied K (0.3000) by > 0.05 absolute \u2014 possible case-control ascertainment.  Phase 1 does not correct for this; supplied K is used for scaling. See Lee et al. 2011 for the correction recipe.",
+        "[INF phenotype_layer t+0.0139061s] liability_mcem layer: K=0.3000 tau=0.524 n=40; warm-start from Mills-ratio imputation",
+        "  [info] TI n_grid=20  wall=0.155975s",
+        "  [info] log_p_ref: TI=-30.8972  truth=-30.8972",
+        "  [info] log_r:    TI=-32.565  truth=-32.5218  stderr=0.0367809",
+        "[PASS] TI log_p_ref (closed form)  got=-30.8972  expected=-30.8972  |err|=2.13163e-14  tol=1e-09",
+        "[PASS] TI log_r vs diagonal-V truth  got=-32.565  expected=-32.5218  |err|=0.0432484  tol=0.160343",
+        "[PASS] TI stderr finite and non-negative (0.0367809)",
+        "",
+        "30 passed, 0 failed."
+      ]
+    },
+    {
+      "step": "fp32-test_tmvn",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ./build-fp32/test_tmvn",
+      "exit": 0,
+      "wall_s": 3.0,
+      "max_rss_mib": 106.2,
+      "log": "docs/pedigree-graph-0.8-migration/gate/11a/ace_iter_reml/fp32-test_tmvn.log",
+      "tail": [
+        "[PASS] corr-V: diag(V\u207b\u00b9)[0]  got=0.75  expected=0.75  |err|=1.11022e-16  tol=0.0001",
+        "[PASS] corr-V: diag(V\u207b\u00b9)[1]  got=1  expected=1  |err|=4.44089e-16  tol=0.0001",
+        "[PASS] corr-V: diag(V\u207b\u00b9)[2]  got=0.75  expected=0.75  |err|=1.11022e-16  tol=0.0001",
+        "[PASS] corr-V: sum(V\u207b\u00b9)  got=1  expected=1  |err|=1.11022e-16  tol=0.0001",
+        "[PASS] corr-V: V\u207b\u00b9 symmetric after mirror  got=0  expected=0  |err|=0  tol=1e-08",
+        "[PASS] TMVN respects hard truncation  got=0  expected=0  |err|=0  tol=0  (0 out of 10000 draws)",
+        "[PASS] TMVN case mean (indep, \u03c4=0.5)  got=1.13851  expected=1.14108  |err|=0.0025707  tol=0.02",
+        "[PASS] TMVN case var (indep, \u03c4=0.5)  got=0.265989  expected=0.26848  |err|=0.00249165  tol=0.05",
+        "[PASS] TMVN ctrl mean (indep, \u03c4=0.5)  got=-0.509086  expected=-0.50916  |err|=7.45288e-05  tol=0.02",
+        "[PASS] TMVN ctrl var (indep, \u03c4=0.5)  got=0.47878  expected=0.486175  |err|=0.00739511  tol=0.05",
+        "",
+        "11 passed, 0 failed."
+      ]
+    },
+    {
+      "step": "fp64-test_laplace_primitives",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ./build-fp64/test_laplace_primitives",
+      "exit": 0,
+      "wall_s": 3.0,
+      "max_rss_mib": 99.3,
+      "log": "docs/pedigree-graph-0.8-migration/gate/11a/ace_iter_reml/fp64-test_laplace_primitives.log",
+      "tail": [
+        "compute_w_prime: checked 44 of 50 entries (rest hit w_floor)",
+        "[PASS] compute_w_prime FD match (max rel err < 1e-3)  max_rel_err=0.000000",
+        "diag(H\u207b\u00b9) vs dense: mean_rel_err=0.00350397  max_rel_err=0.0110182",
+        "[PASS] compute_diag_hinv Hutchinson matches dense (mean < 5%)  mean_rel=0.003504",
+        "[PASS] compute_diag_hinv Hutchinson matches dense (max < 25%)  max_rel=0.011018",
+        "",
+        "3 passed, 0 failed."
+      ]
+    },
+    {
+      "step": "fp64-test_mcem_step",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ./build-fp64/test_mcem_step",
+      "exit": 0,
+      "wall_s": 3.2,
+      "max_rss_mib": 106.1,
+      "log": "docs/pedigree-graph-0.8-migration/gate/11a/ace_iter_reml/fp64-test_mcem_step.log",
+      "tail": [
+        "[PASS] MCEM Louis SEs finite + positive  var=[1.03513,4.20435,0.712641]",
+        "[INF phenotype_layer t+0.0135906s] liability_mean layer: K=0.3000 tau=0.524 l_case=1.528 l_ctrl=-0.655 n_case=20 n_ctrl=20 emp_K=0.5000",
+        "[WRN phenotype_layer t+0.0136155s] empirical case fraction (0.5000) differs from supplied K (0.3000) by > 0.05 absolute \u2014 possible case-control ascertainment.  Phase 1 does not correct for this; supplied K is used for scaling. See Lee et al. 2011 for the correction recipe.",
+        "[INF phenotype_layer t+0.0136381s] liability_mcem layer: K=0.3000 tau=0.524 n=40; warm-start from Mills-ratio imputation",
+        "  [info] TI n_grid=20  wall=0.160936s",
+        "  [info] log_p_ref: TI=-30.8972  truth=-30.8972",
+        "  [info] log_r:    TI=-32.565  truth=-32.5218  stderr=0.0367809",
+        "[PASS] TI log_p_ref (closed form)  got=-30.8972  expected=-30.8972  |err|=2.13163e-14  tol=1e-09",
+        "[PASS] TI log_r vs diagonal-V truth  got=-32.565  expected=-32.5218  |err|=0.0432485  tol=0.160343",
+        "[PASS] TI stderr finite and non-negative (0.0367809)",
+        "",
+        "30 passed, 0 failed."
+      ]
+    },
+    {
+      "step": "fp64-test_tmvn",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ./build-fp64/test_tmvn",
+      "exit": 0,
+      "wall_s": 3.0,
+      "max_rss_mib": 104.4,
+      "log": "docs/pedigree-graph-0.8-migration/gate/11a/ace_iter_reml/fp64-test_tmvn.log",
+      "tail": [
+        "[PASS] corr-V: diag(V\u207b\u00b9)[0]  got=0.75  expected=0.75  |err|=1.11022e-16  tol=0.0001",
+        "[PASS] corr-V: diag(V\u207b\u00b9)[1]  got=1  expected=1  |err|=4.44089e-16  tol=0.0001",
+        "[PASS] corr-V: diag(V\u207b\u00b9)[2]  got=0.75  expected=0.75  |err|=1.11022e-16  tol=0.0001",
+        "[PASS] corr-V: sum(V\u207b\u00b9)  got=1  expected=1  |err|=1.11022e-16  tol=0.0001",
+        "[PASS] corr-V: V\u207b\u00b9 symmetric after mirror  got=0  expected=0  |err|=0  tol=1e-08",
+        "[PASS] TMVN respects hard truncation  got=0  expected=0  |err|=0  tol=0  (0 out of 10000 draws)",
+        "[PASS] TMVN case mean (indep, \u03c4=0.5)  got=1.13851  expected=1.14108  |err|=0.0025707  tol=0.02",
+        "[PASS] TMVN case var (indep, \u03c4=0.5)  got=0.265989  expected=0.26848  |err|=0.00249165  tol=0.05",
+        "[PASS] TMVN ctrl mean (indep, \u03c4=0.5)  got=-0.509086  expected=-0.50916  |err|=7.45288e-05  tol=0.02",
+        "[PASS] TMVN ctrl var (indep, \u03c4=0.5)  got=0.47878  expected=0.486175  |err|=0.00739511  tol=0.05",
+        "",
+        "11 passed, 0 failed."
+      ]
+    }
+  ],
+  "ok": true
+}

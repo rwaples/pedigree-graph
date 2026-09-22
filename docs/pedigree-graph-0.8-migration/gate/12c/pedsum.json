@@ -1,0 +1,90 @@
+{
+  "unit": "pedsum",
+  "stage": "12c",
+  "routing": "locked",
+  "cwd": "external/pedsum",
+  "started": "2026-09-20T13:58:22",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml python -c 'import pedigree_graph as p, sys;ok = '\"'\"'.pixi/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.7,
+      "max_rss_mib": 117.4,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedsum/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedsum/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 42.1,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedsum/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml ruff format --check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 42.2,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedsum/format.log",
+      "tail": [
+        "60 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 177.0,
+      "max_rss_mib": 337.7,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedsum/pytest.log",
+      "tail": [
+        "........................................................................ [ 22%]",
+        "........................................................................ [ 44%]",
+        "........................................................................ [ 66%]",
+        "........................................................................ [ 88%]",
+        "....................................                                     [100%]",
+        "324 passed in 176.12s (0:02:56)"
+      ]
+    },
+    {
+      "step": "tsv",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml python -c 'import polars as pl; pl.read_parquet('\"'\"'/data/Documents/simACE/results/test/small_test/rep1/pedigree.parquet'\"'\"').write_csv('\"'\"'/tmp/pg08-gate-hyabfqi2/pedigree.tsv'\"'\"', separator='\"'\"'\\t'\"'\"')'",
+      "exit": 0,
+      "wall_s": 0.3,
+      "max_rss_mib": 54.6,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedsum/tsv.log",
+      "tail": []
+    },
+    {
+      "step": "cli-smoke",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml python pedigree_summary.py summarize --in /tmp/pg08-gate-hyabfqi2/pedigree.tsv --out /tmp/pg08-gate-hyabfqi2/pedsum-smoke",
+      "exit": 0,
+      "wall_s": 2.1,
+      "max_rss_mib": 258.9,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12c/pedsum/cli-smoke.log",
+      "tail": [
+        "14:01:21 INFO pedigree_summary: mating-pair summary in 0.00s",
+        "14:01:21 INFO pedigree_graph._relationship_counts: relationship_counts: max_degree=5, threads=1",
+        "14:01:21 INFO pedigree_graph._relationship_counts: relationship_counts total: 0.086s",
+        "14:01:21 INFO pedigree_summary: relationship pair counts (relationship_counts) in 0.09s",
+        "14:01:21 INFO pedigree_summary: inbreeding (F + n_ancestors) in 0.20s",
+        "14:01:21 INFO pedigree_summary: descendants in 0.00s",
+        "14:01:22 INFO pedigree_graph._ne_rates: mean_kinship_by_generation: n=5312, groups=6, unlabelled=0, 0.64s",
+        "14:01:22 INFO pedigree_summary: effective size (7 estimators) in 0.65s",
+        "14:01:22 INFO pedigree_summary: individual table built in 0.08s",
+        "14:01:22 INFO pedigree_summary: aggregate pedigree sections in 0.01s",
+        "14:01:22 INFO pedigree_summary: wrote /tmp/pg08-gate-hyabfqi2/pedsum-smoke/{summary.yaml, summary.extra.yaml}",
+        "14:01:22 INFO pedigree_summary: wrote annotated.tsv.gz in 0.03s"
+      ]
+    }
+  ],
+  "ok": true
+}

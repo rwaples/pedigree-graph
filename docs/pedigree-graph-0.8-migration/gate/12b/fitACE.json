@@ -1,0 +1,63 @@
+{
+  "unit": "fitACE",
+  "stage": "12b",
+  "routing": "/tmp/claude-1000/-data-Documents-simACE/04d7784f-3228-4136-89ad-9f9576b23aad/scratchpad/pg090-wheel/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-09-19T14:18:09",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/tmp/claude-1000/-data-Documents-simACE/04d7784f-3228-4136-89ad-9f9576b23aad/scratchpad/pg090-wheel/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.9,
+      "max_rss_mib": 105.9,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12b/fitACE/routing.log",
+      "tail": [
+        "routed /tmp/claude-1000/-data-Documents-simACE/04d7784f-3228-4136-89ad-9f9576b23aad/scratchpad/pg090-wheel/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 104.2,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12b/fitACE/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 105.2,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12b/fitACE/format.log",
+      "tail": [
+        "237 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 22.3,
+      "max_rss_mib": 414.0,
+      "log": "docs/pedigree-graph-0.8-migration/gate/12b/fitACE/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "........................................................................ [ 18%]",
+        "........................................................................ [ 37%]",
+        "........................................................................ [ 56%]",
+        "........................................................................ [ 75%]",
+        "........................................................................ [ 93%]",
+        ".......................                                                  [100%]",
+        "383 passed in 20.88s"
+      ]
+    }
+  ],
+  "ok": true
+}

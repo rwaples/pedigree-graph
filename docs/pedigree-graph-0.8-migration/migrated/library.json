@@ -1,0 +1,194 @@
+{
+  "random_30k": {
+    "_stage_approx": {
+      "max_rss_mib": 6938,
+      "wall_s": 75.7
+    },
+    "_stage_deg2": {
+      "max_rss_mib": 773,
+      "wall_s": 44.7
+    },
+    "_stage_lineage": {
+      "max_rss_mib": 172,
+      "wall_s": 0.2
+    },
+    "_stage_pairs": {
+      "max_rss_mib": 222,
+      "wall_s": 0.3
+    },
+    "approx_matrix": {
+      "csc_structure_sha": "f272591b38cbc8c5d023e6f8d564f21b7a792b27a29d00b20fa8f954fef31d42",
+      "nnz_full": 53817918,
+      "threshold": 0.001,
+      "upper_nnz": 26924109,
+      "value_sum_full": 406926.74617004395
+    },
+    "complete_matrix": {
+      "not_run": "134M-entry complete matrix skipped under 0.8 on the 30 GiB box; the approximate stage already exercises the complete retiring DP pass"
+    },
+    "degree2_matrix": {
+      "support_sha": "92f3549cc24b8c5508b3d8d702019dc97acec44337b8104acb24d921f9629adb",
+      "upper_nnz": 238796,
+      "value_sum": 48466.02114868164
+    },
+    "descendant_counts": {
+      "dtype": "int64",
+      "max": 3241,
+      "sum": 2191160
+    },
+    "estimate_deg5": {
+      "1C": 60,
+      "1C1R": 209906,
+      "1C2R": 327624,
+      "2C": 198639,
+      "Av": 67,
+      "FO": 27771,
+      "FS": 20,
+      "G3Av": 345,
+      "G3GP": 344489,
+      "GAv": 130,
+      "GGAv": 199,
+      "GGGP": 233738,
+      "GGP": 149813,
+      "GP": 92433,
+      "H1C": 185155,
+      "H1C1R": 205800,
+      "HAv": 206491,
+      "HGAv": 348815,
+      "HGGAv": 575769,
+      "MHS": 29721,
+      "MO": 27785,
+      "MZ": 608,
+      "PHS": 30091
+    },
+    "estimate_exact_codes": [
+      "FO",
+      "FS",
+      "MHS",
+      "MO",
+      "MZ",
+      "PHS"
+    ],
+    "inbreeding": {
+      "max": 0.127197265625,
+      "n_positive": 6669,
+      "sum": 13.127777099609375
+    },
+    "n": 30300,
+    "pairs_deg3": {
+      "1C": 2017,
+      "1C1R": 0,
+      "1C2R": 0,
+      "2C": 0,
+      "Av": 67,
+      "FO": 27771,
+      "FS": 20,
+      "G3Av": 0,
+      "G3GP": 0,
+      "GAv": 130,
+      "GGAv": 0,
+      "GGGP": 0,
+      "GGP": 149807,
+      "GP": 92433,
+      "H1C": 0,
+      "H1C1R": 0,
+      "HAv": 206264,
+      "HGAv": 0,
+      "HGGAv": 0,
+      "MHS": 29721,
+      "MO": 27785,
+      "MZ": 608,
+      "PHS": 30091
+    },
+    "staged": "run as separate processes after the single-process run was killed for memory"
+  },
+  "small_test_rep1_full": {
+    "approx_matrix": {
+      "complete_entries_absent": 273889,
+      "max_abs_diff_vs_complete_on_support": 0.0,
+      "support_sha": "89aa3b99040e440e8979a65ffb2217ab4216ebdb1ceabb46959a8281ed862c04",
+      "threshold": 0.001,
+      "upper_nnz": 1387476,
+      "value_sum": 26677.75048828125
+    },
+    "complete_matrix": {
+      "upper_nnz": 1661365,
+      "value_sha": "9be82f062550a44b54a6560318e1130f53c2f31eb8ac9a689783bf3fae7dda0e",
+      "value_sum": 26921.234375
+    },
+    "degree2_matrix": {
+      "support_sha": "7812d1d86db6a35fa3ebda6470b70c3ba51571f9bb2ec7dae7856244c19bd510",
+      "upper_nnz": 52382,
+      "value_sum": 10602.06982421875
+    },
+    "descendant_counts": {
+      "dtype": "int64",
+      "max": 427,
+      "sum": 114000
+    },
+    "estimate_deg5": {
+      "1C": 12461,
+      "1C1R": 45789,
+      "1C2R": 57836,
+      "2C": 78621,
+      "Av": 12350,
+      "FO": 5000,
+      "FS": 3915,
+      "G3Av": 25489,
+      "G3GP": 30936,
+      "GAv": 18468,
+      "GGAv": 24326,
+      "GGGP": 31493,
+      "GGP": 23833,
+      "GP": 15958,
+      "H1C": 8881,
+      "H1C1R": 69655,
+      "HAv": 13103,
+      "HGAv": 19584,
+      "HGGAv": 25740,
+      "MHS": 2313,
+      "MO": 5000,
+      "MZ": 32,
+      "PHS": 1868
+    },
+    "estimate_exact_codes": [
+      "FO",
+      "FS",
+      "MHS",
+      "MO",
+      "MZ",
+      "PHS"
+    ],
+    "inbreeding": {
+      "max": 0.25,
+      "n_positive": 314,
+      "sum": 8.671875
+    },
+    "n": 6000,
+    "pairs_deg3": {
+      "1C": 12503,
+      "1C1R": 0,
+      "1C2R": 0,
+      "2C": 0,
+      "Av": 12296,
+      "FO": 5000,
+      "FS": 3915,
+      "G3Av": 0,
+      "G3GP": 0,
+      "GAv": 18355,
+      "GGAv": 0,
+      "GGGP": 0,
+      "GGP": 23833,
+      "GP": 15958,
+      "H1C": 0,
+      "H1C1R": 0,
+      "HAv": 13045,
+      "HGAv": 0,
+      "HGGAv": 0,
+      "MHS": 2313,
+      "MO": 5000,
+      "MZ": 32,
+      "PHS": 1868
+    }
+  }
+}

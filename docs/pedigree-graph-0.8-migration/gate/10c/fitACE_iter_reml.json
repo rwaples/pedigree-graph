@@ -1,0 +1,37 @@
+{
+  "unit": "fitACE_iter_reml",
+  "stage": "10c",
+  "routing": "locked",
+  "cwd": "fitACE",
+  "started": "2026-09-09T15:00:51",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml python -c 'import pedigree_graph as p, sys;ok = '\"'\"'.pixi/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 2.8,
+      "max_rss_mib": 105.8,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10c/fitACE_iter_reml/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/fitACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml pytest -q -p no:cacheprovider fitACE_iter_reml/tests",
+      "exit": 0,
+      "wall_s": 95.1,
+      "max_rss_mib": 347.9,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10c/fitACE_iter_reml/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "........................................................................ [ 63%]",
+        "..........................ssss............                               [100%]",
+        "110 passed, 4 skipped in 93.45s (0:01:33)"
+      ]
+    }
+  ],
+  "ok": true
+}

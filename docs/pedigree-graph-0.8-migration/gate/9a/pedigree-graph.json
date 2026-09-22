@@ -1,0 +1,77 @@
+{
+  "unit": "pedigree-graph",
+  "stage": "9a",
+  "routing": "own-manifest",
+  "cwd": "external/pedigree-graph",
+  "started": "2026-09-09T08:13:02",
+  "steps": [
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 39.4,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/pedigree-graph/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 39.4,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/pedigree-graph/format.log",
+      "tail": [
+        "145 files already formatted"
+      ]
+    },
+    {
+      "step": "ty",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen ty check",
+      "exit": 0,
+      "wall_s": 0.8,
+      "max_rss_mib": 115.0,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/pedigree-graph/ty.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen pytest -q -p no:cacheprovider -m 'not slow' tests",
+      "exit": 0,
+      "wall_s": 182.5,
+      "max_rss_mib": 1105.6,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/pedigree-graph/pytest.log",
+      "tail": [
+        "tests/test_row_order.py::test_every_operation_is_invariant_under_row_order[single_individual-dict]",
+        "tests/test_row_order.py::test_every_operation_is_invariant_under_row_order[single_individual-from_arrays]",
+        "  /data/Documents/simACE/external/pedigree-graph/pedigree_graph/_ne_estimate.py:274: RuntimeWarning: ne_variance_family_size: pg.sex is uniform (all 0); estimator is degenerate and will return ne=None",
+        "    return self._once(name, lambda: self._compute(name))",
+        "",
+        "tests/test_row_order.py::test_every_operation_is_invariant_under_row_order[single_individual-dict]",
+        "tests/test_row_order.py::test_every_operation_is_invariant_under_row_order[single_individual-from_arrays]",
+        "  /data/Documents/simACE/external/pedigree-graph/pedigree_graph/_ne_estimate.py:274: RuntimeWarning: ne_sex_ratio: pg.sex is uniform (all 0); estimator is degenerate and will return ne=None",
+        "    return self._once(name, lambda: self._compute(name))",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "2068 passed, 7 skipped, 9 deselected, 58 warnings in 180.49s (0:03:00)"
+      ]
+    },
+    {
+      "step": "pytest-slow",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen pytest -q -p no:cacheprovider -m slow tests",
+      "exit": 0,
+      "wall_s": 553.5,
+      "max_rss_mib": 7406.3,
+      "log": "docs/pedigree-graph-0.8-migration/gate/9a/pedigree-graph/pytest-slow.log",
+      "tail": [
+        ".........                                                                [100%]",
+        "9 passed, 2075 deselected in 551.81s (0:09:11)"
+      ]
+    }
+  ],
+  "ok": true
+}

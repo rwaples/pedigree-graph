@@ -1,0 +1,63 @@
+{
+  "unit": "fitACE",
+  "stage": "10d",
+  "routing": "locked",
+  "cwd": "fitACE",
+  "started": "2026-09-09T19:57:22",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml python -c 'import pedigree_graph as p, sys;ok = '\"'\"'.pixi/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 2.8,
+      "max_rss_mib": 105.8,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10d/fitACE/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/fitACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml ruff check",
+      "exit": 0,
+      "wall_s": 0.7,
+      "max_rss_mib": 106.1,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10d/fitACE/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml ruff format --check",
+      "exit": 0,
+      "wall_s": 0.7,
+      "max_rss_mib": 101.6,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10d/fitACE/format.log",
+      "tail": [
+        "237 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 80.4,
+      "max_rss_mib": 482.3,
+      "log": "docs/pedigree-graph-0.8-migration/gate/10d/fitACE/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "........................................................................ [ 18%]",
+        "........................................................................ [ 37%]",
+        "........................................................................ [ 56%]",
+        "........................................................................ [ 75%]",
+        "........................................................................ [ 93%]",
+        ".......................                                                  [100%]",
+        "383 passed in 76.34s (0:01:16)"
+      ]
+    }
+  ],
+  "ok": true
+}
