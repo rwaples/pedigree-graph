@@ -85,6 +85,19 @@ copy, or sizes from a bound, is a requirement here; it is worth about 30
 percent of peak independent of dtype and was deliberately left out of the
 0.8.0 Python kernel.
 
+*Amended 2026-09-23 (slice 13, 0.9.1).* The Rust core's memo is one small
+open-addressing table per lower row, `(hi: u32, value: f32)` slots of 8
+bytes, each row doubling on its own, so a rehash copies one row and nothing
+else. It was selected over a Rust port of the 0.9.0 flat table by
+measurement (`docs/pedigree-graph-0.8-migration/gate/13a/NOTES.md`): on the
+536k-row degree-3 batch peak RSS fell from 5.4 GiB (wheel) to 3.0 GiB, on
+`random_30k` the degree-3 walk went from 82.5 s to 5.3 s, and on
+`random_300k` the walk completes in 934 s at 14.1 GiB where the wheel did not
+finish in an hour. The memo lives for one call and is freed before the call
+returns; nothing is retained on the graph, which closes the migration plan's
+"pairwise kinship" step. The flat port measured within 12 to 25 percent of
+the wheel, so the layout, not the language, is the saving.
+
 ### Memoisation and ownership
 
 The public graph is immutable; safe interior memoisation is allowed.

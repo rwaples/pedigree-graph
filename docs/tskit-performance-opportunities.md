@@ -64,8 +64,9 @@ calculation is usually more efficient than many pairwise requests. See the
 pedigree-graph already has two exact value engines with different reuse and
 working-set properties:
 
-- `_kinship_pairwise.py` evaluates sparse arbitrary pairs with a recurrence
-  memo.
+- `crates/core/src/kinship/pairwise.rs` (reached through
+  `_native.pair_kinship`) evaluates sparse arbitrary pairs with a call-local
+  recurrence memo.
 - `_kinship_dp.py` evaluates complete rows and retires them after their last
   direct child.
 - `_kinship_matrix.py::_exactify_support` uses deterministic pair chunks for
@@ -348,10 +349,10 @@ internal implementations of opportunities 1 and 2.
 
 pedigree-graph currently computes kinship in three materially different ways:
 
-1. **Requested pairs:** `_kinship_pairwise.py::_pairwise_kinship_core` performs
+1. **Requested pairs:** `kinship::pairwise::Walker` in the Rust core performs
    an iterative, post-order Karigl recurrence over only the requested pairs and
-   their pair-state dependencies. One open-addressing memo is shared across the
-   request (`pedigree_graph/_kinship_pairwise.py:265-415`).
+   their pair-state dependencies. One memo is shared across the request and
+   freed with it (`crates/core/src/kinship/pairwise.rs`).
 2. **Matrices and selected support:** `_kinship_dp.py::_dp_kinship` processes
    the pedigree depth by depth, while `_kinship_dp_depth.py::_process_depth`
    merge-walks the two parent rows and writes symmetric child entries
@@ -370,14 +371,13 @@ value contract with query-specific execution modules.
 This is the strongest additional pairwise-kinship experiment.
 
 In stable topological order, a canonical pair state is `(lo, hi)`, and the
-production kernel decodes `lo` as `other` and `hi` as `peeled`
-(`pedigree_graph/_kinship_pairwise.py:339-343`). Every dependency has a
-strictly smaller maximum endpoint:
+production kernel peels the endpoint of greater depth, ties to the greater row
+(`crates/core/src/kinship/pairwise.rs`, `Walker::peel`). Every dependency has
+a strictly smaller maximum endpoint in that order:
 
-- an ordinary state emits `(mother_hi, lo)` and `(father_hi, lo)`
-  (`pedigree_graph/_kinship_pairwise.py:374-382`); and
-- a self or MZ-like state emits `(mother_hi, father_hi)`
-  (`pedigree_graph/_kinship_pairwise.py:360-363`).
+- an ordinary state emits `(mother_peeled, other)` and `(father_peeled, other)`;
+  and
+- a self or MZ-like state emits `(mother_peeled, father_peeled)`.
 
 Both parents precede the peeled child, and `lo < hi` for a non-self state, so
 the recurrence DAG is naturally layered by `hi`. A bulk engine could exploit
@@ -391,14 +391,15 @@ that structure:
 4. scatter requested root values back to caller order.
 
 A compact representation could use row offsets plus one `int32 lo` and one
-`float32` value per distinct state. The current global memo uses an `int64` key
-and `float32` value—12 bytes per slot—and grows at a 70% load threshold
-(`pedigree_graph/_kinship_pairwise.py:43`, `92-93`, `401`). At the maximum
-load that is about 17 bytes of slot storage per live entry before stack/output
-storage, and geometric growth temporarily retains both tables. ADR 0009
-measured the rehash copy at about 30% of peak RSS on the 536k-row case
-([ADR 0009](adr/0009-kinship-is-a-pinned-float32-recurrence.md)). Row buckets
-could remove occupancy slack, global random probing, and whole-table rehashing.
+`float32` value per distinct state. Since slice 13 the memo is already
+row-bucketed: one small open-addressing table of `(hi: u32, value: f32)`
+slots per lower row, 8 bytes a slot, grown one row at a time
+(`crates/core/src/kinship/memo.rs`). That layout took the 0.9.0 flat table's
+whole-table rehash and global random probing out, and measured 0.53x to 0.68x
+the peak RSS and 0.065x to 0.3x the wall of the flat table on the random
+fixtures (`docs/pedigree-graph-0.8-migration/gate/13a/NOTES.md`). What K1
+would add over it is the sorted, deduplicated bucket sweep in place of the
+per-state hash probe.
 Temporary closure arrays and bucket metadata must be included in any comparison;
 the eight-byte steady-state pair is not a complete peak-memory estimate.
 
@@ -427,12 +428,13 @@ which either wall time or peak memory improves materially.
 
 ### K2. Instrument and tune the existing hash memo first
 
-Before replacing the memo, measure whether its simplest implementation choices
-are a bottleneck. `_memo_slot` maps a canonical key directly with
-`idx = key & mask`, without mixing the key bits
-(`pedigree_graph/_kinship_pairwise.py:226-235`). Since the key is
-`lo * n + hi` and relatedness workloads often concentrate endpoints, poor
-low-bit distribution is plausible but unverified.
+*Largely answered by slice 13's bake-off.* The 0.9.0 memo mapped a canonical
+key directly with `idx = key & mask`, without mixing the key bits, and the
+Rust port of that table matched the wheel within 12 to 25 percent, so the
+Python overhead was not the bottleneck; the per-row layout that replaced it
+was worth 8 to 15x on the random fixtures. The remaining questions below
+apply to the per-row tables (identity hash on `hi`, load 0.7, first capacity
+4, doubling).
 
 Add benchmark-only telemetry for:
 
@@ -447,11 +449,10 @@ load factors, and optional pre-sizing from an observed or sampled
 states-per-root ratio. Hash placement cannot change recurrence values because
 the original canonical key is still stored and compared.
 
-The current `_memo_grow` allocates a complete doubled table and rehashes every
-entry (`pedigree_graph/_kinship_pairwise.py:247-261`). Independently of key
-mixing, the Rust-core implementation should benchmark segmented growth or
-another no-predecessor-copy layout against the requirement already recorded in
-[ADR 0007](adr/0007-rust-core-host-boundary-and-release.md). A standard Rust
+The 0.9.0 `_memo_grow` allocated a complete doubled table and rehashed every
+entry; the per-row layout doubles one row's table at a time, which is the
+no-predecessor-copy requirement of
+[ADR 0007](adr/0007-rust-core-host-boundary-and-release.md) as amended. A standard Rust
 hash map is not automatically better: its entry alignment, control bytes, load
 factor, and growth peak all need measurement against the current structure of
 arrays.

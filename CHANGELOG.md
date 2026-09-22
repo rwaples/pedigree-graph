@@ -6,6 +6,46 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: `pair_kinship` runs on the Rust core** (slice 13; ADR 0005,
+  0007 and 0009 as amended). `PedigreeGraph.pair_kinship` and
+  `PedigreeView.pair_kinship` keep their three call forms, validation
+  codes, read-only float32 results and the ADR 0009 value definition, and
+  every value is bit-identical to 0.9.0: a golden lock of the 0.9.0 bits on
+  every parity fixture is a permanent test, and the four simACE study
+  pedigrees (20k to 536k rows, 16 million pairs) replayed with zero
+  differing elements in both endpoint orders. The recurrence now takes
+  structural depth as its peel input in graph space, builds one memo per
+  call as one small table per lower row, and frees it before returning.
+  Against the 0.9.0 wheel on one thread: `random_30k` degree-3 pairs 82.5 s
+  to 5.3 s and 762 to 515 MiB peak; the 536k-row study pedigree at degree 3
+  31.3 s to 24.8 s and 5.4 to 3.0 GiB; `random_300k` degree 3 completes in
+  934 s at 14.1 GiB where 0.9.0 did not finish in an hour. Record:
+  `docs/pedigree-graph-0.8-migration/gate/13a/NOTES.md`.
+- **Changed: `relationship_kinship_matrix` fills its values in one native
+  walk of the CSC support** (`_native.kinship_support_values`) instead of
+  streaming pair chunks through a retained memo. On the 536k-row pedigree
+  at degree 3 the matrix takes 32.7 s against 49.1 s, at the same peak RSS.
+- **Changed: nothing is retained between `pair_kinship` calls.** 0.9.0 kept
+  the recurrence memo on the graph under a 1 GiB limit so a repeated query
+  on the same graph returned in under a second; each call now walks cold.
+  On `random_30k` that repeat is 5.4 s instead of 0.45 s, and a matrix after
+  a degree-3 walk 5.8 s instead of 1.2 s; the first call of either is 15
+  times faster than before, and no consumer in simACE, fitACE or pedsum
+  makes the second call.
+- **Removed: `ResourceError("memo_capacity_exceeded")`.** The memo has no
+  global capacity any more; a pedigree that exhausts memory raises
+  `ResourceError("allocation_failed")` from one of the new `kinship_memo`,
+  `kinship_stack` or `kinship_output` families, or completes. The code and
+  its `(operation, capacity, maximum)` fields leave `RESOURCE_CODES`.
+- **Added (private): `PedigreeValidationError` codes
+  `kinship_support_unsorted` and `kinship_support_asymmetric`**, raised by
+  the native support walk on a malformed CSC. Unreachable from the public
+  matrix path; pinned through the raw binding.
+- **Removed (private):** the Numba pairwise kernel and its memo
+  (`pairwise_kinship`, `_pairwise_kinship_core`, `_run_kernel`, `_PairMemo`,
+  `memoised_kinship`, `PedigreeGraph._pair_memo`, `_release_pair_memo`).
+  The readable Python recurrence is now the test oracle
+  `tests/oracle/pair_kinship.py`.
 - **Added: `pedigree_graph.MAX_DEGREE` and `_native.max_degree_max()`**, the
   deepest degree the relationship APIs accept. Both sides now derive that
   ceiling from the category registry instead of naming a literal, and a test

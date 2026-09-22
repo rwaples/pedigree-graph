@@ -65,6 +65,11 @@ work-stack with a hand-rolled open-addressing `int64 → float64` memo keyed on
 canonical `lo·n + hi`). They are validated bit-for-bit against each other and
 to `atol=1e-6` against `kinship_matrix(0.0)`.
 
+*Amended 2026-09-22 (slice 13):* the production kernel is now the Rust core's
+`kinship::pair_kinship` (ADR 0007), reached through `_native.pair_kinship`;
+the Python reference lives on as the test oracle `tests/oracle/pair_kinship.py`
+and is never imported by the package. The value definition is ADR 0009's.
+
 ## Consequences
 
 * **Behavior change (the point):** multi-path pairs (double cousins, etc.) now
