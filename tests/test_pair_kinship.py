@@ -1,10 +1,10 @@
-"""``pair_kinship`` on graphs and views: the pinned float32 recurrence (ADR 0009, slice 5a).
+"""``pair_kinship`` on graphs and views: the pinned float32 recurrence (ADR 0009).
 
 Within one receiver every value is bit-identical to the ``kinship_matrix``
 entry for the same pair, to the pure-Python oracle, to the reversed endpoint
-order, and to itself before and after a matrix is cached.  Across two row
-orders of one pedigree the values stay inside the ADR 0009 envelope, and the
-ULP distance is reported.  Errors carry structured codes.
+order, and to itself across repeated calls and cached matrices.  Across two
+row orders of one pedigree the values stay inside the ADR 0009 envelope, and
+the ULP distance is reported.  Errors carry structured codes.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from types import MappingProxyType
 import numpy as np
 import pytest
 import scipy.sparse as sp
-from conftest import kernel_inputs, parity_columns, parity_fixtures
+from conftest import parity_columns, parity_fixtures
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 from test_pedigree_graph import (
     _ped_double_first_cousins,
@@ -28,13 +28,6 @@ from pedigree_graph import (
     RELATIONSHIPS,
     PedigreeGraph,
     PedigreeValidationError,
-    ResourceError,
-)
-from pedigree_graph._kinship_pairwise import (
-    _memo_ceiling,
-    _PairMemo,
-    _run_kernel,
-    pairwise_kinship,
 )
 from pedigree_graph._threads import _reset_thread_state, configure_threads
 
@@ -196,9 +189,8 @@ class TestWithinGraphParity:
     def test_kernel_matches_the_python_oracle(self, name):
         graph = _graph(name)
         first, second = _all_pairs(graph.n_individuals)
-        kernel = pairwise_kinship(*kernel_inputs(graph, first, second))
         oracle = oracle_pair_kinship(graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, first, second)
-        assert kernel.tobytes() == oracle.tobytes()
+        assert graph.pair_kinship(first, second).tobytes() == oracle.tobytes()
 
     @pytest.mark.parametrize("name", ["deep_inbred_60g", "random_1k"])
     def test_result_is_the_same_before_and_after_the_matrix(self, name):
@@ -384,189 +376,63 @@ class TestErrors:
         assert info.value.code == "invalid_integer_value"
         assert info.value.fields["value"] == "null"
 
-    def test_memo_capacity_limit_is_a_resource_error(self):
-        graph = _graph("deep_inbred_60g")
-        first, second = _all_pairs(graph.n_individuals)
-        with pytest.raises(ResourceError) as info:
-            _run_kernel(*kernel_inputs(graph, first, second), cap_limit=1 << 16)
-        assert info.value.code == "memo_capacity_exceeded"
-        assert dict(info.value.fields) == {"operation": "pair_kinship", "capacity": 1 << 16, "maximum": 1 << 16}
 
-    def test_a_non_power_of_two_memo_limit_is_floored_not_hung(self):
-        # The memo probes with ``key & (capacity - 1)``, so a capacity that is
-        # not a power of two reaches only its low slots and the probe loop
-        # spins forever once they fill.  The ceiling is floored instead.
-        graph = _graph("deep_inbred_60g")
-        first, second = _all_pairs(graph.n_individuals)
-        with pytest.raises(ResourceError) as info:
-            _run_kernel(*kernel_inputs(graph, first, second), cap_limit=100_000)
-        assert info.value.fields["maximum"] == 1 << 16
-
-    @pytest.mark.parametrize(("limit", "expected"), [(1, 1), (2, 2), (100, 64), (100_000, 1 << 16), (1 << 31, 1 << 31)])
-    def test_memo_ceiling_is_a_power_of_two(self, limit, expected):
-        assert _memo_ceiling(limit) == expected
-
-    def test_memo_ceiling_rejects_a_limit_below_one_slot(self):
-        with pytest.raises(ValueError, match="at least one slot"):
-            _memo_ceiling(0)
-
-
-class TestPersistentMemo:
-    """Slice 5d: the memo outlives the call, and reuse never changes a bit."""
-
-    @staticmethod
-    def _cold(name: str, first, second) -> np.ndarray:
-        return _graph(name).pair_kinship(first, second)
+class TestRepeatedCalls:
+    """Nothing is kept between calls, so a second call is a cold call and stores the same bits."""
 
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
-    def test_every_call_form_is_bit_identical_warm_and_cold(self, name):
+    def test_every_call_form_is_bit_identical_across_calls(self, name):
         graph = _graph(name)
         pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
         rows = np.arange(graph.n_individuals)
-        graph.pair_kinship(rows, rows)  # warms the diagonal closure
-        assert graph._pair_memo is not None
-        warm = graph.pair_kinship(pairs)
+        graph.pair_kinship(rows, rows)
+        again = graph.pair_kinship(pairs)
         fresh = _graph(name)
         cold = fresh.pair_kinship(fresh.relationship_pairs(max_degree=MAX_DEGREE))
         for code in RELATIONSHIPS:
-            assert warm[code].tobytes() == cold[code].tobytes(), code
+            assert again[code].tobytes() == cold[code].tobytes(), code
         block = max(pairs.values(), key=len)
-        assert graph.pair_kinship(block).tobytes() == self._cold(name, block.first_rows, block.second_rows).tobytes()
+        assert (
+            graph.pair_kinship(block).tobytes()
+            == _graph(name).pair_kinship(block.first_rows, block.second_rows).tobytes()
+        )
         first, second = _all_pairs(graph.n_individuals)
-        assert graph.pair_kinship(first, second).tobytes() == self._cold(name, first, second).tobytes()
+        assert graph.pair_kinship(first, second).tobytes() == _graph(name).pair_kinship(first, second).tobytes()
 
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
-    def test_relationship_matrix_after_a_warm_walk_matches_a_cold_one(self, name):
+    def test_relationship_matrix_after_a_walk_matches_a_fresh_one(self, name):
         graph = _graph(name)
         graph.pair_kinship(graph.relationship_pairs(max_degree=MAX_DEGREE))
-        warm = graph.relationship_kinship_matrix(max_degree=MAX_DEGREE)
-        cold = _graph(name).relationship_kinship_matrix(max_degree=MAX_DEGREE)
-        assert warm.indptr.tobytes() == cold.indptr.tobytes()
-        assert warm.indices.tobytes() == cold.indices.tobytes()
-        assert warm.data.tobytes() == cold.data.tobytes()
+        after = graph.relationship_kinship_matrix(max_degree=MAX_DEGREE)
+        fresh = _graph(name).relationship_kinship_matrix(max_degree=MAX_DEGREE)
+        assert after.indptr.tobytes() == fresh.indptr.tobytes()
+        assert after.indices.tobytes() == fresh.indices.tobytes()
+        assert after.data.tobytes() == fresh.data.tobytes()
 
-    def test_a_view_shares_and_extends_the_graph_memo(self):
+    def test_a_view_and_its_graph_agree_across_calls(self):
         graph = _graph("random_1k")
         view = graph.view(ids=FIXTURES["random_1k"]["ids"][::3])
         pairs = view.relationship_pairs(max_degree=MAX_DEGREE)
         values = view.pair_kinship(pairs)
-        memo = graph._pair_memo
-        assert memo is not None
-        assert memo.entries > 0
         fresh = _graph("random_1k").view(ids=FIXTURES["random_1k"]["ids"][::3])
         cold = fresh.pair_kinship(fresh.relationship_pairs(max_degree=MAX_DEGREE))
         for code in RELATIONSHIPS:
             assert values[code].tobytes() == cold[code].tobytes(), code
         rows = np.arange(graph.n_individuals)
-        graph.pair_kinship(rows, rows)
-        assert graph._pair_memo is not None
-        assert graph._pair_memo.entries >= memo.entries
+        assert graph.pair_kinship(rows, rows).tobytes() == _graph("random_1k").pair_kinship(rows, rows).tobytes()
 
-    def test_memo_survives_pair_then_matrix_then_pair(self):
+    def test_pair_then_matrix_then_pair(self):
         graph = _graph("deep_inbred_60g")
         pairs = graph.relationship_pairs(max_degree=2)
         before = graph.pair_kinship(pairs)
-        entries_after_pairs = graph._pair_memo.entries
         graph.relationship_kinship_matrix(max_degree=3)
-        entries_after_matrix = graph._pair_memo.entries
-        assert entries_after_matrix >= entries_after_pairs
         after = graph.pair_kinship(pairs)
-        assert graph._pair_memo.entries == entries_after_matrix
         for code in RELATIONSHIPS:
             assert before[code].tobytes() == after[code].tobytes(), code
 
-    def test_a_repeated_query_walks_nothing(self):
+    def test_an_empty_query_returns_empty(self):
         graph = _graph("deep_inbred_60g")
-        first, second = _all_pairs(graph.n_individuals)
-        inputs = kernel_inputs(graph, first, second)
-        out, stats, memo = _run_kernel(*inputs)
-        again, stats_again, memo_again = _run_kernel(*inputs, memo=memo)
-        assert again.tobytes() == out.tobytes()
-        assert memo_again.entries == memo.entries
-        assert int(stats_again[1]) == int(stats[1])  # capacity unchanged
-        assert int(stats_again[2]) == 0  # no growth
-        assert int(stats_again[3]) == 0  # nothing pushed: every root was a hit
-
-    def test_a_superset_query_adds_only_new_entries(self):
-        graph = _graph("deep_inbred_60g")
-        rows = np.arange(graph.n_individuals)
-        _, _, memo = _run_kernel(*kernel_inputs(graph, rows, rows))
-        first, second = _all_pairs(graph.n_individuals)
-        warm, _, memo_after = _run_kernel(*kernel_inputs(graph, first, second), memo=memo)
-        cold, _, memo_cold = _run_kernel(*kernel_inputs(graph, first, second))
-        assert warm.tobytes() == cold.tobytes()
-        assert memo_after.entries == memo_cold.entries
-        assert memo_after.entries > memo.entries
-
-    def test_release_makes_the_next_call_cold_and_identical(self):
-        graph = _graph("deep_inbred_60g")
-        first, second = _all_pairs(graph.n_individuals)
-        warm = graph.pair_kinship(first, second)
-        assert graph._pair_memo is not None
-        graph._release_pair_memo()
-        graph._release_pair_memo()
-        assert graph._pair_memo is None
-        assert graph.pair_kinship(first, second).tobytes() == warm.tobytes()
-        assert graph._pair_memo is not None
-        graph._release_kinship_matrices()
-        assert graph._pair_memo is None
-
-    def test_a_memo_over_the_retention_limit_is_dropped_not_raised(self):
-        graph = _graph("deep_inbred_60g")
-        first, second = _all_pairs(graph.n_individuals)
-        cold = _graph("deep_inbred_60g").pair_kinship(first, second)
-        graph._pair_memo_limit = 0
-        assert graph.pair_kinship(first, second).tobytes() == cold.tobytes()
-        assert graph._pair_memo is None
-        graph._pair_memo_limit = 1 << 30
-        assert graph.pair_kinship(first, second).tobytes() == cold.tobytes()
-        assert graph._pair_memo is not None
-        assert graph._pair_memo.nbytes == 12 * graph._pair_memo.capacity
-
-    def test_a_starting_memo_past_the_cap_is_replaced_not_walked(self):
-        graph = _graph("random_1k")
-        rows = np.arange(graph.n_individuals)
-        _, _, memo = _run_kernel(*kernel_inputs(graph, rows, rows))
-        assert memo.capacity > 1 << 4
-        with pytest.raises(ResourceError):
-            _run_kernel(*kernel_inputs(graph, rows, rows), cap_limit=1 << 4, memo=memo)
-
-    def test_an_empty_query_leaves_the_memo_as_it_was(self):
-        graph = _graph("deep_inbred_60g")
-        rows = np.arange(graph.n_individuals)
-        graph.pair_kinship(rows, rows)
-        memo = graph._pair_memo
         assert graph.pair_kinship([], []).shape == (0,)
-        assert graph._pair_memo is not None
-        assert graph._pair_memo.entries == memo.entries
-        assert graph._pair_memo.keys is memo.keys
-
-    def test_a_failed_call_drops_the_memo_instead_of_a_stale_count(self, monkeypatch):
-        # The kernel fills the retained table in place before a doubling, so a
-        # failure part-way leaves more live keys than the retained count; the
-        # next call would overfill the table and the probe would never stop.
-        graph = _graph("deep_inbred_60g")
-        rows = np.arange(graph.n_individuals)
-        graph.pair_kinship(rows[:8], rows[:8])
-        assert graph._pair_memo is not None
-        import pedigree_graph._kinship_pairwise as module
-
-        def fail(*args, **kwargs):
-            raise MemoryError("simulated doubling failure")
-
-        monkeypatch.setattr(module, "_run_kernel", fail)
-        with pytest.raises(MemoryError):
-            graph.pair_kinship(rows, rows)
-        assert graph._pair_memo is None
-        monkeypatch.undo()
-        cold = _graph("deep_inbred_60g").pair_kinship(rows, rows)
-        assert graph.pair_kinship(rows, rows).tobytes() == cold.tobytes()
-
-    def test_the_empty_memo_starts_cold(self):
-        memo = _PairMemo()
-        assert memo.capacity == 0
-        assert memo.entries == 0
-        assert memo.nbytes == 0
 
 
 class TestThreads:
@@ -589,8 +455,8 @@ class TestThreads:
 
 
 # Closest categories spanning degrees 0-3, both half-sib kinds included.  A
-# kernel call on random_30k costs its ancestral closure rather than its pair
-# count: HAv or H1C alone add 30-70 s, so the matrix gate selects these blocks
+# call on random_30k costs its ancestral closure rather than its pair count:
+# HAv or H1C alone add 30-70 s, so the matrix gate selects these blocks
 # instead of repeating the max_degree=3 walk.
 MATRIX_GATE_CATEGORIES = ("MZ", "FS", "MHS", "PHS", "Av", "1C")
 
@@ -602,11 +468,6 @@ def test_random_30k_integration():
     pairs = graph.relationship_pairs(max_degree=3)
     values = graph.pair_kinship(pairs)
     assert sum(len(block) for block in pairs.values()) > 0
-    # Slice 5d: the first call leaves its closure on the graph, and every call
-    # below starts from it, so this gate reads the warm timing after one walk.
-    memo = graph._pair_memo
-    assert memo is not None
-    assert memo.entries > sum(len(block) for block in pairs.values())
     for code, block in pairs.items():
         assert len(values[code]) == len(block), code
         if len(block):
@@ -636,7 +497,3 @@ def test_random_30k_integration():
     assert np.abs(2.0 * diagonal.astype(np.float64) - 1.0 - graph.inbreeding()).max() <= 2.0**-22
     deepest = np.arange(graph.n_individuals)[-1000:]
     assert graph.pair_kinship(deepest, deepest).tobytes() == diagonal[deepest].tobytes()
-    # The matrix's support was within the pair closure plus the diagonal, so
-    # the memo grew by the diagonal closure at most and nothing was re-walked.
-    assert graph._pair_memo is not None
-    assert graph._pair_memo.entries >= memo.entries

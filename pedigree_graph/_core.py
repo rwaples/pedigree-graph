@@ -27,7 +27,7 @@ from pedigree_graph._kinship_kernel import (
     _compute_F_meuwissen_luo,
 )
 from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
-from pedigree_graph._kinship_pairwise import _MEMO_RETAIN_LIMIT, graph_pair_kinship
+from pedigree_graph._kinship_pairwise import graph_pair_kinship
 from pedigree_graph._lineage import connected_component_ids as _connected_component_ids
 from pedigree_graph._lineage import descendant_path_counts as _descendant_path_counts
 from pedigree_graph._lineage import distinct_ancestor_counts as _distinct_ancestor_counts
@@ -48,7 +48,6 @@ if TYPE_CHECKING:
     import scipy.sparse as sp
 
     from pedigree_graph._frames import FrameLike
-    from pedigree_graph._kinship_pairwise import _PairMemo
     from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
@@ -144,12 +143,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         self._complete_kinship_cache: sp.csc_matrix | None = None
         self._relationship_kinship_cache: dict[tuple[str, ...], sp.csc_matrix] = {}
         self._approximate_kinship_cache: dict[float, sp.csc_matrix] = {}
-        # The pair-recurrence memo the last kernel call left behind, reused as
-        # the next call's starting table by pair_kinship and the relationship
-        # matrix (both through _kinship_pairwise.memoised_kinship).  Retained
-        # only while its tables fit under the limit, in bytes.
-        self._pair_memo: _PairMemo | None = None
-        self._pair_memo_limit: int = _MEMO_RETAIN_LIMIT
         # mean_kinship_by_generation() is threshold-free: one summary per graph.
         self._generation_kinship_summary: GenerationKinshipSummary | None = None
         self._close_relative_counts_cache: RelationshipCountResult | None = None
@@ -247,17 +240,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         self._complete_kinship_cache = None
         self._relationship_kinship_cache.clear()
         self._approximate_kinship_cache.clear()
-        self._release_pair_memo()
-
-    def _release_pair_memo(self) -> None:
-        """Drop the pair-recurrence memo, so the next ``pair_kinship`` starts cold.
-
-        The memo is the ancestor-pair closure of every query so far, 12 bytes a
-        slot, kept so a later query pays only for the pairs it newly reaches.
-        Releasing it changes no value: a cold call stores the same bits.
-        Idempotent.
-        """
-        self._pair_memo = None
 
     # ------------------------------------------------------------------
     # Alternative constructors
@@ -628,13 +610,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         derives from structural depth; supplied generation labels never enter
         it.
 
-        The recurrence memo outlives the call: the graph keeps the ancestor
-        pairs each query resolved and starts the next query from them, so
-        repeated queries on one graph pay for newly reached ancestors only.
-        A reused entry is the bit a cold call computes.  The memo costs 12
-        bytes per slot for the life of the graph, is retained only while it
-        fits the graph's retention limit, and is dropped by
-        :meth:`_release_kinship_matrices`.
+        The recurrence runs in the Rust core with one memo per call, shared
+        across every pair of the query and freed before the call returns;
+        nothing is kept on the graph, so repeated queries pay the full walk
+        each time and return identical bits.
 
         Args:
             first: ``first_rows`` (graph rows, any integer array-like), a
@@ -654,7 +633,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 from another receiver; ``invalid_shape``,
                 ``invalid_integer_value``, or ``pair_row_out_of_range`` per row
                 argument; ``pair_length_mismatch``.
-            ResourceError: ``memo_capacity_exceeded`` on a pedigree too inbred
-                and deep for the direct recurrence.
+            ResourceError: ``allocation_failed`` when the memo, the walk's
+                stack, or the output cannot be allocated.
         """
         return graph_pair_kinship(self, first, second)

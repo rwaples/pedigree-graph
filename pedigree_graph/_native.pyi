@@ -57,6 +57,24 @@ def relationship_pairs(
     execution: str,
     view_rows: NDArray[np.int32] | None = None,
 ) -> dict[str, tuple[NDArray[np.int32], NDArray[np.int32]]]: ...
+def pair_kinship(
+    pedigree: BuiltPedigree,
+    depth: NDArray[np.int32],
+    first: NDArray[np.int32],
+    second: NDArray[np.int32],
+    /,
+    *,
+    layout: str = "rows",
+) -> NDArray[np.float32]: ...
+def kinship_support_values(
+    pedigree: BuiltPedigree,
+    depth: NDArray[np.int32],
+    indptr: NDArray[np.int64],
+    indices: NDArray[np.int32],
+    /,
+    *,
+    layout: str = "rows",
+) -> NDArray[np.float32]: ...
 def allocation_families() -> list[str]: ...
 
 # Test seam, not public API: refused unless the process was started with

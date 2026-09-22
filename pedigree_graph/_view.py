@@ -273,9 +273,7 @@ class PedigreeView:
         :meth:`pedigree_graph.PedigreeGraph.pair_kinship`.  Rows are view rows
         (``0 <= row < len(view)``) and a block or collection must carry this
         view's own token; the recurrence itself runs through the full graph
-        from structural depth, so unselected ancestors still count, and it
-        starts from and extends the owning graph's retained memo, so views and
-        graph share one closure.
+        from structural depth, so unselected ancestors still count.
 
         Returns:
             A read-only float32 array aligned to the input pairs, or for a

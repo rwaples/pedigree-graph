@@ -1,24 +1,25 @@
-"""Cold versus warm ``pair_kinship`` on one graph: the slice 5d memo gate.
+"""``pair_kinship`` and ``relationship_kinship_matrix`` on one graph: the slice 13 benchmark.
 
-A kernel call on ``random_30k`` costs its ancestral closure rather than its
-pair count, and before slice 5d every call rebuilt that closure from nothing.
-The graph now keeps the memo its last call left behind, so this suite measures
-what that buys and what it costs:
+A call on ``random_30k`` costs its ancestral closure rather than its pair
+count.  Slice 5d kept the memo on the graph so a second call could start from
+it; slice 13 moves the walk to the Rust core with one memo per call (ADR
+0007), so the two warm cells are recorded as an accepted cost, not scored:
 
-    python benchmarks/bench_pair_kinship.py --repeat 5 --out benchmarks/reports/pair_kinship.json
+    python benchmarks/bench_pair_kinship.py --repeat 3 --out benchmarks/reports/pair_kinship.json
     python benchmarks/bench_pair_kinship.py --render benchmarks/reports/pair_kinship.json
 
 ``cold`` is the first degree-3 query on a fresh graph and ``warm`` the same
 query again on the same graph, prepared outside the timed region.  ``matrix``
 is ``relationship_kinship_matrix(max_degree=3)`` on a fresh graph and
-``matrix_after_pairs`` the same matrix after a degree-3 ``pair_kinship`` has
-already walked the closure.  Every arm checksums its values, so the four cells
-also show the warm path returning the cold path's bits.
+``matrix_after_pairs`` the same matrix after a degree-3 ``pair_kinship``.
+Every arm checksums its values, so the cells also show each path returning
+the same bits.
 
-``cold`` is the baseline and the regression gate: the memo handoff must not
-slow the first call or grow its peak RSS by more than the 5% rule.  Run the
-same file against the pre-slice commit for the other side of that comparison;
-there the "warm" arms simply measure a second cold call.
+``cold`` and ``matrix`` are the scored cells: the native walk must not slow
+the first call or grow its peak RSS beyond the 5% rule against the 0.9.0
+wheel.  The memo layout under test is selected per subprocess with
+``PEDIGREE_GRAPH_KINSHIP_LAYOUT`` (``rows`` or ``flat``) while the slice 13
+bake-off runs.
 """
 
 from __future__ import annotations
@@ -44,15 +45,10 @@ from _harness import (
 MAX_DEGREE = 3
 
 
-def _memo_facts(graph) -> dict[str, int]:
-    memo = getattr(graph, "_pair_memo", None)
-    if memo is None:
-        return {"memo_entries": 0, "memo_capacity": 0, "memo_mib": 0}
-    return {
-        "memo_entries": int(memo.entries),
-        "memo_capacity": int(memo.capacity),
-        "memo_mib": int(memo.nbytes >> 20),
-    }
+def _layout_facts() -> dict[str, str]:
+    from pedigree_graph._kinship_pairwise import _MEMO_LAYOUT
+
+    return {"layout": _MEMO_LAYOUT}
 
 
 def _pairs_setup(graph) -> Prepared:
@@ -72,12 +68,12 @@ def _pair_kinship(graph, pairs) -> Measurement:
     for code in pairs:
         if len(values[code]):
             checksum ^= checksum_values(values[code])
-    return Measurement(checksum, _memo_facts(graph))
+    return Measurement(checksum, _layout_facts())
 
 
 def _matrix(graph, _prepared) -> Measurement:
     matrix = graph.relationship_kinship_matrix(max_degree=MAX_DEGREE)
-    return Measurement(checksum_matrix_upper(matrix), {"nnz": int(matrix.nnz), **_memo_facts(graph)})
+    return Measurement(checksum_matrix_upper(matrix), {"nnz": int(matrix.nnz), **_layout_facts()})
 
 
 SUITE = Suite(

@@ -53,10 +53,6 @@ import polars as pl
 from simace.simulation.simulate import run_simulation
 
 from pedigree_graph import PedigreeGraph, ResourceError
-from pedigree_graph._kinship_pairwise import (
-    _pairwise_kinship_with_stats,
-    pairwise_kinship,
-)
 from pedigree_graph.effective_size import ALL_EFFECTIVE_SIZE_ESTIMATORS, estimate_effective_sizes
 
 # The shared benchmark contract lives beside this file, not on the path.
@@ -152,11 +148,6 @@ def warmup() -> float:
     pg.relationship_pairs(max_degree=5)
     pg2 = PedigreeGraph.from_frame(df)
     pg2.pair_kinship(pg2.relationship_pairs(max_degree=2))
-    # Warm the direct pairwise-kinship kernel explicitly (also reached via
-    # pair_kinship above, but warm it directly so the stats wrapper and
-    # bare-kernel microbench below never pay first-call JIT).
-    pairwise_kinship(*_kernel_inputs(pg2, np.array([0, 1]), np.array([1, 2])))
-    _pairwise_kinship_with_stats(*_kernel_inputs(pg2, np.array([0]), np.array([1])))
     with contextlib.suppress(Exception):  # tiny pedigree may degenerate some estimators
         estimate_effective_sizes(PedigreeGraph.from_frame(df), _estimators(skip_coancestry=True))
     return time.perf_counter() - t0
@@ -267,12 +258,6 @@ def fmt_nnz_logs(records: list[dict]) -> str:
     return "\n".join(out)
 
 
-def _kernel_inputs(pg, a, b):
-    """Parent arrays and pair endpoints in the graph's private depth-major order (ADR 0009)."""
-    mother, father, twin = pg._topological_parents
-    return mother, father, twin, pg._topology.translate(a), pg._topology.translate(b)
-
-
 def _flatten_pairs(pairs) -> tuple[np.ndarray, np.ndarray]:
     """Concatenate every block's endpoints into flat graph-space arrays."""
     non_empty = [block for block in pairs.values() if len(block)]
@@ -321,64 +306,58 @@ def _deep_inbred_pedigree(n_gen: int = 22, per_gen: int = 40, n_founders: int = 
 
 
 def pairwise_diagnostics(df, max_degree: int, seed: int, py_cap: int = 10_000) -> str:
-    """Memo/stack stats for the direct kernel + a Python-vs-numba microbench.
+    """Native ``pair_kinship`` wall time plus a Python-oracle microbench.
 
-    Confirms the memo stays far below ``n**2`` on the representative simulated
-    pedigree and quantifies the numba speedup over the pure-Python reference.
-    The Python reference is timed on a capped random subset (it is far slower);
+    The Python oracle is timed on a capped random subset (it is far slower);
     the cap is reported, never silent.
     """
     pg = PedigreeGraph.from_frame(df)
     pairs = pg.relationship_pairs(max_degree=max_degree)
-    mother, father, twin, a, b = _kernel_inputs(pg, *_flatten_pairs(pairs))
+    a, b = _flatten_pairs(pairs)
     n, p = pg.n_individuals, a.shape[0]
 
     t0 = time.perf_counter()
-    _, stats = _pairwise_kinship_with_stats(mother, father, twin, a, b)
-    nb_full = time.perf_counter() - t0
+    pg.pair_kinship(a, b)
+    native_full = time.perf_counter() - t0
 
     if p > py_cap:
         rng = np.random.default_rng(seed)
         sel = rng.choice(p, py_cap, replace=False)
         sa, sb = a[sel], b[sel]
-        cap_note = f"subset {py_cap:,} of {p:,} (Python reference too slow on full set)"
+        cap_note = f"subset {py_cap:,} of {p:,} (Python oracle too slow on full set)"
     else:
         sa, sb = a, b
         cap_note = f"all {p:,} pairs"
 
     t0 = time.perf_counter()
-    nb_sub = pairwise_kinship(mother, father, twin, sa, sb)
-    nb_sub_t = time.perf_counter() - t0
+    native_sub = pg.pair_kinship(sa, sb)
+    native_sub_t = time.perf_counter() - t0
     t0 = time.perf_counter()
-    py_sub = oracle_pair_kinship(mother, father, twin, pg._topology.gather(pg.depth), sa, sb)
+    py_sub = oracle_pair_kinship(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, sa, sb)
     py_sub_t = time.perf_counter() - t0
-    bit_exact = bool(np.array_equal(nb_sub, py_sub))
-    speedup = py_sub_t / nb_sub_t if nb_sub_t > 0 else float("nan")
+    bit_exact = bool(np.array_equal(native_sub, py_sub))
+    speedup = py_sub_t / native_sub_t if native_sub_t > 0 else float("nan")
 
     return "\n".join(
         [
             "=== Direct pairwise-kinship diagnostics (simulated pedigree) ===",
             f"  individuals n         : {n:,}   (n^2 = {n * n:,}, the full-matrix cell count)",
             f"  requested pairs P     : {p:,}",
-            f"  numba kernel (full P) : {nb_full:.3f}s",
-            f"  memo entries          : {stats['memo_entries']:,}  "
-            f"({stats['memo_entries'] / max(n * n, 1):.3%} of n^2)",
-            f"  memo capacity / grows : {stats['memo_capacity']:,} / {stats['memo_grows']}",
-            f"  max work-stack depth  : {stats['max_stack_depth']:,}",
-            f"  py-vs-numba microbench [{cap_note}]:",
-            f"    pure-Python ref     : {py_sub_t:.3f}s",
-            f"    numba kernel        : {nb_sub_t:.3f}s",
+            f"  native walk (full P)  : {native_full:.3f}s",
+            f"  py-vs-native microbench [{cap_note}]:",
+            f"    pure-Python oracle  : {py_sub_t:.3f}s",
+            f"    native walk         : {native_sub_t:.3f}s",
             f"    speedup             : {speedup:.1f}x   bit-exact: {bit_exact}",
         ]
     )
 
 
 def stress_diagnostics(seed: int) -> str:
-    """Deep/inbred worst-case guard: memo must stay bounded and beat the matrix.
+    """Deep/inbred worst-case guard: the direct walk must beat the matrix.
 
-    Builds a deep, heavily-inbred pedigree (large ancestor sets), runs the
-    direct kernel on all extracted pairs, and compares wall time + correctness
-    against the full ``kinship_matrix()`` path it replaces.
+    Builds a deep, heavily-inbred pedigree (large ancestor sets), runs
+    ``pair_kinship`` on all extracted pairs, and compares wall time and
+    correctness against the full ``kinship_matrix()`` path it replaces.
     """
     df = _deep_inbred_pedigree(seed=seed)
     pg = PedigreeGraph.from_frame(df)
@@ -386,18 +365,14 @@ def stress_diagnostics(seed: int) -> str:
     a, b = _flatten_pairs(pairs)
     n, p = pg.n_individuals, a.shape[0]
 
-    overflowed = False
+    failed = False
     try:
         t0 = time.perf_counter()
-        out_nb, stats = _pairwise_kinship_with_stats(*_kernel_inputs(pg, a, b))
-        nb_t = time.perf_counter() - t0
+        out_native = pg.pair_kinship(a, b)
+        native_t = time.perf_counter() - t0
     except ResourceError:
-        overflowed = True
-        stats, nb_t, out_nb = (
-            {"memo_entries": -1, "memo_capacity": -1, "memo_grows": -1, "max_stack_depth": -1},
-            float("nan"),
-            None,
-        )
+        failed = True
+        native_t, out_native = float("nan"), None
 
     pg_mat = PedigreeGraph.from_frame(df)
     t0 = time.perf_counter()
@@ -405,23 +380,19 @@ def stress_diagnostics(seed: int) -> str:
     mat_t = time.perf_counter() - t0
     nnz = k.nnz
     ok = "n/a"
-    if out_nb is not None:
+    if out_native is not None:
         exp = np.asarray(k.tocsr()[a, b]).ravel()
-        ok = str(bool(np.allclose(out_nb, exp, atol=1e-9)))
+        ok = str(bool(np.allclose(out_native, exp, atol=1e-9)))
 
     return "\n".join(
         [
             "=== Worst-case stress: deep/inbred pedigree ===",
             f"  individuals n         : {n:,}   (n^2 = {n * n:,})",
             f"  requested pairs P     : {p:,}",
-            f"  capacity-limit raised : {overflowed}",
-            f"  memo entries          : {stats['memo_entries']:,}  "
-            f"({stats['memo_entries'] / max(n * n, 1):.3%} of n^2)",
-            f"  memo capacity / grows : {stats['memo_capacity']:,} / {stats['memo_grows']}",
-            f"  max work-stack depth  : {stats['max_stack_depth']:,}",
+            f"  allocation failed     : {failed}",
             f"  matrix nnz (~density) : {nnz:,}  ({nnz / max(n * n, 1):.1%} dense)",
-            f"  direct kernel wall    : {nb_t:.3f}s",
-            f"  full-matrix wall      : {mat_t:.3f}s  (the path the kernel replaces)",
+            f"  direct walk wall      : {native_t:.3f}s",
+            f"  full-matrix wall      : {mat_t:.3f}s  (the path the walk replaces)",
             f"  direct == matrix      : {ok}",
         ]
     )

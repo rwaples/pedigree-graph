@@ -64,19 +64,10 @@ def _upper_coordinates(matrix: sp.csc_matrix) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _evaluate_chunks(graph, first: np.ndarray, second: np.ndarray, chunks: list[tuple[int, int]]) -> Measurement:
-    from pedigree_graph._kinship_pairwise import _pairwise_kinship_with_stats
-
-    mother, father, twin = graph._topological_parents
-    translate = graph._topology.translate
     checksum = 0
-    capacity = 0
     for lo, hi in chunks:
-        values, stats = _pairwise_kinship_with_stats(
-            mother, father, twin, translate(first[lo:hi]), translate(second[lo:hi])
-        )
-        checksum ^= checksum_values(values)
-        capacity = max(capacity, stats["memo_capacity"])
-    return Measurement(checksum, {"chunks": len(chunks), "max_memo_capacity": capacity})
+        checksum ^= checksum_values(graph.pair_kinship(first[lo:hi], second[lo:hi]))
+    return Measurement(checksum, {"chunks": len(chunks)})
 
 
 def _pairwise_setup(graph) -> Prepared:

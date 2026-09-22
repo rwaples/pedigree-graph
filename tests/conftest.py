@@ -176,14 +176,3 @@ def parity_columns(fixture: dict[str, np.ndarray], birth_year: np.ndarray | None
     if birth_year is not None:
         columns["birth_year"] = birth_year
     return columns
-
-
-def kernel_inputs(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> tuple[np.ndarray, ...]:
-    """Parent arrays and pair endpoints in the private depth-major order the kinship kernel runs in.
-
-    The kernel peels the greater row, which is the ADR 0009 depth-then-row rule
-    only in that order, so a caller reaching past ``pair_kinship`` has to
-    translate first.
-    """
-    mother, father, twin = graph._topological_parents
-    return mother, father, twin, graph._topology.translate(first), graph._topology.translate(second)

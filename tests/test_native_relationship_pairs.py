@@ -279,6 +279,10 @@ FAMILIES = tuple(_native.allocation_families())
 #: fails here instead of silently losing its case.
 COUNT_FAMILIES = frozenset({"parent_edges", "csr", "sibling_index", "accumulator", "row_set"})
 
+#: The families only the kinship walk reserves; ``test_native_pair_kinship``
+#: holds those, and here a call that never reaches them has to succeed.
+KINSHIP_FAMILIES = frozenset({"kinship_memo", "kinship_stack", "kinship_output"})
+
 #: The plant's size floor. Without one it fires on whichever reservation of
 #: the family comes first, which for a collected iterator is its zero lower
 #: bound, leaving ``requested_elements`` meaningless. One element is the
@@ -289,8 +293,8 @@ SEAM_MIN_ELEMENTS = 1
 
 
 def test_the_family_list_covers_the_counting_families():
-    """``COUNT_FAMILIES`` names families the core still has."""
-    assert set(FAMILIES) >= COUNT_FAMILIES
+    """``COUNT_FAMILIES`` and ``KINSHIP_FAMILIES`` name families the core still has."""
+    assert set(FAMILIES) >= COUNT_FAMILIES | KINSHIP_FAMILIES
     assert len(FAMILIES) == len(set(FAMILIES))
 
 
@@ -313,7 +317,10 @@ def test_a_refused_allocation_raises_a_resource_error(family):
             )
         def counts():
             return _native.relationship_counts(graph._built, max_degree=5, threads=1)
-        expect_failure = {{"pairs": True, "counts": family in {sorted(COUNT_FAMILIES)!r}}}
+        expect_failure = {{
+            "pairs": family not in {sorted(KINSHIP_FAMILIES)!r},
+            "counts": family in {sorted(COUNT_FAMILIES)!r},
+        }}
         for label, call in (("pairs", pairs), ("counts", counts)):
             _native.fail_next_allocation(family, floor)
             try:

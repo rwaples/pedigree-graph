@@ -64,6 +64,8 @@ VALIDATION_CODES: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "unknown_relationship_category": ("codes",),
         "max_degree_out_of_range": ("value", "minimum", "maximum"),
         "coordinate_space_mismatch": ("operation", "receiver_type", "result_type"),
+        "kinship_support_unsorted": ("column",),
+        "kinship_support_asymmetric": ("row", "column"),
     }
 )
 
@@ -90,7 +92,6 @@ RESOURCE_CODES: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "pedigree_too_large": ("n_individuals", "maximum"),
         "pair_key_overflow": ("n_individuals", "maximum"),
         "csc_index_overflow": ("nnz", "maximum"),
-        "memo_capacity_exceeded": ("operation", "capacity", "maximum"),
         "arithmetic_overflow": ("operation", "dtype"),
         "allocation_failed": ("operation", "requested_elements", "dtype"),
     }

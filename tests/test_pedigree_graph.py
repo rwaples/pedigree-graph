@@ -6,14 +6,9 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
-from conftest import kernel_inputs
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
-from pedigree_graph import MissingMetadataError, PedigreeGraph, PedigreeValidationError, PedigreeView
-from pedigree_graph._kinship_pairwise import (
-    _pairwise_kinship_with_stats,
-    pairwise_kinship,
-)
+from pedigree_graph import MissingMetadataError, PedigreeGraph, PedigreeValidationError, PedigreeView, _native
 
 logger = logging.getLogger(__name__)
 
@@ -1598,8 +1593,14 @@ class TestPairwiseKinshipReference:
         assert out.shape == (0,)
 
 
-class TestPairwiseKinshipNumba:
-    """The numba kernel must be bit-identical to the pure-Python reference.
+def _native_kinship(pg: PedigreeGraph, first, second) -> np.ndarray:
+    return _native.pair_kinship(
+        pg._built, pg.depth, np.asarray(first, dtype=np.int32), np.asarray(second, dtype=np.int32)
+    )
+
+
+class TestPairwiseKinshipNative:
+    """The native kernel must be bit-identical to the pure-Python reference.
 
     Both compute float32 with the same IEEE ops in the same peel order, so
     they agree to the last bit regardless of traversal order, making
@@ -1608,23 +1609,23 @@ class TestPairwiseKinshipNumba:
     """
 
     @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
-    def test_numba_bit_exact_vs_python(self, build):
+    def test_native_bit_exact_vs_python(self, build):
         pg = PedigreeGraph.from_frame(build())
         ii, jj = np.triu_indices(pg.n_individuals)
         py = oracle_pair_kinship(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
-        nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
+        nb = _native_kinship(pg, ii, jj)
         assert nb.dtype == np.float32
         np.testing.assert_array_equal(nb, py)
 
     @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
-    def test_numba_matches_matrix_oracle(self, build):
+    def test_native_matches_matrix_oracle(self, build):
         pg = PedigreeGraph.from_frame(build())
         K = pg.kinship_matrix().toarray()
         ii, jj = np.triu_indices(pg.n_individuals)
-        nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
+        nb = _native_kinship(pg, ii, jj)
         np.testing.assert_array_equal(nb, K[ii, jj])
 
-    def test_fuzz_numba_equals_python_and_oracle(self):
+    def test_fuzz_native_equals_python_and_oracle(self):
         rng = np.random.default_rng(20240609)
         checked = 0
         for _ in range(200):
@@ -1634,7 +1635,7 @@ class TestPairwiseKinshipNumba:
             K = pg.kinship_matrix().toarray()
             ii, jj = np.triu_indices(pg.n_individuals)
             py = oracle_pair_kinship(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
-            nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
+            nb = _native_kinship(pg, ii, jj)
             np.testing.assert_array_equal(nb, py)
             np.testing.assert_array_equal(nb, K[ii, jj])
             checked += 1
@@ -1642,25 +1643,13 @@ class TestPairwiseKinshipNumba:
 
     def test_input_orientation_preserved(self):
         pg = PedigreeGraph.from_frame(_ped_sib_mating())
-        fwd = pairwise_kinship(*kernel_inputs(pg, np.array([2, 4]), np.array([4, 2])))
-        rev = pairwise_kinship(*kernel_inputs(pg, np.array([4, 2]), np.array([2, 4])))
+        fwd = _native_kinship(pg, [2, 4], [4, 2])
+        rev = _native_kinship(pg, [4, 2], [2, 4])
         np.testing.assert_array_equal(fwd, rev[::-1])
 
     def test_empty_input_returns_empty_float32(self):
         pg = PedigreeGraph.from_frame(_ped_sib_mating())
         empty = np.array([], dtype=np.int64)
-        out = pairwise_kinship(*kernel_inputs(pg, empty, empty))
+        out = _native_kinship(pg, empty, empty)
         assert out.dtype == np.float32
         assert out.shape == (0,)
-
-    def test_stats_wrapper_reports_bounded_memo(self):
-        # On a moderately related pedigree the memo and stack stay small
-        # relative to n**2 — the scaling guarantee in miniature.
-        rng = np.random.default_rng(7)
-        pg = PedigreeGraph.from_frame(_random_pedigree(rng))
-        ii, jj = np.triu_indices(pg.n_individuals)
-        out, stats = _pairwise_kinship_with_stats(*kernel_inputs(pg, ii, jj))
-        assert out.shape == ii.shape
-        assert stats["memo_entries"] <= pg.n_individuals * pg.n_individuals
-        assert stats["max_stack_depth"] >= 1
-        assert stats["memo_capacity"] >= stats["memo_entries"]

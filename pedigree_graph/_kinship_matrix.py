@@ -12,8 +12,9 @@ same ADR 0009 float32 recurrence values.  They differ only in support:
 Approximate-support values are captured during one complete retiring DP pass:
 complete exact rows exist only while descendants need them, and only retained
 candidate positions reach the output CSC. Sparse relationship-selected support
-continues to use deterministic fixed-size pair chunks. Both paths implement the
-same pinned recurrence bits.
+is filled by one native walk of the recurrence over the CSC support itself
+(``_native.kinship_support_values``). Both paths implement the same pinned
+recurrence bits.
 """
 
 from __future__ import annotations
@@ -32,9 +33,11 @@ import numba
 import numpy as np
 import scipy.sparse as sp
 
+from pedigree_graph import _native
 from pedigree_graph._errors import ResourceError
+from pedigree_graph._input import _own_native
 from pedigree_graph._kinship_dp import _build_kinship_csc, _fill_candidate_kinship_values
-from pedigree_graph._kinship_pairwise import memoised_kinship
+from pedigree_graph._kinship_pairwise import _MEMO_LAYOUT
 from pedigree_graph._relationship_pairs import check_execution, relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._threads import thread_budget
@@ -49,9 +52,9 @@ logger = logging.getLogger(__name__)
 
 _INT32_MAX = int(np.iinfo(np.int32).max)
 
-# Sparse relationship support uses bounded pairwise recurrence chunks. Dense
-# approximate support instead uses the retiring DP below; see
-# benchmarks/matrix_exactification.md for the measured crossover rationale.
+# Dense approximate support is captured from the retiring DP in bounded
+# chunks; see benchmarks/matrix_exactification.md for the measured crossover
+# rationale.  Sparse relationship support is one native walk instead.
 _EXACT_VALUE_CHUNK_SIZE = 1 << 20
 
 
@@ -288,24 +291,21 @@ def _upper_support_chunks(
         yield rows[:used], columns[:used], positions[:used]
 
 
-def _exactify_support(
-    graph: PedigreeGraph,
-    matrix: sp.csc_matrix,
-    *,
-    chunk_size: int = _EXACT_VALUE_CHUNK_SIZE,
-) -> sp.csc_matrix:
+def _exactify_support(graph: PedigreeGraph, matrix: sp.csc_matrix) -> sp.csc_matrix:
     """Replace every value on a symmetric CSC support with pair-recurrence bits.
 
-    Each chunk runs from the graph's retained pair memo and leaves it for the
-    next, so the diagonal closure a preceding ``pair_kinship`` already walked
-    is not walked again, and a following ``pair_kinship`` starts from the
-    support's closure.
+    One native walk over the support: each upper entry and the diagonal is
+    evaluated once through a call-local memo and written with its mirror, so
+    the only scratch beyond the memo is the ``data`` array the matrix owns.
     """
-    topology = graph._topology
-    for first, second, positions in _upper_support_chunks(matrix, chunk_size):
-        values = memoised_kinship(graph, topology.translate(first), topology.translate(second))
-        if not _write_symmetric_values(matrix.indptr, matrix.indices, matrix.data, positions, second, values):
-            raise AssertionError("kinship support must be symmetric")
+    values = _native.kinship_support_values(
+        graph._built,
+        graph.depth,
+        np.ascontiguousarray(matrix.indptr, dtype=np.int64),
+        np.ascontiguousarray(matrix.indices, dtype=np.int32),
+        layout=_MEMO_LAYOUT,
+    )
+    matrix.data = _own_native(values, np.float32)
     return matrix
 
 
@@ -466,9 +466,6 @@ def relationship_kinship_matrix(
     started = time.perf_counter()
     pairs = relationship_pairs(graph, selection, execution)
     matrix = _support_from_relationships(graph, pairs)
-    # Pair chunks suit sparse relationship support, not dense support generally.
-    # The measured max-degree-5 case spans about 4 chunks versus 26 for the
-    # dense candidate case; see benchmarks/matrix_exactification.md.
     _exactify_support(graph, matrix)
     matrix = _freeze_csc(matrix)
     graph._relationship_kinship_cache[key] = matrix

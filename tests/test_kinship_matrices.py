@@ -180,26 +180,19 @@ class TestApproximateSupportMatrix:
             )
 
 
-class TestChunking:
-    def test_chunk_boundaries_do_not_change_values(self):
+class TestSupportWalk:
+    def test_exactifying_the_complete_support_reproduces_the_matrix(self):
         graph = _graph("double_first_cousins")
         template = graph.kinship_matrix()
-        matrices = []
-        for chunk_size in (1, 7, 1 << 20):
-            candidate = template.copy()
-            candidate.data.setflags(write=True)
-            candidate.data.fill(np.nan)
-            matrices.append(_exactify_support(graph, candidate, chunk_size=chunk_size))
-        for actual in matrices[1:]:
-            np.testing.assert_array_equal(actual.indptr, matrices[0].indptr)
-            np.testing.assert_array_equal(actual.indices, matrices[0].indices)
-            assert actual.data.tobytes() == matrices[0].data.tobytes()
-
-    def test_invalid_internal_chunk_size_is_rejected(self):
-        graph = _graph("single_individual")
-        candidate = graph.kinship_matrix().copy()
-        with pytest.raises(ValueError, match="chunk_size must be positive"):
-            _exactify_support(graph, candidate, chunk_size=0)
+        candidate = template.copy()
+        candidate.data.setflags(write=True)
+        candidate.data.fill(np.nan)
+        actual = _exactify_support(graph, candidate)
+        np.testing.assert_array_equal(actual.indptr, template.indptr)
+        np.testing.assert_array_equal(actual.indices, template.indices)
+        assert actual.data.tobytes() == template.data.tobytes()
+        assert actual.data.dtype == np.float32
+        assert not actual.data.flags.writeable
 
 
 class TestRowOrder:

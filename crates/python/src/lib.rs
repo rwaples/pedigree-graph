@@ -10,6 +10,7 @@ use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pedigree_graph_core::alloc::{self, Family};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
+use pedigree_graph_core::kinship::{self, KinshipPedigree, Layout};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
@@ -404,6 +405,101 @@ fn relationship_pairs<'py>(
     Ok(values)
 }
 
+/// The recurrence's columns, borrowed from a graph's [`BuiltPedigree`] and
+/// its cached depth for one call.
+struct KinshipColumns<'py> {
+    mother_rows: PyReadonlyArray1<'py, i32>,
+    father_rows: PyReadonlyArray1<'py, i32>,
+    twin_rows: PyReadonlyArray1<'py, i32>,
+    depth: PyReadonlyArray1<'py, i32>,
+}
+
+impl<'py> KinshipColumns<'py> {
+    fn borrow(
+        py: Python<'py>,
+        pedigree: &BuiltPedigree,
+        depth: PyReadonlyArray1<'py, i32>,
+    ) -> KinshipColumns<'py> {
+        KinshipColumns {
+            mother_rows: pedigree.mother_rows.bind(py).readonly(),
+            father_rows: pedigree.father_rows.bind(py).readonly(),
+            twin_rows: pedigree.twin_rows.bind(py).readonly(),
+            depth,
+        }
+    }
+
+    fn pedigree(&self, py: Python<'py>) -> PyResult<KinshipPedigree<'_>> {
+        KinshipPedigree::try_new(
+            self.mother_rows.as_slice()?,
+            self.father_rows.as_slice()?,
+            self.twin_rows.as_slice()?,
+            self.depth.as_slice()?,
+        )
+        .map_err(|e| to_pyerr(py, e))
+    }
+}
+
+fn checked_layout(name: &str) -> PyResult<Layout> {
+    Layout::parse(name).ok_or_else(|| {
+        PyValueError::new_err(format!("layout must be \"flat\" or \"rows\", got {name:?}"))
+    })
+}
+
+/// Pedigree-expected kinship per requested pair (ADR 0009), in graph rows.
+///
+/// `pedigree` is the graph's own [`BuiltPedigree`] and `depth` its structural
+/// depth.  `first` and `second` are validated graph rows of one length.  One
+/// memo serves the whole call and is freed before it returns; the walk runs
+/// on the calling thread with the GIL released.  `layout` picks the memo
+/// layout while slice 13's bake-off runs.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, first, second, /, *, layout = "rows"))]
+fn pair_kinship<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+    first: PyReadonlyArray1<'py, i32>,
+    second: PyReadonlyArray1<'py, i32>,
+    layout: &str,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let layout = checked_layout(layout)?;
+    let first = first.as_slice()?;
+    let second = second.as_slice()?;
+    let values = py
+        .detach(|| kinship::pair_kinship(ped, first, second, layout))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(values.into_pyarray(py))
+}
+
+/// The kinship of every entry of a symmetric CSC support, as its `data`.
+///
+/// `indptr` (int64, `n + 1` entries) and `indices` (int32, sorted within
+/// each column) describe the support; the result is float32 of length
+/// `nnz`, with each upper entry evaluated once and its mirror written from
+/// it.  A missing mirror or an unsorted column is a validation error.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, indptr, indices, /, *, layout = "rows"))]
+fn kinship_support_values<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+    indptr: PyReadonlyArray1<'py, i64>,
+    indices: PyReadonlyArray1<'py, i32>,
+    layout: &str,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let layout = checked_layout(layout)?;
+    let indptr = indptr.as_slice()?;
+    let indices = indices.as_slice()?;
+    let values = py
+        .detach(|| kinship::support_values(ped, indptr, indices, layout))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(values.into_pyarray(py))
+}
+
 /// The allocation family names, in `Family::ALL` order.
 ///
 /// The test seam's parametrisation reads this rather than keeping its own
@@ -490,6 +586,8 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(configure_pool, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_counts, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(pair_kinship, m)?)?;
+    m.add_function(wrap_pyfunction!(kinship_support_values, m)?)?;
     m.add_function(wrap_pyfunction!(allocation_families, m)?)?;
     m.add_function(wrap_pyfunction!(fail_next_allocation, m)?)?;
     m.add_class::<BuiltPedigree>()?;

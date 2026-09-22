@@ -21,7 +21,6 @@ from pedigree_graph._kinship_kernel import (
     _build_kinship_csc,
     _compute_F_meuwissen_luo,
 )
-from pedigree_graph._kinship_pairwise import pairwise_kinship
 from pedigree_graph._topology import structural_depth
 
 
@@ -36,11 +35,17 @@ def _F(m, f, n=None, tw=None):
 
 
 def _F_via_pairwise(m, f, tw):
-    m = np.asarray(m, dtype=np.int32)
-    f = np.asarray(f, dtype=np.int32)
-    tw = np.asarray(tw, dtype=np.int32)
-    rows = np.arange(len(m), dtype=np.int64)
-    return 2.0 * pairwise_kinship(m, f, tw, rows, rows).astype(np.float64) - 1.0
+    n = len(m)
+    graph = PedigreeGraph.from_frame(
+        {
+            "id": np.arange(n),
+            "mother": np.asarray(m, dtype=np.int64),
+            "father": np.asarray(f, dtype=np.int64),
+            "twin": np.asarray(tw, dtype=np.int64),
+        }
+    )
+    rows = np.arange(n)
+    return 2.0 * graph.pair_kinship(rows, rows).astype(np.float64) - 1.0
 
 
 def _F_via_matrix(m, f, tw, gen, n=None):

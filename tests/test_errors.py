@@ -22,9 +22,9 @@ def _sample_fields(required):
 
 
 def test_registry_sizes_match_the_contract_table():
-    assert len(VALIDATION_CODES) == 24
+    assert len(VALIDATION_CODES) == 26
     assert len(METADATA_CODES) == 5
-    assert len(RESOURCE_CODES) == 6
+    assert len(RESOURCE_CODES) == 5
 
 
 @pytest.mark.parametrize(("cls", "registry", "code"), _ALL_CODES, ids=[c for _, _, c in _ALL_CODES])
