@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.9.1
 
 - **Changed: `pair_kinship` runs on the Rust core** (slice 13; ADR 0005,
   0007 and 0009 as amended). `PedigreeGraph.pair_kinship` and
