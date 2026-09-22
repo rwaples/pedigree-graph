@@ -19,7 +19,6 @@ from __future__ import annotations
 
 __all__ = ["graph_pair_kinship", "view_pair_kinship"]
 
-import os
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING
@@ -38,12 +37,6 @@ if TYPE_CHECKING:
 
     from pedigree_graph._core import PedigreeGraph
     from pedigree_graph._view import CoordinateToken, PedigreeView
-
-# The memo layout the core runs on, "rows" or "flat", while the slice 13
-# bake-off measures the two; the benchmark harness sets the variable in each
-# arm's subprocess.  Removed with the losing layout once 13a records the pick.
-_MEMO_LAYOUT = os.environ.get("PEDIGREE_GRAPH_KINSHIP_LAYOUT", "rows")
-
 
 _FIRST = _FieldSpec("first_rows", True, 0, _INT32_MAX, np.int32)
 _SECOND = _FieldSpec("second_rows", True, 0, _INT32_MAX, np.int32)
@@ -179,7 +172,6 @@ def _evaluate(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> np
         graph.depth,
         np.ascontiguousarray(first, dtype=np.int32),
         np.ascontiguousarray(second, dtype=np.int32),
-        layout=_MEMO_LAYOUT,
     )
     return _own_native(values, np.float32)
 

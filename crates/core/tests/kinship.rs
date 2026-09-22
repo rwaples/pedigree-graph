@@ -1,11 +1,11 @@
-//! Both memo layouts match a recursive float32 oracle bit for bit on every
+//! The native walk matches a recursive float32 oracle bit for bit on every
 //! dumped fixture, in graph space with structural depth as the peel input.
 //!
 //! The oracle is the ADR 0009 recurrence as written; it is deliberately the
 //! `tests/oracle/pair_kinship.py` statement in Rust so the core is held to
 //! the same contract the Python differential test holds the binding to.
 
-use pedigree_graph_core::kinship::{pair_kinship, support_values, KinshipPedigree, Layout};
+use pedigree_graph_core::kinship::{pair_kinship, support_values, KinshipPedigree};
 use pedigree_graph_core::relationships::PedigreeColumns;
 use pedigree_graph_core::topology::structural_depth;
 use std::collections::HashMap;
@@ -94,7 +94,7 @@ fn query(n: usize) -> (Vec<i32>, Vec<i32>) {
 }
 
 #[test]
-fn both_layouts_match_the_oracle_on_every_fixture() {
+fn the_walk_matches_the_oracle_on_every_fixture() {
     let mut checked = 0usize;
     for tsv in fixtures() {
         let name = tsv.file_stem().unwrap().to_string_lossy().to_string();
@@ -121,14 +121,12 @@ fn both_layouts_match_the_oracle_on_every_fixture() {
             .zip(&second)
             .map(|(&a, &b)| oracle.phi(a, b).to_bits())
             .collect();
-        for layout in [Layout::Flat, Layout::Rows] {
-            let forward = pair_kinship(ped, &first, &second, layout).unwrap();
-            let reverse = pair_kinship(ped, &second, &first, layout).unwrap();
-            let got: Vec<u32> = forward.iter().map(|v| v.to_bits()).collect();
-            let rev: Vec<u32> = reverse.iter().map(|v| v.to_bits()).collect();
-            assert_eq!(got, expected, "{name} {layout:?} forward");
-            assert_eq!(rev, expected, "{name} {layout:?} reverse");
-        }
+        let forward = pair_kinship(ped, &first, &second).unwrap();
+        let reverse = pair_kinship(ped, &second, &first).unwrap();
+        let got: Vec<u32> = forward.iter().map(|v| v.to_bits()).collect();
+        let rev: Vec<u32> = reverse.iter().map(|v| v.to_bits()).collect();
+        assert_eq!(got, expected, "{name} forward");
+        assert_eq!(rev, expected, "{name} reverse");
         checked += first.len();
         eprintln!("{name}: {} pairs in {:.1?}", first.len(), started.elapsed());
     }
@@ -167,11 +165,9 @@ fn support_values_match_pair_kinship_on_a_dense_small_fixture() {
         indices.extend_from_slice(rows);
         indptr.push(indices.len() as i64);
     }
-    let expected = pair_kinship(ped, &first, &second, Layout::Rows).unwrap();
-    for layout in [Layout::Flat, Layout::Rows] {
-        let data = support_values(ped, &indptr, &indices, layout).unwrap();
-        let got: Vec<u32> = data.iter().map(|v| v.to_bits()).collect();
-        let want: Vec<u32> = expected.iter().map(|v| v.to_bits()).collect();
-        assert_eq!(got, want, "{layout:?}");
-    }
+    let expected = pair_kinship(ped, &first, &second).unwrap();
+    let data = support_values(ped, &indptr, &indices).unwrap();
+    let got: Vec<u32> = data.iter().map(|v| v.to_bits()).collect();
+    let want: Vec<u32> = expected.iter().map(|v| v.to_bits()).collect();
+    assert_eq!(got, want);
 }

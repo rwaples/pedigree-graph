@@ -14,7 +14,7 @@
 //! marker, so every distinct key is computed exactly once even when shared
 //! across requested pairs, and endpoint order cannot change a bit.
 
-use super::memo::{Flat, Layout, PairMemo, Rows};
+use super::memo::PairMemo;
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use crate::relationships::{check_column_length, check_row_range};
@@ -85,22 +85,22 @@ fn canon(a: i32, b: i32) -> (u32, u32) {
 }
 
 /// One memo, one stack, one pedigree: the state of a single call.
-pub struct Walker<'a, M: PairMemo> {
+pub struct Walker<'a> {
     ped: KinshipPedigree<'a>,
-    memo: M,
+    memo: PairMemo,
     stack: Vec<u64>,
 }
 
-impl<'a, M: PairMemo> Walker<'a, M> {
-    pub fn new(ped: KinshipPedigree<'a>, pairs: usize) -> Result<Self, Error> {
+impl<'a> Walker<'a> {
+    pub fn new(ped: KinshipPedigree<'a>) -> Result<Self, Error> {
         Ok(Walker {
             ped,
-            memo: M::new(ped.len(), pairs)?,
+            memo: PairMemo::new(ped.len())?,
             stack: Vec::new(),
         })
     }
 
-    pub fn memo(&self) -> &M {
+    pub fn memo(&self) -> &PairMemo {
         &self.memo
     }
 
@@ -172,7 +172,7 @@ impl<'a, M: PairMemo> Walker<'a, M> {
                     let v0 = self.memo.get(dlo, dhi).expect("dependency resolved");
                     0.5f32 * (1.0f32 + v0)
                 } else {
-                    let dep = |memo: &M, parent: i32| -> f32 {
+                    let dep = |memo: &PairMemo, parent: i32| -> f32 {
                         if parent < 0 {
                             0.0
                         } else {
@@ -212,19 +212,6 @@ fn check_pairs(ped: &KinshipPedigree<'_>, first: &[i32], second: &[i32]) -> Resu
     Ok(())
 }
 
-fn pairs_with<M: PairMemo>(
-    ped: KinshipPedigree<'_>,
-    first: &[i32],
-    second: &[i32],
-) -> Result<Vec<f32>, Error> {
-    let mut out = alloc::with_capacity(first.len(), Family::KinshipOutput, "float32")?;
-    let mut walker = Walker::<M>::new(ped, first.len())?;
-    for (&a, &b) in first.iter().zip(second) {
-        out.push(walker.resolve(a, b)?);
-    }
-    Ok(out)
-}
-
 /// Kinship per requested pair, positionally aligned to `first` and `second`.
 ///
 /// # Errors
@@ -236,13 +223,14 @@ pub fn pair_kinship(
     ped: KinshipPedigree<'_>,
     first: &[i32],
     second: &[i32],
-    layout: Layout,
 ) -> Result<Vec<f32>, Error> {
     check_pairs(&ped, first, second)?;
-    match layout {
-        Layout::Flat => pairs_with::<Flat>(ped, first, second),
-        Layout::Rows => pairs_with::<Rows>(ped, first, second),
+    let mut out = alloc::with_capacity(first.len(), Family::KinshipOutput, "float32")?;
+    let mut walker = Walker::new(ped)?;
+    for (&a, &b) in first.iter().zip(second) {
+        out.push(walker.resolve(a, b)?);
     }
+    Ok(out)
 }
 
 /// Where column `column`'s sorted index range holds `row`, if it does.
@@ -255,14 +243,14 @@ fn mirror(indptr: &[i64], indices: &[i32], column: usize, row: i32) -> Option<us
         .map(|offset| start + offset)
 }
 
-fn support_with<M: PairMemo>(
+fn support_with(
     ped: KinshipPedigree<'_>,
     indptr: &[i64],
     indices: &[i32],
 ) -> Result<Vec<f32>, Error> {
     let n = ped.len();
     let mut data = alloc::filled(0.0f32, indices.len(), Family::KinshipOutput, "float32")?;
-    let mut walker = Walker::<M>::new(ped, indices.len() / 2)?;
+    let mut walker = Walker::new(ped)?;
     for column in 0..n {
         let start = indptr[column] as usize;
         let end = indptr[column + 1] as usize;
@@ -354,13 +342,9 @@ pub fn support_values(
     ped: KinshipPedigree<'_>,
     indptr: &[i64],
     indices: &[i32],
-    layout: Layout,
 ) -> Result<Vec<f32>, Error> {
     check_support(&ped, indptr, indices)?;
-    match layout {
-        Layout::Flat => support_with::<Flat>(ped, indptr, indices),
-        Layout::Rows => support_with::<Rows>(ped, indptr, indices),
-    }
+    support_with(ped, indptr, indices)
 }
 
 #[cfg(test)]
@@ -381,46 +365,35 @@ mod tests {
         (mother, father, twin, depth)
     }
 
-    fn values(
-        cols: &(Vec<i32>, Vec<i32>, Vec<i32>, Vec<i32>),
-        pairs: &[(i32, i32)],
-        layout: Layout,
-    ) -> Vec<f32> {
+    fn values(cols: &(Vec<i32>, Vec<i32>, Vec<i32>, Vec<i32>), pairs: &[(i32, i32)]) -> Vec<f32> {
         let ped = KinshipPedigree::try_new(&cols.0, &cols.1, &cols.2, &cols.3).unwrap();
         let first: Vec<i32> = pairs.iter().map(|p| p.0).collect();
         let second: Vec<i32> = pairs.iter().map(|p| p.1).collect();
-        pair_kinship(ped, &first, &second, layout).unwrap()
+        pair_kinship(ped, &first, &second).unwrap()
     }
 
     #[test]
     fn nuclear_family_has_the_textbook_values() {
         // 0, 1 founders; 2, 3 full sibs; 4 child of 2 and an outsider 5.
         let cols = ped(&[(-1, -1), (-1, -1), (0, 1), (0, 1), (2, 5), (-1, -1)], &[]);
-        for layout in [Layout::Flat, Layout::Rows] {
-            let got = values(
-                &cols,
-                &[(0, 0), (0, 1), (0, 2), (2, 3), (3, 2), (3, 4), (4, 4)],
-                layout,
-            );
-            assert_eq!(got, vec![0.5, 0.0, 0.25, 0.25, 0.25, 0.125, 0.5]);
-        }
+        let got = values(
+            &cols,
+            &[(0, 0), (0, 1), (0, 2), (2, 3), (3, 2), (3, 4), (4, 4)],
+        );
+        assert_eq!(got, vec![0.5, 0.0, 0.25, 0.25, 0.25, 0.125, 0.5]);
     }
 
     #[test]
     fn sib_mating_child_is_inbred() {
         // 2 and 3 are full sibs; 4 is their child: F = 0.25, self-kinship 0.625.
         let cols = ped(&[(-1, -1), (-1, -1), (0, 1), (0, 1), (2, 3)], &[]);
-        for layout in [Layout::Flat, Layout::Rows] {
-            assert_eq!(values(&cols, &[(4, 4), (2, 4)], layout), vec![0.625, 0.375]);
-        }
+        assert_eq!(values(&cols, &[(4, 4), (2, 4)]), vec![0.625, 0.375]);
     }
 
     #[test]
     fn mz_twins_take_the_self_formula() {
         let cols = ped(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[(2, 3)]);
-        for layout in [Layout::Flat, Layout::Rows] {
-            assert_eq!(values(&cols, &[(2, 3), (3, 2)], layout), vec![0.5, 0.5]);
-        }
+        assert_eq!(values(&cols, &[(2, 3), (3, 2)]), vec![0.5, 0.5]);
     }
 
     #[test]
@@ -430,7 +403,7 @@ mod tests {
         // Dense 4x4 in CSC: column c holds rows 0..4.
         let indptr = [0i64, 4, 8, 12, 16];
         let indices: Vec<i32> = (0..4).flat_map(|_| 0..4).collect();
-        let data = support_values(ped, &indptr, &indices, Layout::Rows).unwrap();
+        let data = support_values(ped, &indptr, &indices).unwrap();
         let expect = [
             0.5, 0.0, 0.25, 0.25, //
             0.0, 0.5, 0.25, 0.25, //
@@ -447,7 +420,7 @@ mod tests {
         // Column 2 holds row 0, but column 0 holds only its diagonal.
         let indptr = [0i64, 1, 2, 4];
         let indices = [0, 1, 0, 2];
-        let err = support_values(ped, &indptr, &indices, Layout::Flat).unwrap_err();
+        let err = support_values(ped, &indptr, &indices).unwrap_err();
         assert_eq!(err, Error::KinshipSupportAsymmetric { row: 0, column: 2 });
     }
 
@@ -457,7 +430,7 @@ mod tests {
         let ped = KinshipPedigree::try_new(&cols.0, &cols.1, &cols.2, &cols.3).unwrap();
         let indptr = [0i64, 1, 2, 5];
         let indices = [0, 1, 2, 0, 1];
-        let err = support_values(ped, &indptr, &indices, Layout::Flat).unwrap_err();
+        let err = support_values(ped, &indptr, &indices).unwrap_err();
         assert_eq!(err, Error::KinshipSupportUnsorted { column: 2 });
     }
 
@@ -468,13 +441,13 @@ mod tests {
     ];
 
     /// Every kinship family reports `allocation_failed` on both entries and
-    /// both layouts instead of aborting.  The seam is process-wide, so each
+    /// instead of aborting.  The seam is process-wide, so each
     /// case runs [`seam_child`] in a fresh copy of this test binary.
     #[test]
     fn a_refused_allocation_of_any_kinship_family_is_an_error() {
         let exe = std::env::current_exe().unwrap();
         for family in KINSHIP_FAMILIES {
-            for mode in ["pairs_flat", "pairs_rows", "support_flat", "support_rows"] {
+            for mode in ["pairs", "support"] {
                 let out = std::process::Command::new(&exe)
                     .args([
                         "--exact",
@@ -504,11 +477,6 @@ mod tests {
         };
         let family = Family::parse(&name).unwrap();
         let mode = std::env::var("PG_KINSHIP_SEAM_MODE").unwrap();
-        let layout = if mode.ends_with("flat") {
-            Layout::Flat
-        } else {
-            Layout::Rows
-        };
         let cols = crate::relationships::testing::random_pedigree(300, 5);
         let depth = structural_depth(&cols.mother, &cols.father);
         let ped = KinshipPedigree::try_new(&cols.mother, &cols.father, &cols.twin, &depth).unwrap();
@@ -516,10 +484,10 @@ mod tests {
         let indptr: Vec<i64> = (0..=300).map(|c| c * 300).collect();
         let indices: Vec<i32> = (0..300).flat_map(|_| 0..300).collect();
         let run = |ped| {
-            if mode.starts_with("pairs") {
-                pair_kinship(ped, &rows, &rows, layout).map(|v| v.len())
+            if mode == "pairs" {
+                pair_kinship(ped, &rows, &rows).map(|v| v.len())
             } else {
-                support_values(ped, &indptr, &indices, layout).map(|v| v.len())
+                support_values(ped, &indptr, &indices).map(|v| v.len())
             }
         };
         fail_next(Some(family));
@@ -535,7 +503,7 @@ mod tests {
     fn endpoints_outside_the_pedigree_are_rejected() {
         let cols = ped(&[(-1, -1), (-1, -1), (0, 1)], &[]);
         let ped = KinshipPedigree::try_new(&cols.0, &cols.1, &cols.2, &cols.3).unwrap();
-        let err = pair_kinship(ped, &[0, 3], &[1, 1], Layout::Rows).unwrap_err();
+        let err = pair_kinship(ped, &[0, 3], &[1, 1]).unwrap_err();
         assert!(matches!(
             err,
             Error::ValueOutOfRange {
@@ -545,7 +513,7 @@ mod tests {
                 ..
             }
         ));
-        let err = pair_kinship(ped, &[0], &[1, 1], Layout::Rows).unwrap_err();
+        let err = pair_kinship(ped, &[0], &[1, 1]).unwrap_err();
         assert!(matches!(
             err,
             Error::LengthMismatch {

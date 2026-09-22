@@ -63,8 +63,6 @@ def pair_kinship(
     first: NDArray[np.int32],
     second: NDArray[np.int32],
     /,
-    *,
-    layout: str = "rows",
 ) -> NDArray[np.float32]: ...
 def kinship_support_values(
     pedigree: BuiltPedigree,
@@ -72,8 +70,6 @@ def kinship_support_values(
     indptr: NDArray[np.int64],
     indices: NDArray[np.int32],
     /,
-    *,
-    layout: str = "rows",
 ) -> NDArray[np.float32]: ...
 def allocation_families() -> list[str]: ...
 

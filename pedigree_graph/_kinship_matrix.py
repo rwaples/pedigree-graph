@@ -37,7 +37,6 @@ from pedigree_graph import _native
 from pedigree_graph._errors import ResourceError
 from pedigree_graph._input import _own_native
 from pedigree_graph._kinship_dp import _build_kinship_csc, _fill_candidate_kinship_values
-from pedigree_graph._kinship_pairwise import _MEMO_LAYOUT
 from pedigree_graph._relationship_pairs import check_execution, relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._threads import thread_budget
@@ -303,7 +302,6 @@ def _exactify_support(graph: PedigreeGraph, matrix: sp.csc_matrix) -> sp.csc_mat
         graph.depth,
         np.ascontiguousarray(matrix.indptr, dtype=np.int64),
         np.ascontiguousarray(matrix.indices, dtype=np.int32),
-        layout=_MEMO_LAYOUT,
     )
     matrix.data = _own_native(values, np.float32)
     return matrix

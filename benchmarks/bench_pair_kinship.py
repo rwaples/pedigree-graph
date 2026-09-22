@@ -15,11 +15,10 @@ is ``relationship_kinship_matrix(max_degree=3)`` on a fresh graph and
 Every arm checksums its values, so the cells also show each path returning
 the same bits.
 
-``cold`` and ``matrix`` are the scored cells: the native walk must not slow
-the first call or grow its peak RSS beyond the 5% rule against the 0.9.0
-wheel.  The memo layout under test is selected per subprocess with
-``PEDIGREE_GRAPH_KINSHIP_LAYOUT`` (``rows`` or ``flat``) while the slice 13
-bake-off runs.
+Every fresh-graph cell is scored: the native walk must not slow the first
+call or grow its peak RSS beyond the 5% rule against the 0.9.0 wheel.  The
+slice 13 record is ``docs/pedigree-graph-0.8-migration/gate/13a/NOTES.md``;
+``compare_reports.py`` beside it lays several reports side by side.
 """
 
 from __future__ import annotations
@@ -38,17 +37,21 @@ from _harness import (
     Suite,
     checksum_matrix_upper,
     checksum_values,
+    file_fixture,
     main,
     parity_fixture,
 )
 
 MAX_DEGREE = 3
 
-
-def _layout_facts() -> dict[str, str]:
-    from pedigree_graph._kinship_pairwise import _MEMO_LAYOUT
-
-    return {"layout": _MEMO_LAYOUT}
+# The simACE study pedigrees (ADR 0009 corpus), machine-local under the
+# umbrella's results/; absent files record as unavailable.
+UMBRELLA = Path(__file__).resolve().parent.parent.parent.parent
+STUDY = {
+    "dev_mean_n10k": ("results/dev/dev_mean_n10k/rep1/pedigree.parquet", "`dev_mean_n10k/rep1` (20,400 rows)"),
+    "baseline10K": ("results/base/baseline10K/rep1/pedigree.parquet", "`baseline10K/rep1` (53,466 rows)"),
+    "baseline100K": ("results/base/baseline100K/rep1/pedigree.parquet", "`baseline100K/rep1` (536,036 rows)"),
+}
 
 
 def _pairs_setup(graph) -> Prepared:
@@ -68,20 +71,38 @@ def _pair_kinship(graph, pairs) -> Measurement:
     for code in pairs:
         if len(values[code]):
             checksum ^= checksum_values(values[code])
-    return Measurement(checksum, _layout_facts())
+    return Measurement(checksum, {})
+
+
+def _self_pairs(graph, _prepared) -> Measurement:
+    import numpy as np
+
+    rows = np.arange(graph.n_individuals, dtype=np.int32)
+    return Measurement(checksum_values(graph.pair_kinship(rows, rows)), {})
+
+
+def _pairs5_setup(graph) -> Prepared:
+    pairs = graph.relationship_pairs(max_degree=5)
+    return Prepared(payload=pairs, facts={"pairs": sum(len(block) for block in pairs.values())})
 
 
 def _matrix(graph, _prepared) -> Measurement:
     matrix = graph.relationship_kinship_matrix(max_degree=MAX_DEGREE)
-    return Measurement(checksum_matrix_upper(matrix), {"nnz": int(matrix.nnz), **_layout_facts()})
+    return Measurement(checksum_matrix_upper(matrix), {"nnz": int(matrix.nnz)})
 
 
 SUITE = Suite(
     name="pair_kinship",
     note=Path(__file__).with_suffix(".md"),
-    fixtures=(parity_fixture("random_30k", label="`random_30k`"),),
+    fixtures=(
+        parity_fixture("random_30k", label="`random_30k`"),
+        parity_fixture("random_300k", label="`random_300k`"),
+        *(file_fixture(name, UMBRELLA / rel, label=label) for name, (rel, label) in STUDY.items()),
+    ),
     arms=(
         Arm("cold", _pair_kinship, label="degree-3 pair_kinship, fresh graph", setup=_pairs_setup),
+        Arm("self", _self_pairs, label="pair_kinship over every self pair, fresh graph"),
+        Arm("pairs5", _pair_kinship, label="degree-5 pair_kinship, fresh graph", setup=_pairs5_setup),
         Arm("warm", _pair_kinship, label="the same query again on the same graph", setup=_warm_setup),
         Arm("matrix", _matrix, label="relationship_kinship_matrix(max_degree=3), fresh graph"),
         Arm(
@@ -90,6 +111,19 @@ SUITE = Suite(
             label="the same matrix after a degree-3 pair_kinship",
             setup=_warm_setup,
         ),
+    ),
+    cells=(
+        "random_30k/cold",
+        "random_30k/warm",
+        "random_30k/matrix",
+        "random_30k/matrix_after_pairs",
+        "random_300k/cold",
+        "baseline10K/cold",
+        "baseline10K/self",
+        "baseline100K/cold",
+        "baseline100K/self",
+        "baseline100K/matrix",
+        "dev_mean_n10k/pairs5",
     ),
     gate=Gate(baseline="cold"),
     order=RunOrder.INTERLEAVED,

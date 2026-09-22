@@ -3,8 +3,8 @@
 The binding is the seam slice 13 moves the pairwise recurrence across (ADR
 0007, 0009): the Rust walk evaluates in graph space with structural depth as
 the peel input, and Python keeps the query resolution.  These tests hold the
-raw binding against ``tests/oracle/pair_kinship.py`` on every parity fixture,
-in both memo layouts and both endpoint orders, and pin the boundary
+raw binding against ``tests/oracle/pair_kinship.py`` on every parity fixture
+in both endpoint orders, and pin the boundary
 contract: an owned float32 array, structured errors, and every kinship
 allocation family surfacing as ``allocation_failed``.
 """
@@ -22,7 +22,6 @@ from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 
 FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 FIXTURE_NAMES = sorted(FIXTURES)
-LAYOUTS = ("flat", "rows")
 KINSHIP_FAMILIES = ("kinship_memo", "kinship_stack", "kinship_output")
 ENVELOPE_UNIT = 2.0**-25
 
@@ -31,9 +30,9 @@ def _graph(name: str) -> PedigreeGraph:
     return PedigreeGraph.from_frame(parity_columns(FIXTURES[name]))
 
 
-def _native_kinship(graph: PedigreeGraph, first, second, layout: str = "rows") -> np.ndarray:
+def _native_kinship(graph: PedigreeGraph, first, second) -> np.ndarray:
     return _native.pair_kinship(
-        graph._built, graph.depth, np.asarray(first, dtype=np.int32), np.asarray(second, dtype=np.int32), layout=layout
+        graph._built, graph.depth, np.asarray(first, dtype=np.int32), np.asarray(second, dtype=np.int32)
     )
 
 
@@ -46,21 +45,19 @@ def _all_pairs(n: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-@pytest.mark.parametrize("layout", LAYOUTS)
-def test_every_pair_matches_the_oracle_in_both_orders(name, layout):
+def test_every_pair_matches_the_oracle_in_both_orders(name):
     graph = _graph(name)
     first, second = _all_pairs(graph.n_individuals)
     expected = _oracle(graph, first, second)
-    assert _native_kinship(graph, first, second, layout).tobytes() == expected.tobytes()
-    assert _native_kinship(graph, second, first, layout).tobytes() == expected.tobytes()
+    assert _native_kinship(graph, first, second).tobytes() == expected.tobytes()
+    assert _native_kinship(graph, second, first).tobytes() == expected.tobytes()
 
 
 @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
-@pytest.mark.parametrize("layout", LAYOUTS)
-def test_mz_and_inbred_constructions_match_the_oracle(build, layout):
+def test_mz_and_inbred_constructions_match_the_oracle(build):
     graph = PedigreeGraph.from_frame(build())
     first, second = _all_pairs(graph.n_individuals)
-    assert _native_kinship(graph, first, second, layout).tobytes() == _oracle(graph, first, second).tobytes()
+    assert _native_kinship(graph, first, second).tobytes() == _oracle(graph, first, second).tobytes()
 
 
 def test_self_pairs_encode_inbreeding():
@@ -68,15 +65,6 @@ def test_self_pairs_encode_inbreeding():
     rows = np.arange(graph.n_individuals)
     values = _native_kinship(graph, rows, rows).astype(np.float64)
     assert np.abs(2.0 * values - 1.0 - graph.inbreeding()).max() <= 2.0**-22
-
-
-def test_the_two_layouts_agree_element_for_element():
-    graph = _graph("random_1k")
-    first, second = _all_pairs(graph.n_individuals)
-    assert (
-        _native_kinship(graph, first, second, "flat").tobytes()
-        == _native_kinship(graph, first, second, "rows").tobytes()
-    )
 
 
 def test_permuted_graphs_stay_inside_the_envelope(capsys):
@@ -129,8 +117,6 @@ class TestBoundary:
             _native.pair_kinship(graph._built, graph.depth[:-1], np.zeros(1, np.int32), np.zeros(1, np.int32))
         assert info.value.code == "length_mismatch"
         assert info.value.fields["field"] == "depth"
-        with pytest.raises(ValueError, match="layout"):
-            _native_kinship(graph, [0], [0], "tree")
 
     def test_the_stub_names_both_entries(self):
         from pathlib import Path
@@ -154,12 +140,11 @@ class TestSupportValues:
         )
 
     @pytest.mark.parametrize("name", ["double_first_cousins", "deep_inbred_60g", "random_1k"])
-    @pytest.mark.parametrize("layout", LAYOUTS)
-    def test_complete_support_reproduces_the_matrix(self, name, layout):
+    def test_complete_support_reproduces_the_matrix(self, name):
         graph = _graph(name)
         matrix = graph.kinship_matrix()
         values = _native.kinship_support_values(
-            graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices, layout=layout
+            graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices
         )
         assert values.dtype == np.float32
         assert values.tobytes() == matrix.data.tobytes()
@@ -191,8 +176,7 @@ class TestSupportValues:
 
 
 @pytest.mark.parametrize("family", KINSHIP_FAMILIES)
-@pytest.mark.parametrize("layout", LAYOUTS)
-def test_a_refused_allocation_raises_a_resource_error(family, layout):
+def test_a_refused_allocation_raises_a_resource_error(family):
     """Both entries surface every kinship family as ``ResourceError("allocation_failed")`` in a fresh process."""
     body = f"""
         from pedigree_graph import ResourceError
@@ -200,10 +184,10 @@ def test_a_refused_allocation_raises_a_resource_error(family, layout):
         rows = np.arange(n, dtype=np.int32)
         matrix = graph.relationship_kinship_matrix(max_degree=2)
         def pairs():
-            return _native.pair_kinship(graph._built, graph.depth, rows, rows, layout={layout!r})
+            return _native.pair_kinship(graph._built, graph.depth, rows, rows)
         def support():
             return _native.kinship_support_values(
-                graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices, layout={layout!r}
+                graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices
             )
         for label, call in (("pairs", pairs), ("support", support)):
             _native.fail_next_allocation(family, 1)

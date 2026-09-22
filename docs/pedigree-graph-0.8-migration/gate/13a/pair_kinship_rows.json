@@ -1,0 +1,595 @@
+{
+  "cells": [
+    {
+      "cell": "random_30k/cold",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 138.94921875,
+          "cell": "random_30k/cold",
+          "checksum": 11925760,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 515.25390625,
+          "ru_maxrss_mib": 515.25390625,
+          "started_at": "2026-09-22T21:08:39+00:00",
+          "wall_s": 5.321780794998631
+        },
+        {
+          "baseline_rss_mib": 139.1640625,
+          "cell": "random_30k/cold",
+          "checksum": 11925760,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 515.25,
+          "ru_maxrss_mib": 515.25,
+          "started_at": "2026-09-22T21:26:25+00:00",
+          "wall_s": 5.358985451981425
+        },
+        {
+          "baseline_rss_mib": 139.11328125,
+          "cell": "random_30k/cold",
+          "checksum": 11925760,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 515.44921875,
+          "ru_maxrss_mib": 515.44921875,
+          "started_at": "2026-09-22T21:44:10+00:00",
+          "wall_s": 5.270445715985261
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_30k/warm",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 258.15625,
+          "cell": "random_30k/warm",
+          "checksum": 11925760,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 516.16796875,
+          "ru_maxrss_mib": 516.16796875,
+          "started_at": "2026-09-22T21:08:52+00:00",
+          "wall_s": 5.429779105994385
+        },
+        {
+          "baseline_rss_mib": 258.42578125,
+          "cell": "random_30k/warm",
+          "checksum": 11925760,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 515.27734375,
+          "ru_maxrss_mib": 515.27734375,
+          "started_at": "2026-09-22T21:26:38+00:00",
+          "wall_s": 5.385830851009814
+        },
+        {
+          "baseline_rss_mib": 285.1953125,
+          "cell": "random_30k/warm",
+          "checksum": 11925760,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 515.22265625,
+          "ru_maxrss_mib": 515.22265625,
+          "started_at": "2026-09-22T21:44:22+00:00",
+          "wall_s": 5.169766122009605
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_30k/matrix",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 127.875,
+          "cell": "random_30k/matrix",
+          "checksum": 12021248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 1163728
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 523.140625,
+          "ru_maxrss_mib": 523.140625,
+          "started_at": "2026-09-22T21:08:59+00:00",
+          "wall_s": 5.983688648004318
+        },
+        {
+          "baseline_rss_mib": 128.09765625,
+          "cell": "random_30k/matrix",
+          "checksum": 12021248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 1163728
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 523.4609375,
+          "ru_maxrss_mib": 523.4609375,
+          "started_at": "2026-09-22T21:26:45+00:00",
+          "wall_s": 6.121115452988306
+        },
+        {
+          "baseline_rss_mib": 128.109375,
+          "cell": "random_30k/matrix",
+          "checksum": 12021248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 1163728
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 523.578125,
+          "ru_maxrss_mib": 523.578125,
+          "started_at": "2026-09-22T21:44:29+00:00",
+          "wall_s": 5.913564921997022
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_30k/matrix_after_pairs",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 295.05078125,
+          "cell": "random_30k/matrix_after_pairs",
+          "checksum": 12021248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 1163728,
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 528.40234375,
+          "ru_maxrss_mib": 528.40234375,
+          "started_at": "2026-09-22T21:09:12+00:00",
+          "wall_s": 5.73422281400417
+        },
+        {
+          "baseline_rss_mib": 258.0859375,
+          "cell": "random_30k/matrix_after_pairs",
+          "checksum": 12021248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 1163728,
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 528.14453125,
+          "ru_maxrss_mib": 528.14453125,
+          "started_at": "2026-09-22T21:26:58+00:00",
+          "wall_s": 5.770323078992078
+        },
+        {
+          "baseline_rss_mib": 294.94921875,
+          "cell": "random_30k/matrix_after_pairs",
+          "checksum": 12021248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 1163728,
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 528.55859375,
+          "ru_maxrss_mib": 528.55859375,
+          "started_at": "2026-09-22T21:44:42+00:00",
+          "wall_s": 5.771408506989246
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_300k/cold",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 268.875,
+          "cell": "random_300k/cold",
+          "checksum": 1029931008,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 5695235
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 14075.80859375,
+          "ru_maxrss_mib": 14075.80859375,
+          "started_at": "2026-09-22T21:09:29+00:00",
+          "wall_s": 935.0261237879749
+        },
+        {
+          "baseline_rss_mib": 268.52734375,
+          "cell": "random_300k/cold",
+          "checksum": 1029931008,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 5695235
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 14076.140625,
+          "ru_maxrss_mib": 14076.140625,
+          "started_at": "2026-09-22T21:27:16+00:00",
+          "wall_s": 934.0245879339927
+        },
+        {
+          "baseline_rss_mib": 268.69140625,
+          "cell": "random_300k/cold",
+          "checksum": 1029931008,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 5695235
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 14077.46484375,
+          "ru_maxrss_mib": 14077.46484375,
+          "started_at": "2026-09-22T21:45:00+00:00",
+          "wall_s": 933.2268734519894
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline10K/cold",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 243.05078125,
+          "cell": "baseline10K/cold",
+          "checksum": 1026097152,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 1054649
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 461.5625,
+          "ru_maxrss_mib": 461.5625,
+          "started_at": "2026-09-22T21:25:06+00:00",
+          "wall_s": 2.0836610269907396
+        },
+        {
+          "baseline_rss_mib": 243.30078125,
+          "cell": "baseline10K/cold",
+          "checksum": 1026097152,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 1054649
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 461.6953125,
+          "ru_maxrss_mib": 461.6953125,
+          "started_at": "2026-09-22T21:42:52+00:00",
+          "wall_s": 1.9654858329740819
+        },
+        {
+          "baseline_rss_mib": 243.29296875,
+          "cell": "baseline10K/cold",
+          "checksum": 1026097152,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 1054649
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 461.6796875,
+          "ru_maxrss_mib": 461.6796875,
+          "started_at": "2026-09-22T22:00:34+00:00",
+          "wall_s": 2.0640772079932503
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline10K/self",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 222.3984375,
+          "cell": "baseline10K/self",
+          "checksum": 212992,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows"
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 275.70703125,
+          "ru_maxrss_mib": 275.70703125,
+          "started_at": "2026-09-22T21:25:09+00:00",
+          "wall_s": 0.4331532820069697
+        },
+        {
+          "baseline_rss_mib": 222.41796875,
+          "cell": "baseline10K/self",
+          "checksum": 212992,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows"
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 275.69921875,
+          "ru_maxrss_mib": 275.69921875,
+          "started_at": "2026-09-22T21:42:55+00:00",
+          "wall_s": 0.4218827689765021
+        },
+        {
+          "baseline_rss_mib": 222.30859375,
+          "cell": "baseline10K/self",
+          "checksum": 212992,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows"
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 275.359375,
+          "ru_maxrss_mib": 275.359375,
+          "started_at": "2026-09-22T22:00:37+00:00",
+          "wall_s": 0.44505350798135623
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline100K/cold",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 532.84375,
+          "cell": "baseline100K/cold",
+          "checksum": 24461312,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 10427780
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3022.1640625,
+          "ru_maxrss_mib": 3022.1640625,
+          "started_at": "2026-09-22T21:25:13+00:00",
+          "wall_s": 25.60892791498918
+        },
+        {
+          "baseline_rss_mib": 532.83203125,
+          "cell": "baseline100K/cold",
+          "checksum": 24461312,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 10427780
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3021.81640625,
+          "ru_maxrss_mib": 3021.81640625,
+          "started_at": "2026-09-22T21:42:59+00:00",
+          "wall_s": 24.83809215700603
+        },
+        {
+          "baseline_rss_mib": 532.77734375,
+          "cell": "baseline100K/cold",
+          "checksum": 24461312,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 10427780
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3021.953125,
+          "ru_maxrss_mib": 3021.953125,
+          "started_at": "2026-09-22T22:00:42+00:00",
+          "wall_s": 24.82394791598199
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline100K/self",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 311.0390625,
+          "cell": "baseline100K/self",
+          "checksum": 999424,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 895.72265625,
+          "ru_maxrss_mib": 895.72265625,
+          "started_at": "2026-09-22T21:25:40+00:00",
+          "wall_s": 5.130141133995494
+        },
+        {
+          "baseline_rss_mib": 311.015625,
+          "cell": "baseline100K/self",
+          "checksum": 999424,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 895.4921875,
+          "ru_maxrss_mib": 895.4921875,
+          "started_at": "2026-09-22T21:43:25+00:00",
+          "wall_s": 5.117265428998508
+        },
+        {
+          "baseline_rss_mib": 311.03515625,
+          "cell": "baseline100K/self",
+          "checksum": 999424,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 895.671875,
+          "ru_maxrss_mib": 895.671875,
+          "started_at": "2026-09-22T22:01:08+00:00",
+          "wall_s": 5.114167244988494
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline100K/matrix",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 311.55078125,
+          "cell": "baseline100K/matrix",
+          "checksum": 24772608,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 21391596
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3125.07421875,
+          "ru_maxrss_mib": 3125.07421875,
+          "started_at": "2026-09-22T21:25:47+00:00",
+          "wall_s": 32.6789868340129
+        },
+        {
+          "baseline_rss_mib": 311.48046875,
+          "cell": "baseline100K/matrix",
+          "checksum": 24772608,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 21391596
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3124.83984375,
+          "ru_maxrss_mib": 3124.83984375,
+          "started_at": "2026-09-22T21:43:31+00:00",
+          "wall_s": 32.835660743003245
+        },
+        {
+          "baseline_rss_mib": 311.5546875,
+          "cell": "baseline100K/matrix",
+          "checksum": 24772608,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "nnz": 21391596
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3124.92578125,
+          "ru_maxrss_mib": 3124.92578125,
+          "started_at": "2026-09-22T22:01:14+00:00",
+          "wall_s": 32.6131730430061
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "dev_mean_n10k/pairs5",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 228.25390625,
+          "cell": "dev_mean_n10k/pairs5",
+          "checksum": 1011253248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 1523363
+          },
+          "n_individuals": 20400,
+          "peak_rss_mib": 456.30078125,
+          "ru_maxrss_mib": 456.30078125,
+          "started_at": "2026-09-22T21:26:21+00:00",
+          "wall_s": 2.3730905780103058
+        },
+        {
+          "baseline_rss_mib": 228.1484375,
+          "cell": "dev_mean_n10k/pairs5",
+          "checksum": 1011253248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 1523363
+          },
+          "n_individuals": 20400,
+          "peak_rss_mib": 456.27734375,
+          "ru_maxrss_mib": 456.27734375,
+          "started_at": "2026-09-22T21:44:06+00:00",
+          "wall_s": 2.3266764520085417
+        },
+        {
+          "baseline_rss_mib": 228.23046875,
+          "cell": "dev_mean_n10k/pairs5",
+          "checksum": 1011253248,
+          "environment": "8977b76af94c",
+          "facts": {
+            "layout": "rows",
+            "pairs": 1523363
+          },
+          "n_individuals": 20400,
+          "peak_rss_mib": 456.20703125,
+          "ru_maxrss_mib": 456.20703125,
+          "started_at": "2026-09-22T22:01:48+00:00",
+          "wall_s": 2.3522260939935222
+        }
+      ],
+      "timeout_s": 3600.0
+    }
+  ],
+  "environments": {
+    "8977b76af94c": {
+      "cpu_governor": "performance",
+      "cpu_max_mhz": 2600,
+      "cpu_model": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+      "git_branch": "main",
+      "git_commit": "c50be63ff9eb63dcc85c971dd24481ab3520e7dc",
+      "git_dirty": true,
+      "harness_sha256": "43358db31bf52f34",
+      "kernel": "7.1.5-76070105-generic",
+      "logical_cpus": 12,
+      "mem_total_gib": 31.0,
+      "pixi_lock_sha256": "598740a05f17c1e1",
+      "python": "3.13.15",
+      "rss_method": "kernel VmHWM, reset via /proc/self/clear_refs at region start",
+      "suite_sha256": "36e83e03ba4c3728",
+      "threads_pinned": 1
+    }
+  },
+  "gate": 1.05,
+  "schema": "pedigree-graph/benchmark/1",
+  "suite": "pair_kinship"
+}

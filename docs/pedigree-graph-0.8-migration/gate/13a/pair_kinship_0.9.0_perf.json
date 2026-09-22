@@ -1,0 +1,507 @@
+{
+  "cells": [
+    {
+      "cell": "random_30k/cold",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 160.3984375,
+          "cell": "random_30k/cold",
+          "checksum": 11925760,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 761.859375,
+          "ru_maxrss_mib": 761.859375,
+          "started_at": "2026-09-22T22:30:03+00:00",
+          "wall_s": 82.5020698250155
+        },
+        {
+          "baseline_rss_mib": 160.453125,
+          "cell": "random_30k/cold",
+          "checksum": 11925760,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 761.82421875,
+          "ru_maxrss_mib": 761.82421875,
+          "started_at": "2026-09-22T22:37:49+00:00",
+          "wall_s": 82.51001913100481
+        },
+        {
+          "baseline_rss_mib": 160.609375,
+          "cell": "random_30k/cold",
+          "checksum": 11925760,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 762.23046875,
+          "ru_maxrss_mib": 762.23046875,
+          "started_at": "2026-09-22T22:45:33+00:00",
+          "wall_s": 82.45423262400436
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_30k/warm",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 564.15234375,
+          "cell": "random_30k/warm",
+          "checksum": 11925760,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 569.01953125,
+          "ru_maxrss_mib": 568.421875,
+          "started_at": "2026-09-22T22:32:50+00:00",
+          "wall_s": 0.45180602799518965
+        },
+        {
+          "baseline_rss_mib": 564.08984375,
+          "cell": "random_30k/warm",
+          "checksum": 11925760,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 568.953125,
+          "ru_maxrss_mib": 568.6640625,
+          "started_at": "2026-09-22T22:40:36+00:00",
+          "wall_s": 0.452483460016083
+        },
+        {
+          "baseline_rss_mib": 564.125,
+          "cell": "random_30k/warm",
+          "checksum": 11925760,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 568.9921875,
+          "ru_maxrss_mib": 568.54296875,
+          "started_at": "2026-09-22T22:48:20+00:00",
+          "wall_s": 0.4507074960274622
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_30k/matrix",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 149.76953125,
+          "cell": "random_30k/matrix",
+          "checksum": 12021248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 1163728
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 780.8671875,
+          "ru_maxrss_mib": 780.8671875,
+          "started_at": "2026-09-22T22:32:52+00:00",
+          "wall_s": 79.86008973701973
+        },
+        {
+          "baseline_rss_mib": 149.64453125,
+          "cell": "random_30k/matrix",
+          "checksum": 12021248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 1163728
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 780.921875,
+          "ru_maxrss_mib": 780.921875,
+          "started_at": "2026-09-22T22:40:38+00:00",
+          "wall_s": 79.95980374200735
+        },
+        {
+          "baseline_rss_mib": 149.609375,
+          "cell": "random_30k/matrix",
+          "checksum": 12021248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 1163728
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 780.890625,
+          "ru_maxrss_mib": 780.890625,
+          "started_at": "2026-09-22T22:48:23+00:00",
+          "wall_s": 79.78508702499676
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_30k/matrix_after_pairs",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 569.2109375,
+          "cell": "random_30k/matrix_after_pairs",
+          "checksum": 12021248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 1163728,
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 595.86328125,
+          "ru_maxrss_mib": 595.6640625,
+          "started_at": "2026-09-22T22:35:36+00:00",
+          "wall_s": 1.186655850004172
+        },
+        {
+          "baseline_rss_mib": 569.03515625,
+          "cell": "random_30k/matrix_after_pairs",
+          "checksum": 12021248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 1163728,
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 595.6796875,
+          "ru_maxrss_mib": 595.4453125,
+          "started_at": "2026-09-22T22:43:22+00:00",
+          "wall_s": 1.2034012229996733
+        },
+        {
+          "baseline_rss_mib": 569.203125,
+          "cell": "random_30k/matrix_after_pairs",
+          "checksum": 12021248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 1163728,
+            "pairs": 566714
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 593.59765625,
+          "ru_maxrss_mib": 593.390625,
+          "started_at": "2026-09-22T22:51:07+00:00",
+          "wall_s": 1.2235301049950067
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline10K/cold",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 265.234375,
+          "cell": "baseline10K/cold",
+          "checksum": 1026097152,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 1054649
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 865.16796875,
+          "ru_maxrss_mib": 865.16796875,
+          "started_at": "2026-09-22T22:35:39+00:00",
+          "wall_s": 6.819593288993929
+        },
+        {
+          "baseline_rss_mib": 265.6171875,
+          "cell": "baseline10K/cold",
+          "checksum": 1026097152,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 1054649
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 865.62890625,
+          "ru_maxrss_mib": 865.62890625,
+          "started_at": "2026-09-22T22:43:25+00:00",
+          "wall_s": 6.818873108015396
+        },
+        {
+          "baseline_rss_mib": 265.45703125,
+          "cell": "baseline10K/cold",
+          "checksum": 1026097152,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 1054649
+          },
+          "n_individuals": 53466,
+          "peak_rss_mib": 865.375,
+          "ru_maxrss_mib": 865.375,
+          "started_at": "2026-09-22T22:51:10+00:00",
+          "wall_s": 6.824980053002946
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline10K/self",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 244.140625,
+          "cell": "baseline10K/self",
+          "checksum": 212992,
+          "environment": "f2e1fd8a07bd",
+          "facts": {},
+          "n_individuals": 53466,
+          "peak_rss_mib": 391.46875,
+          "ru_maxrss_mib": 391.46875,
+          "started_at": "2026-09-22T22:35:47+00:00",
+          "wall_s": 0.7453350209980272
+        },
+        {
+          "baseline_rss_mib": 244.25390625,
+          "cell": "baseline10K/self",
+          "checksum": 212992,
+          "environment": "f2e1fd8a07bd",
+          "facts": {},
+          "n_individuals": 53466,
+          "peak_rss_mib": 391.421875,
+          "ru_maxrss_mib": 391.421875,
+          "started_at": "2026-09-22T22:43:33+00:00",
+          "wall_s": 0.7284318809979595
+        },
+        {
+          "baseline_rss_mib": 244.28125,
+          "cell": "baseline10K/self",
+          "checksum": 212992,
+          "environment": "f2e1fd8a07bd",
+          "facts": {},
+          "n_individuals": 53466,
+          "peak_rss_mib": 391.453125,
+          "ru_maxrss_mib": 391.453125,
+          "started_at": "2026-09-22T22:51:18+00:00",
+          "wall_s": 0.7331128860241733
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline100K/cold",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 556.6875,
+          "cell": "baseline100K/cold",
+          "checksum": 24461312,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 10427780
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 5420.921875,
+          "ru_maxrss_mib": 5420.921875,
+          "started_at": "2026-09-22T22:35:52+00:00",
+          "wall_s": 31.353216127987253
+        },
+        {
+          "baseline_rss_mib": 556.57421875,
+          "cell": "baseline100K/cold",
+          "checksum": 24461312,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 10427780
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 5420.97265625,
+          "ru_maxrss_mib": 5420.97265625,
+          "started_at": "2026-09-22T22:43:38+00:00",
+          "wall_s": 31.27129725299892
+        },
+        {
+          "baseline_rss_mib": 556.44140625,
+          "cell": "baseline100K/cold",
+          "checksum": 24461312,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 10427780
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 5420.6171875,
+          "ru_maxrss_mib": 5420.6171875,
+          "started_at": "2026-09-22T22:51:23+00:00",
+          "wall_s": 31.27756646697526
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline100K/self",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 338.9453125,
+          "cell": "baseline100K/self",
+          "checksum": 999424,
+          "environment": "f2e1fd8a07bd",
+          "facts": {},
+          "n_individuals": 536036,
+          "peak_rss_mib": 1525.96484375,
+          "ru_maxrss_mib": 1525.96484375,
+          "started_at": "2026-09-22T22:36:25+00:00",
+          "wall_s": 6.770912945998134
+        },
+        {
+          "baseline_rss_mib": 338.74609375,
+          "cell": "baseline100K/self",
+          "checksum": 999424,
+          "environment": "f2e1fd8a07bd",
+          "facts": {},
+          "n_individuals": 536036,
+          "peak_rss_mib": 1525.7109375,
+          "ru_maxrss_mib": 1525.7109375,
+          "started_at": "2026-09-22T22:44:11+00:00",
+          "wall_s": 6.745984210021561
+        },
+        {
+          "baseline_rss_mib": 338.80078125,
+          "cell": "baseline100K/self",
+          "checksum": 999424,
+          "environment": "f2e1fd8a07bd",
+          "facts": {},
+          "n_individuals": 536036,
+          "peak_rss_mib": 1525.69921875,
+          "ru_maxrss_mib": 1525.69921875,
+          "started_at": "2026-09-22T22:51:56+00:00",
+          "wall_s": 6.68731889501214
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline100K/matrix",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 341.50390625,
+          "cell": "baseline100K/matrix",
+          "checksum": 24772608,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 21391596
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3100.046875,
+          "ru_maxrss_mib": 3100.046875,
+          "started_at": "2026-09-22T22:36:33+00:00",
+          "wall_s": 50.2352758749912
+        },
+        {
+          "baseline_rss_mib": 341.3125,
+          "cell": "baseline100K/matrix",
+          "checksum": 24772608,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 21391596
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3099.875,
+          "ru_maxrss_mib": 3099.875,
+          "started_at": "2026-09-22T22:44:19+00:00",
+          "wall_s": 49.03148592999787
+        },
+        {
+          "baseline_rss_mib": 341.53515625,
+          "cell": "baseline100K/matrix",
+          "checksum": 24772608,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "nnz": 21391596
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 3099.90625,
+          "ru_maxrss_mib": 3099.90625,
+          "started_at": "2026-09-22T22:52:04+00:00",
+          "wall_s": 49.102360096003395
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "dev_mean_n10k/pairs5",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 254.8046875,
+          "cell": "dev_mean_n10k/pairs5",
+          "checksum": 1011253248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 1523363
+          },
+          "n_individuals": 20400,
+          "peak_rss_mib": 865.5390625,
+          "ru_maxrss_mib": 865.5390625,
+          "started_at": "2026-09-22T22:37:25+00:00",
+          "wall_s": 21.087602000014158
+        },
+        {
+          "baseline_rss_mib": 253.7890625,
+          "cell": "dev_mean_n10k/pairs5",
+          "checksum": 1011253248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 1523363
+          },
+          "n_individuals": 20400,
+          "peak_rss_mib": 864.36328125,
+          "ru_maxrss_mib": 864.36328125,
+          "started_at": "2026-09-22T22:45:10+00:00",
+          "wall_s": 21.053481298004044
+        },
+        {
+          "baseline_rss_mib": 253.734375,
+          "cell": "dev_mean_n10k/pairs5",
+          "checksum": 1011253248,
+          "environment": "f2e1fd8a07bd",
+          "facts": {
+            "pairs": 1523363
+          },
+          "n_individuals": 20400,
+          "peak_rss_mib": 864.4296875,
+          "ru_maxrss_mib": 864.4296875,
+          "started_at": "2026-09-22T22:52:55+00:00",
+          "wall_s": 21.058090781007195
+        }
+      ],
+      "timeout_s": 3600.0
+    }
+  ],
+  "environments": {
+    "f2e1fd8a07bd": {
+      "cpu_governor": "performance",
+      "cpu_max_mhz": 2600,
+      "cpu_model": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+      "git_branch": "main",
+      "git_commit": "c50be63ff9eb63dcc85c971dd24481ab3520e7dc",
+      "git_dirty": true,
+      "harness_sha256": "43358db31bf52f34",
+      "kernel": "7.1.5-76070105-generic",
+      "logical_cpus": 12,
+      "mem_total_gib": 31.0,
+      "pixi_lock_sha256": "598740a05f17c1e1",
+      "python": "3.13.15",
+      "rss_method": "kernel VmHWM, reset via /proc/self/clear_refs at region start",
+      "suite_sha256": "a1a960a30f916ddd",
+      "threads_pinned": 1
+    }
+  },
+  "gate": 1.05,
+  "schema": "pedigree-graph/benchmark/1",
+  "suite": "pair_kinship"
+}

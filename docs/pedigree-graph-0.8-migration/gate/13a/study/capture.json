@@ -1,0 +1,340 @@
+{
+  "core_version": "0.9.0",
+  "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+  "package_version": "0.9.0",
+  "pedigrees": {
+    "baseline100K": {
+      "input_sha256": "96796a92e63698744b7a9fd838ea6dc99631c44c1783c542691912975b7a80e1",
+      "n": 536036,
+      "path": "results/base/baseline100K/rep1/pedigree.parquet",
+      "queries": {
+        "d3/1C": {
+          "pair_sha256": "7d5d2719f2b82b7a7281b69882bfca451436988342783406c9d1518fc3196b1f",
+          "pairs": 1158212
+        },
+        "d3/Av": {
+          "pair_sha256": "26dfc677689ba87dfab0f9429d33d11a40bd8965fae9244165f1b5b3d6d2b264",
+          "pairs": 1074104
+        },
+        "d3/FO": {
+          "pair_sha256": "821a58b8d706b78eb1ff645897046ca32e70d6235aa2049985cc67dc5d430c86",
+          "pairs": 460622
+        },
+        "d3/FS": {
+          "pair_sha256": "2d7fb1884a63f14c8f55137774cd3e61743f8cc17addc6a8479e15cea16e80fc",
+          "pairs": 332120
+        },
+        "d3/GAv": {
+          "pair_sha256": "98ed44f8bdc9d59cf9789c11f9424fcc396cb21ff0fb73e2b78f17f4911ac301",
+          "pairs": 1608847
+        },
+        "d3/GGP": {
+          "pair_sha256": "174b1bab76c8aeaa6192c3517c439addb96b9ab4476e65272ded548005590fc7",
+          "pairs": 2399865
+        },
+        "d3/GP": {
+          "pair_sha256": "0d834bec870a8cc53bd92f0a435f6692d583fe318a031e6bb66369b35b4579ba",
+          "pairs": 1532240
+        },
+        "d3/HAv": {
+          "pair_sha256": "9d3abab07747eae4fb08f9fdac9883f8b36fcd54a9c0383b115b14756d1a7282",
+          "pairs": 1068406
+        },
+        "d3/MHS": {
+          "pair_sha256": "26032661875ba4f870d362e521744fd51c8eaa18a7ddc5341ca0a901fa24cded",
+          "pairs": 165506
+        },
+        "d3/MO": {
+          "pair_sha256": "175259281ea471529ac3fef03ee7bd79c42604e62a1085f6083b479d647b6d66",
+          "pairs": 460622
+        },
+        "d3/MZ": {
+          "pair_sha256": "36b93cfa5957f4ada723f16f6c92d116f37efb6a0c86d48017d709ae51059dc7",
+          "pairs": 2851
+        },
+        "d3/PHS": {
+          "pair_sha256": "10ef6ec2a461ff6fb7caf849bd3eadd63d8be673f216477b525b25e5958d7f07",
+          "pairs": 164385
+        },
+        "self": {
+          "pair_sha256": "053e447bc4d3c5a781b7a6cb32b7e9afc6771996abe5ebb003988189fe0f91b4",
+          "pairs": 536036
+        }
+      },
+      "seconds": 63.8
+    },
+    "baseline10K": {
+      "input_sha256": "e81b6cf71b6d09c3eb1fb2b51d3ecfdb39c94186e257219e61ee3633165b7071",
+      "n": 53466,
+      "path": "results/base/baseline10K/rep1/pedigree.parquet",
+      "queries": {
+        "d3/1C": {
+          "pair_sha256": "4d4f82497c8d844353296873a13f43bf978f1d4abb0b6333fc63a3dccd48c92c",
+          "pairs": 117985
+        },
+        "d3/Av": {
+          "pair_sha256": "5898de364adc9403f3171cfe8cbd6c8d5a331a34eb47fd64edd78315c8696c2f",
+          "pairs": 108806
+        },
+        "d3/FO": {
+          "pair_sha256": "5f5d40879a4ac67d174c3d3b931d74380ad3ceb598b9ef9b3ee6267528acb89a",
+          "pairs": 45999
+        },
+        "d3/FS": {
+          "pair_sha256": "54c96830635d115b9b45059cca7d65913e58211d17a17d7ef010c81c9d722bc9",
+          "pairs": 33425
+        },
+        "d3/GAv": {
+          "pair_sha256": "b949dd9b15fb4d7a960da317468de3fca22859ecc9adf72e79a2037e72c3e209",
+          "pairs": 165012
+        },
+        "d3/GGP": {
+          "pair_sha256": "df6a0e8cbbc6e6c3bba63a8595399318afb531ea341f08d3bbb5ea222eaccc58",
+          "pairs": 239868
+        },
+        "d3/GP": {
+          "pair_sha256": "d11954564b8a38fe581a19d11f55a78798d201fcb44c9a0fc552cced81d6a37f",
+          "pairs": 153054
+        },
+        "d3/HAv": {
+          "pair_sha256": "42fa734712eb1ee57d295ac52ea743d987f7a9455c9bbb3b7a1558a308a1f8a3",
+          "pairs": 110552
+        },
+        "d3/MHS": {
+          "pair_sha256": "ec80ed94968ee800741a0f2dfb258df309e79452ee6c9841cb0c43cdf4e70bb6",
+          "pairs": 16926
+        },
+        "d3/MO": {
+          "pair_sha256": "2604beab4600cd11eff5572929800152f62b4eaefdb8e1181d035f1b7d2a867a",
+          "pairs": 45999
+        },
+        "d3/MZ": {
+          "pair_sha256": "65cc46081e4982d26dd63ac3d3908346b49862ec0b163f52b1e30dc3e6f03914",
+          "pairs": 292
+        },
+        "d3/PHS": {
+          "pair_sha256": "0e39a571d12dc2757995e6855e8c8f0b6d2382d9945f5e5f6f01435c7a0bc9e8",
+          "pairs": 16731
+        },
+        "self": {
+          "pair_sha256": "ca242c43583f0dc8077d65a92be5f227c51098b2740be7cb3c3552918399f74f",
+          "pairs": 53466
+        }
+      },
+      "seconds": 9.5
+    },
+    "dev_laplace_am_strong_50k": {
+      "input_sha256": "ae3b600fa94798c346a7461ab5d0aed538c56fed41d36cfac2fe198e46966084",
+      "n": 102000,
+      "path": "results/dev/dev_laplace_am_strong_50k/rep1/pedigree.parquet",
+      "queries": {
+        "d3/1C": {
+          "pair_sha256": "e94fbe8a73c71eb9ec8e690fad48a014dbf80b515d95827666b0cb54a6745fea",
+          "pairs": 213469
+        },
+        "d3/Av": {
+          "pair_sha256": "7b277b29ab6487df86b6270162a6248661a596875d1c74ad8efb9a4c665efeaf",
+          "pairs": 210598
+        },
+        "d3/FO": {
+          "pair_sha256": "a8e30b852234c3aebb2233c41dd5ba590ec3399a1f51a5308c21422a93535a2c",
+          "pairs": 85000
+        },
+        "d3/FS": {
+          "pair_sha256": "064d85c5a06d2e23ac60b1bbfa3706d3aa639e69edcb32f2269e9bf7edf50f15",
+          "pairs": 65998
+        },
+        "d3/GAv": {
+          "pair_sha256": "c7c5c9cdc42006236da0d337b35f6d303b3a183ec5ebd3f38c0b7672a599ff73",
+          "pairs": 313507
+        },
+        "d3/GGP": {
+          "pair_sha256": "5529858771eda874288d8666eb1fd3a91c584dc212b352fcfbe7ee4c400a64db",
+          "pairs": 407898
+        },
+        "d3/GP": {
+          "pair_sha256": "53c3a7ed39482a494d7975db377ca3728a56203c911659ea8c7bd0eb2988e1e5",
+          "pairs": 271985
+        },
+        "d3/HAv": {
+          "pair_sha256": "1ec6d2c87a138350cbd897930f7394c03ae75d2c9fb91ba803fd9a0b8320337c",
+          "pairs": 210396
+        },
+        "d3/MHS": {
+          "pair_sha256": "4fb6c45488a128e6439eeb58b82827f08790ea0fb23e95b130c36eb135ef6400",
+          "pairs": 33220
+        },
+        "d3/MO": {
+          "pair_sha256": "0f2b9bc12ed67ef3ec7d7dd640adf5a97a60efe41ec7840d7673c807c86dd570",
+          "pairs": 85000
+        },
+        "d3/MZ": {
+          "pair_sha256": "76c2694d2a80f68304fa19fb412a855c3d9046088931d7fbfa8ca31d31475a6a",
+          "pairs": 568
+        },
+        "d3/PHS": {
+          "pair_sha256": "b667bfb042f9d933c0d71cf071b2a9041dda15a5e3b85a97c963a2844de8ffea",
+          "pairs": 32536
+        },
+        "self": {
+          "pair_sha256": "01f485eb3f79069e115ee524b6ccb67f7b3ac042b10fdd23d88d7329a5ee1833",
+          "pairs": 102000
+        }
+      },
+      "seconds": 30.9
+    },
+    "dev_mean_n10k": {
+      "input_sha256": "13109957f36bf3a9a68a4b80e5f23d547cf933defd145854770bb03ba1ca92c1",
+      "n": 20400,
+      "path": "results/dev/dev_mean_n10k/rep1/pedigree.parquet",
+      "queries": {
+        "d3/1C": {
+          "pair_sha256": "4c87028157738913c930099c1b9dd52a653f4c34b79326121b78c4da8d91ab54",
+          "pairs": 43507
+        },
+        "d3/Av": {
+          "pair_sha256": "b1bc6aa25a73c6d3377135c5da94b3c7b7d6b1a1f2b9aa70728ceb299e8ec67c",
+          "pairs": 42449
+        },
+        "d3/FO": {
+          "pair_sha256": "85ce559ff4b87589139d26116ab07d89fc20105a7cff3492f874f1805d329755",
+          "pairs": 17000
+        },
+        "d3/FS": {
+          "pair_sha256": "49a3c0abb0bb0038b0e62702afd997cfb3117d020fbdb9994f118123da3f6929",
+          "pairs": 13196
+        },
+        "d3/GAv": {
+          "pair_sha256": "7d096ac37382e5cef33cb7ea13d475658299a4092e6e6c7deb5637dbc96ac06d",
+          "pairs": 63787
+        },
+        "d3/GGP": {
+          "pair_sha256": "41f41231a986d8828560126a7780c043497e002f95efa705e0f4bc7d527cfd12",
+          "pairs": 81507
+        },
+        "d3/GP": {
+          "pair_sha256": "dd0e1b03cca028ff3e6be1b9ea846b008b9aa3ca0b8fdac29c1810dea2c941ab",
+          "pairs": 54390
+        },
+        "d3/HAv": {
+          "pair_sha256": "6d4b1bd875b4a81f1fafbf2cf6c7b3ff8372371482b07ea9be9fb514ec46008e",
+          "pairs": 40635
+        },
+        "d3/MHS": {
+          "pair_sha256": "98aded4274b81235056c8e970622776f980dbaa5678ce50932f4549c7a51fddf",
+          "pairs": 6515
+        },
+        "d3/MO": {
+          "pair_sha256": "b2c2865b30e33c56ea5030e7aa2e1decede8cfad1e162ee52d60c6c8017716f6",
+          "pairs": 17000
+        },
+        "d3/MZ": {
+          "pair_sha256": "4c63c7eaa7f9c116424e0969a3869aab76d7558fafc219759d3ef4c9395463bc",
+          "pairs": 113
+        },
+        "d3/PHS": {
+          "pair_sha256": "863cbd626c2bf3d9ac1aedf65752cba955af3712418b9b2828c36a9be7ccc815",
+          "pairs": 6406
+        },
+        "d5/1C": {
+          "pair_sha256": "4c87028157738913c930099c1b9dd52a653f4c34b79326121b78c4da8d91ab54",
+          "pairs": 43507
+        },
+        "d5/1C1R": {
+          "pair_sha256": "2bda6f14d4386f909508cad85e1861b5ae65001365ff01552ff838350552e5c2",
+          "pairs": 132437
+        },
+        "d5/1C2R": {
+          "pair_sha256": "c0897b221e723caa86022bc0e9e1264ba64cdd521550443420480308473247fd",
+          "pairs": 178486
+        },
+        "d5/2C": {
+          "pair_sha256": "32fe6ffa2ec4f3a5ca266b1759c06660ad001cb3a6c469790d7b44a6be37721e",
+          "pairs": 130650
+        },
+        "d5/Av": {
+          "pair_sha256": "b1bc6aa25a73c6d3377135c5da94b3c7b7d6b1a1f2b9aa70728ceb299e8ec67c",
+          "pairs": 42449
+        },
+        "d5/FO": {
+          "pair_sha256": "85ce559ff4b87589139d26116ab07d89fc20105a7cff3492f874f1805d329755",
+          "pairs": 17000
+        },
+        "d5/FS": {
+          "pair_sha256": "49a3c0abb0bb0038b0e62702afd997cfb3117d020fbdb9994f118123da3f6929",
+          "pairs": 13196
+        },
+        "d5/G3Av": {
+          "pair_sha256": "7585e0baf67bf11067e2c17fad16973bd9d1004c975392e0f322534ccc0af6bb",
+          "pairs": 86047
+        },
+        "d5/G3GP": {
+          "pair_sha256": "0be21e237ad2843deb0fcc91d0b08aeb59e6206c043f456b07dc5c884f7bb294",
+          "pairs": 107888
+        },
+        "d5/GAv": {
+          "pair_sha256": "7d096ac37382e5cef33cb7ea13d475658299a4092e6e6c7deb5637dbc96ac06d",
+          "pairs": 63787
+        },
+        "d5/GGAv": {
+          "pair_sha256": "aa6d96b85d5d8be55dd4422516bcb80a56fb31963d41a5aee8ecff50bdb6c50c",
+          "pairs": 85381
+        },
+        "d5/GGGP": {
+          "pair_sha256": "fdd0f311ecd34a2c9013075e0a8333c814d50ec40be3825bd2fb3724bc6996d3",
+          "pairs": 108444
+        },
+        "d5/GGP": {
+          "pair_sha256": "41f41231a986d8828560126a7780c043497e002f95efa705e0f4bc7d527cfd12",
+          "pairs": 81507
+        },
+        "d5/GP": {
+          "pair_sha256": "dd0e1b03cca028ff3e6be1b9ea846b008b9aa3ca0b8fdac29c1810dea2c941ab",
+          "pairs": 54390
+        },
+        "d5/H1C": {
+          "pair_sha256": "67c9b08bc31640ac72d804905ede5adefeddd36870f186d1fafa9ad0892391b5",
+          "pairs": 40139
+        },
+        "d5/H1C1R": {
+          "pair_sha256": "752dec97434e4ed7c2d7d13c96ce3d676e3b4ac00bf2221f8dc20dbe25f659d5",
+          "pairs": 121301
+        },
+        "d5/HAv": {
+          "pair_sha256": "6d4b1bd875b4a81f1fafbf2cf6c7b3ff8372371482b07ea9be9fb514ec46008e",
+          "pairs": 40635
+        },
+        "d5/HGAv": {
+          "pair_sha256": "99cd695721f7cb18a3b658b0fed32b89306a0adcd86228cac03209128f3b0419",
+          "pairs": 61877
+        },
+        "d5/HGGAv": {
+          "pair_sha256": "33a3169b5bc289d094bd04a49a6a3854cb25b08b22ce45a86bbedd53d380a996",
+          "pairs": 84208
+        },
+        "d5/MHS": {
+          "pair_sha256": "98aded4274b81235056c8e970622776f980dbaa5678ce50932f4549c7a51fddf",
+          "pairs": 6515
+        },
+        "d5/MO": {
+          "pair_sha256": "b2c2865b30e33c56ea5030e7aa2e1decede8cfad1e162ee52d60c6c8017716f6",
+          "pairs": 17000
+        },
+        "d5/MZ": {
+          "pair_sha256": "4c63c7eaa7f9c116424e0969a3869aab76d7558fafc219759d3ef4c9395463bc",
+          "pairs": 113
+        },
+        "d5/PHS": {
+          "pair_sha256": "863cbd626c2bf3d9ac1aedf65752cba955af3712418b9b2828c36a9be7ccc815",
+          "pairs": 6406
+        },
+        "self": {
+          "pair_sha256": "3459f3f00bd9eb432b5e22843592afdbbbfec4160aebafd2b095e65eaa954136",
+          "pairs": 20400
+        }
+      },
+      "seconds": 35.6
+    }
+  },
+  "role": "capture"
+}

@@ -1,0 +1,937 @@
+{
+  "bit_identical": true,
+  "captured_with": {
+    "core_version": "0.9.0",
+    "package_version": "0.9.0"
+  },
+  "core_version": "0.9.0",
+  "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+  "package_version": "0.9.0",
+  "pedigrees": {
+    "baseline100K": {
+      "n": 536036,
+      "queries": {
+        "d3/1C": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 1158212,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/Av": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 1074104,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/FO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 460622,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/FS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 332120,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 1608847,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GGP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 2399865,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 1532240,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/HAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 1068406,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 165506,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 460622,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MZ": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 2851,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/PHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 164385,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "self": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 536036,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        }
+      },
+      "seconds": 200.9
+    },
+    "baseline10K": {
+      "n": 53466,
+      "queries": {
+        "d3/1C": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 117985,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/Av": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 108806,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/FO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 45999,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/FS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 33425,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 165012,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GGP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 239868,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 153054,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/HAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 110552,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 16926,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 45999,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MZ": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 292,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/PHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 16731,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "self": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 53466,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        }
+      },
+      "seconds": 16.6
+    },
+    "dev_laplace_am_strong_50k": {
+      "n": 102000,
+      "queries": {
+        "d3/1C": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 213469,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/Av": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 210598,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/FO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 85000,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/FS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 65998,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 313507,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GGP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 407898,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 271985,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/HAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 210396,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 33220,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 85000,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MZ": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 568,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/PHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 32536,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "self": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 102000,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        }
+      },
+      "seconds": 29.4
+    },
+    "dev_mean_n10k": {
+      "n": 20400,
+      "queries": {
+        "d3/1C": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 43507,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/Av": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 42449,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/FO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 17000,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/FS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 13196,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 63787,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GGP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 81507,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/GP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 54390,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/HAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 40635,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 6515,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 17000,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/MZ": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 113,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d3/PHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 6406,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/1C": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 43507,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/1C1R": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 132437,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/1C2R": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 178486,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/2C": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 130650,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/Av": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 42449,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/FO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 17000,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/FS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 13196,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/G3Av": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 86047,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/G3GP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 107888,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/GAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 63787,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/GGAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 85381,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/GGGP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 108444,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/GGP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 81507,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/GP": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 54390,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/H1C": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 40139,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/H1C1R": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 121301,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/HAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 40635,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/HGAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 61877,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/HGGAv": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 84208,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/MHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 6515,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/MO": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 17000,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/MZ": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 113,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "d5/PHS": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 6406,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        },
+        "self": {
+          "forward": {
+            "differing": 0,
+            "max_ulp": 0
+          },
+          "pair_sha256_matches": true,
+          "pairs": 20400,
+          "reverse": {
+            "differing": 0,
+            "max_ulp": 0
+          }
+        }
+      },
+      "seconds": 28.1
+    }
+  },
+  "role": "compare"
+}

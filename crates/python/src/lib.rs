@@ -10,7 +10,7 @@ use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pedigree_graph_core::alloc::{self, Family};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
-use pedigree_graph_core::kinship::{self, KinshipPedigree, Layout};
+use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
@@ -439,36 +439,27 @@ impl<'py> KinshipColumns<'py> {
     }
 }
 
-fn checked_layout(name: &str) -> PyResult<Layout> {
-    Layout::parse(name).ok_or_else(|| {
-        PyValueError::new_err(format!("layout must be \"flat\" or \"rows\", got {name:?}"))
-    })
-}
-
 /// Pedigree-expected kinship per requested pair (ADR 0009), in graph rows.
 ///
 /// `pedigree` is the graph's own [`BuiltPedigree`] and `depth` its structural
 /// depth.  `first` and `second` are validated graph rows of one length.  One
 /// memo serves the whole call and is freed before it returns; the walk runs
-/// on the calling thread with the GIL released.  `layout` picks the memo
-/// layout while slice 13's bake-off runs.
+/// on the calling thread with the GIL released.
 #[pyfunction]
-#[pyo3(signature = (pedigree, depth, first, second, /, *, layout = "rows"))]
+#[pyo3(signature = (pedigree, depth, first, second, /))]
 fn pair_kinship<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
     first: PyReadonlyArray1<'py, i32>,
     second: PyReadonlyArray1<'py, i32>,
-    layout: &str,
 ) -> PyResult<Bound<'py, PyArray1<f32>>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
-    let layout = checked_layout(layout)?;
     let first = first.as_slice()?;
     let second = second.as_slice()?;
     let values = py
-        .detach(|| kinship::pair_kinship(ped, first, second, layout))
+        .detach(|| kinship::pair_kinship(ped, first, second))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(values.into_pyarray(py))
 }
@@ -480,22 +471,20 @@ fn pair_kinship<'py>(
 /// `nnz`, with each upper entry evaluated once and its mirror written from
 /// it.  A missing mirror or an unsorted column is a validation error.
 #[pyfunction]
-#[pyo3(signature = (pedigree, depth, indptr, indices, /, *, layout = "rows"))]
+#[pyo3(signature = (pedigree, depth, indptr, indices, /))]
 fn kinship_support_values<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
     indptr: PyReadonlyArray1<'py, i64>,
     indices: PyReadonlyArray1<'py, i32>,
-    layout: &str,
 ) -> PyResult<Bound<'py, PyArray1<f32>>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
-    let layout = checked_layout(layout)?;
     let indptr = indptr.as_slice()?;
     let indices = indices.as_slice()?;
     let values = py
-        .detach(|| kinship::support_values(ped, indptr, indices, layout))
+        .detach(|| kinship::support_values(ped, indptr, indices))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(values.into_pyarray(py))
 }
