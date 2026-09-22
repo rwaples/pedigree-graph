@@ -17,6 +17,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 from conftest import kernel_inputs, parity_columns, parity_fixtures
+from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 from test_pedigree_graph import (
     _ped_double_first_cousins,
     _ped_mz_twins_with_descendants,
@@ -32,7 +33,6 @@ from pedigree_graph import (
 from pedigree_graph._kinship_pairwise import (
     _memo_ceiling,
     _PairMemo,
-    _pairwise_kinship_py,
     _run_kernel,
     pairwise_kinship,
 )
@@ -197,7 +197,7 @@ class TestWithinGraphParity:
         graph = _graph(name)
         first, second = _all_pairs(graph.n_individuals)
         kernel = pairwise_kinship(*kernel_inputs(graph, first, second))
-        oracle = _pairwise_kinship_py(graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, first, second)
+        oracle = oracle_pair_kinship(graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, first, second)
         assert kernel.tobytes() == oracle.tobytes()
 
     @pytest.mark.parametrize("name", ["deep_inbred_60g", "random_1k"])

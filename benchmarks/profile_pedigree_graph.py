@@ -54,7 +54,6 @@ from simace.simulation.simulate import run_simulation
 
 from pedigree_graph import PedigreeGraph, ResourceError
 from pedigree_graph._kinship_pairwise import (
-    _pairwise_kinship_py,
     _pairwise_kinship_with_stats,
     pairwise_kinship,
 )
@@ -62,8 +61,10 @@ from pedigree_graph.effective_size import ALL_EFFECTIVE_SIZE_ESTIMATORS, estimat
 
 # The shared benchmark contract lives beside this file, not on the path.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tests"))
 
 from _harness import PeakRss
+from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
 # --- representative pedigree presets -------------------------------------
 # (N = individuals per generation, G_ped = recorded generations.)
@@ -349,7 +350,7 @@ def pairwise_diagnostics(df, max_degree: int, seed: int, py_cap: int = 10_000) -
     nb_sub = pairwise_kinship(mother, father, twin, sa, sb)
     nb_sub_t = time.perf_counter() - t0
     t0 = time.perf_counter()
-    py_sub = _pairwise_kinship_py(mother, father, twin, pg._topology.gather(pg.depth), sa, sb)
+    py_sub = oracle_pair_kinship(mother, father, twin, pg._topology.gather(pg.depth), sa, sb)
     py_sub_t = time.perf_counter() - t0
     bit_exact = bool(np.array_equal(nb_sub, py_sub))
     speedup = py_sub_t / nb_sub_t if nb_sub_t > 0 else float("nan")

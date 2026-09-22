@@ -106,3 +106,32 @@ under, suffixed `-dirty` when the tree had uncommitted changes.  The lock was
 first generated on the uncommitted slice 4a tree, so its manifest carries
 `23ec496...-dirty`; regenerate once the slice commit exists so the manifest
 names it (the hashes must not change).
+
+# 0.9.0 pair-kinship golden lock
+
+`tests/data/pair_kinship_v0.9/` freezes the float32 bits of
+`PedigreeGraph.pair_kinship` at `v0.9.0`, the last release of the Python/Numba
+kernel, so the slice 13 Rust kernel is held to them bit for bit (ADR 0009).
+
+- `generate_pair_kinship.py` builds the same fixtures as
+  `generate_relationship_pairs.py`, extracts `relationship_pairs(max_degree=3)`,
+  and evaluates `pair_kinship` over the collection and over every self pair.
+  Values are stored as `uint32` bit views, never as floats.
+- `manifest.json` records the generator version, package commit, native
+  `core_version`, the SHA-256 of each int32 pair block and of each `uint32`
+  value block, and the self-pair value hash. A value hash is only meaningful
+  against its pair hash, and the test checks the pairs first.
+- `tests/test_pair_kinship_golden.py` replays the small fixtures array for
+  array in both endpoint orders and, under `@pytest.mark.slow`, replays
+  `random_30k` by hash (about 100 s, all of it the degree-3 walk).
+
+## Regenerate
+
+```bash
+pixi run python tests/parity/generate_pair_kinship.py
+```
+
+Regeneration is a deliberate contract change, reviewed as such; never run it
+to make a failing test pass. The lock was generated on the uncommitted
+slice 13 commit-1 tree, so its manifest carries a `-dirty` commit; the bits
+are those of the `v0.9.0` kernel, which that tree did not touch.

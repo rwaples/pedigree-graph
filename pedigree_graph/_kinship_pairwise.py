@@ -57,9 +57,9 @@ The retained table is the memory trade.  It is kept only while it fits under
 completes never fails on retention; ``PedigreeGraph._release_pair_memo`` frees
 it explicitly.
 
-Two implementations of the same recurrence live here: :func:`_pairwise_kinship_py`
-is the readable recursive oracle used by the property tests, and
-:func:`pairwise_kinship` is the ``@njit`` production kernel.
+:func:`pairwise_kinship` is the ``@njit`` production kernel; the readable
+recursive statement of the same recurrence is the test oracle
+``tests/oracle/pair_kinship.py``.
 """
 
 from __future__ import annotations
@@ -67,7 +67,6 @@ from __future__ import annotations
 __all__ = ["graph_pair_kinship", "memoised_kinship", "pairwise_kinship", "view_pair_kinship"]
 
 from dataclasses import dataclass, field
-from functools import cache
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
@@ -139,65 +138,6 @@ class _PairMemo:
     @property
     def nbytes(self) -> int:
         return int(self.keys.nbytes + self.vals.nbytes)
-
-
-def _pairwise_kinship_py(
-    mother: np.ndarray,
-    father: np.ndarray,
-    twin: np.ndarray,
-    depth: np.ndarray,
-    first: np.ndarray,
-    second: np.ndarray,
-) -> np.ndarray:
-    """Pedigree-expected kinship per requested pair, as a readable recursive oracle.
-
-    Same recurrence, peel rule, and float32 arithmetic as :func:`pairwise_kinship`,
-    written with ``functools.cache`` recursion over graph-space arrays and an
-    explicit depth, so a reader can check it against the module docstring line
-    by line.  Small pedigrees only: Python recursion grows with pedigree depth.
-
-    Args:
-        mother: Mother row per graph row, ``-1`` when absent.
-        father: Father row per graph row, ``-1`` when absent.
-        twin: MZ co-twin row per graph row, ``-1`` when absent.
-        depth: Structural depth per graph row.
-        first: First endpoint of each requested pair, as graph rows.
-        second: Second endpoint of each requested pair, as graph rows.
-
-    Returns:
-        float32 array of length ``len(first)``, positionally aligned to the
-        inputs.
-    """
-    mother = np.asarray(mother, dtype=np.int64)
-    father = np.asarray(father, dtype=np.int64)
-    twin = np.asarray(twin, dtype=np.int64)
-    depth = np.asarray(depth, dtype=np.int64)
-    half = np.float32(0.5)
-    one = np.float32(1.0)
-    zero = np.float32(0.0)
-
-    @cache
-    def _phi(a: int, b: int) -> np.float32:
-        if a > b:
-            a, b = b, a
-        if depth[a] > depth[b]:
-            other, peeled = b, a
-        else:
-            other, peeled = a, b
-        m = int(mother[peeled])
-        f = int(father[peeled])
-        if other == peeled or twin[other] == peeled or twin[peeled] == other:
-            if m < 0 or f < 0:
-                return half
-            return half * (one + _phi(m, f))
-        left = _phi(m, other) if m >= 0 else zero
-        right = _phi(f, other) if f >= 0 else zero
-        return half * (left + right)
-
-    out = np.empty(len(first), dtype=np.float32)
-    for k in range(len(first)):
-        out[k] = _phi(int(first[k]), int(second[k]))
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -296,8 +236,8 @@ def _pairwise_kinship_core(
     only place growth happens.  ``out`` is unfinished when ``overflow`` is
     ``1``.
 
-    The combine expressions mirror :func:`_pairwise_kinship_py` term-for-term
-    in float32, so the two agree to the bit whatever the traversal order, and
+    The combine expressions mirror the ``tests/oracle/pair_kinship.py``
+    recurrence term-for-term in float32, so the two agree to the bit whatever the traversal order, and
     a reused entry is the bit a cold walk would store.
     """
     half = np.float32(0.5)
@@ -541,7 +481,7 @@ def pairwise_kinship(
 ) -> np.ndarray:
     """Pedigree-expected kinship per requested pair (numba production path).
 
-    Same recurrence and bits as :func:`_pairwise_kinship_py`, iterative and
+    Same recurrence and bits as ``tests/oracle/pair_kinship.py``, iterative and
     memoized in a nopython kernel so it scales to large pedigrees.  Every array
     is in the graph's stable depth-major order
     (``PedigreeGraph._topological_parents`` and ``Topology.translate``), where

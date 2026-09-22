@@ -7,10 +7,10 @@ import pandas as pd
 import polars as pl
 import pytest
 from conftest import kernel_inputs
+from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph, PedigreeValidationError, PedigreeView
 from pedigree_graph._kinship_pairwise import (
-    _pairwise_kinship_py,
     _pairwise_kinship_with_stats,
     pairwise_kinship,
 )
@@ -1352,7 +1352,7 @@ class TestPairKinship:
 
 
 # ---------------------------------------------------------------------------
-# Direct pairwise-kinship recurrence (_pairwise_kinship_py) vs matrix oracle
+# Direct pairwise-kinship recurrence (``oracle.pair_kinship``) vs matrix oracle
 # ---------------------------------------------------------------------------
 
 
@@ -1364,7 +1364,7 @@ def _oracle_all_pairs(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.nda
     """
     K = pg.kinship_matrix().toarray()
     ii, jj = np.triu_indices(pg.n_individuals)
-    got = _pairwise_kinship_py(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
+    got = oracle_pair_kinship(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
     exp = K[ii, jj]
     return got, exp, ii, jj
 
@@ -1507,7 +1507,7 @@ def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pl.DataFr
 
 
 class TestPairwiseKinshipReference:
-    """`_pairwise_kinship_py` must equal `kinship_matrix()` on every pair.
+    """the pure-Python oracle must equal `kinship_matrix()` on every pair.
 
     The matrix DP implements the same pinned recurrence (ADR 0009), so parity
     is bit-exact.  These cover the cases a nominal lookup gets wrong (multiple
@@ -1522,7 +1522,7 @@ class TestPairwiseKinshipReference:
     _sib_mating = staticmethod(_ped_sib_mating)
 
     def _phi(self, pg, a, b):
-        return _pairwise_kinship_py(
+        return oracle_pair_kinship(
             pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, np.array([a]), np.array([b])
         )[0]
 
@@ -1576,10 +1576,10 @@ class TestPairwiseKinshipReference:
         # phi is symmetric; reversed input order must give the same value and
         # not reorder the output.
         pg = PedigreeGraph.from_frame(self._sib_mating())
-        fwd = _pairwise_kinship_py(
+        fwd = oracle_pair_kinship(
             pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, np.array([2, 4]), np.array([4, 2])
         )
-        rev = _pairwise_kinship_py(
+        rev = oracle_pair_kinship(
             pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, np.array([4, 2]), np.array([2, 4])
         )
         np.testing.assert_array_equal(fwd, rev[::-1])
@@ -1593,7 +1593,7 @@ class TestPairwiseKinshipReference:
     def test_empty_input_returns_empty_float32(self):
         pg = PedigreeGraph.from_frame(self._sib_mating())
         empty = np.array([], dtype=np.int64)
-        out = _pairwise_kinship_py(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, empty, empty)
+        out = oracle_pair_kinship(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, empty, empty)
         assert out.dtype == np.float32
         assert out.shape == (0,)
 
@@ -1603,7 +1603,7 @@ class TestPairwiseKinshipNumba:
 
     Both compute float32 with the same IEEE ops in the same peel order, so
     they agree to the last bit regardless of traversal order, making
-    `_pairwise_kinship_py` a true bit oracle.  The matrix implements the same
+    the pure-Python oracle a true bit oracle.  The matrix implements the same
     recurrence, so parity with it is bit-exact too (ADR 0009).
     """
 
@@ -1611,7 +1611,7 @@ class TestPairwiseKinshipNumba:
     def test_numba_bit_exact_vs_python(self, build):
         pg = PedigreeGraph.from_frame(build())
         ii, jj = np.triu_indices(pg.n_individuals)
-        py = _pairwise_kinship_py(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
+        py = oracle_pair_kinship(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
         nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
         assert nb.dtype == np.float32
         np.testing.assert_array_equal(nb, py)
@@ -1633,7 +1633,7 @@ class TestPairwiseKinshipNumba:
                 continue
             K = pg.kinship_matrix().toarray()
             ii, jj = np.triu_indices(pg.n_individuals)
-            py = _pairwise_kinship_py(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
+            py = oracle_pair_kinship(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
             nb = pairwise_kinship(*kernel_inputs(pg, ii, jj))
             np.testing.assert_array_equal(nb, py)
             np.testing.assert_array_equal(nb, K[ii, jj])
