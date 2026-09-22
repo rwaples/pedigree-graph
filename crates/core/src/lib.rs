@@ -5,7 +5,8 @@
 //! fifth degree one individual at a time so that peak memory is linear in the
 //! pedigree size (issue #11).
 //!
-//! Alongside it live native construction ([`graph`]), the stable depth-major
+//! Alongside it live the pairwise kinship recurrence ([`kinship`]), native
+//! construction ([`graph`]), the stable depth-major
 //! topological order every order-dependent kernel sweeps in ([`topology`]),
 //! and the structured error enum each host maps onto its own exception
 //! classes ([`error`]).
@@ -15,6 +16,7 @@
 pub mod alloc;
 pub mod error;
 pub mod graph;
+pub mod kinship;
 pub mod pool;
 pub mod relationships;
 pub mod topology;

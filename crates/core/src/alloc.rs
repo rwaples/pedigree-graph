@@ -36,10 +36,16 @@ pub enum Family {
     /// The view projection's scratch: the map's permutation check, and the
     /// packed keys a view block is sorted through.
     ViewSortScratch,
+    /// The pairwise-kinship memo: the flat table or a row's table.
+    KinshipMemo,
+    /// The pairwise-kinship work stack.
+    KinshipStack,
+    /// The pairwise-kinship output, per pair or per support entry.
+    KinshipOutput,
 }
 
 impl Family {
-    pub const ALL: [Family; 9] = [
+    pub const ALL: [Family; 12] = [
         Family::ParentEdges,
         Family::Csr,
         Family::SiblingIndex,
@@ -49,6 +55,9 @@ impl Family {
         Family::TaskTable,
         Family::PairBlock,
         Family::ViewSortScratch,
+        Family::KinshipMemo,
+        Family::KinshipStack,
+        Family::KinshipOutput,
     ];
 
     /// The `operation` field of the error.
@@ -63,6 +72,9 @@ impl Family {
             Family::TaskTable => "task_table",
             Family::PairBlock => "pair_block",
             Family::ViewSortScratch => "view_sort_scratch",
+            Family::KinshipMemo => "kinship_memo",
+            Family::KinshipStack => "kinship_stack",
+            Family::KinshipOutput => "kinship_output",
         }
     }
 

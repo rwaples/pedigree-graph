@@ -22,7 +22,7 @@ pub(super) fn pedigree(parents: &[(i32, i32)], twins: &[(usize, usize)]) -> Pedi
 /// A random overlapping-generation pedigree of `n` rows: each row after the
 /// first twenty takes two distinct parents from the preceding sixty rows,
 /// with a few MZ twin pairs and a few parents outside the pedigree.
-pub(super) fn random_pedigree(n: usize, seed: u64) -> PedigreeColumns {
+pub(crate) fn random_pedigree(n: usize, seed: u64) -> PedigreeColumns {
     let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
     let mut next = move || {
         state ^= state << 13;

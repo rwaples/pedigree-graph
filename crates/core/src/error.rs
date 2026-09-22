@@ -214,7 +214,18 @@ pub enum Error {
         /// The highest supported degree.
         maximum: i64,
     },
-    /// The caller named a sex encoding the API does not define.
+    /// A kinship support column's row indices are not strictly increasing.
+    KinshipSupportUnsorted {
+        /// The offending column.
+        column: usize,
+    },
+    /// An upper entry of a kinship support has no mirror in its row's column.
+    KinshipSupportAsymmetric {
+        /// The entry's row.
+        row: usize,
+        /// The entry's column.
+        column: usize,
+    },
     /// The graph-to-view map is not a partial permutation of view rows.
     InvalidViewMap {
         /// The graph row carrying the offending entry.
@@ -224,6 +235,7 @@ pub enum Error {
         /// Why it is rejected.
         reason: &'static str,
     },
+    /// The caller named a sex encoding the API does not define.
     UnknownSexEncoding {
         /// The name as given.
         name: String,
@@ -244,7 +256,9 @@ impl Error {
             | Error::MzParentMismatch { .. }
             | Error::MzSexMismatch { .. }
             | Error::BirthYearTopology { .. }
-            | Error::MaxDegreeOutOfRange { .. } => ErrorClass::Validation,
+            | Error::MaxDegreeOutOfRange { .. }
+            | Error::KinshipSupportUnsorted { .. }
+            | Error::KinshipSupportAsymmetric { .. } => ErrorClass::Validation,
             Error::PedigreeTooLarge { .. } => ErrorClass::Resource,
             Error::AllocationFailed { .. } => ErrorClass::Resource,
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => {
@@ -273,6 +287,8 @@ impl Error {
             Error::AllocationFailed { .. } => "allocation_failed",
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => "",
             Error::MaxDegreeOutOfRange { .. } => "max_degree_out_of_range",
+            Error::KinshipSupportUnsorted { .. } => "kinship_support_unsorted",
+            Error::KinshipSupportAsymmetric { .. } => "kinship_support_asymmetric",
             Error::InvalidViewMap { .. } | Error::UnknownSexEncoding { .. } => "",
         }
     }
@@ -407,6 +423,10 @@ impl Error {
                 ("minimum", Int(*minimum)),
                 ("maximum", Int(*maximum)),
             ],
+            Error::KinshipSupportUnsorted { column } => vec![("column", int(*column))],
+            Error::KinshipSupportAsymmetric { row, column } => {
+                vec![("row", int(*row)), ("column", int(*column))]
+            }
             Error::UnknownSexEncoding { .. } => Vec::new(),
         }
     }
@@ -574,6 +594,14 @@ impl std::fmt::Display for Error {
             } => write!(
                 f,
                 "max_degree must be in [{minimum}, {maximum}], got {value}"
+            ),
+            Error::KinshipSupportUnsorted { column } => write!(
+                f,
+                "kinship support column {column} is not sorted by row"
+            ),
+            Error::KinshipSupportAsymmetric { row, column } => write!(
+                f,
+                "kinship support entry ({row}, {column}) has no mirror at ({column}, {row})"
             ),
             Error::UnknownSexEncoding { name } => write!(
                 f,

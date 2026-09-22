@@ -8,7 +8,7 @@ mod pairs;
 mod sets;
 mod sibling_index;
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 
 pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
 pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};
@@ -132,7 +132,11 @@ impl<'a> Pedigree<'a> {
     }
 }
 
-fn check_column_length(field: &'static str, actual_length: usize, n: usize) -> Result<(), Error> {
+pub(crate) fn check_column_length(
+    field: &'static str,
+    actual_length: usize,
+    n: usize,
+) -> Result<(), Error> {
     if actual_length != n {
         return Err(Error::LengthMismatch {
             field,
@@ -143,7 +147,7 @@ fn check_column_length(field: &'static str, actual_length: usize, n: usize) -> R
     Ok(())
 }
 
-fn check_row_range(field: &'static str, rows: &[i32], n: usize) -> Result<(), Error> {
+pub(crate) fn check_row_range(field: &'static str, rows: &[i32], n: usize) -> Result<(), Error> {
     let maximum = n as i64 - 1;
     if let Some(position) = rows
         .iter()
