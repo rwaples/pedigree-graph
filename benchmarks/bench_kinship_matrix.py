@@ -37,31 +37,22 @@ from typing import TYPE_CHECKING
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _harness import (
+    WHEEL_INTERPRETER,
     Arm,
     Fixture,
     Gate,
     Measurement,
     RunOrder,
     Suite,
-    file_fixture,
     main,
     parity_fixture,
+    study_fixture,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 THRESHOLD = 0.001
-
-UMBRELLA = Path(__file__).resolve().parent.parent.parent.parent
-WHEEL_INTERPRETER = UMBRELLA / ".pixi" / "envs" / "default" / "bin" / "python"
-
-STUDY = {
-    "dev_mean_n10k": ("results/dev/dev_mean_n10k/rep1/pedigree.parquet", "`dev_mean_n10k/rep1` (20,400 rows)"),
-    "dev_cont_n10k": ("results/dev/dev_cont_n10k/rep1/pedigree.parquet", "`dev_cont_n10k/rep1` (20,400 rows)"),
-    "baseline10K": ("results/base/baseline10K/rep1/pedigree.parquet", "`baseline10K/rep1` (53,466 rows)"),
-    "baseline100K": ("results/base/baseline100K/rep1/pedigree.parquet", "`baseline100K/rep1` (536,036 rows)"),
-}
 
 
 @dataclass(frozen=True)
@@ -136,7 +127,7 @@ def _run(subject, _payload) -> Measurement:
 _BASES = {
     "random_1k": parity_fixture("random_1k", label="`random_1k`"),
     "random_30k": parity_fixture("random_30k", label="`random_30k`"),
-    **{name: file_fixture(name, UMBRELLA / rel, label=label) for name, (rel, label) in STUDY.items()},
+    **{name: study_fixture(name) for name in ("dev_mean_n10k", "dev_cont_n10k", "baseline10K", "baseline100K")},
 }
 
 _CELLS = (

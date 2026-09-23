@@ -1,0 +1,1891 @@
+schema:
+  name: simace_report
+  version: 2
+replicate:
+  folder: test
+  scenario: small_test
+  rep: 1
+  seed: 12042
+inputs:
+  parameters:
+    A1: 0.5
+    A2: 0.4
+    C1: 0.0
+    C2: 0.2
+    E1: 0.5
+    E2: 0.4
+    G_ped: 6
+    G_sim: 8
+    N: 1000
+    assort1: 0
+    assort2: 0
+    mating_lambda: 0.5
+    mating_model: standard
+    max_degree: 3
+    p_mztwin: 0.02
+    rA: 0.0
+    rC: 0.0
+    rE: 0.0
+    rep: 1
+    seed: 12042
+    simace_version: 2026.9.1
+    skip_ne_coancestry: true
+  trait_model:
+    trait1:
+      A: 0.5
+      C: 0.0
+      E: 0.5
+    trait2:
+      A: 0.4
+      C: 0.2
+      E: 0.4
+  ascertainment:
+    dropout_rate: null
+    case_ascertainment_ratio: 1
+    N_sample: null
+scopes:
+  recorded_pedigree:
+    source: pedigree.full.parquet
+    n_individuals: 6000
+    n_generations: 6
+  phenotyped_population:
+    source: trait.full.parquet
+    n_individuals: 3000
+    n_generations: 1
+  analysis_sample:
+    source: trait.parquet
+    n_individuals: 3000
+    n_generations: 3
+  analysis_pedigree:
+    source: pedigree.parquet
+    n_individuals: 5312
+    n_generations: 6
+    ancestor_closure_ratio: 1.7706666666666666
+quality_checks:
+  summary:
+    passed: true
+    n_passed: 40
+    n_failed: 0
+    n_warn: 0
+  checks:
+  - id: structural.id_integrity
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 6000
+    expected: 6000
+    tolerance: null
+    message: Expected 6000 contiguous IDs, found 6000 individuals
+  - id: structural.parent_references
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'Mothers valid: True, Fathers valid: True, No self-parenting: True'
+  - id: structural.sex_parent_consistency
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'Mothers female: True, Fathers male: True'
+  - id: structural.sex_distribution
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.499
+    expected: null
+    tolerance: null
+    message: 'Male ratio: 0.499 (expected ~0.5)'
+  - id: twins.twin_bidirectional
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'All 64 twin references are bidirectional: True'
+  - id: twins.twin_same_parents
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'All 32 twin pairs share parents: True'
+  - id: twins.twin_same_A1
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'All MZ twin pairs have identical A1 values: True'
+  - id: twins.twin_same_A2
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'All MZ twin pairs have identical A2 values: True'
+  - id: twins.twin_same_sex
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'All MZ twin pairs have same sex: True'
+  - id: twins.twin_rate
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.0096
+    expected: 0.02
+    tolerance: null
+    message: 'Twin rate in non-founders: 0.0096 (p_mztwin=0.0200, tol: 0.0600)'
+  - id: half_sibs.half_sib_A1_correlation
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.2570824063547326
+    expected: 0.25
+    tolerance: null
+    message: 'Half-sib (pooled MHS+PHS) A1 correlation: 0.2571 (expected: 0.2500,
+      tol: 0.0580)'
+  - id: half_sibs.half_sib_A2_correlation
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.2618257491318944
+    expected: 0.25
+    tolerance: null
+    message: 'Half-sib (pooled MHS+PHS) A2 correlation: 0.2618 (expected: 0.2500,
+      tol: 0.0580)'
+  - id: half_sibs.half_sib_shared_C1
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: .nan
+    expected: 0.0
+    tolerance: null
+    message: 'PHS shared C1 correlation: nan (expected: ~0, tol: 0.0926)'
+  - id: half_sibs.half_sib_shared_C2
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.040074402043494564
+    expected: 0.0
+    tolerance: null
+    message: 'PHS shared C2 correlation: 0.0401 (expected: ~0, tol: 0.0926)'
+  - id: statistical.variance_A1
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.5172418359369056
+    expected: 0.5
+    tolerance: null
+    message: 'Var(A1) in founders: 0.5172 (expected: 0.5)'
+  - id: statistical.variance_C1
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.0
+    expected: 0.0
+    tolerance: null
+    message: 'Var(C1) in founders: 0.0000 (expected: 0.0)'
+  - id: statistical.variance_E1
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.5420526410589441
+    expected: 0.5
+    tolerance: null
+    message: 'Var(E1) in founders: 0.5421 (expected: 0.5)'
+  - id: statistical.variance_A2
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.4183393463665322
+    expected: 0.4
+    tolerance: null
+    message: 'Var(A2) in founders: 0.4183 (expected: 0.4)'
+  - id: statistical.variance_C2
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.18797938701197384
+    expected: 0.2
+    tolerance: null
+    message: 'Var(C2) in founders: 0.1880 (expected: 0.2)'
+  - id: statistical.variance_E2
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.3864075175430595
+    expected: 0.4
+    tolerance: null
+    message: 'Var(E2) in founders: 0.3864 (expected: 0.4)'
+  - id: statistical.total_variance_trait1
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 1.0592944769958499
+    expected: 1.0
+    tolerance: null
+    message: 'Total variance trait 1: 1.0593 (expected: 1.0)'
+  - id: statistical.total_variance_trait2
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.9927262509215655
+    expected: 1.0
+    tolerance: null
+    message: 'Total variance trait 2: 0.9927 (expected: 1.0)'
+  - id: statistical.cross_trait_rA
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: -0.02209369876920719
+    expected: 0.0
+    tolerance: null
+    message: 'Cross-trait A correlation: -0.0221 (expected: 0.0)'
+  - id: statistical.cross_trait_rC
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: .nan
+    expected: 0.0
+    tolerance: null
+    message: 'Cross-trait C correlation: nan (expected: 0.0)'
+  - id: statistical.cross_trait_rE
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.004849690880849529
+    expected: 0.0
+    tolerance: null
+    message: 'Cross-trait E correlation: 0.0048 (expected: 0.0)'
+  - id: statistical.c1_inheritance
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'Proportion of families with shared C1: 1.0000'
+  - id: statistical.c2_inheritance
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: null
+    expected: null
+    tolerance: null
+    message: 'Proportion of families with shared C2: 1.0000'
+  - id: statistical.e1_independence
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: -0.006101407799725435
+    expected: null
+    tolerance: null
+    message: 'E1 correlation between siblings: -0.0061 (expected: ~0)'
+  - id: heritability.mz_twin_A1_correlation
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 1.0
+    expected: 1.0
+    tolerance: null
+    message: 'MZ twin A1 correlation: 1.0000 (expected: 1.0)'
+  - id: heritability.mz_twin_A2_correlation
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 1.0
+    expected: 1.0
+    tolerance: null
+    message: 'MZ twin A2 correlation: 1.0000 (expected: 1.0)'
+  - id: heritability.dz_sibling_A1_correlation
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.4633171038792718
+    expected: 0.5
+    tolerance: null
+    message: 'DZ sibling A1 correlation: 0.4633 (expected: ~0.5000, tol: 0.0500)'
+  - id: heritability.dz_sibling_A2_correlation
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.5415399882599125
+    expected: 0.5
+    tolerance: null
+    message: 'DZ sibling A2 correlation: 0.5415 (expected: ~0.5000, tol: 0.0500)'
+  - id: heritability.falconer_estimate_trait1
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.7060151889202817
+    expected: 0.5
+    tolerance: null
+    message: "Falconer h\xB2\u2081 = 2(r_MZ - r_DZ) = 0.7060 (expected ~0.5, tol:\
+      \ 0.9769)"
+  - id: heritability.falconer_estimate_trait2
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.5861960042529477
+    expected: 0.4
+    tolerance: null
+    message: "Falconer h\xB2\u2082 = 2(r_MZ - r_DZ) = 0.5862 (expected ~0.4, tol:\
+      \ 0.7703)"
+  - id: population.generation_sizes
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed:
+    - 1000
+    - 1000
+    - 1000
+    - 1000
+    - 1000
+    - 1000
+    expected: 1000
+    tolerance: null
+    message: 'Generation sizes: [1000, 1000, 1000, 1000, 1000, 1000] (expected: 1000
+      each)'
+  - id: population.generation_count
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 6
+    expected: 6
+    tolerance: null
+    message: 'Number of generations: 6 (expected: 6)'
+  - id: population.family_size
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 2.4813895781637716
+    expected: 2.0
+    tolerance: null
+    message: 'Mean offspring per mother: 2.48 (expected: ~2.0)'
+  - id: assortative_mating.mate_corr_liability1
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.0058898244213669276
+    expected: 0.0
+    tolerance: null
+    message: 'Mate correlation liability1: 0.0059 (expected: 0, tol: 0.1000)'
+  - id: assortative_mating.mate_corr_liability2
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 0.007382834876417993
+    expected: 0.0
+    tolerance: null
+    message: 'Mate correlation liability2: 0.0074 (expected: 0, tol: 0.1000)'
+  - id: consanguineous_matings.grandparent_reconciliation
+    scope: recorded_pedigree
+    severity: error
+    status: pass
+    observed: 15958
+    expected: 16000
+    tolerance: null
+    message: 'Grandparent links: expected=16000, observed=15958, explained_missing=42,
+      actual_missing=42'
+truth:
+  recorded_pedigree:
+    population:
+      generation_sizes:
+      - 1000
+      - 1000
+      - 1000
+      - 1000
+      - 1000
+      - 1000
+      n_generations: 6
+      sex_ratio_male: 0.499
+    traits:
+      trait1:
+        configured:
+          A: 0.5
+          C: 0.0
+          E: 0.5
+        realized:
+          var_A: 0.5172418359369056
+          var_C: 0.0
+          var_E: 0.5420526410589441
+          var_liability: 1.0592944769958499
+          h2_liability: 0.48828899533564935
+        realized_by_generation:
+          generation_1:
+            n: 1000
+            var_A: 0.5167245864868164
+            var_C: 0.0
+            var_E: 0.5415106415748596
+            var_liability: 1.0619701147079468
+            cov_A_non_genetic: 0.0018674531020224094
+            cov_A_C: 0.0
+            cov_A_E: 0.0018674531020224094
+          generation_2:
+            n: 1000
+            var_A: 0.478333443403244
+            var_C: 0.0
+            var_E: 0.5012861490249634
+            var_liability: 0.97330641746521
+            cov_A_non_genetic: -0.00315657421015203
+            cov_A_C: 0.0
+            cov_A_E: -0.00315657421015203
+          generation_3:
+            n: 1000
+            var_A: 0.43223845958709717
+            var_C: 0.0
+            var_E: 0.5394605994224548
+            var_liability: 1.0076539516448975
+            cov_A_non_genetic: 0.01797742210328579
+            cov_A_C: 0.0
+            cov_A_E: 0.01797742210328579
+          generation_4:
+            n: 1000
+            var_A: 0.47732946276664734
+            var_C: 0.0
+            var_E: 0.5071777701377869
+            var_liability: 0.9999018311500549
+            cov_A_non_genetic: 0.007697294466197491
+            cov_A_C: 0.0
+            cov_A_E: 0.007697294466197491
+          generation_5:
+            n: 1000
+            var_A: 0.4614947438240051
+            var_C: 0.0
+            var_E: 0.510099470615387
+            var_liability: 0.9786961674690247
+            cov_A_non_genetic: 0.003550951834768057
+            cov_A_C: 0.0
+            cov_A_E: 0.003550951834768057
+          generation_6:
+            n: 1000
+            var_A: 0.4838167726993561
+            var_C: 0.0
+            var_E: 0.520396888256073
+            var_liability: 0.9658015370368958
+            cov_A_non_genetic: -0.019206039607524872
+            cov_A_C: 0.0
+            cov_A_E: -0.019206039607524872
+      trait2:
+        configured:
+          A: 0.4
+          C: 0.2
+          E: 0.4
+        realized:
+          var_A: 0.4183393463665322
+          var_C: 0.18797938701197384
+          var_E: 0.3864075175430595
+          var_liability: 0.9927262509215655
+          h2_liability: 0.4214045372308633
+        realized_by_generation:
+          generation_1:
+            n: 1000
+            var_A: 0.4179210066795349
+            var_C: 0.18779140710830688
+            var_E: 0.38602110743522644
+            var_liability: 1.0328999757766724
+            cov_A_non_genetic: 0.024961180984973907
+            cov_A_C: 0.01620887778699398
+            cov_A_E: 0.008752304129302502
+          generation_2:
+            n: 1000
+            var_A: 0.434087872505188
+            var_C: 0.18117663264274597
+            var_E: 0.40703582763671875
+            var_liability: 1.0393214225769043
+            cov_A_non_genetic: 0.013285079039633274
+            cov_A_C: -0.0032972695771604776
+            cov_A_E: 0.01658235304057598
+          generation_3:
+            n: 1000
+            var_A: 0.415548175573349
+            var_C: 0.20941396057605743
+            var_E: 0.4018648564815521
+            var_liability: 0.9747782945632935
+            cov_A_non_genetic: -0.010816569440066814
+            cov_A_C: -0.017937229946255684
+            cov_A_E: 0.007120657712221146
+          generation_4:
+            n: 1000
+            var_A: 0.41270604729652405
+            var_C: 0.19822441041469574
+            var_E: 0.41513097286224365
+            var_liability: 0.9423024654388428
+            cov_A_non_genetic: -0.021443260833621025
+            cov_A_C: -0.007856933400034904
+            cov_A_E: -0.013586328364908695
+          generation_5:
+            n: 1000
+            var_A: 0.4115141034126282
+            var_C: 0.20555417239665985
+            var_E: 0.40444710850715637
+            var_liability: 0.9900931119918823
+            cov_A_non_genetic: -0.014401406981050968
+            cov_A_C: -0.002992260502651334
+            cov_A_E: -0.011409145779907703
+          generation_6:
+            n: 1000
+            var_A: 0.44120675325393677
+            var_C: 0.23241189122200012
+            var_E: 0.40973007678985596
+            var_liability: 1.0631674528121948
+            cov_A_non_genetic: -0.01574849896132946
+            cov_A_C: -0.015184735879302025
+            cov_A_E: -0.0005637669819407165
+    family_structure:
+      twin_rate:
+        observed: 0.0096
+        expected: 0.02
+      half_sibs:
+        pair_proportion: 0.3713872832369942
+        offspring_with_half_sib: 0.4090379687863965
+        trait1:
+          A_corr: 0.2570824063547326
+          liability_corr: 0.07259662645518489
+          shared_C: .nan
+        trait2:
+          A_corr: 0.2618257491318944
+          liability_corr: 0.060122492203368176
+          shared_C: 0.040074402043494564
+      consanguineous_matings:
+        n_half_sib_matings: 5
+        n_full_sib_matings: 8
+        total_missing_gp_links: 42
+        grandparent_reconciliation_passed: true
+      offspring_distribution:
+        mother:
+          mean: 2.4813895781637716
+          median: 2.0
+          std: 1.6199249846518438
+          n_parents: 2015
+        father:
+          mean: 2.4354603019970775
+          median: 2.0
+          std: 1.4993010863634009
+          n_parents: 2053
+    cross_trait:
+      rA: -0.02209369876920719
+      rC: .nan
+      rE: 0.004849690880849529
+    assortative_mating:
+      mate_corr_liability1: 0.0058898244213669276
+      mate_corr_liability2: 0.007382834876417993
+      mate_corr_A1: -0.006281353883218004
+      mate_corr_A2: -0.004603737572031719
+observed:
+  ascertainment:
+    retained_fraction: 1.0
+    trait_enrichment:
+      trait1:
+        affected_fraction_before: 0.07233333333333333
+        affected_fraction_after: 0.07233333333333333
+        enrichment_ratio: 1.0
+      trait2:
+        affected_fraction_before: 0.181
+        affected_fraction_after: 0.181
+        enrichment_ratio: 1.0
+  phenotyped_population:
+    prevalence:
+      trait1: 0.07233333333333333
+      trait2: 0.181
+      by_generation:
+        3:
+          trait1: 0.052
+          trait2: 0.111
+        4:
+          trait1: 0.103
+          trait2: 0.273
+        5:
+          trait1: 0.062
+          trait2: 0.159
+  analysis_sample:
+    prevalence:
+      trait1: 0.07233333333333333
+      trait2: 0.181
+      by_generation:
+        3:
+          trait1: 0.052
+          trait2: 0.111
+        4:
+          trait1: 0.103
+          trait2: 0.273
+        5:
+          trait1: 0.062
+          trait2: 0.159
+    mortality:
+      decade_labels:
+      - 0-9
+      - 10-19
+      - 20-29
+      - 30-39
+      - 40-49
+      - 50-59
+      - 60-69
+      - 70-79
+      rates:
+      - 0.001
+      - 0.00333667000333667
+      - 0.008034817542684968
+      - 0.009449881876476544
+      - 0.018739352640545145
+      - 0.02847222222222222
+      - 0.03323802716225876
+      - 0.04325323475046211
+    regression:
+      trait1:
+        slope: -0.6567396763619364
+        intercept: 36.82330649754627
+        r: -0.02713579542719212
+        r2: 0.0007363513934664207
+        stderr: 1.6499527695647527
+        pvalue: 0.6909452553047952
+        n: 217
+      trait2:
+        slope: -9.04064483220954
+        intercept: 44.31084589204984
+        r: -0.3321739884101977
+        r2: 0.11033955857633815
+        stderr: 1.1036904748068743
+        pvalue: 2.667055761620692e-16
+        n: 543
+    cumulative_incidence:
+      trait1:
+        half_target_age: 34.9748743718593
+      trait2:
+        half_target_age: 34.572864321608044
+    cumulative_incidence_by_sex:
+      trait1:
+        female:
+          n: 1529
+          prevalence: 0.07913669064748201
+        male:
+          n: 1471
+          prevalence: 0.06526172671651938
+      trait2:
+        female:
+          n: 1529
+          prevalence: 0.17854807063440156
+        male:
+          n: 1471
+          prevalence: 0.18354860639021073
+    cumulative_incidence_by_sex_generation:
+      trait1:
+        gen3:
+          female:
+            n: 510
+            prevalence: 0.056862745098039215
+          male:
+            n: 490
+            prevalence: 0.04693877551020408
+        gen4:
+          female:
+            n: 509
+            prevalence: 0.11198428290766209
+          male:
+            n: 491
+            prevalence: 0.09368635437881874
+        gen5:
+          female:
+            n: 510
+            prevalence: 0.06862745098039216
+          male:
+            n: 490
+            prevalence: 0.05510204081632653
+      trait2:
+        gen3:
+          female:
+            n: 510
+            prevalence: 0.11764705882352941
+          male:
+            n: 490
+            prevalence: 0.10408163265306122
+        gen4:
+          female:
+            n: 509
+            prevalence: 0.2691552062868369
+          male:
+            n: 491
+            prevalence: 0.2769857433808554
+        gen5:
+          female:
+            n: 510
+            prevalence: 0.14901960784313725
+          male:
+            n: 490
+            prevalence: 0.16938775510204082
+    cumulative_incidence_aj:
+      trait1:
+        n: 2978
+        n_events_disease: 217
+        n_events_death: 245
+        half_target_age: 34.572864321608044
+      trait2:
+        n: 2978
+        n_events_disease: 543
+        n_events_death: 224
+        half_target_age: 32.96482412060302
+    cumulative_incidence_aj_by_sex:
+      trait1:
+        female:
+          n: 1529
+          n_events_disease: 121
+          n_events_death: 115
+          prevalence: 0.07913669064748201
+        male:
+          n: 1471
+          n_events_disease: 96
+          n_events_death: 130
+          prevalence: 0.06526172671651938
+      trait2:
+        female:
+          n: 1529
+          n_events_disease: 273
+          n_events_death: 109
+          prevalence: 0.17854807063440156
+        male:
+          n: 1471
+          n_events_disease: 270
+          n_events_death: 115
+          prevalence: 0.18354860639021073
+    cumulative_incidence_aj_by_sex_generation:
+      trait1:
+        gen3:
+          female:
+            n: 510
+            n_events_disease: 29
+            n_events_death: 40
+            prevalence: 0.056862745098039215
+          male:
+            n: 490
+            n_events_disease: 23
+            n_events_death: 59
+            prevalence: 0.04693877551020408
+        gen4:
+          female:
+            n: 509
+            n_events_disease: 57
+            n_events_death: 66
+            prevalence: 0.11198428290766209
+          male:
+            n: 491
+            n_events_disease: 46
+            n_events_death: 56
+            prevalence: 0.09368635437881874
+        gen5:
+          female:
+            n: 510
+            n_events_disease: 35
+            n_events_death: 9
+            prevalence: 0.06862745098039216
+          male:
+            n: 490
+            n_events_disease: 27
+            n_events_death: 15
+            prevalence: 0.05510204081632653
+      trait2:
+        gen3:
+          female:
+            n: 510
+            n_events_disease: 60
+            n_events_death: 42
+            prevalence: 0.11764705882352941
+          male:
+            n: 490
+            n_events_disease: 51
+            n_events_death: 49
+            prevalence: 0.10408163265306122
+        gen4:
+          female:
+            n: 509
+            n_events_disease: 137
+            n_events_death: 56
+            prevalence: 0.2691552062868369
+          male:
+            n: 491
+            n_events_disease: 136
+            n_events_death: 54
+            prevalence: 0.2769857433808554
+        gen5:
+          female:
+            n: 510
+            n_events_disease: 76
+            n_events_death: 11
+            prevalence: 0.14901960784313725
+          male:
+            n: 490
+            n_events_disease: 83
+            n_events_death: 12
+            prevalence: 0.16938775510204082
+    person_years:
+      total: 158634.5
+      deaths: 269
+      trait1: 149320.0
+      trait2: 135899.0
+    censoring_windows:
+      generations:
+        gen0:
+          n: 0
+        gen1:
+          n: 0
+        gen2:
+          n: 0
+        gen3:
+          n: 1000
+          trait1:
+            pct_affected: 0.052
+            left_censored: 0.062
+            right_censored: 0.884
+            death_censored: 0.002
+          trait2:
+            pct_affected: 0.111
+            left_censored: 0.134
+            right_censored: 0.752
+            death_censored: 0.003
+        gen4:
+          n: 1000
+          trait1:
+            pct_affected: 0.103
+            left_censored: 0.0
+            right_censored: 0.896
+            death_censored: 0.001
+          trait2:
+            pct_affected: 0.273
+            left_censored: 0.0
+            right_censored: 0.716
+            death_censored: 0.011
+        gen5:
+          n: 1000
+          trait1:
+            pct_affected: 0.062
+            left_censored: 0.0
+            right_censored: 0.938
+            death_censored: 0.0
+          trait2:
+            pct_affected: 0.159
+            left_censored: 0.0
+            right_censored: 0.841
+            death_censored: 0.0
+      censor_age: 80
+    censoring_confusion:
+      trait1:
+        tp: 217
+        fn: 102
+        fp: 0
+        tn: 2681
+        n: 3000
+      trait2:
+        tp: 543
+        fn: 256
+        fp: 0
+        tn: 2201
+        n: 3000
+    censoring_cascade:
+      trait1:
+        gen3:
+          observed: 52
+          death_censored: 2
+          right_censored: 0
+          left_truncated: 62
+          true_affected: 116
+          n_gen: 1000
+          sensitivity: 0.4482758620689655
+          window:
+          - 40
+          - 80
+        gen4:
+          observed: 103
+          death_censored: 1
+          right_censored: 0
+          left_truncated: 0
+          true_affected: 104
+          n_gen: 1000
+          sensitivity: 0.9903846153846154
+          window:
+          - 0
+          - 80
+        gen5:
+          observed: 62
+          death_censored: 0
+          right_censored: 37
+          left_truncated: 0
+          true_affected: 99
+          n_gen: 1000
+          sensitivity: 0.6262626262626263
+          window:
+          - 0
+          - 45
+      trait2:
+        gen3:
+          observed: 111
+          death_censored: 3
+          right_censored: 0
+          left_truncated: 134
+          true_affected: 248
+          n_gen: 1000
+          sensitivity: 0.4475806451612903
+          window:
+          - 40
+          - 80
+        gen4:
+          observed: 273
+          death_censored: 11
+          right_censored: 0
+          left_truncated: 0
+          true_affected: 284
+          n_gen: 1000
+          sensitivity: 0.9612676056338029
+          window:
+          - 0
+          - 80
+        gen5:
+          observed: 159
+          death_censored: 0
+          right_censored: 108
+          left_truncated: 0
+          true_affected: 267
+          n_gen: 1000
+          sensitivity: 0.5955056179775281
+          window:
+          - 0
+          - 45
+    family_size:
+      mean: 2.01
+      median: 2.0
+      q1: 1.0
+      q3: 3.0
+      n_families: 1493
+      frac_with_full_sib: 0.8023
+      size_dist:
+        '1': 0.3972
+        '2': 0.3309
+        '3': 0.1768
+        4+: 0.0951
+      person_offspring_dist:
+        '0': 0.455
+        '1': 0.1783
+        '2': 0.1573
+        '3': 0.1057
+        4+: 0.1037
+      person_offspring_dist_by_sex:
+        female:
+          '0': 0.4696
+          '1': 0.1792
+          '2': 0.1478
+          '3': 0.1046
+          4+: 0.0988
+        male:
+          '0': 0.4398
+          '1': 0.1774
+          '2': 0.1672
+          '3': 0.1067
+          4+: 0.1088
+      mates_by_sex:
+        female_mean: 1.23
+        male_mean: 1.2
+        female_1: 0.8074
+        female_2+: 0.1926
+        male_1: 0.8214
+        male_2+: 0.1786
+    relationship_pair_counts:
+      MZ: 15
+      MO: 2000
+      FO: 2000
+      FS: 2348
+      MHS: 1426
+      PHS: 1010
+      GP: 3982
+      Av: 6197
+      GGP: 0
+      HAv: 6372
+      GAv: 6168
+      1C: 9422
+      GGGP: null
+      HGAv: null
+      GGAv: null
+      H1C: null
+      1C1R: null
+      G3GP: null
+      HGGAv: null
+      G3Av: null
+      H1C1R: null
+      1C2R: null
+      2C: null
+    liability_correlations:
+      trait1:
+        MZ: 0.5910567902174408
+        FS: 0.21800597898888238
+        MO: 0.2565803487580675
+        FO: 0.2601108429812126
+        MHS: 0.1301386347234406
+        PHS: 0.07634690703827379
+        1C: 0.06773098236477701
+      trait2:
+        MZ: 0.855858005056343
+        FS: 0.40278739112589396
+        MO: 0.17607064834668562
+        FO: 0.14341324684797968
+        MHS: 0.43226439860746163
+        PHS: 0.04106746978488101
+        1C: 0.03149216034480469
+    affected_correlations:
+      trait1:
+        MZ: -0.10482848367219182
+        FS: 0.03201033600385846
+        MO: 0.055458962507038294
+        FO: 0.016169223593438874
+        MHS: -0.0016290734025919613
+        PHS: 0.04038461072620845
+        1C: -0.0015065632514022643
+      trait2:
+        MZ: 0.13867504905630723
+        FS: 0.09439971822498659
+        MO: 0.01108434420990583
+        FO: 0.00679459434777457
+        MHS: 0.13100873575492858
+        PHS: 0.02975638510701689
+        1C: 0.04932318675884007
+    parent_offspring_corr:
+      trait1:
+        gen1:
+          r: null
+          r2: null
+          slope: null
+          intercept: null
+          stderr: null
+          pvalue: null
+          n_pairs: 0
+        gen2:
+          r: null
+          r2: null
+          slope: null
+          intercept: null
+          stderr: null
+          pvalue: null
+          n_pairs: 0
+        gen3:
+          r: null
+          r2: null
+          slope: null
+          intercept: null
+          stderr: null
+          pvalue: null
+          n_pairs: 0
+        gen4:
+          r: 0.3770616549062175
+          r2: 0.14217549160061546
+          slope: 0.5261072244546537
+          intercept: -0.02918103454400693
+          stderr: 0.04090683232388038
+          pvalue: 7.767076481592021e-38
+          n_pairs: 1000
+        gen5:
+          r: 0.35104487391446315
+          r2: 0.12323250350162133
+          slope: 0.4754681840863144
+          intercept: -7.795226923259721e-05
+          stderr: 0.04014539873238934
+          pvalue: 2.404765890122465e-32
+          n_pairs: 1000
+      trait2:
+        gen1:
+          r: null
+          r2: null
+          slope: null
+          intercept: null
+          stderr: null
+          pvalue: null
+          n_pairs: 0
+        gen2:
+          r: null
+          r2: null
+          slope: null
+          intercept: null
+          stderr: null
+          pvalue: null
+          n_pairs: 0
+        gen3:
+          r: null
+          r2: null
+          slope: null
+          intercept: null
+          stderr: null
+          pvalue: null
+          n_pairs: 0
+        gen4:
+          r: 0.19165390129920998
+          r2: 0.03673121788320732
+          slope: 0.28521559045878425
+          intercept: -0.0031044070615436053
+          stderr: 0.04623427686091717
+          pvalue: 6.943276676672602e-10
+          n_pairs: 1000
+        gen5:
+          r: 0.2557828928032168
+          r2: 0.0654248882507819
+          slope: 0.3581683439588125
+          intercept: 0.05579836351074256
+          stderr: 0.042850662339711916
+          pvalue: 6.464396878643469e-17
+          n_pairs: 1000
+    parent_offspring_corr_by_sex:
+      female:
+        trait1:
+          gen1:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen2:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen3:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen4:
+            r: 0.42422712258644535
+            r2: 0.17996865153797492
+            slope: 0.5742709734112585
+            intercept: -0.008413830290169049
+            stderr: 0.05444144977498512
+            pvalue: 5.460094382166713e-26
+            n_pairs: 509
+          gen5:
+            r: 0.34059933902209644
+            r2: 0.11600790974228899
+            slope: 0.4594159157454921
+            intercept: -0.015986375247261236
+            stderr: 0.05626710478102598
+            pvalue: 3.3255649260912004e-16
+            n_pairs: 510
+        trait2:
+          gen1:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen2:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen3:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen4:
+            r: 0.2181532433922875
+            r2: 0.04759083760257463
+            slope: 0.3114276557036232
+            intercept: 0.004405228410745268
+            stderr: 0.06187330362108524
+            pvalue: 4.883602182931383e-07
+            n_pairs: 509
+          gen5:
+            r: 0.2721289444564521
+            r2: 0.07405416241098278
+            slope: 0.3805388436542346
+            intercept: 0.05331553376462272
+            stderr: 0.05970149310688744
+            pvalue: 1.8793593680052604e-10
+            n_pairs: 510
+      male:
+        trait1:
+          gen1:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen2:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen3:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen4:
+            r: 0.3260623470033976
+            r2: 0.10631665413336407
+            slope: 0.4698861365440049
+            intercept: -0.05060577639874954
+            stderr: 0.06160690401749363
+            pvalue: 2.4733360765834235e-14
+            n_pairs: 491
+          gen5:
+            r: 0.36156262864333044
+            r2: 0.13072753443147486
+            slope: 0.49162355790194895
+            intercept: 0.016309495681035104
+            stderr: 0.05738748616298422
+            pvalue: 1.105905516271639e-17
+            n_pairs: 490
+        trait2:
+          gen1:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen2:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen3:
+            r: null
+            r2: null
+            slope: null
+            intercept: null
+            stderr: null
+            pvalue: null
+            n_pairs: 0
+          gen4:
+            r: 0.16561169567999878
+            r2: 0.027427233746004528
+            slope: 0.2569549348683304
+            intercept: -0.010497077013385966
+            stderr: 0.06919466029812774
+            pvalue: 0.0002059454367947669
+            n_pairs: 491
+          gen5:
+            r: 0.23946877345428846
+            r2: 0.05734529345970133
+            slope: 0.3358225076804983
+            intercept: 0.0580403469599484
+            stderr: 0.06163498855111859
+            pvalue: 5.157942210043905e-08
+            n_pairs: 490
+    parent_offspring_affected_corr:
+      trait1:
+        r: 0.05086434185496939
+        r2: 0.0025871812723391907
+        slope: 0.07053883923750731
+        intercept: 0.07675108460214315
+        stderr: 0.030985221860976974
+        pvalue: 0.022831240442575902
+        n_pairs: 2000
+      trait2:
+        r: 0.012163987467807284
+        r2: 0.00014796259111697266
+        slope: 0.01749760965789924
+        intercept: 0.2127541934084597
+        stderr: 0.032179025350835166
+        pvalue: 0.5866546872242404
+        n_pairs: 2000
+    tetrachoric:
+      trait1:
+        MZ:
+          r: -0.9509779001571097
+          se: null
+          n_pairs: 15
+        FS:
+          r: 0.1009472194582074
+          se: 0.004650598654038228
+          n_pairs: 2348
+        MO:
+          r: 0.15339126111798074
+          se: 0.005182979763776227
+          n_pairs: 2000
+        FO:
+          r: 0.05248207116678401
+          se: 0.005247463077501168
+          n_pairs: 2000
+        MHS:
+          r: -0.005877913819129583
+          se: 0.006269971754830323
+          n_pairs: 1426
+        PHS:
+          r: 0.1257941400558439
+          se: 0.006918307238497154
+          n_pairs: 1010
+        1C:
+          r: -0.005482176528784993
+          se: 0.0024279095437960137
+          n_pairs: 9422
+      trait2:
+        MZ:
+          r: 0.26700331140560923
+          se: 0.07801349330828518
+          n_pairs: 15
+        FS:
+          r: 0.18772971969455957
+          se: 0.006137866920828534
+          n_pairs: 2348
+        MO:
+          r: 0.022374928407640556
+          se: 0.0072935804449924735
+          n_pairs: 2000
+        FO:
+          r: 0.01385913973156131
+          se: 0.007268516858473569
+          n_pairs: 2000
+        MHS:
+          r: 0.2442480472782403
+          se: 0.007997370773320123
+          n_pairs: 1426
+        PHS:
+          r: 0.0626452335996505
+          se: 0.00975781400212041
+          n_pairs: 1010
+        1C:
+          r: 0.09972537873906753
+          se: 0.0032220210104888175
+          n_pairs: 9422
+    tetrachoric_by_generation:
+      gen3:
+        trait1:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 7
+            liability_r: null
+          FS:
+            r: -0.01634647296963885
+            se: 0.0078217772553781
+            n_pairs: 777
+            liability_r: 0.16633795860390785
+          MO:
+            r: null
+            se: null
+            n_pairs: 0
+            liability_r: null
+          FO:
+            r: null
+            se: null
+            n_pairs: 0
+            liability_r: null
+          MHS:
+            r: -0.055982054077382166
+            se: 0.010156219475323932
+            n_pairs: 485
+            liability_r: 0.1336971801115826
+          PHS:
+            r: 0.18372197565874235
+            se: 0.009549965054157863
+            n_pairs: 306
+            liability_r: 0.11605628203886886
+          1C:
+            r: -0.011683098001732265
+            se: 0.003906860508256425
+            n_pairs: 2990
+            liability_r: 0.05867548328751879
+        trait2:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 7
+            liability_r: null
+          FS:
+            r: -0.18359661083624643
+            se: 0.010339863169011695
+            n_pairs: 777
+            liability_r: 0.3690213867540985
+          MO:
+            r: null
+            se: null
+            n_pairs: 0
+            liability_r: null
+          FO:
+            r: null
+            se: null
+            n_pairs: 0
+            liability_r: null
+          MHS:
+            r: 0.049017977704691504
+            se: 0.012438469321601791
+            n_pairs: 485
+            liability_r: 0.22017751982882275
+          PHS:
+            r: 0.12416263069051559
+            se: 0.01400395575178322
+            n_pairs: 306
+            liability_r: 0.07653833899754649
+          1C:
+            r: 0.007188278340779209
+            se: 0.004987090747261224
+            n_pairs: 2990
+            liability_r: 1.3204566913807139e-05
+      gen4:
+        trait1:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 4
+            liability_r: null
+          FS:
+            r: 0.18235299415851206
+            se: 0.00881059302797964
+            n_pairs: 775
+            liability_r: 0.33686328763222523
+          MO:
+            r: 0.20594179157702253
+            se: 0.006889237681935213
+            n_pairs: 1000
+            liability_r: 0.23040797566413823
+          FO:
+            r: 0.12329323349093455
+            se: 0.0066567734448539214
+            n_pairs: 1000
+            liability_r: 0.2947483578096099
+          MHS:
+            r: -0.21303165251346154
+            se: 0.013760939446523991
+            n_pairs: 433
+            liability_r: 0.12334914313754002
+          PHS:
+            r: 0.10672774633674798
+            se: 0.014527643049900852
+            n_pairs: 332
+            liability_r: 0.07069837855502616
+          1C:
+            r: -0.06628986029458166
+            se: 0.004751190343108299
+            n_pairs: 3178
+            liability_r: 0.07631545145251044
+        trait2:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 4
+            liability_r: null
+          FS:
+            r: 0.19245677768277333
+            se: 0.012062957692780386
+            n_pairs: 775
+            liability_r: 0.37550001749183504
+          MO:
+            r: 0.06514660455785946
+            se: 0.00963492097560131
+            n_pairs: 1000
+            liability_r: 0.1504355387484146
+          FO:
+            r: 0.0442235960645318
+            se: 0.009429897597832452
+            n_pairs: 1000
+            liability_r: 0.11584243618404194
+          MHS:
+            r: 0.18867448842110435
+            se: 0.01653770694525098
+            n_pairs: 433
+            liability_r: 0.48060040165898305
+          PHS:
+            r: 0.029218108274100606
+            se: 0.019233598730950156
+            n_pairs: 332
+            liability_r: 0.03810630119393018
+          1C:
+            r: 0.067781485866538
+            se: 0.006288253672497433
+            n_pairs: 3178
+            liability_r: 0.0608519398248491
+      gen5:
+        trait1:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 4
+            liability_r: null
+          FS:
+            r: -0.11164821306052733
+            se: 0.008717202616256865
+            n_pairs: 796
+            liability_r: 0.1567486296265956
+          MO:
+            r: 0.1595849823379553
+            se: 0.007309447842961035
+            n_pairs: 1000
+            liability_r: 0.2832309304022655
+          FO:
+            r: 0.06605724335180897
+            se: 0.007494520563957803
+            n_pairs: 1000
+            liability_r: 0.22455964748691642
+          MHS:
+            r: 0.21295813952374146
+            se: 0.008650324389838647
+            n_pairs: 508
+            liability_r: 0.1137177589995116
+          PHS:
+            r: -0.03775105262855398
+            se: 0.011720092497200435
+            n_pairs: 372
+            liability_r: 0.03415435591379886
+          1C:
+            r: 0.0428855181504391
+            se: 0.0038287144852482725
+            n_pairs: 3254
+            liability_r: 0.06877107790446797
+        trait2:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 4
+            liability_r: null
+          FS:
+            r: 0.2169206123329113
+            se: 0.01012299369978496
+            n_pairs: 796
+            liability_r: 0.449326184798511
+          MO:
+            r: 0.10747964239538044
+            se: 0.01017328114443222
+            n_pairs: 1000
+            liability_r: 0.20024294962494846
+          FO:
+            r: 0.12256761149408224
+            se: 0.01014901329113436
+            n_pairs: 1000
+            liability_r: 0.16925155016320212
+          MHS:
+            r: 0.2877361279702483
+            se: 0.013312528298655275
+            n_pairs: 508
+            liability_r: 0.503844518303844
+          PHS:
+            r: -0.04981201189241496
+            se: 0.01585747629336233
+            n_pairs: 372
+            liability_r: 0.02108271480805047
+          1C:
+            r: 0.01654690354131991
+            se: 0.005416495507395763
+            n_pairs: 3254
+            liability_r: 0.027973028325870956
+    tetrachoric_by_sex:
+      female:
+        trait1:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 7
+            liability_r: null
+          FS:
+            r: 0.313582497002789
+            se: 0.007856948498764164
+            n_pairs: 596
+            liability_r: 0.220606490383381
+          MO:
+            r: 0.19198011411693316
+            se: 0.007140199985009967
+            n_pairs: 1019
+            liability_r: 0.25858330787846845
+          FO:
+            r: null
+            se: null
+            n_pairs: 0
+            liability_r: null
+          MHS:
+            r: 0.24872098723906746
+            se: 0.009879394705378526
+            n_pairs: 396
+            liability_r: 0.17534988378820737
+          PHS:
+            r: 0.1028164149318527
+            se: 0.015020719486549039
+            n_pairs: 235
+            liability_r: 0.08611575232874528
+          1C:
+            r: 0.009747165140602311
+            se: 0.004924233487916219
+            n_pairs: 2279
+            liability_r: 0.06783421916292816
+        trait2:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 7
+            liability_r: null
+          FS:
+            r: 0.16231999320430024
+            se: 0.012006260176897527
+            n_pairs: 596
+            liability_r: 0.3601121397291176
+          MO:
+            r: -0.017913290879559934
+            se: 0.010355107961198854
+            n_pairs: 1019
+            liability_r: 0.18094621268250077
+          FO:
+            r: null
+            se: null
+            n_pairs: 0
+            liability_r: null
+          MHS:
+            r: 0.35161870674992196
+            se: 0.013541048179794596
+            n_pairs: 396
+            liability_r: 0.4249250071243653
+          PHS:
+            r: -0.10142679443006436
+            se: 0.019877727792582775
+            n_pairs: 235
+            liability_r: 0.11917255767175343
+          1C:
+            r: 0.09719261539116002
+            se: 0.006416594981050753
+            n_pairs: 2279
+            liability_r: 0.015711899485143937
+      male:
+        trait1:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 8
+            liability_r: null
+          FS:
+            r: 0.22074195279136938
+            se: 0.008560385819948361
+            n_pairs: 608
+            liability_r: 0.22849679606377957
+          MO:
+            r: null
+            se: null
+            n_pairs: 0
+            liability_r: null
+          FO:
+            r: -0.028764484928140162
+            se: 0.0075556103138538335
+            n_pairs: 981
+            liability_r: 0.22162444332572634
+          MHS:
+            r: -0.16264933248526792
+            se: 0.015012823551368215
+            n_pairs: 314
+            liability_r: 0.12459092298393867
+          PHS:
+            r: -0.9256601106336468
+            se: null
+            n_pairs: 232
+            liability_r: 0.027708631716872725
+          1C:
+            r: 0.020125022618216058
+            se: 0.004750016827850124
+            n_pairs: 2362
+            liability_r: 0.04922622528235274
+        trait2:
+          MZ:
+            r: null
+            se: null
+            n_pairs: 8
+            liability_r: null
+          FS:
+            r: 0.25534035369872266
+            se: 0.01177265182358435
+            n_pairs: 608
+            liability_r: 0.4588449472994201
+          MO:
+            r: null
+            se: null
+            n_pairs: 0
+            liability_r: null
+          FO:
+            r: -0.03208146375904703
+            se: 0.010433979670649204
+            n_pairs: 981
+            liability_r: 0.1239831996196555
+          MHS:
+            r: 0.1666709792316939
+            se: 0.017613623396490925
+            n_pairs: 314
+            liability_r: 0.5356688321978234
+          PHS:
+            r: 0.32978141903621716
+            se: 0.018693107961866514
+            n_pairs: 232
+            liability_r: -0.012222142960291844
+          1C:
+            r: 0.05000410393950572
+            se: 0.006625806427062603
+            n_pairs: 2362
+            liability_r: 0.007702987041860129
+    cross_trait_tetrachoric:
+      same_person:
+        r: 0.033484510402441214
+        se: 0.004950899962407351
+        n: 3000
+      same_person_by_generation:
+        gen3:
+          r: 0.05765217498426512
+          se: 0.0073996809109365645
+          n: 1000
+        gen4:
+          r: -0.036042205747423096
+          se: 0.009781403866638862
+          n: 1000
+        gen5:
+          r: 0.0047773846810637045
+          se: 0.008288000285180841
+          n: 1000
+      cross_person:
+        MZ:
+          r: 0.998595383312312
+          se: 78.7674764404969
+          n_pairs: 15
+        FS:
+          r: 0.037400071421304096
+          se: 0.005717012551089648
+          n_pairs: 2348
+        MO:
+          r: -0.06466612800687596
+          se: 0.006415229467523134
+          n_pairs: 2000
+        FO:
+          r: -0.06624360715682674
+          se: 0.0063904091918260885
+          n_pairs: 2000
+        MHS:
+          r: 0.13981175607723237
+          se: 0.00700352932914595
+          n_pairs: 1426
+        PHS:
+          r: 0.09259957210729344
+          se: 0.008442826234956617
+          n_pairs: 1010
+        1C:
+          r: -0.02682289511874486
+          se: 0.002863495498233975
+          n_pairs: 9422
+    joint_affection:
+      counts:
+        both: 43
+        trait1_only: 174
+        trait2_only: 500
+        neither: 2283
+      proportions:
+        both: 0.014333333333333333
+        trait1_only: 0.058
+        trait2_only: 0.16666666666666666
+        neither: 0.761
+      n: 3000
+      by_sex:
+        female: 0.017
+        male: 0.0116
+  analysis_pedigree:
+    relationship_pair_counts:
+      MZ: 25
+      MO: 4574
+      FO: 4574
+      FS: 3290
+      MHS: 1960
+      PHS: 1513
+      GP: 15250
+      Av: 10491
+      GGP: 23833
+      HAv: 11125
+      GAv: 15499
+      1C: 11509
+      GGGP: null
+      HGAv: null
+      GGAv: null
+      H1C: null
+      1C1R: null
+      G3GP: null
+      HGGAv: null
+      G3Av: null
+      H1C1R: null
+      1C2R: null
+      2C: null
+    parent_status:
+      phenotyped:
+        '0': 1000
+        '1': 0
+        '2': 2000
+      in_pedigree:
+        '0': 0
+        '1': 0
+        '2': 3000
+    mate_correlation:
+      matrix:
+      - - 0.003628438587930813
+        - 0.016419369922057482
+      - - 0.03102937124342029
+        - 0.001481496342288193
+      n_pairs: 2393
+estimators:
+  heritability:
+    observed_scale:
+      trait1:
+        falconer: -0.27367763935210054
+        sibs: 0.06402067200771693
+        po: 0.07053883923750731
+        hs: 0.07751107464723297
+        cousins: -0.012052506011218114
+      trait2:
+        falconer: 0.08855066166264128
+        sibs: 0.18879943644997318
+        po: 0.01749760965789924
+        hs: 0.32153024172389094
+        cousins: 0.3945854940707206
+    liability_scale:
+      trait1:
+        mz_twin_A_corr: 1.0
+        mz_twin_liability_corr: 0.5704496004515914
+        dz_sibling_A_corr: 0.4633171038792718
+        dz_sibling_liability_corr: 0.2174420059914506
+        falconer: 0.7060151889202817
+        parent_offspring_A_slope: 0.9714935421943665
+        parent_offspring_A_r2: 0.46709752082824707
+        parent_offspring_liability_slope: 0.4730363190174103
+        parent_offspring_liability_r2: 0.11621606349945068
+      trait2:
+        mz_twin_A_corr: 1.0
+        mz_twin_liability_corr: 0.6849659575456908
+        dz_sibling_A_corr: 0.5415399882599125
+        dz_sibling_liability_corr: 0.39186795541921693
+        falconer: 0.5861960042529477
+        parent_offspring_A_slope: 1.0298210382461548
+        parent_offspring_A_r2: 0.5205738544464111
+        parent_offspring_liability_slope: 0.3973958194255829
+        parent_offspring_liability_r2: 0.08040159940719604

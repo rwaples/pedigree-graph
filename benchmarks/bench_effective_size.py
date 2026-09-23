@@ -16,57 +16,20 @@ Ordering is ``GROUPED`` rather than interleaved.  With one arm there is nothing
 to interleave against, and the larger cell runs for close to half an hour, so
 finishing a cell before starting the next keeps an interrupted sweep useful.
 
-The fixtures are closed-parentage Wright-Fisher pedigrees with dense generation
-labels, sex, and birth years, built by ``tests/parity/generate_ne_baseline_0_9.py``
-(the 0.9 golden generator) so every estimator, Hill's birth-year branch
-included, runs.  The parity corpus is not used because its random pedigrees
-carry external parents, which the founder-based estimators refuse.
+The fixtures are the closed-parentage Wright-Fisher pedigrees of
+``_harness.WF_FIXTURES``, which says why the parity corpus does not serve.
 """
 
 from __future__ import annotations
 
-import hashlib
 import sys
 from pathlib import Path
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tests" / "parity"))
 
-from _harness import Arm, Fixture, Measurement, RunOrder, Suite, checksum_values, main
-
-_FIXTURES = {
-    "wf_n2000_g8": {"seed": 31, "n_per_gen": 2000, "n_gens": 8},
-    "wf_n5000_g8": {"seed": 37, "n_per_gen": 5000, "n_gens": 8},
-}
-
-
-def _frame(name: str):
-    import generate_ne_baseline_0_9 as gen
-
-    params = _FIXTURES[name]
-    return gen.with_birth_years(gen.random_mating(**params))
-
-
-def _wf_fixture(name: str) -> Fixture:
-    params = _FIXTURES[name]
-
-    def build():
-        from pedigree_graph import PedigreeGraph
-
-        return PedigreeGraph.from_frame(_frame(name))
-
-    def provenance() -> str:
-        digest = hashlib.sha256()
-        frame = _frame(name)
-        for column in frame.columns:
-            digest.update(column.encode())
-            digest.update(np.ascontiguousarray(frame[column].to_numpy()).tobytes())
-        return digest.hexdigest()
-
-    label = f"`{name}` (seed {params['seed']}, {params['n_per_gen']} per generation, {params['n_gens']} generations)"
-    return Fixture(name=name, label=label, build=build, provenance=provenance)
+from _harness import Arm, Measurement, RunOrder, Suite, checksum_values, main, wf_fixture
 
 
 def _scalars(results) -> Measurement:
@@ -95,7 +58,7 @@ SUITE = Suite(
     note=Path(__file__).with_suffix(".md"),
     # Cheapest first, so an interrupted sweep still renders complete cells.
     # With one arm the full product is already this order, so no cells list.
-    fixtures=(_wf_fixture("wf_n2000_g8"), _wf_fixture("wf_n5000_g8")),
+    fixtures=(wf_fixture("wf_n2000_g8"), wf_fixture("wf_n5000_g8")),
     arms=(Arm("estimate_serial", _estimate_serial, label="`estimate_effective_sizes`, lazy prerequisites, serial"),),
     gate=None,
     order=RunOrder.GROUPED,

@@ -29,6 +29,10 @@ __all__ = [
     "GATE",
     "MIN_CONFIDENT_REPEATS",
     "PINNED_ENV",
+    "STUDY_PEDIGREES",
+    "UMBRELLA",
+    "WF_FIXTURES",
+    "WHEEL_INTERPRETER",
     "Arm",
     "Cell",
     "ContractError",
@@ -42,6 +46,7 @@ __all__ = [
     "RunOrder",
     "Suite",
     "Verdict",
+    "checksum_array",
     "checksum_ints",
     "checksum_matrix_upper",
     "checksum_values",
@@ -50,7 +55,9 @@ __all__ = [
     "package_facts",
     "parity_fixture",
     "render_markdown",
+    "study_fixture",
     "verify_report",
+    "wf_fixture",
 ]
 
 import argparse
@@ -79,6 +86,16 @@ if TYPE_CHECKING:
 REPO: Final[Path] = Path(__file__).resolve().parent.parent
 HARNESS_PATH: Final[Path] = Path(__file__).resolve()
 SCHEMA: Final[str] = "pedigree-graph/benchmark/1"
+
+UMBRELLA: Final[Path] = REPO.parent.parent
+"""The simACE checkout this repository sits inside (``external/pedigree-graph``)."""
+
+WHEEL_INTERPRETER: Final[Path] = UMBRELLA / ".pixi" / "envs" / "default" / "bin" / "python"
+"""The simACE env's interpreter, which imports the released wheel it is locked to.
+
+A wheel arm runs its children here; the benchmark script's directory leads
+``sys.path``, not the repository root, so the child imports site-packages.
+"""
 
 GATE: Final[float] = 1.05
 """The only definition of the 5% rule.
@@ -228,6 +245,19 @@ def checksum_ints(values: Mapping[str, int | None]) -> int:
         value = values[key]
         digest.update(f"{key}={'none' if value is None else int(value)};".encode())
     return int.from_bytes(digest.digest()[:4], "big")
+
+
+def checksum_array(values: np.ndarray) -> int:
+    """SHA-256 over dtype, shape and bytes, truncated to 64 bits.
+
+    Exact for integers and bit-exact for floats, and unlike an XOR fold it
+    cannot cancel repeated values or miss a permutation.
+    """
+    contiguous = np.ascontiguousarray(values)
+    digest = hashlib.sha256()
+    digest.update(f"{contiguous.dtype.str}{contiguous.shape};".encode())
+    digest.update(contiguous.tobytes())
+    return int.from_bytes(digest.digest()[:8], "big")
 
 
 @dataclass(frozen=True, order=True)
@@ -619,6 +649,62 @@ def file_fixture(name: str, path: Path, *, label: str) -> Fixture:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
     return Fixture(name=name, label=label, build=build, provenance=provenance, available=path.exists)
+
+
+STUDY_PEDIGREES: Final[dict[str, tuple[str, str]]] = {
+    "dev_mean_n10k": ("results/dev/dev_mean_n10k/rep1/pedigree.parquet", "`dev_mean_n10k/rep1` (20,400 rows)"),
+    "dev_cont_n10k": ("results/dev/dev_cont_n10k/rep1/pedigree.parquet", "`dev_cont_n10k/rep1` (20,400 rows)"),
+    "baseline10K": ("results/base/baseline10K/rep1/pedigree.parquet", "`baseline10K/rep1` (53,466 rows)"),
+    "baseline100K": ("results/base/baseline100K/rep1/pedigree.parquet", "`baseline100K/rep1` (536,036 rows)"),
+}
+"""simACE results pedigrees, as paths relative to :data:`UMBRELLA`, with their labels."""
+
+
+def study_fixture(name: str) -> Fixture:
+    """A simACE results pedigree from :data:`STUDY_PEDIGREES`, unavailable when not generated here."""
+    relative, label = STUDY_PEDIGREES[name]
+    return file_fixture(name, UMBRELLA / relative, label=label)
+
+
+WF_FIXTURES: Final[dict[str, dict[str, int]]] = {
+    "wf_n2000_g8": {"seed": 31, "n_per_gen": 2000, "n_gens": 8},
+    "wf_n5000_g8": {"seed": 37, "n_per_gen": 5000, "n_gens": 8},
+}
+"""Closed Wright-Fisher pedigrees for the Ne estimators.
+
+Built by ``tests/parity/generate_ne_baseline_0_9.py`` (the 0.9 golden
+generator) with dense generation labels, sex and birth years, so every
+estimator, Hill's birth-year branch included, runs.  The parity corpus does
+not serve: its random pedigrees carry external parents, which the
+founder-based estimators refuse.
+"""
+
+
+def wf_fixture(name: str) -> Fixture:
+    """A :data:`WF_FIXTURES` pedigree, hashed column by column for provenance."""
+    params = WF_FIXTURES[name]
+
+    def frame() -> Any:
+        _parity_module()
+        import generate_ne_baseline_0_9 as gen
+
+        return gen.with_birth_years(gen.random_mating(**params))
+
+    def build() -> Any:
+        from pedigree_graph import PedigreeGraph
+
+        return PedigreeGraph.from_frame(frame())
+
+    def provenance() -> str:
+        digest = hashlib.sha256()
+        columns = frame()
+        for column in columns.columns:
+            digest.update(column.encode())
+            digest.update(np.ascontiguousarray(columns[column].to_numpy()).tobytes())
+        return digest.hexdigest()
+
+    label = f"`{name}` (seed {params['seed']}, {params['n_per_gen']} per generation, {params['n_gens']} generations)"
+    return Fixture(name=name, label=label, build=build, provenance=provenance)
 
 
 _WARM_UP_COLUMNS: Final[dict[str, list[int]]] = {
