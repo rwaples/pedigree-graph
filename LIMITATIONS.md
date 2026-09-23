@@ -73,25 +73,18 @@ See the amendment to ADR 0011 for the API decision.
 ## ``distinct_ancestor_counts`` memory follows its live parent frontier
 
 ``PedigreeGraph.distinct_ancestor_counts`` keeps a sorted closed ancestor set
-for each row that still has an unprocessed direct child. It reuses that row's
-power-of-two storage slot after the last child. This removes the old complete
-sparse closure, but it does not guarantee memory proportional to one generation:
+for each row that still has an unprocessed direct child, sized exactly, and
+frees it after the last child. This removes the old complete sparse closure,
+but it does not guarantee memory proportional to one generation:
 a parent with a late last child remains live, and a pathological pedigree can
 keep much of its historical ancestry in the frontier.
 
-The committed A/B benchmark in ``benchmarks/bench_distinct_ancestors.py``
-measured the retiring DP against the removed closure:
-
-- `random_30k`: 0.257 s and 173 MiB became 0.043 s and 178 MiB;
-- `random_300k`: 3.42 s and 586 MiB became 0.45 s and 269 MiB;
-- a closed 60-generation pedigree: 31.68 s and 532 MiB became 0.16 s and 183 MiB.
-
-The DP itself allocated less memory on every fixture. In a fresh process,
-loading the Numba runtime adds about 42 MiB before the timed call, so total peak
-RSS is higher on small inputs even though their timed RSS growth is lower. The
-package uses one implementation rather than dispatching at a measured size or
-depth threshold. Full results, allocator telemetry, and the environment are in
-``benchmarks/bench_distinct_ancestors.md``.
+The sweep runs in the Rust core since 0.9.4, with one exactly sized set per
+live row. Against the 0.9.3 Numba pool it measured 0.31x to 0.62x the wall
+and 0.40x to 0.69x the peak RSS on every benchmarked pedigree, from 1k rows to
+the 536k-row ``baseline100K``, including closed 60-generation and
+2,000-wide pedigrees. The Numba runtime's fixed RSS is gone with it. Record:
+``docs/pedigree-graph-0.8-migration/gate/15a/NOTES.md``.
 
 ## Half-founders and missing parents
 
@@ -126,6 +119,9 @@ It passes a row mask to the Rust engine and builds no pair list.
   knob.
 
 ## Last updated
+
+2026-09-23 — ``distinct_ancestor_counts`` runs on the Rust core (0.9.4);
+the Numba runtime cost is gone.
 
 Issue #17: replace the scalar estimator with six exact close-relative
 counts, remove approximate/clamped metadata, and update view-count guidance.

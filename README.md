@@ -42,11 +42,12 @@ so the full suite is dominated by a handful of tests.  The other four are the
 N=2000 effective-size scaling tests in `tests/test_effective_size_scaling.py`,
 which touch neither `random_30k` nor the pair-kinship kernel.
 
-Requires Python ≥ 3.13.  Runtime deps: `numpy`, `scipy`, and `numba` (still
-used by the inbreeding walk, the equivalent-generation kernel and the lineage
-kernels); construction, relationships, topology, pairwise kinship, the
-kinship matrices and the generation kinship summary are compiled Rust
-(`pedigree_graph._native`, sources under `crates/`).
+Requires Python ≥ 3.13.  Runtime deps: `numpy` and `scipy`.  Construction,
+relationships, topology, pairwise kinship, the kinship matrices, the
+generation kinship summary, inbreeding, the lineage counts and the Ne
+prerequisites are compiled Rust (`pedigree_graph._native`, sources under
+`crates/`).  `numba` is only a `test` extra, for the retired kernels the test
+suite keeps as oracles.
 Pandas is optional and only needed if you pass DataFrames to the
 constructors.
 

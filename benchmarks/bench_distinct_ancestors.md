@@ -5,6 +5,15 @@ transitive closure with one retiring Numba DP. This benchmark freezes the
 removed closure as its baseline and compares the production DP on controlled
 width and depth series plus the repository's standard random fixtures.
 
+## Slice 15 (0.9.4): the sweep on the Rust core
+
+The retiring DP moved to the core with one exactly sized set per live row,
+and this driver's baseline arm is now the 0.9.3 wheel instead of the frozen
+closure. On all twelve fixtures the core measured 0.31x to 0.62x the wheel's
+median wall and 0.40x to 0.69x its peak RSS, counts byte-identical
+(`gate/15a/distinct_ancestors.md`, `gate/15a/NOTES.md`). The sections below
+record the closure-to-Numba change of 2026-09-16.
+
 ## Method
 
 Every result was produced by the committed driver:

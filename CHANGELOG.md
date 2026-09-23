@@ -4,6 +4,37 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Changed: `inbreeding`, `distinct_ancestor_counts` and
+  `descendant_path_counts` run on the Rust core, as do the equivalent
+  complete generations behind `ne_individual_delta_f` and the per-cohort
+  founder-contribution means behind `ne_long_term_contributions`** (slice
+  15; ADR 0007 as amended, ADR 0008). Signatures, dtypes, read-only memos
+  and graph-row coordinates are unchanged. Counts are byte-identical to
+  0.9.3, and F, EqG, the founder means and every Ne record came out
+  bit-identical on every parity fixture in three row orders and on the
+  study pedigrees (10k to 536k rows). Against the 0.9.3 wheel on one
+  thread: `inbreeding` on `random_300k` 2.73 s to 0.88 s and 181 to
+  89 MiB peak; `distinct_ancestor_counts` 0.31x to 0.62x the wall and
+  0.40x to 0.69x the peak RSS on all twelve benchmarked pedigrees (issue
+  #1); `ne_individual_delta_f` on 45k rows 0.59 s to 0.16 s.
+  `descendant_path_counts` is 0.4 to 0.8 ms slower on 300k to 536k rows
+  for its new overflow check, at half to three quarters of the peak RSS.
+  Record: `docs/pedigree-graph-0.8-migration/gate/15a/NOTES.md`.
+- **Changed: the release build uses one codegen unit.** Under the default
+  sixteen, adding modules repartitioned the crate and made the unchanged
+  generation-summary DP 12% slower; with one it is 7% faster than 0.9.3.
+- **Removed: `numba` from the runtime dependencies**, with
+  `_inbreeding_kernel`, `_lineage_kernel` and `_kinship_depth`. The three
+  modules are the test suite's oracles now (`tests/oracle/`), and `numba`
+  is in the `test` extra for them. Installing the wheel no longer pulls
+  numba or llvmlite.
+- **Fixed: `descendant_path_counts` no longer wraps past int64.** A count
+  that outgrows int64 (about 63 generations of repeated sib mating) raises
+  `ResourceError("arithmetic_overflow")` with `operation` and `dtype`
+  fields, where 0.9.3 returned wrapped values silently.
+
 ## v0.9.3
 
 - **Fixed (private): a parentless row above depth 0 keeps its diagonal in

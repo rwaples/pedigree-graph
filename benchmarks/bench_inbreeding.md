@@ -3,6 +3,15 @@
 What `PedigreeGraph.inbreeding()` costs at production scale: the genome-node
 Meuwissen-Luo walk of ADR 0008, measured across the four parity pedigrees.
 
+## Slice 15 (0.9.4): the walk on the Rust core
+
+The walk moved to the core. Against the 0.9.3 wheel, interleaved in one sweep
+of this driver (`gate/15a/inbreeding.md`): `deep_inbred_60g` 22.1 ms to
+4.3 ms and 144 to 59 MiB peak, `random_300k` 2.73 s to 0.88 s and 181 to
+89 MiB, `baseline100K/rep1` (536,036 rows) 1.56 s to 0.45 s and 359 to
+268 MiB, F byte-identical on all three. The sections below are the 0.8
+baseline this driver was written for.
+
 ## Method
 
 Every figure below was produced by `benchmarks/bench_inbreeding.py`, which is

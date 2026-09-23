@@ -359,10 +359,10 @@ pedigree-graph currently computes kinship in three materially different ways:
    `crates/core/src/kinship/matrix.rs` processes the pedigree depth by depth,
    while `Dp::process_row` merge-walks the two parent rows and writes
    symmetric child entries.
-3. **Inbreeding only:** `_inbreeding_kernel.py::_compute_F_meuwissen_luo`
-   performs the genome-node Meuwissen-Luo walk using the decomposition
-   `A = T D T'` without constructing pairwise kinship
-   (`pedigree_graph/_inbreeding_kernel.py:53-210`).
+3. **Inbreeding only:** `kinship::inbreeding::inbreeding` performs the
+   genome-node Meuwissen-Luo walk using the decomposition `A = T D T'`
+   without constructing pairwise kinship
+   (`crates/core/src/kinship/inbreeding.rs:39-137`).
 
 These shapes have different outputs and working sets. A single universal
 kinship kernel is unlikely to be optimal; the useful design target is a shared
@@ -462,11 +462,11 @@ arrays.
 ### K3. Use `A = T D T'` for an implicit kinship operator
 
 Opportunity 2 proposed a matrix-free API. The existing inbreeding calculation
-provides a concrete implementation path. `_compute_F_meuwissen_luo` already
-constructs the Mendelian-sampling diagonal `D` and traverses path coefficients
-from `T` on the genome-node pedigree
-(`pedigree_graph/_inbreeding_kernel.py:136-150`, `196-201`), but currently returns
-only `F` (`pedigree_graph/_inbreeding_kernel.py:210`).
+provides a concrete implementation path. `kinship::inbreeding::inbreeding`
+already constructs the Mendelian-sampling diagonal `D` and traverses path
+coefficients from `T` on the genome-node pedigree
+(`crates/core/src/kinship/inbreeding.rs:72-86`, `122-127`), but
+currently returns only `F` (`crates/core/src/kinship/inbreeding.rs:136`).
 
 In exact arithmetic, with numerator relationship matrix `A = T D T'` and
 kinship `K = A / 2`, a product `K @ W` can be calculated without storing `K`:

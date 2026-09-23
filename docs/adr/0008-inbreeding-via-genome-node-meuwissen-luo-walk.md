@@ -52,6 +52,10 @@ without loops, founder twins, and inbred twins.
   fitACE's inbreeding export see shifts under 1%, so 0.7.1 golden values on
   pedigrees with MZ twins need a tolerance, not bit-exact parity.
 * The Rust port (ADR 0007) ports this walk, not a diagonal extraction.
+  *Discharged in 0.9.4 (slice 15):* `crates/core/src/kinship/inbreeding.rs`
+  is this walk, genome nodes, `D` cases, per-depth frontier and touch-order
+  sum included, and returns the 0.9.3 Numba kernel's bits on every parity
+  fixture in three row orders (`tests/test_native_inbreeding.py`).
 
 ## Alternatives considered
 

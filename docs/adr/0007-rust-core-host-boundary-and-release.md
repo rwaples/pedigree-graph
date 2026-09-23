@@ -352,3 +352,31 @@ could recycle, within one merge walk, the slot that walk was still reading;
 `mean_kinship_by_generation` was wrong on the 536k study pedigree by 1.4e-5
 relative in its deepest bucket. The record shows the mechanism and the
 native DP is held to the relocation-free walk.
+
+## Amended 2026-09-23 (slice 15, the last Numba kernels)
+
+**Numba is out of the wheel.** The Meuwissen-Luo inbreeding walk, the
+distinct-ancestor and descendant-path sweeps, Maignel's equivalent complete
+generations and the per-cohort founder-contribution means moved to the core
+(`kinship/inbreeding.rs`, `lineage.rs`, `kinship/generations.rs`), and `numba`
+left the runtime dependencies; the three Numba modules are kept verbatim as
+test oracles under the `test` extra. Every kernel the package runs is now
+Rust, SciPy or NumPy.
+
+**Storage and caches.** The distinct-ancestor sets are one exactly sized
+slice per row with children, dropped after its last child, the layout slice
+14 selected for the DP rows. It measured 0.40x to 0.69x the 0.9.3 pool's
+peak RSS on all twelve benchmarked pedigrees, so no arena was ported. As in
+slices 12 to 14, results are handed over once and memoised on the graph;
+nothing native is retained.
+
+**Order.** The sweeps that need only parents before children walk graph rows
+when construction found them parents-first, and only then sort by depth,
+which they then take and check; `kinship/depth_order.rs` holds the sort the
+kinship DP shares. Construction's validated columns and its parents-first
+flag are trusted at these bindings rather than re-checked, because a second
+pass was the difference on sweeps of a few milliseconds.
+
+**Build.** The release profile uses one codegen unit: under sixteen, adding
+this slice's modules moved the unchanged generation-summary DP's inlining and
+cost it 12%. Record: `docs/pedigree-graph-0.8-migration/gate/15a/NOTES.md`.
