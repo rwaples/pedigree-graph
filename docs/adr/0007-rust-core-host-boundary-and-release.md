@@ -323,3 +323,32 @@ force each allocation family to fail through a lowered private limit.
 sequence above therefore moves: the R package is the 0.10.0 milestone, and
 the "R 0.9.0" section and the `r/` line of the layout should be read as
 0.10.0. Nothing about the R surface itself changes.
+
+## Amended 2026-09-23 (slice 14, the kinship matrix DP)
+
+**DP row storage.** The bake-off this ADR required ran on the 0.9.1 wheel
+and two source layouts in one interleaved sweep of nine cells
+(`docs/pedigree-graph-0.8-migration/gate/14a/NOTES.md`). One owned vector
+pair per row, freed on retirement, is 0.11x to 0.28x the wheel's median
+wall and 0.21x to 0.80x its peak RSS on every cell, and beats the ported
+0.9.1 slab allocator on every cell on both metrics; on the 536k-row summary
+it peaks at 3.6 GiB against the wheel's 14.8 GiB and the arena's 8.6 GiB.
+The "first simplicity prototype" above therefore ships, and the arena was
+deleted with the record. The DP runs in stable depth-major order inside the
+core and assembles the CSC in graph rows without a sort, so the SciPy
+permutation copy is gone; the three products (`kinship_matrix`,
+`approximate_kinship_matrix`, the generation summary) are one kernel with
+three sinks, and step 7 of the migration sequence is done with the
+generation summary taken from step 8.
+
+**Ownership.** The three CSC arrays and the sum vector are handed over once
+and cached read-only on the graph, as the slice 12 pair blocks are; nothing
+native is retained. The ownership benchmark this ADR asked for on large CSC
+buffers is the slice 12 measurement adopted as is: same shape, one transfer,
+no native cache.
+
+**A 0.9.1 defect the differential found.** The numba DP's retiring path
+could recycle, within one merge walk, the slot that walk was still reading;
+`mean_kinship_by_generation` was wrong on the 536k study pedigree by 1.4e-5
+relative in its deepest bucket. The record shows the mechanism and the
+native DP is held to the relocation-free walk.

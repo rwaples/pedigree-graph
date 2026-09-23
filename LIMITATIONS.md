@@ -120,8 +120,7 @@ It passes a row mask to the Rust engine and builds no pair list.
 - Historical scalar lineal-count performance. Those formulas are removed;
   current lineal counts use ``relationship_counts``.
 - F (inbreeding coefficient) scaling — covered by
-  ``pedigree_graph._kinship_kernel`` and its own row-retirement
-  optimisation work.
+  ``pedigree_graph._inbreeding_kernel``.
 - Effective size estimator scaling — covered by
   ``pedigree_graph._effective_size`` and the ``skip_ne_coancestry``
   knob.

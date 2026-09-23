@@ -6,6 +6,48 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: `kinship_matrix`, `approximate_kinship_matrix` and
+  `mean_kinship_by_generation` run on the Rust core** (slice 14; ADR 0007
+  and 0009 as amended). The three keep their signatures, dtypes, sorted
+  read-only CSC arrays, caches and the propagation-pruned support the
+  0.7.1 record freezes, and every entry is the `pair_kinship` bit. Bytes
+  are identical to 0.9.1 on every parity fixture in three row orders and
+  on the study pedigrees (20k to 53k rows, complete and 0.001 matrices,
+  summaries) except where 0.9.1 was wrong (below). One depth-major DP in
+  the core builds all three, assembles the CSC in graph rows without a
+  SciPy permutation copy, and stores rows as owned vectors freed on
+  retirement, selected over a port of the 0.9.1 arena by measurement.
+  Against the 0.9.1 wheel on one thread: `random_30k` complete matrix
+  97 s to 19 s and 13.9 to 4.7 GiB peak; its 0.001 matrix 76 s to 10.5 s
+  and 6.9 to 1.5 GiB; its summary 52 s to 5.6 s and 6.3 to 1.3 GiB; the
+  536k-row summary 89 s to 16 s and 14.8 to 3.6 GiB. Record:
+  `docs/pedigree-graph-0.8-migration/gate/14a/NOTES.md`.
+- **Fixed: `mean_kinship_by_generation` no longer reads storage its own
+  merge walk has freed.** In 0.9.1's retiring DP a parent row that outgrew
+  its slot during a child's merge walk pushed the old slot onto the free
+  list, and a later append in the same walk could take that slot back and
+  overwrite what the walk was still reading. It needs a row to outgrow its
+  first slot (`2 ** (max_depth + 4)` entries, 16 to 4096), which none of the
+  repository fixtures do; the 536k-row study pedigree `baseline100K/rep1`
+  does, and its deepest generation's mean kinship was 1.4e-5 too low in
+  relative terms (`docs/pedigree-graph-0.8-migration/gate/14a/NOTES.md`).
+  The native DP stages each walk's relatives before writing, and
+  `tests/test_native_kinship_matrix.py` reproduces the 0.9.1 disagreement
+  on a small pedigree with tiny slots. `approximate_kinship_matrix` ran the
+  same retiring pass to capture its values; a corrupted row there would
+  have failed its own completeness assertion rather than returned a wrong
+  value, and no study pedigree reached it.
+- **Removed (private): the numba kinship DP.** `_kinship_dp`,
+  `_kinship_dp_depth`, `_kinship_allocator`, `_kinship_csc` and the
+  `_kinship_kernel` facade are gone from the package, as are
+  `Topology.translate` and the approximate-support helpers of
+  `_kinship_matrix` (`_topological_candidate_index`,
+  `_exactify_approximate_support`, `_write_symmetric_values`,
+  `_upper_support_chunks`); `_kinship_depth` keeps `_compute_eqg` alone.
+  The DP lives on verbatim as the differential oracle
+  `tests/oracle/kinship_dp/`. numba remains a dependency for the inbreeding
+  walk, the equivalent-generation kernel and the lineage kernels.
+
 - **Fixed (private): `_native.kinship_support_values` rejects every
   malformed support it used to fill with zeros.** A lower entry with no
   upper mirror now raises `kinship_support_asymmetric` (only the upper to

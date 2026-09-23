@@ -116,7 +116,11 @@ Consequences of that definition:
   50-generation closed herd and 0 on every simACE pedigree.
 * The peel rule is part of the value's definition. The Rust core (ADR 0007)
   implements the same rule, and cross-implementation parity tests compare
-  bits, not tolerances.
+  bits, not tolerances. Since slice 14 (2026-09-23) the matrix DP runs in
+  the core too, in stable depth-major order where the rule is "greater
+  row": `kinship_matrix`, `approximate_kinship_matrix` and the generation
+  kinship summary are one kernel there, and its 0.9.1 numba form is the
+  differential oracle under `tests/oracle/kinship_dp/`.
 * The rehash copy in the pairwise memo (old and new tables coexist) costs
   about 30 percent of peak RSS at 536k rows independent of dtype. That is a
   memo-layout requirement for the Rust core, not a 0.8.0 Python change.

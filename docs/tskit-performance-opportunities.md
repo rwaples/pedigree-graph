@@ -67,12 +67,13 @@ working-set properties:
 - `crates/core/src/kinship/pairwise.rs` (reached through
   `_native.pair_kinship`) evaluates sparse arbitrary pairs with a call-local
   recurrence memo.
-- `_kinship_dp.py` evaluates complete rows and retires them after their last
-  direct child.
-- `_kinship_matrix.py::_exactify_support` uses deterministic pair chunks for
-  sparse relationship-selected support.
-- `_kinship_matrix.py::_exactify_approximate_support` captures dense candidate
-  values during one complete retiring-DP pass.
+- `crates/core/src/kinship/matrix.rs` (reached through `_native.kinship_csc`,
+  `_native.approximate_kinship_csc` and `_native.generation_kinship_sums`)
+  evaluates complete rows and retires them after their last direct child.
+- `_kinship_matrix.py::_exactify_support` walks the sparse
+  relationship-selected support once through `_native.kinship_support_values`.
+- `_native.approximate_kinship_csc` captures dense candidate values during
+  one complete retiring-DP pass in the core.
 
 The existing profile shows why the distinction matters. On the 20,400-row
 fitACE pedigree with 4,991,524 upper-triangle candidates, exact-value evaluation
@@ -135,8 +136,9 @@ output, rather than make a sparse or dense matrix an obligatory intermediate.
 #### Current seam
 
 `PedigreeGraph.per_gen_mean_kinship` already demonstrates a specialised form of
-this interface: `_kinship_dp.py` computes per-generation summary values while
-streaming DP storage, and `_ne_rates.py` consumes those summaries. General
+this interface: the core's retiring DP (`_native.generation_kinship_sums`)
+computes per-generation sums while streaming row storage, and `_ne_rates.py`
+consumes them. General
 matrix-vector products and grouped reductions still require callers to obtain a
 kinship matrix or issue pairwise queries. No current consumer in simACE, fitACE or
 pedsum forms such a product in Python; see the evaluation order below.
@@ -353,10 +355,10 @@ pedigree-graph currently computes kinship in three materially different ways:
    an iterative, post-order Karigl recurrence over only the requested pairs and
    their pair-state dependencies. One memo is shared across the request and
    freed with it (`crates/core/src/kinship/pairwise.rs`).
-2. **Matrices and selected support:** `_kinship_dp.py::_dp_kinship` processes
-   the pedigree depth by depth, while `_kinship_dp_depth.py::_process_depth`
-   merge-walks the two parent rows and writes symmetric child entries
-   (`pedigree_graph/_kinship_dp_depth.py:191-315`).
+2. **Matrices and selected support:** `Dp::run` in
+   `crates/core/src/kinship/matrix.rs` processes the pedigree depth by depth,
+   while `Dp::process_row` merge-walks the two parent rows and writes
+   symmetric child entries.
 3. **Inbreeding only:** `_inbreeding_kernel.py::_compute_F_meuwissen_luo`
    performs the genome-node Meuwissen-Luo walk using the decomposition
    `A = T D T'` without constructing pairwise kinship
@@ -510,27 +512,17 @@ and ULP differences rather than asserting bit parity.
 
 ### K4. Iterate contiguous depth spans instead of scanning all rows
 
-The private topology is depth-major, but each depth operation currently scans
-all `n` rows and rejects rows outside the active depth:
-
-- candidate capture: `pedigree_graph/_kinship_dp_depth.py:41`;
-- MZ pass: `pedigree_graph/_kinship_dp_depth.py:96`; and
-- parent-row processing: `pedigree_graph/_kinship_dp_depth.py:212`.
-
-Precompute `depth_start[d]` and `depth_end[d]` once, then pass the active range
-to each kernel. This removes repeated `range(n)` scans and branches without
-changing row order, recurrence arithmetic, retirement, or candidate capture.
-
-The likely gain is modest on the usual approximately eight-generation simACE
-pedigree, but it may matter on deep pedigrees because several control passes
-currently scale with `n * number_of_depths`. Benchmark shallow and 50–60-depth
-fixtures before implementation. This is the lowest-risk kernel-level
-optimisation in this section.
+Done in slice 14. The numba DP scanned all `n` rows at every depth for
+candidate capture, the MZ pass and parent-row processing; the Rust port
+(`Topo::starts` and `Topo::retirement` in `crates/core/src/kinship/matrix.rs`)
+bucket rows by depth and by retirement depth once, so each depth touches only
+its own rows, with row order, recurrence arithmetic, retirement and candidate
+capture unchanged.
 
 ### K5. Reuse parental merge templates within sibships
 
-`_process_depth` merge-walks the same two parent rows independently for every
-child (`pedigree_graph/_kinship_dp_depth.py:249-300`). Full siblings at the same
+`Dp::process_row` (`crates/core/src/kinship/matrix.rs`) merge-walks the same
+two parent rows independently for every child. Full siblings at the same
 depth share the part of this calculation involving rows from earlier depths.
 A family-batched implementation could:
 
@@ -554,9 +546,9 @@ canonical parent pair.
 ### K6. Fuse propagated-support discovery with exact-value capture
 
 `approximate_kinship_matrix` currently runs a threshold-propagating DP to build
-candidate support (`pedigree_graph/_kinship_matrix.py:495-503`) and then a
-complete retiring DP to capture exact values on that support
-(`pedigree_graph/_kinship_matrix.py:520`). A dual-state DP could carry:
+candidate support and then a complete retiring DP to capture exact values on
+that support (`approximate_with` in `crates/core/src/kinship/matrix.rs`). A
+dual-state DP could carry:
 
 - complete exact values used by the unpruned recurrence; and
 - propagated values or presence flags used solely to decide candidate support.
