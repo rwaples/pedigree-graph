@@ -182,7 +182,16 @@ SUITE = Suite(
         Arm("wheel", _run, label="0.9.3 wheel (simACE env)", interpreter=WHEEL_INTERPRETER),
         Arm("source", _run, label="source build (this env)"),
     ),
-    gate=Gate(baseline="wheel", gated=frozenset({"source"})),
+    gate=Gate(
+        baseline="wheel",
+        gated=frozenset({"source"}),
+        accepted={
+            # Reviewed 2026-09-23 (gate/15a/NOTES.md): the per-add int64 overflow
+            # check plan D7 requires, which the 0.9.3 loop lacked and wrapped.
+            "dp-300k/source": "accepted ~0.4 ms for checked int64 path counts; peak RSS halves",
+            "dp-536k/source": "accepted ~0.8 ms for checked int64 path counts; peak RSS -26%",
+        },
+    ),
     order=RunOrder.INTERLEAVED,
     timeout_s=3600.0,
 )
