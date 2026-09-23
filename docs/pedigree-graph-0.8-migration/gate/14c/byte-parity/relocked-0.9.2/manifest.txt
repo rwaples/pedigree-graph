@@ -1,0 +1,7 @@
+simACE env pedigree-graph 0.9.2
+fitACE env pedigree-graph 0.9.2
+9c580c90cc3ea817c05e209824a50b21d44da69641df922e19566d3507a924a0  report.yaml
+505a8fd35b74925a2ce84346d4e00b16ea8a660eb0a759e65e2ba21f19d4b784  pairwise_relatedness.tsv
+c26e097ae13d6d85af9693dce129246a82fa96d2907f0f892599cbee11824abc  A.grm.sp.bin
+80ec2ca3511f6b525779bfec72ce10f4bda87417231b45aa54d924be7687ca1d  A.grm.id
+955aabb95ddf738bcdba79b698fb4064b2bd5ef759a59a3bac3beaa89551fb8b  mean_kinship_by_generation.txt
