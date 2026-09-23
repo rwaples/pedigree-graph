@@ -22,5 +22,8 @@ pub mod rows;
 
 pub use generations::{equivalent_generations, founder_contribution_means};
 pub use inbreeding::inbreeding;
-pub use matrix::{approximate_kinship_csc, generation_kinship_sums, kinship_csc, Csc};
+pub use matrix::{
+    approximate_kinship_csc, generation_kinship_sums, kinship_csc, kinship_csc_upper, Csc,
+    MAX_CSC_NNZ,
+};
 pub use pairwise::{pair_kinship, support_values, KinshipPedigree};

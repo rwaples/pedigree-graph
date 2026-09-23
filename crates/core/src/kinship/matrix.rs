@@ -358,14 +358,18 @@ impl<'t, S: RowStore> Dp<'t, S> {
     }
 }
 
+/// The most entries a CSC may hold: its `indptr` is int32.
+pub const MAX_CSC_NNZ: usize = i32::MAX as usize;
+
 /// The int32 `indptr` of per-column counts, refusing before any index array
-/// could be sized past int32.
-fn checked_indptr(counts: &[usize]) -> Result<Vec<i32>, Error> {
+/// could be sized past `max_nnz` (at most [`MAX_CSC_NNZ`]).
+fn checked_indptr(counts: &[usize], max_nnz: usize) -> Result<Vec<i32>, Error> {
     let nnz: u64 = counts.iter().map(|&c| c as u64).sum();
-    if nnz > i32::MAX as u64 {
+    let max_nnz = max_nnz.min(MAX_CSC_NNZ);
+    if nnz > max_nnz as u64 {
         return Err(Error::CscIndexOverflow {
             nnz,
-            maximum: i64::from(i32::MAX),
+            maximum: max_nnz as i64,
         });
     }
     let mut indptr = alloc::filled(0i32, counts.len() + 1, Family::KinshipCsc, "int32")?;
@@ -377,18 +381,43 @@ fn checked_indptr(counts: &[usize]) -> Result<Vec<i32>, Error> {
     Ok(indptr)
 }
 
+/// Which entries of the symmetric matrix a CSC keeps.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Triangle {
+    /// Both triangles and the diagonal.
+    Full,
+    /// Row `<=` column in graph rows: the upper triangle and the diagonal.
+    Upper,
+}
+
+impl Triangle {
+    #[inline]
+    fn keeps(self, row: usize, column: usize) -> bool {
+        self == Triangle::Full || row <= column
+    }
+}
+
 /// Symmetric row storage in depth-major space, assembled into a CSC in
 /// graph rows.  Graph rows are visited in order and each stored column is
 /// translated through `order`, so rows within every output column ascend.
-fn assemble<'a>(topo: &Topo, row: impl Fn(usize) -> (&'a [u32], &'a [f32])) -> Result<Csc, Error> {
+fn assemble<'a>(
+    topo: &Topo,
+    row: impl Fn(usize) -> (&'a [u32], &'a [f32]),
+    triangle: Triangle,
+    max_nnz: usize,
+) -> Result<Csc, Error> {
     let n = topo.n;
     let mut counts = alloc::filled(0usize, n, Family::KinshipCsc, "uint64")?;
     for r in 0..n {
+        let graph_row = topo.order[r] as usize;
         for &c in row(r).0 {
-            counts[topo.order[c as usize] as usize] += 1;
+            let column = topo.order[c as usize] as usize;
+            if triangle.keeps(graph_row, column) {
+                counts[column] += 1;
+            }
         }
     }
-    let indptr = checked_indptr(&counts)?;
+    let indptr = checked_indptr(&counts, max_nnz)?;
     let nnz = indptr[n] as usize;
     let mut cursor = counts;
     for (column, slot) in cursor.iter_mut().enumerate() {
@@ -400,6 +429,9 @@ fn assemble<'a>(topo: &Topo, row: impl Fn(usize) -> (&'a [u32], &'a [f32])) -> R
         let (cols, vals) = row(topo.inverse[i] as usize);
         for (&c, &v) in cols.iter().zip(vals) {
             let column = topo.order[c as usize] as usize;
+            if !triangle.keeps(i, column) {
+                continue;
+            }
             let pos = cursor[column];
             cursor[column] += 1;
             indices[pos] = i as i32;
@@ -413,11 +445,15 @@ fn assemble<'a>(topo: &Topo, row: impl Fn(usize) -> (&'a [u32], &'a [f32])) -> R
     })
 }
 
-fn complete_with<S: RowStore>(topo: &Topo) -> Result<Csc, Error> {
+fn complete_with<S: RowStore>(
+    topo: &Topo,
+    triangle: Triangle,
+    max_nnz: usize,
+) -> Result<Csc, Error> {
     let mut dp = Dp::<S>::new(topo, 0.0, false, Sink::Rows)?;
     dp.run()?;
     let store = dp.store;
-    assemble(topo, |r| (store.cols(r), store.vals(r)))
+    assemble(topo, |r| (store.cols(r), store.vals(r)), triangle, max_nnz)
 }
 
 fn approximate_with<S: RowStore>(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
@@ -495,12 +531,17 @@ fn approximate_with<S: RowStore>(topo: &Topo, threshold: f64) -> Result<Csc, Err
         }
     }
     drop((indptr, cols, vals, cursor));
-    assemble(topo, |r| {
-        (
-            &sym_cols[sym_indptr[r]..sym_indptr[r + 1]],
-            &sym_vals[sym_indptr[r]..sym_indptr[r + 1]],
-        )
-    })
+    assemble(
+        topo,
+        |r| {
+            (
+                &sym_cols[sym_indptr[r]..sym_indptr[r + 1]],
+                &sym_vals[sym_indptr[r]..sym_indptr[r + 1]],
+            )
+        },
+        Triangle::Full,
+        MAX_CSC_NNZ,
+    )
 }
 
 fn sums_with<S: RowStore>(
@@ -539,7 +580,24 @@ fn sums_with<S: RowStore>(
 /// exceeds int32, and [`Error::AllocationFailed`] for any buffer.
 pub fn kinship_csc(ped: KinshipPedigree<'_>) -> Result<Csc, Error> {
     let topo = Topo::build(&ped)?;
-    complete_with::<Owned>(&topo)
+    complete_with::<Owned>(&topo, Triangle::Full, MAX_CSC_NNZ)
+}
+
+/// The upper triangle of [`kinship_csc`]: the entries with row `<=` column
+/// in graph rows, laid out as it lays out every column, for hosts whose
+/// sparse matrix stores one triangle of a symmetric matrix (R's
+/// `dsCMatrix`).  The int32 cap applies to the upper entries, so about twice
+/// the pairs fit, and the output arrays are about half the size; the DP's
+/// row store is the full symmetric matrix either way.  `max_nnz` lowers the
+/// cap for tests; hosts pass [`MAX_CSC_NNZ`].
+///
+/// # Errors
+///
+/// As [`kinship_csc`], with [`Error::CscIndexOverflow`] above `max_nnz`
+/// upper entries.
+pub fn kinship_csc_upper(ped: KinshipPedigree<'_>, max_nnz: usize) -> Result<Csc, Error> {
+    let topo = Topo::build(&ped)?;
+    complete_with::<Owned>(&topo, Triangle::Upper, max_nnz)
 }
 
 /// Exact values on the propagation-pruned support: the structure a DP that
@@ -819,7 +877,7 @@ mod tests {
     #[test]
     fn nnz_past_int32_is_an_overflow_error() {
         let counts = [usize::try_from(i32::MAX).unwrap(), 1];
-        let err = checked_indptr(&counts).unwrap_err();
+        let err = checked_indptr(&counts, MAX_CSC_NNZ).unwrap_err();
         assert_eq!(
             err,
             Error::CscIndexOverflow {
@@ -831,7 +889,10 @@ mod tests {
         assert_eq!(err.class(), crate::error::ErrorClass::Resource);
         let names: Vec<&str> = err.fields().iter().map(|(name, _)| *name).collect();
         assert_eq!(names, ["nnz", "maximum"]);
-        assert_eq!(checked_indptr(&[2, 0, 3]).unwrap(), vec![0, 2, 2, 5]);
+        assert_eq!(
+            checked_indptr(&[2, 0, 3], MAX_CSC_NNZ).unwrap(),
+            vec![0, 2, 2, 5]
+        );
     }
 
     #[test]

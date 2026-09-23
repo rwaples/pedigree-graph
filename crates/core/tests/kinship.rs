@@ -5,7 +5,10 @@
 //! `tests/oracle/pair_kinship.py` statement in Rust so the core is held to
 //! the same contract the Python differential test holds the binding to.
 
-use pedigree_graph_core::kinship::{pair_kinship, support_values, KinshipPedigree};
+use pedigree_graph_core::error::Error;
+use pedigree_graph_core::kinship::{
+    kinship_csc, kinship_csc_upper, pair_kinship, support_values, Csc, KinshipPedigree, MAX_CSC_NNZ,
+};
 use pedigree_graph_core::relationships::PedigreeColumns;
 use pedigree_graph_core::topology::structural_depth;
 use std::collections::HashMap;
@@ -170,4 +173,59 @@ fn support_values_match_pair_kinship_on_a_dense_small_fixture() {
     let got: Vec<u32> = data.iter().map(|v| v.to_bits()).collect();
     let want: Vec<u32> = expected.iter().map(|v| v.to_bits()).collect();
     assert_eq!(got, want);
+}
+
+/// The entries of `full` with row `<=` column, laid out as a CSC.
+fn upper_of(full: &Csc) -> Csc {
+    let mut indptr = vec![0i32];
+    let mut indices = Vec::new();
+    let mut data = Vec::new();
+    for column in 0..full.indptr.len() - 1 {
+        for p in full.indptr[column] as usize..full.indptr[column + 1] as usize {
+            if full.indices[p] as usize <= column {
+                indices.push(full.indices[p]);
+                data.push(full.data[p]);
+            }
+        }
+        indptr.push(indices.len() as i32);
+    }
+    Csc {
+        indptr,
+        indices,
+        data,
+    }
+}
+
+#[test]
+fn the_upper_csc_is_the_upper_triangle_of_the_complete_one_on_every_fixture() {
+    for tsv in fixtures() {
+        let cols = PedigreeColumns::read_tsv(&tsv).unwrap();
+        let depth = structural_depth(&cols.mother, &cols.father);
+        let ped = KinshipPedigree::try_new(&cols.mother, &cols.father, &cols.twin, &depth).unwrap();
+        let full = kinship_csc(ped).unwrap();
+        let upper = kinship_csc_upper(ped, MAX_CSC_NNZ).unwrap();
+        let want = upper_of(&full);
+        assert_eq!(upper.indptr, want.indptr, "{}", tsv.display());
+        assert_eq!(upper.indices, want.indices, "{}", tsv.display());
+        let got: Vec<u32> = upper.data.iter().map(|v| v.to_bits()).collect();
+        let bits: Vec<u32> = want.data.iter().map(|v| v.to_bits()).collect();
+        assert_eq!(got, bits, "{}", tsv.display());
+    }
+}
+
+#[test]
+fn the_upper_csc_refuses_past_its_cap_on_upper_entries() {
+    let tsv = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/nuclear_full_sibs.tsv");
+    let cols = PedigreeColumns::read_tsv(&tsv).unwrap();
+    let depth = structural_depth(&cols.mother, &cols.father);
+    let ped = KinshipPedigree::try_new(&cols.mother, &cols.father, &cols.twin, &depth).unwrap();
+    let nnz = kinship_csc_upper(ped, MAX_CSC_NNZ).unwrap().indices.len();
+    assert!(kinship_csc_upper(ped, nnz).is_ok());
+    assert_eq!(
+        kinship_csc_upper(ped, nnz - 1).unwrap_err(),
+        Error::CscIndexOverflow {
+            nnz: nnz as u64,
+            maximum: (nnz - 1) as i64
+        }
+    );
 }
