@@ -145,7 +145,8 @@ fn depth_major_order<'py>(
     py: Python<'py>,
     depth: PyReadonlyArray1<'py, i32>,
 ) -> PyResult<Option<Permutation<'py>>> {
-    Ok(match topology::depth_major_order(depth.as_slice()?) {
+    let order = topology::depth_major_order(depth.as_slice()?).map_err(|e| to_pyerr(py, e))?;
+    Ok(match order {
         Order::Identity => None,
         Order::Permuted { order, inverse } => {
             Some((order.into_pyarray(py), inverse.into_pyarray(py)))

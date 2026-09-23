@@ -4,6 +4,23 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.9.3
+
+- **Fixed (private): a parentless row above depth 0 keeps its diagonal in
+  the native DP.** `_native.kinship_csc`, `_native.approximate_kinship_csc`
+  and `_native.generation_kinship_sums` accept any depth that is above both
+  parents', and 0.9.2 seeded the 0.5 diagonal only at depth 0, so a founder
+  the caller placed deeper lost its diagonal and its edges to descendants
+  without an error. `PedigreeGraph` always passes the true structural depth
+  and was never affected. The DP now treats every parentless row as a
+  founder wherever it sits, as the 0.9.1 DP did; bytes on structural depth
+  are unchanged.
+- **Fixed (private): a refused reservation in the depth-major sort is a
+  `ResourceError`, not a panic.** 0.9.2 wrapped the sort's fallible form in
+  an `expect`, so a planted `view_sort_scratch` failure landing on a graph's
+  lazily built topology raised `PanicException`. Only reachable with the
+  allocation test seam armed.
+
 ## v0.9.2
 
 - **Changed: `kinship_matrix`, `approximate_kinship_matrix` and

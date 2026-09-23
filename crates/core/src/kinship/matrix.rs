@@ -221,12 +221,7 @@ impl<'t, S: RowStore> Dp<'t, S> {
 
     fn run(&mut self) -> Result<(), Error> {
         let topo = self.topo;
-        for j in topo.rows_at(0) {
-            self.store.push(j, j as u32, 0.5)?;
-        }
-        self.mz_pass(0)?;
-        self.depth_done(0)?;
-        for d in 1..=topo.max_depth() {
+        for d in 0..=topo.max_depth() {
             for j in topo.rows_at(d) {
                 self.process_row(j)?;
             }
@@ -239,13 +234,14 @@ impl<'t, S: RowStore> Dp<'t, S> {
     /// The merge walk of one row over its parents' finished rows, then its
     /// diagonal.  The emitted relatives are staged so the parent rows are
     /// read as they stood when the row started, then written in emission
-    /// order into both rows of each pair.
+    /// order into both rows of each pair.  A parentless row is its
+    /// diagonal alone, whatever depth the caller gave it.
     fn process_row(&mut self, j: usize) -> Result<(), Error> {
         let topo = self.topo;
         let m = topo.mother[j];
         let f = topo.father[j];
         if m < 0 && f < 0 {
-            return Ok(());
+            return self.store.push(j, j as u32, 0.5);
         }
         let jc = j as u32;
         let (mc, mv) = if m >= 0 {
@@ -933,6 +929,22 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// The structural check accepts a parentless row above depth 0; it
+    /// must still get its diagonal and reach its descendants.
+    #[test]
+    fn a_founder_above_depth_zero_keeps_its_diagonal() {
+        let c = cols(&[(-1, -1), (-1, -1), (0, 1)], &[]);
+        let raised = KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &[0, 1, 2]).unwrap();
+        let want = pairwise(&c);
+        assert_eq!(dense(&kinship_csc(raised).unwrap(), 3), want);
+        assert_eq!(
+            dense(&approximate_kinship_csc(raised, 0.1).unwrap(), 3),
+            want
+        );
+        let sums = generation_kinship_sums(raised, &[0, 0, 0], 1).unwrap();
+        assert_eq!(sums, vec![0.5]);
     }
 
     #[test]

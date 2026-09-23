@@ -111,6 +111,36 @@ def test_mz_and_inbred_constructions_match_the_oracle(build):
     assert _bytes(_native.approximate_kinship_csc(graph._built, graph.depth, 0.2)) == _oracle_csc(graph, 0.2)
 
 
+def test_a_parentless_row_above_depth_zero_keeps_its_diagonal():
+    """The raw binding accepts any structural depth; a founder raised above 0 is still a founder.
+
+    ``PedigreeGraph`` always passes the true structural depth, so only the
+    bindings can reach this; 0.9.2 dropped such a row's diagonal and its
+    edges to descendants.
+    """
+    graph = _graph("random_1k")
+    # Doubling keeps every child strictly below its parents; the extra one
+    # then puts every founder at an odd depth of at least 1.
+    depth = np.asarray(graph.depth, dtype=np.int32) * 2
+    founders = (np.asarray(graph.mother_rows) < 0) & (np.asarray(graph.father_rows) < 0)
+    depth[founders] += 1
+
+    class Raised:
+        n_individuals = graph.n_individuals
+        mother_rows = graph.mother_rows
+        father_rows = graph.father_rows
+        twin_rows = graph.twin_rows
+        _built = graph._built
+
+    Raised.depth = depth
+    assert _bytes(_native.kinship_csc(graph._built, depth)) == _oracle_csc(Raised, 0.0)
+    assert _bytes(_native.approximate_kinship_csc(graph._built, depth, THRESHOLD)) == _oracle_csc(Raised, THRESHOLD)
+    dense, observed, _ = _densify_labels(np.asarray(graph.depth, dtype=np.int32))
+    n_buckets = int(observed.shape[0]) + 1
+    got = _native.generation_kinship_sums(graph._built, depth, dense, n_buckets)
+    assert got.tobytes() == _oracle_sums(Raised, dense, n_buckets).tobytes()
+
+
 def test_a_retired_row_cannot_be_resurrected():
     """A founder whose last child is at depth 1 retires; a depth-2 write to it dissolves.
 

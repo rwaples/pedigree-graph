@@ -124,13 +124,19 @@ pub fn structural_depth(mother: &[i32], father: &[i32]) -> Vec<i32> {
 /// non-decreasing, so that one linear scan decides [`Order::Identity`] and the
 /// common already-ordered graph allocates nothing.  Otherwise a counting sort
 /// keyed by depth is naturally stable and runs in `O(n + max_depth)`.
-pub fn depth_major_order(depth: &[i32]) -> Order {
-    depth_major_order_in(depth, Family::ViewSortScratch).expect("infallible allocation")
+///
+/// # Errors
+///
+/// [`Error::AllocationFailed`] (family `view_sort_scratch`) when a map
+/// cannot be reserved; the host maps it to `ResourceError` like every other
+/// refused reservation rather than aborting.
+pub fn depth_major_order(depth: &[i32]) -> Result<Order, Error> {
+    depth_major_order_in(depth, Family::ViewSortScratch)
 }
 
 /// [`depth_major_order`] with its three arrays reserved through `family`,
-/// so a kernel that permutes a large pedigree reports a refused
-/// reservation as [`Error::AllocationFailed`] instead of aborting.
+/// so a kernel that permutes a large pedigree reports the refusal under
+/// its own family.
 pub fn depth_major_order_in(depth: &[i32], family: Family) -> Result<Order, Error> {
     if depth.windows(2).all(|w| w[0] <= w[1]) {
         return Ok(Order::Identity);
@@ -322,7 +328,7 @@ mod tests {
     fn depth_major_fixture_needs_no_permutation() {
         let depth = structural_depth(&DEPTH_MAJOR_MOTHER, &DEPTH_MAJOR_FATHER);
         assert_eq!(depth, vec![0, 0, 0, 1, 2]);
-        assert_eq!(depth_major_order(&depth), Order::Identity);
+        assert_eq!(depth_major_order(&depth).unwrap(), Order::Identity);
         assert!(is_topological(&DEPTH_MAJOR_MOTHER, &DEPTH_MAJOR_FATHER));
     }
 
@@ -333,7 +339,7 @@ mod tests {
         let depth = structural_depth(&mother, &father);
         assert_eq!(depth, vec![1, 0, 2, 0, 0]);
 
-        let order = depth_major_order(&depth);
+        let order = depth_major_order(&depth).unwrap();
         assert_eq!(
             order,
             Order::Permuted {
@@ -352,7 +358,7 @@ mod tests {
         let depth = structural_depth(&mother, &father);
         assert_eq!(depth, vec![2, 1, 0, 0, 0]);
 
-        let order = depth_major_order(&depth);
+        let order = depth_major_order(&depth).unwrap();
         assert_eq!(
             order,
             Order::Permuted {
@@ -379,28 +385,28 @@ mod tests {
         let father = [-1, -1, -1, 2, 2];
         let depth = structural_depth(&mother, &father);
         assert_eq!(depth, vec![0, 0, 0, 1, 1]);
-        assert_eq!(depth_major_order(&depth), Order::Identity);
+        assert_eq!(depth_major_order(&depth).unwrap(), Order::Identity);
     }
 
     #[test]
     fn one_absent_parent_still_deepens_the_child() {
         let depth = structural_depth(&[-1, -1, 0], &[-1, -1, -1]);
         assert_eq!(depth, vec![0, 0, 1]);
-        assert_eq!(depth_major_order(&depth), Order::Identity);
+        assert_eq!(depth_major_order(&depth).unwrap(), Order::Identity);
     }
 
     #[test]
     fn a_single_parent_chain_deepens_every_step() {
         let depth = structural_depth(&[-1, 0, 1, -1], &[-1, -1, -1, 2]);
         assert_eq!(depth, vec![0, 1, 2, 3]);
-        assert_eq!(depth_major_order(&depth), Order::Identity);
+        assert_eq!(depth_major_order(&depth).unwrap(), Order::Identity);
     }
 
     #[test]
     fn an_empty_graph_is_the_identity() {
         let depth = structural_depth(&[], &[]);
         assert_eq!(depth, Vec::<i32>::new());
-        assert_eq!(depth_major_order(&depth), Order::Identity);
+        assert_eq!(depth_major_order(&depth).unwrap(), Order::Identity);
         assert!(is_topological(&[], &[]));
     }
 
