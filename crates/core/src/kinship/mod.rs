@@ -15,4 +15,3 @@ pub mod rows;
 
 pub use matrix::{approximate_kinship_csc, generation_kinship_sums, kinship_csc, Csc};
 pub use pairwise::{pair_kinship, support_values, KinshipPedigree};
-pub use rows::Layout;

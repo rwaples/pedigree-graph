@@ -28,7 +28,7 @@
 //! column's rows come out ascending without a sort.
 
 use super::pairwise::KinshipPedigree;
-use super::rows::{Arena, Layout, Owned, RowStore};
+use super::rows::{Owned, RowStore};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use crate::topology::{self, Order};
@@ -207,7 +207,7 @@ impl<'t, S: RowStore> Dp<'t, S> {
     fn new(topo: &'t Topo, threshold: f64, retire: bool, sink: Sink) -> Result<Self, Error> {
         Ok(Dp {
             topo,
-            store: S::new(topo.n, topo.max_depth())?,
+            store: S::new(topo.n)?,
             threshold,
             retirement: if retire {
                 Some(topo.retirement()?)
@@ -578,12 +578,9 @@ fn sums_with<S: RowStore>(
 /// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
 /// not above both parents', [`Error::CscIndexOverflow`] when the entry count
 /// exceeds int32, and [`Error::AllocationFailed`] for any buffer.
-pub fn kinship_csc(ped: KinshipPedigree<'_>, layout: Layout) -> Result<Csc, Error> {
+pub fn kinship_csc(ped: KinshipPedigree<'_>) -> Result<Csc, Error> {
     let topo = Topo::build(&ped)?;
-    match layout {
-        Layout::Owned => complete_with::<Owned>(&topo),
-        Layout::Arena => complete_with::<Arena>(&topo),
-    }
+    complete_with::<Owned>(&topo)
 }
 
 /// Exact values on the propagation-pruned support: the structure a DP that
@@ -595,21 +592,14 @@ pub fn kinship_csc(ped: KinshipPedigree<'_>, layout: Layout) -> Result<Csc, Erro
 ///
 /// As [`kinship_csc`], plus [`Error::KinshipThresholdOutOfRange`] for a
 /// threshold that is not finite or not in `[0, 1]`.
-pub fn approximate_kinship_csc(
-    ped: KinshipPedigree<'_>,
-    threshold: f64,
-    layout: Layout,
-) -> Result<Csc, Error> {
+pub fn approximate_kinship_csc(ped: KinshipPedigree<'_>, threshold: f64) -> Result<Csc, Error> {
     if !threshold.is_finite() || !(0.0..=1.0).contains(&threshold) {
         return Err(Error::KinshipThresholdOutOfRange {
             value: threshold.to_string(),
         });
     }
     let topo = Topo::build(&ped)?;
-    match layout {
-        Layout::Owned => approximate_with::<Owned>(&topo, threshold),
-        Layout::Arena => approximate_with::<Arena>(&topo, threshold),
-    }
+    approximate_with::<Owned>(&topo, threshold)
 }
 
 /// Per bucket, the kinship summed over unordered same-bucket pairs of
@@ -624,7 +614,6 @@ pub fn generation_kinship_sums(
     ped: KinshipPedigree<'_>,
     labels: &[i32],
     n_buckets: usize,
-    layout: Layout,
 ) -> Result<Vec<f64>, Error> {
     crate::relationships::check_column_length("labels", labels.len(), ped.len())?;
     if n_buckets == 0 {
@@ -649,10 +638,7 @@ pub fn generation_kinship_sums(
         });
     }
     let topo = Topo::build(&ped)?;
-    match layout {
-        Layout::Owned => sums_with::<Owned>(&topo, labels, n_buckets),
-        Layout::Arena => sums_with::<Arena>(&topo, labels, n_buckets),
-    }
+    sums_with::<Owned>(&topo, labels, n_buckets)
 }
 
 #[cfg(test)]
@@ -771,14 +757,12 @@ mod tests {
     }
 
     #[test]
-    fn the_complete_matrix_is_the_pairwise_recurrence_in_both_layouts() {
+    fn the_complete_matrix_is_the_pairwise_recurrence() {
         for c in [family(), shuffled_family().0] {
             let want = pairwise(&c);
-            for layout in [Layout::Owned, Layout::Arena] {
-                let csc = kinship_csc(c.ped(), layout).unwrap();
-                assert_eq!(dense(&csc, c.mother.len()), want, "{layout:?}");
-                assert_eq!(csc.data.len(), csc.indices.len());
-            }
+            let csc = kinship_csc(c.ped()).unwrap();
+            assert_eq!(dense(&csc, c.mother.len()), want);
+            assert_eq!(csc.data.len(), csc.indices.len());
         }
     }
 
@@ -786,8 +770,8 @@ mod tests {
     fn a_permuted_graph_gives_the_permuted_matrix() {
         let base = family();
         let (shuffled, perm) = shuffled_family();
-        let a = dense(&kinship_csc(base.ped(), Layout::Owned).unwrap(), 11);
-        let b = dense(&kinship_csc(shuffled.ped(), Layout::Owned).unwrap(), 11);
+        let a = dense(&kinship_csc(base.ped()).unwrap(), 11);
+        let b = dense(&kinship_csc(shuffled.ped()).unwrap(), 11);
         for (new_i, &old_i) in perm.iter().enumerate() {
             for (new_j, &old_j) in perm.iter().enumerate() {
                 assert_eq!(b[new_i][new_j], a[old_i][old_j]);
@@ -798,13 +782,10 @@ mod tests {
     #[test]
     fn approximate_at_zero_is_the_complete_matrix_and_higher_prunes() {
         for c in [family(), shuffled_family().0] {
-            let complete = kinship_csc(c.ped(), Layout::Owned).unwrap();
-            for layout in [Layout::Owned, Layout::Arena] {
-                assert_eq!(
-                    approximate_kinship_csc(c.ped(), 0.0, layout).unwrap(),
-                    complete
-                );
-                let pruned = approximate_kinship_csc(c.ped(), 0.2, layout).unwrap();
+            let complete = kinship_csc(c.ped()).unwrap();
+            {
+                assert_eq!(approximate_kinship_csc(c.ped(), 0.0).unwrap(), complete);
+                let pruned = approximate_kinship_csc(c.ped(), 0.2).unwrap();
                 assert!(pruned.data.len() < complete.data.len());
                 let want = pairwise(&c);
                 let got = dense(&pruned, c.mother.len());
@@ -824,14 +805,11 @@ mod tests {
     #[test]
     fn mz_twins_share_the_self_value_on_every_path() {
         let c = family();
-        let csc = kinship_csc(c.ped(), Layout::Owned).unwrap();
+        let csc = kinship_csc(c.ped()).unwrap();
         let m = dense(&csc, 11);
         assert_eq!(m[8][9], m[8][8]);
         assert_eq!(m[9][8], m[9][9]);
-        let pruned = dense(
-            &approximate_kinship_csc(c.ped(), 0.4, Layout::Owned).unwrap(),
-            11,
-        );
+        let pruned = dense(&approximate_kinship_csc(c.ped(), 0.4).unwrap(), 11);
         assert_eq!(pruned[8][9], m[8][8], "the MZ edge survives any threshold");
     }
 
@@ -839,7 +817,7 @@ mod tests {
     fn generation_sums_match_the_matrix_walk() {
         for c in [family(), shuffled_family().0] {
             let n = c.mother.len();
-            let m = dense(&kinship_csc(c.ped(), Layout::Owned).unwrap(), n);
+            let m = dense(&kinship_csc(c.ped()).unwrap(), n);
             let labels: Vec<i32> = c.depth.clone();
             let buckets = *labels.iter().max().unwrap() as usize + 1;
             let mut want = vec![0.0f64; buckets];
@@ -850,11 +828,9 @@ mod tests {
                     }
                 }
             }
-            for layout in [Layout::Owned, Layout::Arena] {
-                let got = generation_kinship_sums(c.ped(), &labels, buckets, layout).unwrap();
-                for (g, w) in got.iter().zip(&want) {
-                    assert!((g - w).abs() <= 1e-12, "{layout:?}: {got:?} vs {want:?}");
-                }
+            let got = generation_kinship_sums(c.ped(), &labels, buckets).unwrap();
+            for (g, w) in got.iter().zip(&want) {
+                assert!((g - w).abs() <= 1e-12, "{got:?} vs {want:?}");
             }
         }
     }
@@ -870,10 +846,10 @@ mod tests {
         dp.run().unwrap();
         assert!(dp.store.is_retired(0));
         assert!(dp.store.cols(0).is_empty());
-        let m = dense(&kinship_csc(c.ped(), Layout::Owned).unwrap(), 5);
+        let m = dense(&kinship_csc(c.ped()).unwrap(), 5);
         assert_eq!(m[0][4], 0.125, "the pair is held on row 4's side");
         let labels = vec![0, 0, 0, 0, 0];
-        let sums = generation_kinship_sums(c.ped(), &labels, 1, Layout::Owned).unwrap();
+        let sums = generation_kinship_sums(c.ped(), &labels, 1).unwrap();
         let want: f64 = (0..5)
             .flat_map(|i| (i + 1..5).map(move |j| (i, j)))
             .map(|(i, j)| f64::from(m[i][j]))
@@ -903,13 +879,13 @@ mod tests {
     fn malformed_inputs_are_rejected_before_any_work() {
         let c = cols(&[(-1, -1), (-1, -1), (0, 1)], &[]);
         let ped = c.ped();
-        let err = approximate_kinship_csc(ped, 1.5, Layout::Owned).unwrap_err();
+        let err = approximate_kinship_csc(ped, 1.5).unwrap_err();
         assert!(matches!(err, Error::KinshipThresholdOutOfRange { .. }));
         assert!(matches!(
-            approximate_kinship_csc(ped, f64::NAN, Layout::Owned).unwrap_err(),
+            approximate_kinship_csc(ped, f64::NAN).unwrap_err(),
             Error::KinshipThresholdOutOfRange { .. }
         ));
-        let err = generation_kinship_sums(ped, &[0, 0], 1, Layout::Owned).unwrap_err();
+        let err = generation_kinship_sums(ped, &[0, 0], 1).unwrap_err();
         assert!(matches!(
             err,
             Error::LengthMismatch {
@@ -917,7 +893,7 @@ mod tests {
                 ..
             }
         ));
-        let err = generation_kinship_sums(ped, &[0, 0, 1], 1, Layout::Owned).unwrap_err();
+        let err = generation_kinship_sums(ped, &[0, 0, 1], 1).unwrap_err();
         assert!(matches!(
             err,
             Error::ValueOutOfRange {
@@ -926,7 +902,7 @@ mod tests {
                 ..
             }
         ));
-        let err = generation_kinship_sums(ped, &[0, 0, 0], 0, Layout::Owned).unwrap_err();
+        let err = generation_kinship_sums(ped, &[0, 0, 0], 0).unwrap_err();
         assert!(matches!(
             err,
             Error::ValueOutOfRange {
@@ -936,7 +912,7 @@ mod tests {
         ));
 
         let flat = KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &[0, 0, 0]).unwrap();
-        let err = kinship_csc(flat, Layout::Owned).unwrap_err();
+        let err = kinship_csc(flat).unwrap_err();
         assert!(matches!(
             err,
             Error::ValueOutOfRange {
@@ -950,7 +926,7 @@ mod tests {
         let negative =
             KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &[-1, 0, 1]).unwrap();
         assert!(matches!(
-            kinship_csc(negative, Layout::Owned).unwrap_err(),
+            kinship_csc(negative).unwrap_err(),
             Error::ValueOutOfRange {
                 field: "depth",
                 position: 0,
@@ -962,13 +938,10 @@ mod tests {
     #[test]
     fn an_empty_pedigree_gives_empty_products() {
         let c = cols(&[], &[]);
-        let csc = kinship_csc(c.ped(), Layout::Owned).unwrap();
+        let csc = kinship_csc(c.ped()).unwrap();
         assert_eq!(csc.indptr, vec![0]);
         assert!(csc.indices.is_empty());
-        assert_eq!(
-            generation_kinship_sums(c.ped(), &[], 1, Layout::Arena).unwrap(),
-            vec![0.0]
-        );
+        assert_eq!(generation_kinship_sums(c.ped(), &[], 1).unwrap(), vec![0.0]);
     }
 
     const MATRIX_FAMILIES: [Family; 4] = [
@@ -990,25 +963,22 @@ mod tests {
                 {
                     continue;
                 }
-                for layout in ["owned", "arena"] {
-                    let out = std::process::Command::new(&exe)
-                        .args([
-                            "--exact",
-                            "kinship::matrix::tests::seam_child",
-                            "--nocapture",
-                        ])
-                        .env("PG_MATRIX_SEAM_FAMILY", family.name())
-                        .env("PG_MATRIX_SEAM_PRODUCT", product)
-                        .env("PG_MATRIX_SEAM_LAYOUT", layout)
-                        .output()
-                        .unwrap();
-                    assert!(
-                        out.status.success(),
-                        "{}/{product}/{layout}:\n{}",
-                        family.name(),
-                        String::from_utf8_lossy(&out.stderr)
-                    );
-                }
+                let out = std::process::Command::new(&exe)
+                    .args([
+                        "--exact",
+                        "kinship::matrix::tests::seam_child",
+                        "--nocapture",
+                    ])
+                    .env("PG_MATRIX_SEAM_FAMILY", family.name())
+                    .env("PG_MATRIX_SEAM_PRODUCT", product)
+                    .output()
+                    .unwrap();
+                assert!(
+                    out.status.success(),
+                    "{}/{product}:\n{}",
+                    family.name(),
+                    String::from_utf8_lossy(&out.stderr)
+                );
             }
         }
     }
@@ -1022,20 +992,19 @@ mod tests {
         };
         let family = Family::parse(&name).unwrap();
         let product = std::env::var("PG_MATRIX_SEAM_PRODUCT").unwrap();
-        let layout = Layout::parse(&std::env::var("PG_MATRIX_SEAM_LAYOUT").unwrap()).unwrap();
         let c = crate::relationships::testing::random_pedigree(300, 5);
         let depth = structural_depth(&c.mother, &c.father);
         let ped = KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &depth).unwrap();
         let labels = vec![0i32; 300];
         let run = |ped| match product.as_str() {
-            "complete" => kinship_csc(ped, layout).map(|c| c.data.len()),
-            "approximate" => approximate_kinship_csc(ped, 0.01, layout).map(|c| c.data.len()),
-            _ => generation_kinship_sums(ped, &labels, 1, layout).map(|s| s.len()),
+            "complete" => kinship_csc(ped).map(|c| c.data.len()),
+            "approximate" => approximate_kinship_csc(ped, 0.01).map(|c| c.data.len()),
+            _ => generation_kinship_sums(ped, &labels, 1).map(|s| s.len()),
         };
         fail_next(Some(family));
         match run(ped) {
             Err(Error::AllocationFailed { operation, .. }) => assert_eq!(operation, family.name()),
-            other => panic!("{name}/{product}/{layout:?} gave {other:?}"),
+            other => panic!("{name}/{product} gave {other:?}"),
         }
         fail_next(None);
         assert!(run(ped).is_ok());

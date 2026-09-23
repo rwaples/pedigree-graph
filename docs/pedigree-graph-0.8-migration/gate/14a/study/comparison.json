@@ -1,0 +1,282 @@
+{
+  "byte_identical": false,
+  "captured_with": {
+    "core_version": "0.9.1",
+    "package_version": "0.9.1"
+  },
+  "core_version": "0.9.1",
+  "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+  "package_version": "0.9.0",
+  "pedigrees": {
+    "baseline100K": {
+      "products": {
+        "mean_kinship_by_generation": {
+          "generations": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "mean_kinship_bits": [
+            0,
+            4528644365474346328,
+            4533126625548697611,
+            4535879168807839631,
+            4537605117938090841,
+            4539380790326544332
+          ],
+          "n": 536036,
+          "outcome": "completed",
+          "pair_counts": [
+            2819892351,
+            2980807866,
+            3416213811,
+            4938440653,
+            4940030901,
+            4943411028
+          ],
+          "seconds": 21.4,
+          "unlabelled_individual_count": 0,
+          "verdict": "differs"
+        }
+      },
+      "source": "results/base/baseline100K/rep1/pedigree.parquet"
+    },
+    "baseline10K": {
+      "products": {
+        "approximate_kinship_matrix": {
+          "data_bits_sha256": "72a4099b68ba2430dbf6a0cf53cd00f0430914a040404211a3d16945f4476e3b",
+          "indices_sha256": "d4e734307ad59086e200fb145f0d608a737bb01081ced242734ea36fd7ec04bf",
+          "indptr_sha256": "927fea49106f8ddafe9d3d7bf0fee325c9c194fc6f02badeb557554a951b780f",
+          "n": 53466,
+          "nnz": 28292524,
+          "outcome": "completed",
+          "seconds": 4.8,
+          "verdict": "byte_identical"
+        },
+        "kinship_matrix": {
+          "data_bits_sha256": "36b8384863d530c3f4b67e09a23d3f87c20e989504c27d52fc73307cae7b9f72",
+          "indices_sha256": "ec4a79b14e550f3945bdc1331eea1d06359fc511f66ccd9e7fcf8ce11dc9fb2f",
+          "indptr_sha256": "692647674359da9b69c4e66441d851507f4219d6c13af8514953b0bee6eb3e78",
+          "n": 53466,
+          "nnz": 39390880,
+          "outcome": "completed",
+          "seconds": 4.3,
+          "verdict": "byte_identical"
+        },
+        "mean_kinship_by_generation": {
+          "generations": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "mean_kinship_bits": [
+            0,
+            4544005698798499702,
+            4548467402568775358,
+            4550821494415763309,
+            4553012007526131705,
+            4554179454432917807
+          ],
+          "n": 53466,
+          "outcome": "completed",
+          "pair_counts": [
+            27613596,
+            29594971,
+            33887028,
+            49406770,
+            49416711,
+            49317346
+          ],
+          "seconds": 1.5,
+          "unlabelled_individual_count": 0,
+          "verdict": "byte_identical"
+        }
+      },
+      "source": "results/base/baseline10K/rep1/pedigree.parquet"
+    },
+    "dev_cont_n10k": {
+      "products": {
+        "approximate_kinship_matrix": {
+          "data_bits_sha256": "cff50090620ebedbd9ea76786906732a9151f6c0928363812e11057e08135607",
+          "indices_sha256": "66852bcc0193bb19cb739956a817c8ab18d9f4e1366cdfd1eab1eeb38be466b5",
+          "indptr_sha256": "e07570b47a91daaab2d2e0760c0c7f952dfe8deb0e3cc7dade837abe7b612774",
+          "n": 20400,
+          "nnz": 9962648,
+          "outcome": "completed",
+          "seconds": 1.7,
+          "verdict": "byte_identical"
+        },
+        "kinship_matrix": {
+          "data_bits_sha256": "0732dbd8d737978dbad2d5ca20140fe2de2045585072548190ce820cd304bf6d",
+          "indices_sha256": "9f2675e91b7a74d580db4261fd2c64e768b506e1db98dd9e57e13b84916a410c",
+          "indptr_sha256": "2c0d203e901eda6c93928b106ad1ae3798f7a18dc66b457d1ed03fddbabc14b9",
+          "n": 20400,
+          "nnz": 13165606,
+          "outcome": "completed",
+          "seconds": 1.3,
+          "verdict": "byte_identical"
+        },
+        "mean_kinship_by_generation": {
+          "generations": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "mean_kinship_bits": [
+            0,
+            4550727383626134042,
+            4555130768498808662,
+            4557980856682217765,
+            4559558422109187956,
+            4561105579316097314
+          ],
+          "n": 20400,
+          "outcome": "completed",
+          "pair_counts": [
+            5713890,
+            5707131,
+            5713890,
+            5727420,
+            5720653,
+            5703753
+          ],
+          "seconds": 0.4,
+          "unlabelled_individual_count": 0,
+          "verdict": "byte_identical"
+        }
+      },
+      "source": "results/dev/dev_cont_n10k/rep1/pedigree.parquet"
+    },
+    "dev_mean_n10k": {
+      "products": {
+        "approximate_kinship_matrix": {
+          "data_bits_sha256": "cff50090620ebedbd9ea76786906732a9151f6c0928363812e11057e08135607",
+          "indices_sha256": "66852bcc0193bb19cb739956a817c8ab18d9f4e1366cdfd1eab1eeb38be466b5",
+          "indptr_sha256": "e07570b47a91daaab2d2e0760c0c7f952dfe8deb0e3cc7dade837abe7b612774",
+          "n": 20400,
+          "nnz": 9962648,
+          "outcome": "completed",
+          "seconds": 1.6,
+          "verdict": "byte_identical"
+        },
+        "kinship_matrix": {
+          "data_bits_sha256": "0732dbd8d737978dbad2d5ca20140fe2de2045585072548190ce820cd304bf6d",
+          "indices_sha256": "9f2675e91b7a74d580db4261fd2c64e768b506e1db98dd9e57e13b84916a410c",
+          "indptr_sha256": "2c0d203e901eda6c93928b106ad1ae3798f7a18dc66b457d1ed03fddbabc14b9",
+          "n": 20400,
+          "nnz": 13165606,
+          "outcome": "completed",
+          "seconds": 1.3,
+          "verdict": "byte_identical"
+        },
+        "mean_kinship_by_generation": {
+          "generations": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "mean_kinship_bits": [
+            0,
+            4550727383626134042,
+            4555130768498808662,
+            4557980856682217765,
+            4559558422109187956,
+            4561105579316097314
+          ],
+          "n": 20400,
+          "outcome": "completed",
+          "pair_counts": [
+            5713890,
+            5707131,
+            5713890,
+            5727420,
+            5720653,
+            5703753
+          ],
+          "seconds": 0.5,
+          "unlabelled_individual_count": 0,
+          "verdict": "byte_identical"
+        }
+      },
+      "source": "results/dev/dev_mean_n10k/rep1/pedigree.parquet"
+    },
+    "random_30k": {
+      "products": {
+        "approximate_kinship_matrix": {
+          "data_bits_sha256": "a6e2ed6d9df121abaab2e144ec07aec3430fb021b52f114e144e85bc9d086e48",
+          "indices_sha256": "36a251b0580465b6644d6e325e05f5a457f7996ffb69e5b358cb4eb893e1f783",
+          "indptr_sha256": "5084b27744ad7f285919a644ca361b4cdec5c329bb74d73af1c01b203e6d3be4",
+          "n": 30300,
+          "nnz": 53817918,
+          "outcome": "completed",
+          "seconds": 13.4,
+          "verdict": "byte_identical"
+        },
+        "kinship_matrix": {
+          "data_bits_sha256": "d1cfacf2a458e684998220ca5f0657c59461719c8c5eb0599bd979b0655a0e74",
+          "indices_sha256": "b185ea26051c1c50ce7b8a1d8b90395a74bee9c183b461d4fad964889220aa60",
+          "indptr_sha256": "56b9a707c6727a764dde72ae4a7453b979b72733442858b6c7cfc312db7e0b92",
+          "n": 30300,
+          "nnz": 267684308,
+          "outcome": "completed",
+          "seconds": 25.8,
+          "verdict": "byte_identical"
+        },
+        "mean_kinship_by_generation": {
+          "generations": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8
+          ],
+          "mean_kinship_bits": [
+            0,
+            4554412598488301382,
+            4556379404530378430,
+            4557830697359936331,
+            4558544494041221047,
+            4559264768272909860,
+            4559788148617798633,
+            4560427170743038552,
+            4561113971604726628
+          ],
+          "n": 30300,
+          "outcome": "completed",
+          "pair_counts": [
+            1143828,
+            7467180,
+            6342141,
+            6317235,
+            6253416,
+            6278196,
+            6239278,
+            6074355,
+            4794156
+          ],
+          "seconds": 5.7,
+          "unlabelled_individual_count": 0,
+          "verdict": "byte_identical"
+        }
+      },
+      "source": "parity:random_30k"
+    }
+  },
+  "role": "compare"
+}

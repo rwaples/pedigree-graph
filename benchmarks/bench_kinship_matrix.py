@@ -2,19 +2,17 @@
 
 ``kinship_matrix()``, ``approximate_kinship_matrix(0.001)`` and
 ``mean_kinship_by_generation()`` share one depth-major DP kernel.  Slice 14
-moves it to the Rust core behind two row-storage layouts (ADR 0007's
-benchmark-selected storage), so the sweep has three implementation arms
-interleaved in one run:
+moved it to the Rust core, and the sweep interleaves two builds in one run,
+as ADR 0007 requires for a gated comparison:
 
 * ``wheel``: the 0.9.1 PyPI wheel as the simACE umbrella env installs it,
   run under that env's interpreter;
-* ``owned``: this source build with one owned vector pair per row;
-* ``arena``: this source build with the flat arena and free list ported as is.
+* ``source``: this checkout, built into this repo's env.
 
-The two source arms select their layout through
-``PEDIGREE_GRAPH_KINSHIP_ROWS`` during the bake-off; the variable and the
-losing layout are deleted once the 14a record is written.  Every record
-carries the import path and versions of the package the child measured.
+The 14a bake-off ran a third arm, the 0.9.1 arena allocator ported as it
+was, selected through an environment variable; both went with the record.
+Every record carries the import path and versions of the package the child
+measured.
 
 Each fixture here is one input crossed with one product, built fresh in the
 child so no product ever takes a cached route (the summary walks the complete
@@ -159,10 +157,9 @@ SUITE = Suite(
     fixtures=tuple(_query_fixture(name, _BASES[base], product) for name, base, product in _CELLS),
     arms=(
         Arm("wheel", _run, label="0.9.1 wheel (simACE env)", interpreter=WHEEL_INTERPRETER),
-        Arm("owned", _run, label="source, owned rows", env={"PEDIGREE_GRAPH_KINSHIP_ROWS": "owned"}),
-        Arm("arena", _run, label="source, arena rows", env={"PEDIGREE_GRAPH_KINSHIP_ROWS": "arena"}),
+        Arm("source", _run, label="source build (this env)"),
     ),
-    gate=Gate(baseline="wheel", gated=frozenset({"owned", "arena"})),
+    gate=Gate(baseline="wheel", gated=frozenset({"source"})),
     order=RunOrder.INTERLEAVED,
     timeout_s=3600.0,
 )

@@ -10,7 +10,7 @@ use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pedigree_graph_core::alloc::{self, Family};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
-use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree, Layout};
+use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
@@ -489,21 +489,6 @@ fn kinship_support_values<'py>(
     Ok(values.into_pyarray(py))
 }
 
-/// The bake-off switch for the DP's row layout (slice 14); `owned` unless
-/// `PEDIGREE_GRAPH_KINSHIP_ROWS` names the other.
-const LAYOUT_ENV: &str = "PEDIGREE_GRAPH_KINSHIP_ROWS";
-
-fn kinship_layout() -> PyResult<Layout> {
-    match std::env::var(LAYOUT_ENV) {
-        Err(_) => Ok(Layout::Owned),
-        Ok(name) => Layout::parse(&name).ok_or_else(|| {
-            PyValueError::new_err(format!(
-                "{LAYOUT_ENV} must be \"owned\" or \"arena\", got {name:?}"
-            ))
-        }),
-    }
-}
-
 /// `(indptr, indices, data)` of a symmetric CSC in graph rows.
 type CscArrays<'py> = (
     Bound<'py, PyArray1<i32>>,
@@ -536,9 +521,8 @@ fn kinship_csc<'py>(
 ) -> PyResult<CscArrays<'py>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
-    let layout = kinship_layout()?;
     let csc = py
-        .detach(|| kinship::kinship_csc(ped, layout))
+        .detach(|| kinship::kinship_csc(ped))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(csc_arrays(py, csc))
 }
@@ -557,9 +541,8 @@ fn approximate_kinship_csc<'py>(
 ) -> PyResult<CscArrays<'py>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
-    let layout = kinship_layout()?;
     let csc = py
-        .detach(|| kinship::approximate_kinship_csc(ped, threshold, layout))
+        .detach(|| kinship::approximate_kinship_csc(ped, threshold))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(csc_arrays(py, csc))
 }
@@ -580,9 +563,8 @@ fn generation_kinship_sums<'py>(
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
     let labels = labels.as_slice()?;
-    let layout = kinship_layout()?;
     let sums = py
-        .detach(|| kinship::generation_kinship_sums(ped, labels, n_buckets, layout))
+        .detach(|| kinship::generation_kinship_sums(ped, labels, n_buckets))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(sums.into_pyarray(py))
 }
