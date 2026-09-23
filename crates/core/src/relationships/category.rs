@@ -130,6 +130,35 @@ impl Category {
                 | Category::C2
         )
     }
+
+    /// The `(first, second)` semantic roles of an asymmetric category, as the
+    /// Python registry names them; `None` for a symmetric one.
+    pub fn roles(self) -> Option<(&'static str, &'static str)> {
+        match self {
+            Category::MO => Some(("offspring", "mother")),
+            Category::FO => Some(("offspring", "father")),
+            Category::GP | Category::GGP | Category::GGGP | Category::G3GP => {
+                Some(("descendant", "ancestor"))
+            }
+            Category::Av
+            | Category::HAv
+            | Category::GAv
+            | Category::HGAv
+            | Category::GGAv
+            | Category::HGGAv
+            | Category::G3Av => Some(("niece_nephew", "aunt_uncle")),
+            Category::C1R1 | Category::H1C1R | Category::C1R2 => {
+                Some(("junior_cousin", "senior_cousin"))
+            }
+            Category::MZ
+            | Category::FS
+            | Category::MHS
+            | Category::PHS
+            | Category::C1
+            | Category::H1C
+            | Category::C2 => None,
+        }
+    }
 }
 
 /// A set of categories, for the requested blocks of a pair query.
@@ -199,5 +228,17 @@ impl Counts {
             *a += b;
         }
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Category;
+
+    #[test]
+    fn roles_exist_exactly_for_asymmetric_categories() {
+        for cat in Category::ALL {
+            assert_eq!(cat.roles().is_none(), cat.symmetric(), "{}", cat.code());
+        }
     }
 }
