@@ -1,0 +1,1562 @@
+{
+  "cells": [
+    {
+      "cell": "closed_w200_g8/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 144.125,
+          "cell": "closed_w200_g8/wheel",
+          "checksum": 12468895593382563718,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 327,
+            "mean_ancestors": 75.81944444444444,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 136475
+          },
+          "n_individuals": 1800,
+          "peak_rss_mib": 144.875,
+          "ru_maxrss_mib": 145.609375,
+          "started_at": "2026-09-23T16:33:35+00:00",
+          "wall_s": 0.003017281007487327
+        },
+        {
+          "baseline_rss_mib": 144.1171875,
+          "cell": "closed_w200_g8/wheel",
+          "checksum": 12468895593382563718,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 327,
+            "mean_ancestors": 75.81944444444444,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 136475
+          },
+          "n_individuals": 1800,
+          "peak_rss_mib": 144.87890625,
+          "ru_maxrss_mib": 145.59375,
+          "started_at": "2026-09-23T16:34:17+00:00",
+          "wall_s": 0.0030421910050790757
+        },
+        {
+          "baseline_rss_mib": 144.40234375,
+          "cell": "closed_w200_g8/wheel",
+          "checksum": 12468895593382563718,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 327,
+            "mean_ancestors": 75.81944444444444,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 136475
+          },
+          "n_individuals": 1800,
+          "peak_rss_mib": 145.1484375,
+          "ru_maxrss_mib": 145.87109375,
+          "started_at": "2026-09-23T16:35:00+00:00",
+          "wall_s": 0.0030568130023311824
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w200_g8/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 59.66796875,
+          "cell": "closed_w200_g8/source",
+          "checksum": 12468895593382563718,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 327,
+            "mean_ancestors": 75.81944444444444,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 136475
+          },
+          "n_individuals": 1800,
+          "peak_rss_mib": 59.703125,
+          "ru_maxrss_mib": 60.16015625,
+          "started_at": "2026-09-23T16:33:36+00:00",
+          "wall_s": 0.0009442940063308924
+        },
+        {
+          "baseline_rss_mib": 59.6796875,
+          "cell": "closed_w200_g8/source",
+          "checksum": 12468895593382563718,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 327,
+            "mean_ancestors": 75.81944444444444,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 136475
+          },
+          "n_individuals": 1800,
+          "peak_rss_mib": 59.7109375,
+          "ru_maxrss_mib": 60.19921875,
+          "started_at": "2026-09-23T16:34:18+00:00",
+          "wall_s": 0.0009136939770542085
+        },
+        {
+          "baseline_rss_mib": 59.73046875,
+          "cell": "closed_w200_g8/source",
+          "checksum": 12468895593382563718,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 327,
+            "mean_ancestors": 75.81944444444444,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 136475
+          },
+          "n_individuals": 1800,
+          "peak_rss_mib": 59.76953125,
+          "ru_maxrss_mib": 60.16015625,
+          "started_at": "2026-09-23T16:35:01+00:00",
+          "wall_s": 0.0009207199909724295
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w1000_g8/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 145.703125,
+          "cell": "closed_w1000_g8/wheel",
+          "checksum": 12508086900247589243,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 476,
+            "mean_ancestors": 101.1048888888889,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 909944
+          },
+          "n_individuals": 9000,
+          "peak_rss_mib": 148.69921875,
+          "ru_maxrss_mib": 148.69921875,
+          "started_at": "2026-09-23T16:33:37+00:00",
+          "wall_s": 0.017023494991008192
+        },
+        {
+          "baseline_rss_mib": 145.6484375,
+          "cell": "closed_w1000_g8/wheel",
+          "checksum": 12508086900247589243,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 476,
+            "mean_ancestors": 101.1048888888889,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 909944
+          },
+          "n_individuals": 9000,
+          "peak_rss_mib": 148.68359375,
+          "ru_maxrss_mib": 148.68359375,
+          "started_at": "2026-09-23T16:34:19+00:00",
+          "wall_s": 0.01720740899327211
+        },
+        {
+          "baseline_rss_mib": 145.94921875,
+          "cell": "closed_w1000_g8/wheel",
+          "checksum": 12508086900247589243,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 476,
+            "mean_ancestors": 101.1048888888889,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 909944
+          },
+          "n_individuals": 9000,
+          "peak_rss_mib": 148.95703125,
+          "ru_maxrss_mib": 148.95703125,
+          "started_at": "2026-09-23T16:35:02+00:00",
+          "wall_s": 0.017620692000491545
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w1000_g8/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 61.09765625,
+          "cell": "closed_w1000_g8/source",
+          "checksum": 12508086900247589243,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 476,
+            "mean_ancestors": 101.1048888888889,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 909944
+          },
+          "n_individuals": 9000,
+          "peak_rss_mib": 61.71875,
+          "ru_maxrss_mib": 61.94921875,
+          "started_at": "2026-09-23T16:33:38+00:00",
+          "wall_s": 0.005483850021846592
+        },
+        {
+          "baseline_rss_mib": 61.09375,
+          "cell": "closed_w1000_g8/source",
+          "checksum": 12508086900247589243,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 476,
+            "mean_ancestors": 101.1048888888889,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 909944
+          },
+          "n_individuals": 9000,
+          "peak_rss_mib": 61.7421875,
+          "ru_maxrss_mib": 61.7734375,
+          "started_at": "2026-09-23T16:34:20+00:00",
+          "wall_s": 0.005446113005746156
+        },
+        {
+          "baseline_rss_mib": 61.3125,
+          "cell": "closed_w1000_g8/source",
+          "checksum": 12508086900247589243,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 476,
+            "mean_ancestors": 101.1048888888889,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 909944
+          },
+          "n_individuals": 9000,
+          "peak_rss_mib": 61.9453125,
+          "ru_maxrss_mib": 62.14453125,
+          "started_at": "2026-09-23T16:35:03+00:00",
+          "wall_s": 0.0057540359848644584
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w2000_g8/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 146.9453125,
+          "cell": "closed_w2000_g8/wheel",
+          "checksum": 12524142418444581327,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 499,
+            "mean_ancestors": 105.733,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 1903194
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 152.1328125,
+          "ru_maxrss_mib": 152.1328125,
+          "started_at": "2026-09-23T16:33:39+00:00",
+          "wall_s": 0.034703997982433066
+        },
+        {
+          "baseline_rss_mib": 146.6640625,
+          "cell": "closed_w2000_g8/wheel",
+          "checksum": 12524142418444581327,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 499,
+            "mean_ancestors": 105.733,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 1903194
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 151.7890625,
+          "ru_maxrss_mib": 151.7890625,
+          "started_at": "2026-09-23T16:34:21+00:00",
+          "wall_s": 0.034891309012891725
+        },
+        {
+          "baseline_rss_mib": 146.6015625,
+          "cell": "closed_w2000_g8/wheel",
+          "checksum": 12524142418444581327,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 499,
+            "mean_ancestors": 105.733,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 1903194
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 151.72265625,
+          "ru_maxrss_mib": 151.72265625,
+          "started_at": "2026-09-23T16:35:04+00:00",
+          "wall_s": 0.03641768099623732
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w2000_g8/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 62.15625,
+          "cell": "closed_w2000_g8/source",
+          "checksum": 12524142418444581327,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 499,
+            "mean_ancestors": 105.733,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 1903194
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 63.2890625,
+          "ru_maxrss_mib": 63.58984375,
+          "started_at": "2026-09-23T16:33:40+00:00",
+          "wall_s": 0.011906024010386318
+        },
+        {
+          "baseline_rss_mib": 62.0390625,
+          "cell": "closed_w2000_g8/source",
+          "checksum": 12524142418444581327,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 499,
+            "mean_ancestors": 105.733,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 1903194
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 63.35546875,
+          "ru_maxrss_mib": 63.48828125,
+          "started_at": "2026-09-23T16:34:22+00:00",
+          "wall_s": 0.011140832997625694
+        },
+        {
+          "baseline_rss_mib": 62.0390625,
+          "cell": "closed_w2000_g8/source",
+          "checksum": 12524142418444581327,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 499,
+            "mean_ancestors": 105.733,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 1903194
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 63.2890625,
+          "ru_maxrss_mib": 63.51171875,
+          "started_at": "2026-09-23T16:35:05+00:00",
+          "wall_s": 0.011615683004492894
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w128_g8/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 144.09375,
+          "cell": "closed_w128_g8/wheel",
+          "checksum": 9047697374352796410,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 261,
+            "mean_ancestors": 65.70052083333333,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 75687
+          },
+          "n_individuals": 1152,
+          "peak_rss_mib": 144.5234375,
+          "ru_maxrss_mib": 145.375,
+          "started_at": "2026-09-23T16:33:41+00:00",
+          "wall_s": 0.001793567993445322
+        },
+        {
+          "baseline_rss_mib": 143.98828125,
+          "cell": "closed_w128_g8/wheel",
+          "checksum": 9047697374352796410,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 261,
+            "mean_ancestors": 65.70052083333333,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 75687
+          },
+          "n_individuals": 1152,
+          "peak_rss_mib": 144.4140625,
+          "ru_maxrss_mib": 145.2109375,
+          "started_at": "2026-09-23T16:34:23+00:00",
+          "wall_s": 0.0017870579904410988
+        },
+        {
+          "baseline_rss_mib": 144.109375,
+          "cell": "closed_w128_g8/wheel",
+          "checksum": 9047697374352796410,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 261,
+            "mean_ancestors": 65.70052083333333,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 75687
+          },
+          "n_individuals": 1152,
+          "peak_rss_mib": 144.57421875,
+          "ru_maxrss_mib": 145.14453125,
+          "started_at": "2026-09-23T16:35:06+00:00",
+          "wall_s": 0.0018322500109206885
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w128_g8/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 59.49609375,
+          "cell": "closed_w128_g8/source",
+          "checksum": 9047697374352796410,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 261,
+            "mean_ancestors": 65.70052083333333,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 75687
+          },
+          "n_individuals": 1152,
+          "peak_rss_mib": 59.50390625,
+          "ru_maxrss_mib": 59.984375,
+          "started_at": "2026-09-23T16:33:41+00:00",
+          "wall_s": 0.0005351360014174134
+        },
+        {
+          "baseline_rss_mib": 59.57421875,
+          "cell": "closed_w128_g8/source",
+          "checksum": 9047697374352796410,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 261,
+            "mean_ancestors": 65.70052083333333,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 75687
+          },
+          "n_individuals": 1152,
+          "peak_rss_mib": 59.59375,
+          "ru_maxrss_mib": 60.375,
+          "started_at": "2026-09-23T16:34:24+00:00",
+          "wall_s": 0.0005413329927250743
+        },
+        {
+          "baseline_rss_mib": 59.44140625,
+          "cell": "closed_w128_g8/source",
+          "checksum": 9047697374352796410,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 261,
+            "mean_ancestors": 65.70052083333333,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 75687
+          },
+          "n_individuals": 1152,
+          "peak_rss_mib": 59.453125,
+          "ru_maxrss_mib": 59.96875,
+          "started_at": "2026-09-23T16:35:07+00:00",
+          "wall_s": 0.0005573760136030614
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w128_g16/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 144.30078125,
+          "cell": "closed_w128_g16/wheel",
+          "checksum": 10912113437002054624,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 1068,
+            "mean_ancestors": 353.22472426470586,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 768617
+          },
+          "n_individuals": 2176,
+          "peak_rss_mib": 147.43359375,
+          "ru_maxrss_mib": 147.43359375,
+          "started_at": "2026-09-23T16:33:42+00:00",
+          "wall_s": 0.01287243899423629
+        },
+        {
+          "baseline_rss_mib": 144.265625,
+          "cell": "closed_w128_g16/wheel",
+          "checksum": 10912113437002054624,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 1068,
+            "mean_ancestors": 353.22472426470586,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 768617
+          },
+          "n_individuals": 2176,
+          "peak_rss_mib": 147.34375,
+          "ru_maxrss_mib": 147.34375,
+          "started_at": "2026-09-23T16:34:25+00:00",
+          "wall_s": 0.013129719998687506
+        },
+        {
+          "baseline_rss_mib": 144.23046875,
+          "cell": "closed_w128_g16/wheel",
+          "checksum": 10912113437002054624,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 1068,
+            "mean_ancestors": 353.22472426470586,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 768617
+          },
+          "n_individuals": 2176,
+          "peak_rss_mib": 147.28515625,
+          "ru_maxrss_mib": 147.28515625,
+          "started_at": "2026-09-23T16:35:08+00:00",
+          "wall_s": 0.012881391012342647
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w128_g16/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 59.9140625,
+          "cell": "closed_w128_g16/source",
+          "checksum": 10912113437002054624,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 1068,
+            "mean_ancestors": 353.22472426470586,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 768617
+          },
+          "n_individuals": 2176,
+          "peak_rss_mib": 60.55859375,
+          "ru_maxrss_mib": 60.91015625,
+          "started_at": "2026-09-23T16:33:43+00:00",
+          "wall_s": 0.004083130013896152
+        },
+        {
+          "baseline_rss_mib": 59.7109375,
+          "cell": "closed_w128_g16/source",
+          "checksum": 10912113437002054624,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 1068,
+            "mean_ancestors": 353.22472426470586,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 768617
+          },
+          "n_individuals": 2176,
+          "peak_rss_mib": 60.35546875,
+          "ru_maxrss_mib": 60.796875,
+          "started_at": "2026-09-23T16:34:25+00:00",
+          "wall_s": 0.004111000976990908
+        },
+        {
+          "baseline_rss_mib": 59.7890625,
+          "cell": "closed_w128_g16/source",
+          "checksum": 10912113437002054624,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 1068,
+            "mean_ancestors": 353.22472426470586,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 768617
+          },
+          "n_individuals": 2176,
+          "peak_rss_mib": 60.421875,
+          "ru_maxrss_mib": 60.73046875,
+          "started_at": "2026-09-23T16:35:08+00:00",
+          "wall_s": 0.0042107409972231835
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w128_g32/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 144.890625,
+          "cell": "closed_w128_g32/wheel",
+          "checksum": 5534745263277103867,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 2695,
+            "mean_ancestors": 1100.189393939394,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 4647200
+          },
+          "n_individuals": 4224,
+          "peak_rss_mib": 153.48828125,
+          "ru_maxrss_mib": 153.48828125,
+          "started_at": "2026-09-23T16:33:44+00:00",
+          "wall_s": 0.054274075984722
+        },
+        {
+          "baseline_rss_mib": 144.83984375,
+          "cell": "closed_w128_g32/wheel",
+          "checksum": 5534745263277103867,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 2695,
+            "mean_ancestors": 1100.189393939394,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 4647200
+          },
+          "n_individuals": 4224,
+          "peak_rss_mib": 153.43359375,
+          "ru_maxrss_mib": 153.43359375,
+          "started_at": "2026-09-23T16:34:26+00:00",
+          "wall_s": 0.052965495007811114
+        },
+        {
+          "baseline_rss_mib": 144.640625,
+          "cell": "closed_w128_g32/wheel",
+          "checksum": 5534745263277103867,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 2695,
+            "mean_ancestors": 1100.189393939394,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 4647200
+          },
+          "n_individuals": 4224,
+          "peak_rss_mib": 153.296875,
+          "ru_maxrss_mib": 153.296875,
+          "started_at": "2026-09-23T16:35:09+00:00",
+          "wall_s": 0.052583037002477795
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w128_g32/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 60.3046875,
+          "cell": "closed_w128_g32/source",
+          "checksum": 5534745263277103867,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 2695,
+            "mean_ancestors": 1100.189393939394,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 4647200
+          },
+          "n_individuals": 4224,
+          "peak_rss_mib": 61.95703125,
+          "ru_maxrss_mib": 61.95703125,
+          "started_at": "2026-09-23T16:33:45+00:00",
+          "wall_s": 0.022679793008137494
+        },
+        {
+          "baseline_rss_mib": 60.109375,
+          "cell": "closed_w128_g32/source",
+          "checksum": 5534745263277103867,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 2695,
+            "mean_ancestors": 1100.189393939394,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 4647200
+          },
+          "n_individuals": 4224,
+          "peak_rss_mib": 61.6171875,
+          "ru_maxrss_mib": 61.6171875,
+          "started_at": "2026-09-23T16:34:27+00:00",
+          "wall_s": 0.021731647982960567
+        },
+        {
+          "baseline_rss_mib": 60.1875,
+          "cell": "closed_w128_g32/source",
+          "checksum": 5534745263277103867,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 2695,
+            "mean_ancestors": 1100.189393939394,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 4647200
+          },
+          "n_individuals": 4224,
+          "peak_rss_mib": 61.8125,
+          "ru_maxrss_mib": 61.8125,
+          "started_at": "2026-09-23T16:35:10+00:00",
+          "wall_s": 0.02188175599440001
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w128_g60/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 145.63671875,
+          "cell": "closed_w128_g60/wheel",
+          "checksum": 3544957112422719649,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 5571,
+            "mean_ancestors": 2507.1830174180327,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 19576085
+          },
+          "n_individuals": 7808,
+          "peak_rss_mib": 160.53125,
+          "ru_maxrss_mib": 160.53125,
+          "started_at": "2026-09-23T16:33:46+00:00",
+          "wall_s": 0.15781364499707706
+        },
+        {
+          "baseline_rss_mib": 145.66015625,
+          "cell": "closed_w128_g60/wheel",
+          "checksum": 3544957112422719649,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 5571,
+            "mean_ancestors": 2507.1830174180327,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 19576085
+          },
+          "n_individuals": 7808,
+          "peak_rss_mib": 160.359375,
+          "ru_maxrss_mib": 160.359375,
+          "started_at": "2026-09-23T16:34:28+00:00",
+          "wall_s": 0.1569955159793608
+        },
+        {
+          "baseline_rss_mib": 145.80078125,
+          "cell": "closed_w128_g60/wheel",
+          "checksum": 3544957112422719649,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 5571,
+            "mean_ancestors": 2507.1830174180327,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 19576085
+          },
+          "n_individuals": 7808,
+          "peak_rss_mib": 160.63671875,
+          "ru_maxrss_mib": 160.63671875,
+          "started_at": "2026-09-23T16:35:11+00:00",
+          "wall_s": 0.1591895140009001
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "closed_w128_g60/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 61.18359375,
+          "cell": "closed_w128_g60/source",
+          "checksum": 3544957112422719649,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 5571,
+            "mean_ancestors": 2507.1830174180327,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 19576085
+          },
+          "n_individuals": 7808,
+          "peak_rss_mib": 64.81640625,
+          "ru_maxrss_mib": 64.81640625,
+          "started_at": "2026-09-23T16:33:47+00:00",
+          "wall_s": 0.08841028300230391
+        },
+        {
+          "baseline_rss_mib": 61.125,
+          "cell": "closed_w128_g60/source",
+          "checksum": 3544957112422719649,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 5571,
+            "mean_ancestors": 2507.1830174180327,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 19576085
+          },
+          "n_individuals": 7808,
+          "peak_rss_mib": 64.875,
+          "ru_maxrss_mib": 64.875,
+          "started_at": "2026-09-23T16:34:29+00:00",
+          "wall_s": 0.08881892199860886
+        },
+        {
+          "baseline_rss_mib": 61.01953125,
+          "cell": "closed_w128_g60/source",
+          "checksum": 3544957112422719649,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 5571,
+            "mean_ancestors": 2507.1830174180327,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 19576085
+          },
+          "n_individuals": 7808,
+          "peak_rss_mib": 64.75,
+          "ru_maxrss_mib": 64.75,
+          "started_at": "2026-09-23T16:35:12+00:00",
+          "wall_s": 0.09015016999910586
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_1k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 144.19140625,
+          "cell": "random_1k/wheel",
+          "checksum": 2023886073456858142,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 97,
+            "mean_ancestors": 21.919607843137253,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 22358
+          },
+          "n_individuals": 1020,
+          "peak_rss_mib": 144.25,
+          "ru_maxrss_mib": 144.99609375,
+          "started_at": "2026-09-23T16:33:48+00:00",
+          "wall_s": 0.0005312710127327591
+        },
+        {
+          "baseline_rss_mib": 144.1484375,
+          "cell": "random_1k/wheel",
+          "checksum": 2023886073456858142,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 97,
+            "mean_ancestors": 21.919607843137253,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 22358
+          },
+          "n_individuals": 1020,
+          "peak_rss_mib": 144.19921875,
+          "ru_maxrss_mib": 145.10546875,
+          "started_at": "2026-09-23T16:34:30+00:00",
+          "wall_s": 0.0005225100030656904
+        },
+        {
+          "baseline_rss_mib": 144.12109375,
+          "cell": "random_1k/wheel",
+          "checksum": 2023886073456858142,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 97,
+            "mean_ancestors": 21.919607843137253,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 22358
+          },
+          "n_individuals": 1020,
+          "peak_rss_mib": 144.17578125,
+          "ru_maxrss_mib": 144.94921875,
+          "started_at": "2026-09-23T16:35:13+00:00",
+          "wall_s": 0.000527302996488288
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_1k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 59.52734375,
+          "cell": "random_1k/source",
+          "checksum": 2023886073456858142,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 97,
+            "mean_ancestors": 21.919607843137253,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 22358
+          },
+          "n_individuals": 1020,
+          "peak_rss_mib": 59.52734375,
+          "ru_maxrss_mib": 60.21875,
+          "started_at": "2026-09-23T16:33:48+00:00",
+          "wall_s": 0.0002479919930920005
+        },
+        {
+          "baseline_rss_mib": 59.4453125,
+          "cell": "random_1k/source",
+          "checksum": 2023886073456858142,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 97,
+            "mean_ancestors": 21.919607843137253,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 22358
+          },
+          "n_individuals": 1020,
+          "peak_rss_mib": 59.4453125,
+          "ru_maxrss_mib": 60.1015625,
+          "started_at": "2026-09-23T16:34:30+00:00",
+          "wall_s": 0.0002459320239722729
+        },
+        {
+          "baseline_rss_mib": 59.46875,
+          "cell": "random_1k/source",
+          "checksum": 2023886073456858142,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 97,
+            "mean_ancestors": 21.919607843137253,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 22358
+          },
+          "n_individuals": 1020,
+          "peak_rss_mib": 59.46875,
+          "ru_maxrss_mib": 60.03515625,
+          "started_at": "2026-09-23T16:35:14+00:00",
+          "wall_s": 0.0002656239958014339
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "deep_inbred_60g/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 144.05859375,
+          "cell": "deep_inbred_60g/wheel",
+          "checksum": 12828496093552940807,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 540,
+            "mean_ancestors": 257.1085164835165,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 187175
+          },
+          "n_individuals": 728,
+          "peak_rss_mib": 144.26953125,
+          "ru_maxrss_mib": 144.9375,
+          "started_at": "2026-09-23T16:33:49+00:00",
+          "wall_s": 0.0016727109905332327
+        },
+        {
+          "baseline_rss_mib": 144.2421875,
+          "cell": "deep_inbred_60g/wheel",
+          "checksum": 12828496093552940807,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 540,
+            "mean_ancestors": 257.1085164835165,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 187175
+          },
+          "n_individuals": 728,
+          "peak_rss_mib": 144.453125,
+          "ru_maxrss_mib": 145.26953125,
+          "started_at": "2026-09-23T16:34:31+00:00",
+          "wall_s": 0.0016154999902937561
+        },
+        {
+          "baseline_rss_mib": 143.99609375,
+          "cell": "deep_inbred_60g/wheel",
+          "checksum": 12828496093552940807,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 540,
+            "mean_ancestors": 257.1085164835165,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 187175
+          },
+          "n_individuals": 728,
+          "peak_rss_mib": 144.203125,
+          "ru_maxrss_mib": 145.03515625,
+          "started_at": "2026-09-23T16:35:14+00:00",
+          "wall_s": 0.0016057679895311594
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "deep_inbred_60g/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 59.4453125,
+          "cell": "deep_inbred_60g/source",
+          "checksum": 12828496093552940807,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 540,
+            "mean_ancestors": 257.1085164835165,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 187175
+          },
+          "n_individuals": 728,
+          "peak_rss_mib": 59.5234375,
+          "ru_maxrss_mib": 60.07421875,
+          "started_at": "2026-09-23T16:33:50+00:00",
+          "wall_s": 0.0012387030001264066
+        },
+        {
+          "baseline_rss_mib": 59.390625,
+          "cell": "deep_inbred_60g/source",
+          "checksum": 12828496093552940807,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 540,
+            "mean_ancestors": 257.1085164835165,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 187175
+          },
+          "n_individuals": 728,
+          "peak_rss_mib": 59.46875,
+          "ru_maxrss_mib": 60.02734375,
+          "started_at": "2026-09-23T16:34:32+00:00",
+          "wall_s": 0.000988352985586971
+        },
+        {
+          "baseline_rss_mib": 59.4375,
+          "cell": "deep_inbred_60g/source",
+          "checksum": 12828496093552940807,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 540,
+            "mean_ancestors": 257.1085164835165,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 187175
+          },
+          "n_individuals": 728,
+          "peak_rss_mib": 59.515625,
+          "ru_maxrss_mib": 60.0546875,
+          "started_at": "2026-09-23T16:35:15+00:00",
+          "wall_s": 0.0009892210073303431
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_30k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 148.33984375,
+          "cell": "random_30k/wheel",
+          "checksum": 5600220856912005827,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 444,
+            "mean_ancestors": 70.53663366336633,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 2137260
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 155.97265625,
+          "ru_maxrss_mib": 155.97265625,
+          "started_at": "2026-09-23T16:33:51+00:00",
+          "wall_s": 0.043124762014485896
+        },
+        {
+          "baseline_rss_mib": 148.24609375,
+          "cell": "random_30k/wheel",
+          "checksum": 5600220856912005827,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 444,
+            "mean_ancestors": 70.53663366336633,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 2137260
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 156.21875,
+          "ru_maxrss_mib": 156.21875,
+          "started_at": "2026-09-23T16:34:34+00:00",
+          "wall_s": 0.04328225099015981
+        },
+        {
+          "baseline_rss_mib": 147.1796875,
+          "cell": "random_30k/wheel",
+          "checksum": 5600220856912005827,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 444,
+            "mean_ancestors": 70.53663366336633,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 2137260
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 154.83203125,
+          "ru_maxrss_mib": 154.83203125,
+          "started_at": "2026-09-23T16:35:17+00:00",
+          "wall_s": 0.043570755020482466
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_30k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 63.640625,
+          "cell": "random_30k/source",
+          "checksum": 5600220856912005827,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 444,
+            "mean_ancestors": 70.53663366336633,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 2137260
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 64.81640625,
+          "ru_maxrss_mib": 64.97265625,
+          "started_at": "2026-09-23T16:33:53+00:00",
+          "wall_s": 0.013565089990152046
+        },
+        {
+          "baseline_rss_mib": 63.640625,
+          "cell": "random_30k/source",
+          "checksum": 5600220856912005827,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 444,
+            "mean_ancestors": 70.53663366336633,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 2137260
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 64.8828125,
+          "ru_maxrss_mib": 64.72265625,
+          "started_at": "2026-09-23T16:34:35+00:00",
+          "wall_s": 0.013633869995828718
+        },
+        {
+          "baseline_rss_mib": 63.93359375,
+          "cell": "random_30k/source",
+          "checksum": 5600220856912005827,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 444,
+            "mean_ancestors": 70.53663366336633,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 2137260
+          },
+          "n_individuals": 30300,
+          "peak_rss_mib": 64.90234375,
+          "ru_maxrss_mib": 65.19140625,
+          "started_at": "2026-09-23T16:35:18+00:00",
+          "wall_s": 0.013917342002969235
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_300k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 170.93359375,
+          "cell": "random_300k/wheel",
+          "checksum": 2929118677118745316,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 470,
+            "mean_ancestors": 72.25615841584158,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 21893616
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 248.13671875,
+          "ru_maxrss_mib": 248.13671875,
+          "started_at": "2026-09-23T16:34:03+00:00",
+          "wall_s": 0.45456767300493084
+        },
+        {
+          "baseline_rss_mib": 171.6640625,
+          "cell": "random_300k/wheel",
+          "checksum": 2929118677118745316,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 470,
+            "mean_ancestors": 72.25615841584158,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 21893616
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 247.8203125,
+          "ru_maxrss_mib": 247.8203125,
+          "started_at": "2026-09-23T16:34:46+00:00",
+          "wall_s": 0.4578753639943898
+        },
+        {
+          "baseline_rss_mib": 170.87109375,
+          "cell": "random_300k/wheel",
+          "checksum": 2929118677118745316,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 470,
+            "mean_ancestors": 72.25615841584158,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 21893616
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 247.07421875,
+          "ru_maxrss_mib": 247.07421875,
+          "started_at": "2026-09-23T16:35:28+00:00",
+          "wall_s": 0.4538181980024092
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "random_300k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 85.92578125,
+          "cell": "random_300k/source",
+          "checksum": 2929118677118745316,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 470,
+            "mean_ancestors": 72.25615841584158,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 21893616
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 103.05078125,
+          "ru_maxrss_mib": 103.08203125,
+          "started_at": "2026-09-23T16:34:13+00:00",
+          "wall_s": 0.16526103200158104
+        },
+        {
+          "baseline_rss_mib": 87.08203125,
+          "cell": "random_300k/source",
+          "checksum": 2929118677118745316,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 470,
+            "mean_ancestors": 72.25615841584158,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 21893616
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 103.05859375,
+          "ru_maxrss_mib": 103.2890625,
+          "started_at": "2026-09-23T16:34:56+00:00",
+          "wall_s": 0.16346415798761882
+        },
+        {
+          "baseline_rss_mib": 86.16796875,
+          "cell": "random_300k/source",
+          "checksum": 2929118677118745316,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 470,
+            "mean_ancestors": 72.25615841584158,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 21893616
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 103.15625,
+          "ru_maxrss_mib": 103.16796875,
+          "started_at": "2026-09-23T16:35:39+00:00",
+          "wall_s": 0.1583320859936066
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline100K/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 338.05078125,
+          "cell": "baseline100K/wheel",
+          "checksum": 2278874049866584189,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 62,
+            "mean_ancestors": 20.990819646441658,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 11251835
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 393.14453125,
+          "ru_maxrss_mib": 393.14453125,
+          "started_at": "2026-09-23T16:34:15+00:00",
+          "wall_s": 0.24971396999899298
+        },
+        {
+          "baseline_rss_mib": 338.45703125,
+          "cell": "baseline100K/wheel",
+          "checksum": 2278874049866584189,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 62,
+            "mean_ancestors": 20.990819646441658,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 11251835
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 393.546875,
+          "ru_maxrss_mib": 393.546875,
+          "started_at": "2026-09-23T16:34:58+00:00",
+          "wall_s": 0.2559003960050177
+        },
+        {
+          "baseline_rss_mib": 338.05859375,
+          "cell": "baseline100K/wheel",
+          "checksum": 2278874049866584189,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 62,
+            "mean_ancestors": 20.990819646441658,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 11251835
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 392.99609375,
+          "ru_maxrss_mib": 392.99609375,
+          "started_at": "2026-09-23T16:35:40+00:00",
+          "wall_s": 0.2555064379994292
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "baseline100K/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 247.78515625,
+          "cell": "baseline100K/source",
+          "checksum": 2278874049866584189,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 62,
+            "mean_ancestors": 20.990819646441658,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 11251835
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 272.24609375,
+          "ru_maxrss_mib": 272.24609375,
+          "started_at": "2026-09-23T16:34:16+00:00",
+          "wall_s": 0.14437577399075963
+        },
+        {
+          "baseline_rss_mib": 247.6171875,
+          "cell": "baseline100K/source",
+          "checksum": 2278874049866584189,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 62,
+            "mean_ancestors": 20.990819646441658,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 11251835
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 272.078125,
+          "ru_maxrss_mib": 272.078125,
+          "started_at": "2026-09-23T16:34:59+00:00",
+          "wall_s": 0.147848927997984
+        },
+        {
+          "baseline_rss_mib": 247.72265625,
+          "cell": "baseline100K/source",
+          "checksum": 2278874049866584189,
+          "environment": "fffaf209fb03",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_ancestors": 62,
+            "mean_ancestors": 20.990819646441658,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3",
+            "total_ancestor_links": 11251835
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 272.16796875,
+          "ru_maxrss_mib": 272.16796875,
+          "started_at": "2026-09-23T16:35:42+00:00",
+          "wall_s": 0.14576233699335717
+        }
+      ],
+      "timeout_s": 3600.0
+    }
+  ],
+  "environments": {
+    "fffaf209fb03": {
+      "cpu_governor": "performance",
+      "cpu_max_mhz": 2600,
+      "cpu_model": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+      "git_branch": "main",
+      "git_commit": "011258d04d19e90e0703e56dcef57d48971dc840",
+      "git_dirty": true,
+      "harness_sha256": "83ca5eaea419a9df",
+      "kernel": "7.1.5-76070105-generic",
+      "logical_cpus": 12,
+      "mem_total_gib": 31.0,
+      "pixi_lock_sha256": "01f17bb501182fec",
+      "python": "3.13.15",
+      "rss_method": "kernel VmHWM, reset via /proc/self/clear_refs at region start",
+      "suite_sha256": "e8e2c1a3b438f31d",
+      "threads_pinned": 1
+    }
+  },
+  "gate": 1.05,
+  "schema": "pedigree-graph/benchmark/1",
+  "suite": "distinct_ancestors"
+}

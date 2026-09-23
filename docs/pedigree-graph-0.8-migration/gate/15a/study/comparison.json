@@ -1,0 +1,1880 @@
+{
+  "all_within_tolerance": true,
+  "atol": 1e-12,
+  "captured_with": {
+    "core_version": "0.9.3",
+    "package_version": "0.9.3"
+  },
+  "core_version": "0.9.3",
+  "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+  "package_version": "0.9.3",
+  "pedigrees": {
+    "baseline100K": {
+      "products": {
+        "descendant_path_counts": {
+          "baseline_seconds": 0.18,
+          "bytes_identical": true,
+          "seconds": 0.01,
+          "verdict": "byte_identical"
+        },
+        "distinct_ancestor_counts": {
+          "baseline_seconds": 0.45,
+          "bytes_identical": true,
+          "seconds": 0.14,
+          "verdict": "byte_identical"
+        },
+        "effective_sizes": {
+          "arrays": {
+            "ne_group_coancestry/census_ratio": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/mean_group_coancestry_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_genomes_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/generation_interval": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_eligible_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_left_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_right_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_offspring_pairs": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_unknown_birth_year": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/mean_f_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/mean_eqg_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_reference": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_used_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_unrelated_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/reference_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/standard_error": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/final_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/max_delta_final": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/n_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/n_effective_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/sum_c_squared": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_female_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_male_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_f": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_m": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne_per_transition": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/parent_generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_ff": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_fm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mf": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 19.37,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 16.87,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "eqg": {
+          "arrays": {
+            "eqg": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.19,
+          "bytes_identical": true,
+          "eqg_path": "_native.equivalent_generations",
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.01,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "inbreeding": {
+          "arrays": {
+            "F": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 1.75,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.39,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        }
+      },
+      "source": "results/base/baseline100K/rep1/pedigree.parquet"
+    },
+    "baseline10K": {
+      "products": {
+        "descendant_path_counts": {
+          "baseline_seconds": 0.17,
+          "bytes_identical": true,
+          "seconds": 0.0,
+          "verdict": "byte_identical"
+        },
+        "distinct_ancestor_counts": {
+          "baseline_seconds": 0.21,
+          "bytes_identical": true,
+          "seconds": 0.01,
+          "verdict": "byte_identical"
+        },
+        "effective_sizes": {
+          "arrays": {
+            "ne_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/mean_theta_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/census_ratio": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/mean_group_coancestry_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_genomes_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/generation_interval": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_eligible_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_left_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_right_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_offspring_pairs": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_unknown_birth_year": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/mean_f_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/mean_eqg_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_reference": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_used_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_unrelated_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/reference_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/standard_error": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/final_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/max_delta_final": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/n_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/n_effective_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/sum_c_squared": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_female_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_male_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_f": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_m": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne_per_transition": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/parent_generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_ff": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_fm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mf": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 1.41,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 1.02,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "eqg": {
+          "arrays": {
+            "eqg": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.19,
+          "bytes_identical": true,
+          "eqg_path": "_native.equivalent_generations",
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.0,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "inbreeding": {
+          "arrays": {
+            "F": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.32,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.03,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        }
+      },
+      "source": "results/base/baseline10K/rep1/pedigree.parquet"
+    },
+    "dev_cont_n10k": {
+      "products": {
+        "descendant_path_counts": {
+          "baseline_seconds": 0.19,
+          "bytes_identical": true,
+          "seconds": 0.0,
+          "verdict": "byte_identical"
+        },
+        "distinct_ancestor_counts": {
+          "baseline_seconds": 0.2,
+          "bytes_identical": true,
+          "seconds": 0.0,
+          "verdict": "byte_identical"
+        },
+        "effective_sizes": {
+          "arrays": {
+            "ne_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/mean_theta_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/census_ratio": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/mean_group_coancestry_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_genomes_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/generation_interval": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_eligible_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_left_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_right_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_offspring_pairs": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_unknown_birth_year": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/mean_f_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/mean_eqg_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_reference": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_used_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_unrelated_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/reference_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/standard_error": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/final_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/max_delta_final": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/n_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/n_effective_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/sum_c_squared": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_female_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_male_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_f": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_m": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne_per_transition": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/parent_generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_ff": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_fm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mf": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.54,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.3,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "eqg": {
+          "arrays": {
+            "eqg": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.18,
+          "bytes_identical": true,
+          "eqg_path": "_native.equivalent_generations",
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.0,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "inbreeding": {
+          "arrays": {
+            "F": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.23,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.01,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        }
+      },
+      "source": "results/dev/dev_cont_n10k/rep1/pedigree.parquet"
+    },
+    "dev_mean_n10k": {
+      "products": {
+        "descendant_path_counts": {
+          "baseline_seconds": 0.17,
+          "bytes_identical": true,
+          "seconds": 0.0,
+          "verdict": "byte_identical"
+        },
+        "distinct_ancestor_counts": {
+          "baseline_seconds": 0.19,
+          "bytes_identical": true,
+          "seconds": 0.0,
+          "verdict": "byte_identical"
+        },
+        "effective_sizes": {
+          "arrays": {
+            "ne_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/mean_theta_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/census_ratio": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/mean_group_coancestry_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_genomes_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/generation_interval": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_eligible_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_left_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_right_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_offspring_pairs": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_unknown_birth_year": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/mean_f_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/mean_eqg_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_reference": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_used_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_unrelated_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/reference_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/standard_error": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/final_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/max_delta_final": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/n_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/n_effective_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/sum_c_squared": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_female_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_male_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_f": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_m": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne_per_transition": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/parent_generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_ff": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_fm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mf": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.55,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.31,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "eqg": {
+          "arrays": {
+            "eqg": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.19,
+          "bytes_identical": true,
+          "eqg_path": "_native.equivalent_generations",
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.0,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "inbreeding": {
+          "arrays": {
+            "F": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.23,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.01,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        }
+      },
+      "source": "results/dev/dev_mean_n10k/rep1/pedigree.parquet"
+    },
+    "random_30k": {
+      "products": {
+        "descendant_path_counts": {
+          "baseline_seconds": 0.17,
+          "bytes_identical": true,
+          "seconds": 0.0,
+          "verdict": "byte_identical"
+        },
+        "distinct_ancestor_counts": {
+          "baseline_seconds": 0.22,
+          "bytes_identical": true,
+          "seconds": 0.01,
+          "verdict": "byte_identical"
+        },
+        "effective_sizes": {
+          "arrays": {
+            "ne_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/mean_theta_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/census_ratio": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/mean_group_coancestry_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/n_genomes_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_group_coancestry/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/generation_interval": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_eligible_cohorts": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_left_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_excluded_right_censored": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_offspring_pairs": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/n_unknown_birth_year": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_hill_overlapping/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/mean_f_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/n_generations_used": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/slope": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_from": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_inbreeding/transition_to": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/mean_eqg_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_reference": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/n_used_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/ne_unrelated_founders": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/reference_generation": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_individual_delta_f/standard_error": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/fields/affected_count": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/fields/first_id": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_long_term_contributions/fields/first_row": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_female_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/n_male_per_gen": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_sex_ratio/ne_per_gen": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_f": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/cov_m": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/ne_per_transition": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/parent_generations": {
+              "bytes_identical": true,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_ff": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_fm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mf": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            },
+            "ne_variance_family_size/v_mm": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 5.7,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 4.84,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "eqg": {
+          "arrays": {
+            "eqg": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.18,
+          "bytes_identical": true,
+          "eqg_path": "_native.equivalent_generations",
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.0,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        },
+        "inbreeding": {
+          "arrays": {
+            "F": {
+              "bytes_identical": true,
+              "max_abs_diff": 0.0,
+              "max_rel_diff": 0.0,
+              "within_tolerance": true
+            }
+          },
+          "baseline_seconds": 0.45,
+          "bytes_identical": true,
+          "extra": [],
+          "max_abs_diff": 0.0,
+          "max_rel_diff": 0.0,
+          "missing": [],
+          "seconds": 0.06,
+          "verdict": "byte_identical",
+          "within_tolerance": true
+        }
+      },
+      "source": "parity:random_30k"
+    }
+  },
+  "role": "compare",
+  "rtol": 1e-09
+}

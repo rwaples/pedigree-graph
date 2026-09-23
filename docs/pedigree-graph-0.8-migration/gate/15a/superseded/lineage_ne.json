@@ -1,0 +1,722 @@
+{
+  "cells": [
+    {
+      "cell": "ltc-18k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 195.921875,
+          "cell": "ltc-18k/wheel",
+          "checksum": 16750263830317407774,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 1919.2847150121302,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 196.93359375,
+          "ru_maxrss_mib": 196.65625,
+          "started_at": "2026-09-23T16:35:46+00:00",
+          "wall_s": 0.0050129400042351335
+        },
+        {
+          "baseline_rss_mib": 195.97265625,
+          "cell": "ltc-18k/wheel",
+          "checksum": 16750263830317407774,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 1919.2847150121302,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 196.8671875,
+          "ru_maxrss_mib": 196.5546875,
+          "started_at": "2026-09-23T16:38:02+00:00",
+          "wall_s": 0.005234123003901914
+        },
+        {
+          "baseline_rss_mib": 196.01953125,
+          "cell": "ltc-18k/wheel",
+          "checksum": 16750263830317407774,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 1919.2847150121302,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 196.91015625,
+          "ru_maxrss_mib": 196.68359375,
+          "started_at": "2026-09-23T16:40:18+00:00",
+          "wall_s": 0.005017134011723101
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "ltc-18k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 99.703125,
+          "cell": "ltc-18k/source",
+          "checksum": 16750263830317407774,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 1919.2847150121302,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 100.3203125,
+          "ru_maxrss_mib": 100.09765625,
+          "started_at": "2026-09-23T16:35:49+00:00",
+          "wall_s": 0.0030265570094343275
+        },
+        {
+          "baseline_rss_mib": 100.6796875,
+          "cell": "ltc-18k/source",
+          "checksum": 16750263830317407774,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 1919.2847150121302,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 101.24609375,
+          "ru_maxrss_mib": 100.97265625,
+          "started_at": "2026-09-23T16:38:05+00:00",
+          "wall_s": 0.003017195005668327
+        },
+        {
+          "baseline_rss_mib": 99.8125,
+          "cell": "ltc-18k/source",
+          "checksum": 16750263830317407774,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 1919.2847150121302,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 18000,
+          "peak_rss_mib": 100.43359375,
+          "ru_maxrss_mib": 100.1796875,
+          "started_at": "2026-09-23T16:40:21+00:00",
+          "wall_s": 0.00304795999545604
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "idf-45k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 207.29296875,
+          "cell": "idf-45k/wheel",
+          "checksum": 5381999641013868900,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4256.212133790992,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 208.51953125,
+          "ru_maxrss_mib": 208.51953125,
+          "started_at": "2026-09-23T16:36:05+00:00",
+          "wall_s": 0.5863038889947347
+        },
+        {
+          "baseline_rss_mib": 207.1875,
+          "cell": "idf-45k/wheel",
+          "checksum": 5381999641013868900,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4256.212133790992,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 208.21484375,
+          "ru_maxrss_mib": 208.21484375,
+          "started_at": "2026-09-23T16:38:21+00:00",
+          "wall_s": 0.5915543629962485
+        },
+        {
+          "baseline_rss_mib": 206.984375,
+          "cell": "idf-45k/wheel",
+          "checksum": 5381999641013868900,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4256.212133790992,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 208.2421875,
+          "ru_maxrss_mib": 208.2421875,
+          "started_at": "2026-09-23T16:40:37+00:00",
+          "wall_s": 0.5866272489947733
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "idf-45k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 112.84765625,
+          "cell": "idf-45k/source",
+          "checksum": 5381999641013868900,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4256.212133790992,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 115.2578125,
+          "ru_maxrss_mib": 115.2578125,
+          "started_at": "2026-09-23T16:36:18+00:00",
+          "wall_s": 0.15786270800163038
+        },
+        {
+          "baseline_rss_mib": 112.55859375,
+          "cell": "idf-45k/source",
+          "checksum": 5381999641013868900,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4256.212133790992,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 114.98046875,
+          "ru_maxrss_mib": 114.98046875,
+          "started_at": "2026-09-23T16:38:34+00:00",
+          "wall_s": 0.16026763000991195
+        },
+        {
+          "baseline_rss_mib": 111.671875,
+          "cell": "idf-45k/source",
+          "checksum": 5381999641013868900,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4256.212133790992,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 114.01953125,
+          "ru_maxrss_mib": 114.01953125,
+          "started_at": "2026-09-23T16:40:50+00:00",
+          "wall_s": 0.16120254201814532
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "ltc-45k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 207.3203125,
+          "cell": "ltc-45k/wheel",
+          "checksum": 6034935606833952854,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4886.883661223172,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 209.5859375,
+          "ru_maxrss_mib": 209.5859375,
+          "started_at": "2026-09-23T16:36:35+00:00",
+          "wall_s": 0.010462086007464677
+        },
+        {
+          "baseline_rss_mib": 208.3671875,
+          "cell": "ltc-45k/wheel",
+          "checksum": 6034935606833952854,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4886.883661223172,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 210.67578125,
+          "ru_maxrss_mib": 210.67578125,
+          "started_at": "2026-09-23T16:38:51+00:00",
+          "wall_s": 0.011070031992858276
+        },
+        {
+          "baseline_rss_mib": 207.34765625,
+          "cell": "ltc-45k/wheel",
+          "checksum": 6034935606833952854,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4886.883661223172,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 209.828125,
+          "ru_maxrss_mib": 209.828125,
+          "started_at": "2026-09-23T16:41:07+00:00",
+          "wall_s": 0.010615658015012741
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "ltc-45k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 113.19140625,
+          "cell": "ltc-45k/source",
+          "checksum": 6034935606833952854,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4886.883661223172,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 114.81640625,
+          "ru_maxrss_mib": 114.81640625,
+          "started_at": "2026-09-23T16:36:48+00:00",
+          "wall_s": 0.010695201985072345
+        },
+        {
+          "baseline_rss_mib": 112.8203125,
+          "cell": "ltc-45k/source",
+          "checksum": 6034935606833952854,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4886.883661223172,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 114.40234375,
+          "ru_maxrss_mib": 114.40234375,
+          "started_at": "2026-09-23T16:39:03+00:00",
+          "wall_s": 0.009933874011039734
+        },
+        {
+          "baseline_rss_mib": 112.8671875,
+          "cell": "ltc-45k/source",
+          "checksum": 6034935606833952854,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "ne": 4886.883661223172,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 114.4140625,
+          "ru_maxrss_mib": 114.4140625,
+          "started_at": "2026-09-23T16:41:19+00:00",
+          "wall_s": 0.009035113005666062
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "ne-45k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 207.9296875,
+          "cell": "ne-45k/wheel",
+          "checksum": 12415791647294131217,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "n_estimates": 7,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 2248.72265625,
+          "ru_maxrss_mib": 2248.72265625,
+          "started_at": "2026-09-23T16:37:04+00:00",
+          "wall_s": 9.92771088797599
+        },
+        {
+          "baseline_rss_mib": 205.6796875,
+          "cell": "ne-45k/wheel",
+          "checksum": 12415791647294131217,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "n_estimates": 7,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 2247.4765625,
+          "ru_maxrss_mib": 2247.4765625,
+          "started_at": "2026-09-23T16:39:20+00:00",
+          "wall_s": 9.900255186978029
+        },
+        {
+          "baseline_rss_mib": 207.546875,
+          "cell": "ne-45k/wheel",
+          "checksum": 12415791647294131217,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "n_estimates": 7,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 2246.3828125,
+          "ru_maxrss_mib": 2246.3828125,
+          "started_at": "2026-09-23T16:41:35+00:00",
+          "wall_s": 9.549614888004726
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "ne-45k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 113.09375,
+          "cell": "ne-45k/source",
+          "checksum": 12415791647294131217,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "n_estimates": 7,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 2151.40625,
+          "ru_maxrss_mib": 2151.40625,
+          "started_at": "2026-09-23T16:37:27+00:00",
+          "wall_s": 9.20498681400204
+        },
+        {
+          "baseline_rss_mib": 112.9921875,
+          "cell": "ne-45k/source",
+          "checksum": 12415791647294131217,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "n_estimates": 7,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 2151.98828125,
+          "ru_maxrss_mib": 2151.98828125,
+          "started_at": "2026-09-23T16:39:42+00:00",
+          "wall_s": 9.284064311999828
+        },
+        {
+          "baseline_rss_mib": 113.25390625,
+          "cell": "ne-45k/source",
+          "checksum": 12415791647294131217,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "n_estimates": 7,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 45000,
+          "peak_rss_mib": 2150.98046875,
+          "ru_maxrss_mib": 2150.98046875,
+          "started_at": "2026-09-23T16:41:58+00:00",
+          "wall_s": 8.784637877019122
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "dp-300k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 172.64453125,
+          "cell": "dp-300k/wheel",
+          "checksum": 10493215501704456571,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 3509,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 172.64453125,
+          "ru_maxrss_mib": 172.4765625,
+          "started_at": "2026-09-23T16:37:46+00:00",
+          "wall_s": 0.0014191450027283281
+        },
+        {
+          "baseline_rss_mib": 173.51171875,
+          "cell": "dp-300k/wheel",
+          "checksum": 10493215501704456571,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 3509,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 173.51171875,
+          "ru_maxrss_mib": 173.44921875,
+          "started_at": "2026-09-23T16:40:02+00:00",
+          "wall_s": 0.0013990830047987401
+        },
+        {
+          "baseline_rss_mib": 173.43359375,
+          "cell": "dp-300k/wheel",
+          "checksum": 10493215501704456571,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 3509,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 173.453125,
+          "ru_maxrss_mib": 173.29296875,
+          "started_at": "2026-09-23T16:42:16+00:00",
+          "wall_s": 0.0014008520229253918
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "dp-300k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 87.55078125,
+          "cell": "dp-300k/source",
+          "checksum": 10493215501704456571,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 3509,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 87.55078125,
+          "ru_maxrss_mib": 87.67578125,
+          "started_at": "2026-09-23T16:37:55+00:00",
+          "wall_s": 0.0020232249808032066
+        },
+        {
+          "baseline_rss_mib": 87.81640625,
+          "cell": "dp-300k/source",
+          "checksum": 10493215501704456571,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 3509,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 87.85546875,
+          "ru_maxrss_mib": 87.7734375,
+          "started_at": "2026-09-23T16:40:11+00:00",
+          "wall_s": 0.002028649003477767
+        },
+        {
+          "baseline_rss_mib": 87.609375,
+          "cell": "dp-300k/source",
+          "checksum": 10493215501704456571,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 3509,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 303000,
+          "peak_rss_mib": 87.609375,
+          "ru_maxrss_mib": 87.56640625,
+          "started_at": "2026-09-23T16:42:26+00:00",
+          "wall_s": 0.002034345001447946
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "dp-536k/wheel",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 339.66015625,
+          "cell": "dp-536k/wheel",
+          "checksum": 444860848713942354,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 627,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 343.75390625,
+          "ru_maxrss_mib": 348.02734375,
+          "started_at": "2026-09-23T16:37:57+00:00",
+          "wall_s": 0.004829320008866489
+        },
+        {
+          "baseline_rss_mib": 340.078125,
+          "cell": "dp-536k/wheel",
+          "checksum": 444860848713942354,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 627,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 344.171875,
+          "ru_maxrss_mib": 348.390625,
+          "started_at": "2026-09-23T16:40:13+00:00",
+          "wall_s": 0.004306666000047699
+        },
+        {
+          "baseline_rss_mib": 339.7734375,
+          "cell": "dp-536k/wheel",
+          "checksum": 444860848713942354,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 627,
+            "package_file": "/data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 343.86328125,
+          "ru_maxrss_mib": 348.15625,
+          "started_at": "2026-09-23T16:42:27+00:00",
+          "wall_s": 0.0042326720140408725
+        }
+      ],
+      "timeout_s": 3600.0
+    },
+    {
+      "cell": "dp-536k/source",
+      "outcome": "completed",
+      "runs": [
+        {
+          "baseline_rss_mib": 249.19921875,
+          "cell": "dp-536k/source",
+          "checksum": 444860848713942354,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 627,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 253.2890625,
+          "ru_maxrss_mib": 257.51953125,
+          "started_at": "2026-09-23T16:37:58+00:00",
+          "wall_s": 0.005487110989633948
+        },
+        {
+          "baseline_rss_mib": 249.0,
+          "cell": "dp-536k/source",
+          "checksum": 444860848713942354,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 627,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 253.09375,
+          "ru_maxrss_mib": 257.28125,
+          "started_at": "2026-09-23T16:40:14+00:00",
+          "wall_s": 0.005504312022821978
+        },
+        {
+          "baseline_rss_mib": 249.1328125,
+          "cell": "dp-536k/source",
+          "checksum": 444860848713942354,
+          "environment": "a5016bb922b5",
+          "facts": {
+            "core_version": "0.9.3",
+            "max_paths": 627,
+            "package_file": "/data/Documents/simACE/external/pedigree-graph/pedigree_graph/__init__.py",
+            "package_version": "0.9.3"
+          },
+          "n_individuals": 536036,
+          "peak_rss_mib": 253.22265625,
+          "ru_maxrss_mib": 257.41796875,
+          "started_at": "2026-09-23T16:42:28+00:00",
+          "wall_s": 0.005509648995939642
+        }
+      ],
+      "timeout_s": 3600.0
+    }
+  ],
+  "environments": {
+    "a5016bb922b5": {
+      "cpu_governor": "performance",
+      "cpu_max_mhz": 2600,
+      "cpu_model": "Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz",
+      "git_branch": "main",
+      "git_commit": "011258d04d19e90e0703e56dcef57d48971dc840",
+      "git_dirty": true,
+      "harness_sha256": "83ca5eaea419a9df",
+      "kernel": "7.1.5-76070105-generic",
+      "logical_cpus": 12,
+      "mem_total_gib": 31.0,
+      "pixi_lock_sha256": "01f17bb501182fec",
+      "python": "3.13.15",
+      "rss_method": "kernel VmHWM, reset via /proc/self/clear_refs at region start",
+      "suite_sha256": "e1891ec5f21a5f77",
+      "threads_pinned": 1
+    }
+  },
+  "gate": 1.05,
+  "schema": "pedigree-graph/benchmark/1",
+  "suite": "lineage_ne"
+}

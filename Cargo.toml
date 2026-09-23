@@ -14,5 +14,5 @@ debug = 1
 # One codegen unit, so adding a module cannot repartition the crate and move
 # an unrelated kernel's inlining: under the default 16 the slice 15 modules
 # made the unchanged generation-summary DP 12% slower on wf_n5000_g8 (9.41 s
-# to 10.52 s); with one unit it is 8.76 s (gate/15a/NOTES.md).
+# to 10.51 s); with one unit it is 8.76 s (gate/15a/NOTES.md).
 codegen-units = 1
