@@ -10,7 +10,7 @@ use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1};
 use pedigree_graph_core::alloc::{self, Family};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
-use pedigree_graph_core::kinship::{self, KinshipPedigree};
+use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree, Layout};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
@@ -489,6 +489,104 @@ fn kinship_support_values<'py>(
     Ok(values.into_pyarray(py))
 }
 
+/// The bake-off switch for the DP's row layout (slice 14); `owned` unless
+/// `PEDIGREE_GRAPH_KINSHIP_ROWS` names the other.
+const LAYOUT_ENV: &str = "PEDIGREE_GRAPH_KINSHIP_ROWS";
+
+fn kinship_layout() -> PyResult<Layout> {
+    match std::env::var(LAYOUT_ENV) {
+        Err(_) => Ok(Layout::Owned),
+        Ok(name) => Layout::parse(&name).ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "{LAYOUT_ENV} must be \"owned\" or \"arena\", got {name:?}"
+            ))
+        }),
+    }
+}
+
+/// `(indptr, indices, data)` of a symmetric CSC in graph rows.
+type CscArrays<'py> = (
+    Bound<'py, PyArray1<i32>>,
+    Bound<'py, PyArray1<i32>>,
+    Bound<'py, PyArray1<f32>>,
+);
+
+fn csc_arrays(py: Python<'_>, csc: Csc) -> CscArrays<'_> {
+    (
+        csc.indptr.into_pyarray(py),
+        csc.indices.into_pyarray(py),
+        csc.data.into_pyarray(py),
+    )
+}
+
+/// The complete kinship matrix as `(indptr, indices, data)`: int32 `indptr`
+/// of `n + 1`, int32 `indices` and float32 `data` of `nnz`, rows ascending
+/// within each column, the diagonal always present (ADR 0006, 0009).
+///
+/// `pedigree` is the graph's own [`BuiltPedigree`] and `depth` its structural
+/// depth, which must be non-negative and strictly above both parents' for
+/// every row.  The DP runs in depth-major order on the calling thread with
+/// the GIL released; the arrays are moved out of the core without a copy.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, /))]
+fn kinship_csc<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+) -> PyResult<CscArrays<'py>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let layout = kinship_layout()?;
+    let csc = py
+        .detach(|| kinship::kinship_csc(ped, layout))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(csc_arrays(py, csc))
+}
+
+/// Exact values on the propagation-pruned support, as `kinship_csc` lays
+/// them out.  `threshold` must be finite and in `[0, 1]`; every intermediate
+/// value at or below it is dropped while the support propagates, and every
+/// retained entry is then recomputed by the complete recurrence.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, threshold, /))]
+fn approximate_kinship_csc<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+    threshold: f64,
+) -> PyResult<CscArrays<'py>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let layout = kinship_layout()?;
+    let csc = py
+        .detach(|| kinship::approximate_kinship_csc(ped, threshold, layout))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(csc_arrays(py, csc))
+}
+
+/// Per bucket, the float64 kinship summed over unordered same-bucket pairs
+/// of distinct rows that are not MZ co-twins.  `labels` is one int32 bucket
+/// in `0..n_buckets` per graph row.  Rows are retired as the DP passes
+/// them, so no matrix is held.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, labels, n_buckets, /))]
+fn generation_kinship_sums<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+    labels: PyReadonlyArray1<'py, i32>,
+    n_buckets: usize,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let labels = labels.as_slice()?;
+    let layout = kinship_layout()?;
+    let sums = py
+        .detach(|| kinship::generation_kinship_sums(ped, labels, n_buckets, layout))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(sums.into_pyarray(py))
+}
+
 /// The allocation family names, in `Family::ALL` order.
 ///
 /// The test seam's parametrisation reads this rather than keeping its own
@@ -577,6 +675,9 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(relationship_pairs, m)?)?;
     m.add_function(wrap_pyfunction!(pair_kinship, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_support_values, m)?)?;
+    m.add_function(wrap_pyfunction!(kinship_csc, m)?)?;
+    m.add_function(wrap_pyfunction!(approximate_kinship_csc, m)?)?;
+    m.add_function(wrap_pyfunction!(generation_kinship_sums, m)?)?;
     m.add_function(wrap_pyfunction!(allocation_families, m)?)?;
     m.add_function(wrap_pyfunction!(fail_next_allocation, m)?)?;
     m.add_class::<BuiltPedigree>()?;

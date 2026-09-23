@@ -44,7 +44,7 @@ import numpy as np
 from pedigree_graph._cohort_utils import eligible_cohort_range, generation_interval
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._errors import MissingMetadataError
-from pedigree_graph._kinship_kernel import _compute_eqg
+from pedigree_graph._kinship_depth import _compute_eqg
 from pedigree_graph._ne_family_size import (
     _generation_family_table,
     _sex_column,

@@ -1,5 +1,12 @@
 """Why approximate-support values are captured through one complete retiring DP.
 
+Archived with slice 14 (2026-09-23): the numba DP this script drives
+(``_build_kinship_csc``, ``_compute_generation_kinship_summary``) moved to the
+Rust core and its Python form lives under ``tests/oracle/kinship_dp``, so the
+imports below no longer resolve.  The note it regenerated,
+``benchmarks/matrix_exactification.md``, is a frozen slice 5b record; the live
+benchmark of the three matrix products is ``benchmarks/bench_kinship_matrix.py``.
+
 Compares the fused capture against pairwise evaluation in bounded chunks, and
 records what the relationship-selected support costs on the same inputs.
 

@@ -2,7 +2,7 @@
 
 :class:`GenerationKinshipSummary` is the result of
 :meth:`~pedigree_graph.PedigreeGraph.mean_kinship_by_generation` (ADR 0006).
-It is data only; the DP that fills it lives in ``pedigree_graph._kinship_dp``.
+It is data only; the DP that fills it runs in the Rust core (``pedigree_graph._native``).
 """
 
 from __future__ import annotations

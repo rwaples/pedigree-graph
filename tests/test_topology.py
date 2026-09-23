@@ -72,10 +72,6 @@ class TestIdentityHelpers:
     def test_to_topological_returns_the_input_object(self, topo):
         assert topo.to_topological(DEPTH_MAJOR_MOTHER) is DEPTH_MAJOR_MOTHER
 
-    def test_translate_returns_the_input_object(self, topo):
-        rows = np.array([0, 3, -1])
-        assert topo.translate(rows) is rows
-
     def test_gather_returns_the_input_object(self, topo):
         values = np.arange(5.0)
         assert topo.gather(values) is values
@@ -104,13 +100,6 @@ class TestPermutedHelpers:
         t, mother, _ = topo
         moved = t.to_topological(mother)
         assert (moved < 0).sum() == (mother < 0).sum()
-
-    def test_translate_maps_rows_and_passes_minus_one_through(self, topo):
-        t, _, _ = topo
-        rows = np.array([0, 1, 2, 3, 4, -1])
-        translated = t.translate(rows)
-        assert translated[:5].tolist() == t.inverse.tolist()
-        assert translated[5] == -1
 
     def test_gather_and_per_row_to_graph_round_trip(self, topo):
         t, _, _ = topo

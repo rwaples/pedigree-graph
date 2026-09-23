@@ -279,9 +279,20 @@ FAMILIES = tuple(_native.allocation_families())
 #: fails here instead of silently losing its case.
 COUNT_FAMILIES = frozenset({"parent_edges", "csr", "sibling_index", "accumulator", "row_set"})
 
-#: The families only the kinship walk reserves; ``test_native_pair_kinship``
-#: holds those, and here a call that never reaches them has to succeed.
-KINSHIP_FAMILIES = frozenset({"kinship_memo", "kinship_stack", "kinship_output"})
+#: The families only the kinship walk and the kinship matrix DP reserve;
+#: ``test_native_pair_kinship`` and ``test_native_kinship_matrix`` hold those,
+#: and here a call that never reaches them has to succeed.
+KINSHIP_FAMILIES = frozenset(
+    {
+        "kinship_memo",
+        "kinship_stack",
+        "kinship_output",
+        "kinship_rows",
+        "kinship_csc",
+        "kinship_sums",
+        "kinship_scratch",
+    }
+)
 
 #: The plant's size floor. Without one it fires on whichever reservation of
 #: the family comes first, which for a collected iterator is its zero lower

@@ -14,13 +14,9 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
-import scipy.sparse as sp
 
 from pedigree_graph import PedigreeGraph
-from pedigree_graph._kinship_kernel import (
-    _build_kinship_csc,
-    _compute_F_meuwissen_luo,
-)
+from pedigree_graph._inbreeding_kernel import _compute_F_meuwissen_luo
 from pedigree_graph._topology import structural_depth
 
 
@@ -49,15 +45,16 @@ def _F_via_pairwise(m, f, tw):
 
 
 def _F_via_matrix(m, f, tw, gen, n=None):
-    m = np.asarray(m, dtype=np.int32)
-    f = np.asarray(f, dtype=np.int32)
-    tw = np.asarray(tw, dtype=np.int32)
-    gen = np.asarray(gen, dtype=np.int32)
-    if n is None:
-        n = len(m)
-    indptr, indices, data = _build_kinship_csc(n, m, f, tw, gen, 0.0)
-    K = sp.csc_matrix((data, indices, indptr), shape=(n, n))
-    return 2.0 * K.diagonal() - 1.0
+    n = len(m) if n is None else n
+    graph = PedigreeGraph.from_frame(
+        {
+            "id": np.arange(n),
+            "mother": np.asarray(m, dtype=np.int64),
+            "father": np.asarray(f, dtype=np.int64),
+            "twin": np.asarray(tw, dtype=np.int64),
+        }
+    )
+    return 2.0 * graph.kinship_matrix().diagonal() - 1.0
 
 
 def test_all_founders_F_zero():

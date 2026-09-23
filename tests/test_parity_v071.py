@@ -58,8 +58,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
-from pedigree_graph._kinship_dp import _build_kinship_csc
+from oracle.kinship_dp.dp import _build_kinship_csc
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
 
@@ -249,7 +248,7 @@ def _assert_pair_kinship_within_envelope(stored: dict[str, np.ndarray], captured
 
 
 def _propagated_candidate_for_large_parity(graph):
-    """Build old candidate values so this differential gate isolates support."""
+    """Build the 0.9.1 propagated values with the oracle DP so this gate isolates support."""
     indptr, indices, data = _build_kinship_csc(
         graph.n_individuals,
         graph.mother_rows,

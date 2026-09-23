@@ -11,7 +11,7 @@ import pytest
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
-from pedigree_graph._kinship_kernel import _compute_eqg, _compute_generation_kinship_summary
+from pedigree_graph._kinship_depth import _compute_eqg
 from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
     FamilySizeEntry,
@@ -20,7 +20,7 @@ from pedigree_graph._ne_family_size import (
     _sigma2_from_quadrants,
 )
 from pedigree_graph._ne_group_coancestry import GroupCoancestryByCohort, _group_coancestry_by_cohort
-from pedigree_graph._ne_rates import _summary_from_matrix
+from pedigree_graph._ne_rates import _summary_from_matrix, _summary_from_native
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
     EffectiveSizeResults,
@@ -900,15 +900,7 @@ def test_estimate_effective_sizes_returns_eight_serializable_records():
 
 def _streamed_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
     """Helper: the generation kinship summary via the streaming path (no K materialization)."""
-    return _compute_generation_kinship_summary(
-        pg.n_individuals,
-        np.asarray(pg.mother_rows, dtype=np.int32),
-        np.asarray(pg.father_rows, dtype=np.int32),
-        np.asarray(pg.twin_rows, dtype=np.int32),
-        np.asarray(pg.depth, dtype=np.int32),
-        0.0,
-        labels=np.asarray(pg.generation_labels, dtype=np.int32),
-    )
+    return _summary_from_native(pg, np.asarray(pg.generation_labels, dtype=np.int32))
 
 
 def _matrix_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:

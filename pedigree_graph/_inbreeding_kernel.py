@@ -1,9 +1,8 @@
 """Meuwissen-Luo F-only inbreeding kernel over the genome-node pedigree (PGQ-008, ADR 0008).
 
 The sparse ancestor-walk that computes per-individual inbreeding
-coefficients without materializing kinship.  Reuses the topological
-check from ``_kinship_depth`` and the global arena from
-``_kinship_allocator``.
+coefficients without materializing kinship.  Self-contained numba over the
+parent-index arrays; the graph supplies the depth-major order it sweeps in.
 """
 
 from __future__ import annotations

@@ -71,6 +71,24 @@ def kinship_support_values(
     indices: NDArray[np.int32],
     /,
 ) -> NDArray[np.float32]: ...
+def kinship_csc(
+    pedigree: BuiltPedigree,
+    depth: NDArray[np.int32],
+    /,
+) -> tuple[NDArray[np.int32], NDArray[np.int32], NDArray[np.float32]]: ...
+def approximate_kinship_csc(
+    pedigree: BuiltPedigree,
+    depth: NDArray[np.int32],
+    threshold: float,
+    /,
+) -> tuple[NDArray[np.int32], NDArray[np.int32], NDArray[np.float32]]: ...
+def generation_kinship_sums(
+    pedigree: BuiltPedigree,
+    depth: NDArray[np.int32],
+    labels: NDArray[np.int32],
+    n_buckets: int,
+    /,
+) -> NDArray[np.float64]: ...
 def allocation_families() -> list[str]: ...
 
 # Test seam, not public API: refused unless the process was started with

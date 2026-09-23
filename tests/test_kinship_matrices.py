@@ -282,23 +282,3 @@ def test_release_kinship_matrices_drops_every_family_and_is_idempotent():
     rebuilt = graph.kinship_matrix()
     assert rebuilt is not complete
     assert np.array_equal(rebuilt.data, complete.data)
-
-
-def test_oversized_candidate_support_raises_the_structural_assertion():
-    from pedigree_graph._kinship_matrix import _topological_candidate_index
-
-    graph = _graph("random_1k")
-    support = graph.relationship_kinship_matrix(max_degree=2)
-    # Drop one lower-triangle entry so the upper count exceeds the symmetric
-    # presize, the direction that previously died inside a numpy broadcast.
-    coo = support.tocoo()
-    victim = np.flatnonzero(coo.row > coo.col)[0]
-    keep = np.ones(coo.nnz, dtype=bool)
-    keep[victim] = False
-    asymmetric = sp.coo_matrix(
-        (coo.data[keep], (coo.row[keep], coo.col[keep])),
-        shape=support.shape,
-    ).tocsc()
-
-    with pytest.raises(AssertionError, match="upper candidate count"):
-        _topological_candidate_index(graph, asymmetric)

@@ -9,12 +9,13 @@ same ADR 0009 float32 recurrence values.  They differ only in support:
 * ``approximate_kinship_matrix`` keeps the old propagation-pruned support, then
   discards the propagated values and recomputes every retained coefficient.
 
-Approximate-support values are captured during one complete retiring DP pass:
-complete exact rows exist only while descendants need them, and only retained
-candidate positions reach the output CSC. Sparse relationship-selected support
-is filled by one native walk of the recurrence over the CSC support itself
-(``_native.kinship_support_values``). Both paths implement the same pinned
-recurrence bits.
+The complete and approximate matrices are built by the core's depth-major DP
+(``_native.kinship_csc`` and ``_native.approximate_kinship_csc``), which
+returns the three CSC arrays in graph rows; the approximate support is
+captured during one complete retiring pass of the same DP.  Sparse
+relationship-selected support is filled by one native walk of the recurrence
+over the CSC support itself (``_native.kinship_support_values``).  All three
+implement the same pinned recurrence bits.
 """
 
 from __future__ import annotations
@@ -29,20 +30,18 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-import numba
 import numpy as np
 import scipy.sparse as sp
 
 from pedigree_graph import _native
 from pedigree_graph._errors import ResourceError
 from pedigree_graph._input import _own_native
-from pedigree_graph._kinship_dp import _build_kinship_csc, _fill_candidate_kinship_values
 from pedigree_graph._relationship_pairs import check_execution, relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._threads import thread_budget
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Iterable
 
     from pedigree_graph._core import PedigreeGraph
     from pedigree_graph.relationships import RelationshipPairs
@@ -50,11 +49,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _INT32_MAX = int(np.iinfo(np.int32).max)
-
-# Dense approximate support is captured from the retiring DP in bounded
-# chunks; see benchmarks/matrix_exactification.md for the measured crossover
-# rationale.  Sparse relationship support is one native walk instead.
-_EXACT_VALUE_CHUNK_SIZE = 1 << 20
 
 
 def _freeze_csc(matrix: sp.csc_matrix) -> sp.csc_matrix:
@@ -217,79 +211,6 @@ class PedigreeMatrixMethods:
         return approximate_kinship_matrix(self, min_propagated_kinship)
 
 
-@numba.njit(cache=True)
-def _write_symmetric_values(
-    indptr: np.ndarray,
-    indices: np.ndarray,
-    data: np.ndarray,
-    positions: np.ndarray,
-    columns: np.ndarray,
-    values: np.ndarray,
-) -> bool:
-    """Write one upper-triangle value chunk and its transposed positions.
-
-    Returns false only if the supplied structure is not symmetric.  Public
-    callers build the structure themselves, so that result is an internal
-    invariant failure rather than a user error.
-    """
-    for k in range(positions.shape[0]):
-        pos = positions[k]
-        row = indices[pos]
-        col = columns[k]
-        value = values[k]
-        data[pos] = value
-        if row == col:
-            continue
-        lo = indptr[row]
-        hi = indptr[row + 1]
-        while lo < hi:
-            mid = (lo + hi) // 2
-            if indices[mid] < col:
-                lo = mid + 1
-            else:
-                hi = mid
-        if lo >= indptr[row + 1] or indices[lo] != col:
-            return False
-        data[lo] = value
-    return True
-
-
-def _upper_support_chunks(
-    matrix: sp.csc_matrix,
-    chunk_size: int,
-) -> Iterator[tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """Yield upper-triangle ``(rows, columns, data_positions)`` in CSC order."""
-    if chunk_size < 1:
-        raise ValueError(f"chunk_size must be positive, got {chunk_size}")
-    rows = np.empty(chunk_size, dtype=np.int32)
-    columns = np.empty(chunk_size, dtype=np.int32)
-    positions = np.empty(chunk_size, dtype=np.int32)
-    used = 0
-
-    for column in range(matrix.shape[1]):
-        start = int(matrix.indptr[column])
-        end = int(matrix.indptr[column + 1])
-        column_rows = matrix.indices[start:end]
-        upper_count = int(np.searchsorted(column_rows, column, side="right"))
-        offset = 0
-        while offset < upper_count:
-            take = min(chunk_size - used, upper_count - offset)
-            source_start = start + offset
-            source_end = source_start + take
-            target_end = used + take
-            rows[used:target_end] = matrix.indices[source_start:source_end]
-            columns[used:target_end] = column
-            positions[used:target_end] = np.arange(source_start, source_end, dtype=np.int32)
-            used = target_end
-            offset += take
-            if used == chunk_size:
-                yield rows, columns, positions
-                used = 0
-
-    if used:
-        yield rows[:used], columns[:used], positions[:used]
-
-
 def _exactify_support(graph: PedigreeGraph, matrix: sp.csc_matrix) -> sp.csc_matrix:
     """Replace every value on a symmetric CSC support with pair-recurrence bits.
 
@@ -307,74 +228,23 @@ def _exactify_support(graph: PedigreeGraph, matrix: sp.csc_matrix) -> sp.csc_mat
     return matrix
 
 
-def _topological_candidate_index(graph: PedigreeGraph, matrix: sp.csc_matrix) -> sp.csc_matrix:
-    """Map upper graph-space support to stable-topology columns and output positions."""
-    count = (matrix.nnz + graph.n_individuals) // 2
-    lower = np.empty(count, dtype=np.int32)
-    upper = np.empty(count, dtype=np.int32)
-    output_positions = np.empty(count, dtype=np.int32)
-    topology = graph._topology
-    offset = 0
-    for first, second, positions in _upper_support_chunks(matrix, _EXACT_VALUE_CHUNK_SIZE):
-        end = offset + len(first)
-        if end > count:
-            raise AssertionError("upper candidate count must match symmetric CSC nnz")
-        topo_first = np.asarray(topology.translate(first), dtype=np.int32)
-        topo_second = np.asarray(topology.translate(second), dtype=np.int32)
-        lower[offset:end] = np.minimum(topo_first, topo_second)
-        upper[offset:end] = np.maximum(topo_first, topo_second)
-        output_positions[offset:end] = positions
-        offset = end
-    if offset != count:
-        raise AssertionError("upper candidate count must match symmetric CSC nnz")
-    target = sp.coo_matrix(
-        (output_positions, (lower, upper)),
-        shape=matrix.shape,
-        dtype=np.int32,
-    ).tocsc()
-    if target.nnz != count:
-        raise AssertionError("topological candidate support must not contain duplicate pairs")
-    return target
+def _native_csc(
+    graph: PedigreeGraph, arrays: tuple[np.ndarray, np.ndarray, np.ndarray], *, operation: str
+) -> sp.csc_matrix:
+    """Wrap the three arrays the core handed over, frozen and without a copy.
 
-
-def _exactify_approximate_support(graph: PedigreeGraph, matrix: sp.csc_matrix) -> sp.csc_matrix:
-    """Fill dense candidate support through one complete retiring DP pass."""
-    try:
-        target = _topological_candidate_index(graph, matrix)
-        matrix.data.fill(np.nan)
-        _fill_candidate_kinship_values(
-            graph.n_individuals,
-            graph.mother_rows,
-            graph.father_rows,
-            graph.twin_rows,
-            graph.depth,
-            target.indptr,
-            target.indices,
-            target.data,
-            matrix.data,
-        )
-        for _first, second, positions in _upper_support_chunks(matrix, _EXACT_VALUE_CHUNK_SIZE):
-            values = matrix.data[positions]
-            if np.isnan(values).any():
-                raise AssertionError("complete DP did not emit every approximate-support candidate")
-            if not _write_symmetric_values(
-                matrix.indptr,
-                matrix.indices,
-                matrix.data,
-                positions,
-                second,
-                values,
-            ):
-                raise AssertionError("kinship support must be symmetric")
-    except MemoryError as exc:
-        raise ResourceError(
-            "allocation_failed",
-            "approximate_kinship_matrix: allocation failed while exactifying candidate values",
-            operation="approximate_kinship_matrix",
-            requested_elements=matrix.nnz,
-            dtype="float32/int32",
-        ) from exc
-    return matrix
+    The constructor is handed the arrays to validate the shape, then the
+    matrix is pointed at the native allocations themselves rather than the
+    views SciPy wraps them in, as the relationship path does.
+    """
+    indptr, indices, data = (
+        _own_native(arrays[0], np.int32),
+        _own_native(arrays[1], np.int32),
+        _own_native(arrays[2], np.float32),
+    )
+    matrix = _as_csc(graph.n_individuals, indptr, indices, data, operation=operation)
+    matrix.indptr, matrix.indices, matrix.data = indptr, indices, data
+    return _freeze_csc(matrix)
 
 
 def _support_from_relationships(graph: PedigreeGraph, pairs: RelationshipPairs) -> sp.csc_matrix:
@@ -418,24 +288,7 @@ def complete_kinship_matrix(graph: PedigreeGraph) -> sp.csc_matrix:
     if cached is not None:
         return cached
     started = time.perf_counter()
-    try:
-        indptr, indices, data = _build_kinship_csc(
-            graph.n_individuals,
-            graph.mother_rows,
-            graph.father_rows,
-            graph.twin_rows,
-            graph.depth,
-            0.0,
-        )
-    except MemoryError as exc:
-        raise ResourceError(
-            "allocation_failed",
-            "kinship_matrix: allocation failed while computing the complete matrix",
-            operation="kinship_matrix",
-            requested_elements=graph.n_individuals,
-            dtype="float32/int32",
-        ) from exc
-    matrix = _freeze_csc(_as_csc(graph.n_individuals, indptr, indices, data, operation="kinship_matrix"))
+    matrix = _native_csc(graph, _native.kinship_csc(graph._built, graph.depth), operation="kinship_matrix")
     graph._complete_kinship_cache = matrix
     logger.info(
         "kinship_matrix: n=%d, nnz=%d, %.2fs",
@@ -488,32 +341,11 @@ def approximate_kinship_matrix(graph: PedigreeGraph, min_propagated_kinship: flo
         return cached
 
     started = time.perf_counter()
-    try:
-        indptr, indices, propagated = _build_kinship_csc(
-            graph.n_individuals,
-            graph.mother_rows,
-            graph.father_rows,
-            graph.twin_rows,
-            graph.depth,
-            threshold,
-        )
-    except MemoryError as exc:
-        raise ResourceError(
-            "allocation_failed",
-            "approximate_kinship_matrix: allocation failed while computing candidate support",
-            operation="approximate_kinship_matrix",
-            requested_elements=graph.n_individuals,
-            dtype="float32/int32",
-        ) from exc
-    matrix = _as_csc(
-        graph.n_individuals,
-        indptr,
-        indices,
-        propagated,
+    matrix = _native_csc(
+        graph,
+        _native.approximate_kinship_csc(graph._built, graph.depth, threshold),
         operation="approximate_kinship_matrix",
     )
-    _exactify_approximate_support(graph, matrix)
-    matrix = _freeze_csc(matrix)
     graph._approximate_kinship_cache[threshold] = matrix
     logger.info(
         "approximate_kinship_matrix: n=%d, nnz=%d, min_propagated_kinship=%.4g, %.2fs",

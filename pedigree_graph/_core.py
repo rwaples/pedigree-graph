@@ -22,10 +22,8 @@ import numpy as np
 
 from pedigree_graph import _native
 from pedigree_graph._cohort_utils import generation_interval as _generation_interval
+from pedigree_graph._inbreeding_kernel import _compute_F_meuwissen_luo
 from pedigree_graph._input import host_columns, host_columns_from_arrays
-from pedigree_graph._kinship_kernel import (
-    _compute_F_meuwissen_luo,
-)
 from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
 from pedigree_graph._kinship_pairwise import graph_pair_kinship
 from pedigree_graph._lineage import connected_component_ids as _connected_component_ids

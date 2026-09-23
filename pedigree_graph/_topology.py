@@ -10,10 +10,9 @@ move arrays and row references between graph space and that order.
 Stable depth-major is a topological order because a child's structural
 depth strictly exceeds both parents'.  Ties within a depth keep input row
 order, so no original ID ever influences the result.  It is also exactly
-the order :func:`pedigree_graph._kinship_dp._run_dp_core` sorts into, and
-in it "greater depth, then greater row" is simply "greater row", which is
-what lets the pairwise kernel peel by row alone and still match the matrix
-to the bit (ADR 0009).
+the order the core's kinship DP sorts into, and in it "greater depth, then
+greater row" is simply "greater row", which is what lets the pairwise kernel
+peel by row alone and still match the matrix to the bit (ADR 0009).
 
 When the input rows are already depth-major the permutation is the
 identity; ``order`` and ``inverse`` are then ``None`` and every routing
@@ -93,12 +92,6 @@ class Topology:
         if self.order is None or self.inverse is None:
             return rows
         return remap_rows(rows, self.order, self.inverse)
-
-    def translate(self, rows: np.ndarray) -> np.ndarray:
-        """Translate graph row values (pair endpoints) to topological positions."""
-        if self.inverse is None:
-            return rows
-        return np.where(rows < 0, -1, self.inverse[rows])
 
     def gather(self, values: np.ndarray) -> np.ndarray:
         """Reorder per-row values (depth, labels, F) into topological space."""

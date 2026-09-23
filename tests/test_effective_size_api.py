@@ -17,8 +17,6 @@ import pytest
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, ResourceError, effective_size
 from pedigree_graph import _ne_common as ne_common
-from pedigree_graph._cohorts import _densify_labels as _cohorts_densify_labels
-from pedigree_graph._kinship_kernel import _densify_labels as _kernel_densify_labels
 from pedigree_graph._ne_common import (
     _checked_founder_matrix,
     _scalar_ne_from_log_regression,
@@ -794,7 +792,3 @@ def test_mean_kinship_by_generation_reports_unlabelled_rows():
     assert summary.mean_kinship == pytest.approx([0.0, 0.25, 0.375])
     assert np.array_equal(summary.pair_counts, [1, 1, 1])
     assert summary.unlabelled_individual_count == 2
-
-
-def test_cohorts_and_kinship_kernel_share_one_densify_labels():
-    assert _cohorts_densify_labels is _kernel_densify_labels

@@ -24,13 +24,6 @@ import scipy.sparse as sp
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
-from pedigree_graph._kinship_kernel import (
-    KinshipDPConfig,
-    _compute_generation_kinship_summary,
-    _densify_labels,
-    _finalize_summary,
-    _run_dp_core,
-)
 from pedigree_graph._ne_family_size import _sex_specific_family_table
 from pedigree_graph._ne_founders import (
     FounderContributionMeans,
@@ -38,7 +31,7 @@ from pedigree_graph._ne_founders import (
     _ltc_from,
     _per_gen_founder_means,
 )
-from pedigree_graph._ne_rates import _summary_from_matrix
+from pedigree_graph._ne_rates import _summary_from_matrix, _summary_from_native
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
     estimate_effective_sizes,
@@ -234,42 +227,9 @@ def test_per_gen_founder_means_matches_reference(parity_pedigree: PedigreeGraph)
     np.testing.assert_allclose(m_g_new, m_g_ref, atol=1e-12, rtol=0.0, equal_nan=True)
 
 
-def _kernel_summary(pg: PedigreeGraph, **flags) -> GenerationKinshipSummary:
-    """The generation kinship summary straight from the kernel, arrays only."""
-    return _compute_generation_kinship_summary(
-        pg.n_individuals,
-        pg.mother_rows,
-        pg.father_rows,
-        pg.twin_rows,
-        pg.depth,
-        0.0,
-        labels=pg.generation_labels,
-        **flags,
-    )
-
-
-def _eager_retire_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
-    """Parity helper: retire=True with lazy=False.
-
-    Drives the same path as production but with the lazy-alloc gate
-    flipped off so parity tests can compare the lazy-allocated retire
-    result against the eager-allocated retire result.  Bit identity
-    is expected at small N — lazy alloc shifts the buffer layout but
-    not the order of arithmetic operations.
-    """
-    dense, observed, n_unlabelled = _densify_labels(np.asarray(pg.generation_labels, dtype=np.int32))
-    r = _run_dp_core(
-        pg.n_individuals,
-        np.asarray(pg.mother_rows, dtype=np.int32),
-        np.asarray(pg.father_rows, dtype=np.int32),
-        np.asarray(pg.twin_rows, dtype=np.int32),
-        np.asarray(pg.depth, dtype=np.int32),
-        0.0,
-        None,
-        labels=dense,
-        config=KinshipDPConfig(retire=True, lazy=False, debug_asserts=False),
-    )
-    return _finalize_summary(r.sum_theta, r.labels, r.tw_idx, observed, n_unlabelled)
+def _kernel_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
+    """The generation kinship summary straight from the core's retiring DP, no graph caches."""
+    return _summary_from_native(pg, np.asarray(pg.generation_labels))
 
 
 def _assert_summaries_agree(a: GenerationKinshipSummary, b: GenerationKinshipSummary) -> None:
@@ -279,24 +239,9 @@ def _assert_summaries_agree(a: GenerationKinshipSummary, b: GenerationKinshipSum
     assert a.unlabelled_individual_count == b.unlabelled_individual_count
 
 
-def test_retiring_summary_matches_the_post_hoc_walk(parity_pedigree: PedigreeGraph) -> None:
-    # Inline and post-hoc accumulation sum the same pairs in different
-    # orders, so float-level bit identity is not achievable; require
-    # 1e-12 absolute.
+def test_the_public_summary_is_the_streamed_one(parity_pedigree: PedigreeGraph) -> None:
     pg = parity_pedigree
-    _assert_summaries_agree(pg.mean_kinship_by_generation(), _kernel_summary(pg, _debug_no_retire=True))
-
-
-def test_lazy_retire_summary_matches_eager_retire(parity_pedigree: PedigreeGraph) -> None:
-    """Lazy-allocated retire bit-identical to eager retire.
-
-    Same arithmetic, different storage layout — bit identity is the
-    expected outcome.  Falls back to 1e-12 absolute if the platform
-    reorders within-cohort sums via SIMD; in practice it has held
-    exactly.
-    """
-    pg = parity_pedigree
-    assert pg.mean_kinship_by_generation() == _eager_retire_summary(pg)
+    assert pg.mean_kinship_by_generation() == _kernel_summary(pg)
 
 
 def test_retiring_summary_matches_the_matrix_walk(parity_pedigree: PedigreeGraph) -> None:
@@ -330,16 +275,11 @@ def test_the_kernel_summary_never_reads_the_graph_caches(parity_pedigree: Pedigr
     poisoned_K = sp.csc_matrix(K.shape, dtype=K.dtype)
     pg._complete_kinship_cache = poisoned_K
 
-    from_kernel = _kernel_summary(pg, _debug_no_retire=True)
+    from_kernel = _kernel_summary(pg)
     assert not np.allclose(from_kernel.mean_kinship, -999.0, equal_nan=True)
     assert pg._generation_kinship_summary is poisoned_summary
     assert pg._complete_kinship_cache is poisoned_K
     _assert_summaries_agree(from_kernel, streamed)
-
-
-def test_kernel_debug_asserts_pass_on_a_well_formed_pedigree(parity_pedigree: PedigreeGraph) -> None:
-    pg = parity_pedigree
-    _assert_summaries_agree(pg.mean_kinship_by_generation(), _kernel_summary(pg, _debug_asserts=True))
 
 
 def test_ltc_result_matches_the_reference_path(parity_pedigree: PedigreeGraph) -> None:
