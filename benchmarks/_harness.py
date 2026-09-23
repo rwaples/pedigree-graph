@@ -47,6 +47,7 @@ __all__ = [
     "checksum_values",
     "file_fixture",
     "main",
+    "package_facts",
     "parity_fixture",
     "render_markdown",
     "verify_report",
@@ -285,12 +286,22 @@ class Fixture:
 
 @dataclass(frozen=True)
 class Arm:
-    """One named timed operation, with optional untimed setup."""
+    """One named timed operation, with optional untimed setup.
+
+    ``interpreter`` and ``env`` select the process the arm's children run
+    in.  An A/B sweep across package builds (a released wheel in one env, a
+    source build in another, or one source build under two layout switches)
+    interleaves its arms in one sweep, as ADR 0007 requires, only if each
+    arm can name its own interpreter.  ``None`` is this process's
+    interpreter; ``env`` is merged over the pinned environment.
+    """
 
     name: str
     run: Callable[..., Measurement]
     label: str
     setup: Callable[[Any], Prepared] | None = None
+    interpreter: Path | None = None
+    env: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -629,6 +640,25 @@ def _warm_up_graph() -> Any:
 # ---------------------------------------------------------------------------
 
 
+def package_facts() -> dict[str, str]:
+    """Which ``pedigree_graph`` this process imported, so a record cannot be misread.
+
+    A sweep whose arms run under different interpreters produces rows that
+    look alike; the import path, distribution version and core version say
+    which build each row measured.
+    """
+    import importlib.metadata
+
+    import pedigree_graph
+    from pedigree_graph import _native
+
+    return {
+        "package_file": pedigree_graph.__file__,
+        "package_version": importlib.metadata.version("pedigree-graph"),
+        "core_version": _native.core_version(),
+    }
+
+
 def _measure_cell(suite: Suite, cell: Cell, environment: str) -> RunRecord:
     """Child role: warm the arm, build the fixture, run setup, time the arm alone.
 
@@ -659,7 +689,7 @@ def _measure_cell(suite: Suite, cell: Cell, environment: str) -> RunRecord:
         ru_maxrss_mib=0.0,
         checksum=measurement.checksum,
         n_individuals=int(graph.n_individuals),
-        facts={**dict(prepared.facts), **dict(measurement.facts)},
+        facts={**package_facts(), **dict(prepared.facts), **dict(measurement.facts)},
         environment=environment,
         started_at=started_at,
     )
@@ -672,7 +702,7 @@ class _ChildOutcome:
     timed_out: bool
 
 
-def _spawn(script: Path, cell: Cell, timeout_s: float) -> _ChildOutcome:
+def _spawn(script: Path, cell: Cell, timeout_s: float, arm: Arm | None = None) -> _ChildOutcome:
     """One fresh pinned child, returning both its record and its whole-process peak.
 
     ``Popen`` plus ``os.wait4`` rather than ``subprocess.run``: ``run`` reaps the
@@ -685,7 +715,12 @@ def _spawn(script: Path, cell: Cell, timeout_s: float) -> _ChildOutcome:
     would block on write and be killed at the deadline as a spurious timeout.
     """
     env = {**os.environ, **PINNED_ENV}
-    command = [sys.executable, str(script), "--cell", str(cell)]
+    interpreter = sys.executable
+    if arm is not None:
+        env.update(arm.env)
+        if arm.interpreter is not None:
+            interpreter = str(arm.interpreter)
+    command = [interpreter, str(script), "--cell", str(cell)]
     with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
         proc = subprocess.Popen(command, env=env, stdout=out, stderr=err)
         deadline = time.monotonic() + timeout_s
@@ -954,7 +989,7 @@ def _drive(
         if outcomes.get(cell) is Outcome.TIMED_OUT:
             continue
         print(f"  {cell}  rep {index + 1}/{repeat} ... ", end="", flush=True)
-        outcome = _spawn(script, cell, timeout_s)
+        outcome = _spawn(script, cell, timeout_s, suite.arm(cell.arm))
         if outcome.timed_out:
             outcomes[cell] = Outcome.TIMED_OUT
             print(f"TIMEOUT after {timeout_s:.0f}s")
