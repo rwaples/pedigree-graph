@@ -94,14 +94,33 @@ class TestBoundary:
             assert not isinstance(public.base, np.ndarray)
             assert not public.flags.writeable
 
-    def test_a_non_structural_depth_is_rejected(self):
-        graph = _graph("nuclear_full_sibs")
+    def test_a_non_structural_depth_is_rejected_when_the_rows_need_sorting(self):
+        graph = _graph("random_1k", seed=5)
+        assert not graph._built.rows_topological
         flat = np.zeros(graph.n_individuals, dtype=np.int32)
         for binding in (_native.distinct_ancestor_counts, _native.descendant_path_counts):
             with pytest.raises(PedigreeValidationError) as info:
                 binding(graph._built, flat)
             assert info.value.code == "value_out_of_range"
             assert info.value.fields["field"] == "depth"
+
+    def test_depth_is_optional_only_for_parents_first_rows(self):
+        topological, permuted = _graph("random_1k"), _graph("random_1k", seed=5)
+        for binding in (_native.distinct_ancestor_counts, _native.descendant_path_counts):
+            assert (
+                binding(topological._built, None).tobytes() == binding(topological._built, topological.depth).tobytes()
+            )
+            with pytest.raises(PedigreeValidationError) as info:
+                binding(permuted._built, None)
+            assert info.value.code == "length_mismatch"
+            assert info.value.fields["field"] == "depth"
+
+    def test_parents_first_rows_never_read_depth(self):
+        graph = _graph("random_1k")
+        assert graph._built.rows_topological
+        flat = np.zeros(graph.n_individuals, dtype=np.int32)
+        for binding in (_native.distinct_ancestor_counts, _native.descendant_path_counts):
+            assert binding(graph._built, flat).tobytes() == binding(graph._built, graph.depth).tobytes()
 
 
 SEAM_CASES = [

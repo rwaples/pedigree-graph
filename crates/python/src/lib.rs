@@ -11,7 +11,7 @@ use pedigree_graph_core::alloc::{self, Family};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
 use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree};
-use pedigree_graph_core::lineage;
+use pedigree_graph_core::lineage::{self, ParentColumns};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
@@ -588,16 +588,60 @@ fn inbreeding<'py>(
     Ok(values.into_pyarray(py))
 }
 
+/// The parent columns of a graph's [`BuiltPedigree`] and, when the host has
+/// it, its structural depth, borrowed for one parents-first sweep.  The
+/// columns and the parents-first flag are construction's, so they are not
+/// re-validated.
+struct ParentColumnsRef<'py> {
+    mother_rows: PyReadonlyArray1<'py, i32>,
+    father_rows: PyReadonlyArray1<'py, i32>,
+    depth: Option<PyReadonlyArray1<'py, i32>>,
+    rows_topological: bool,
+}
+
+impl<'py> ParentColumnsRef<'py> {
+    fn borrow(
+        py: Python<'py>,
+        pedigree: &BuiltPedigree,
+        depth: Option<PyReadonlyArray1<'py, i32>>,
+    ) -> ParentColumnsRef<'py> {
+        ParentColumnsRef {
+            mother_rows: pedigree.mother_rows.bind(py).readonly(),
+            father_rows: pedigree.father_rows.bind(py).readonly(),
+            depth,
+            rows_topological: pedigree.rows_topological,
+        }
+    }
+
+    fn columns(&self, py: Python<'py>) -> PyResult<ParentColumns<'_>> {
+        let depth = match &self.depth {
+            Some(depth) => Some(depth.as_slice()?),
+            None => None,
+        };
+        ParentColumns::validated(
+            self.mother_rows.as_slice()?,
+            self.father_rows.as_slice()?,
+            depth,
+            self.rows_topological,
+        )
+        .map_err(|e| to_pyerr(py, e))
+    }
+}
+
 /// Distinct strict ancestors per graph row, int32.
+///
+/// `depth` may be `None` when the graph rows are parents-first (every parent
+/// row before its children), which the sweep then walks as they are; it is
+/// required, and checked structural, only when the rows need sorting.
 #[pyfunction]
 #[pyo3(signature = (pedigree, depth, /))]
 fn distinct_ancestor_counts<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
-    depth: PyReadonlyArray1<'py, i32>,
+    depth: Option<PyReadonlyArray1<'py, i32>>,
 ) -> PyResult<Bound<'py, PyArray1<i32>>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = ParentColumnsRef::borrow(py, pedigree, depth);
+    let ped = columns.columns(py)?;
     let counts = py
         .detach(|| lineage::distinct_ancestor_counts(ped))
         .map_err(|e| to_pyerr(py, e))?;
@@ -611,10 +655,10 @@ fn distinct_ancestor_counts<'py>(
 fn descendant_path_counts<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
-    depth: PyReadonlyArray1<'py, i32>,
+    depth: Option<PyReadonlyArray1<'py, i32>>,
 ) -> PyResult<Bound<'py, PyArray1<i64>>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = ParentColumnsRef::borrow(py, pedigree, depth);
+    let ped = columns.columns(py)?;
     let counts = py
         .detach(|| lineage::descendant_path_counts(ped))
         .map_err(|e| to_pyerr(py, e))?;
@@ -627,10 +671,10 @@ fn descendant_path_counts<'py>(
 fn equivalent_generations<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
-    depth: PyReadonlyArray1<'py, i32>,
+    depth: Option<PyReadonlyArray1<'py, i32>>,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = ParentColumnsRef::borrow(py, pedigree, depth);
+    let ped = columns.columns(py)?;
     let values = py
         .detach(|| kinship::equivalent_generations(ped))
         .map_err(|e| to_pyerr(py, e))?;

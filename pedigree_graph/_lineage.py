@@ -24,6 +24,15 @@ if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
 
 
+def sweep_depth(pg: PedigreeGraph) -> np.ndarray | None:
+    """The depth a parents-first sweep sorts by, or ``None`` when it needs none.
+
+    Graph rows that already put every parent before its children are swept as
+    they are, so the structural depth is neither needed nor computed for them.
+    """
+    return None if pg._built.rows_topological else pg.depth
+
+
 def distinct_ancestor_counts(pg: PedigreeGraph) -> np.ndarray:
     """Distinct strict ancestors of every row, int32, read-only, memoised.
 
@@ -31,7 +40,7 @@ def distinct_ancestor_counts(pg: PedigreeGraph) -> np.ndarray:
     """
     cached = pg._distinct_ancestor_counts
     if cached is None:
-        cached = _own_native(_native.distinct_ancestor_counts(pg._built, pg.depth), np.int32)
+        cached = _own_native(_native.distinct_ancestor_counts(pg._built, sweep_depth(pg)), np.int32)
         pg._distinct_ancestor_counts = cached
     return cached
 
@@ -47,7 +56,7 @@ def descendant_path_counts(pg: PedigreeGraph) -> np.ndarray:
     """
     cached = pg._descendant_path_counts
     if cached is None:
-        cached = _own_native(_native.descendant_path_counts(pg._built, pg.depth), np.int64)
+        cached = _own_native(_native.descendant_path_counts(pg._built, sweep_depth(pg)), np.int64)
         pg._descendant_path_counts = cached
     return cached
 

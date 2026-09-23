@@ -38,7 +38,7 @@ const NIL: u32 = u32::MAX;
 /// not above both parents', and [`Error::AllocationFailed`] for any buffer.
 pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
     let n = ped.len();
-    let sweep = DepthOrder::build(&ped, WALK)?;
+    let sweep = DepthOrder::build(ped.mother(), ped.father(), ped.depth(), WALK)?;
     let depth = ped.depth();
     let twin = ped.twin();
     let node = |row: usize| -> usize {

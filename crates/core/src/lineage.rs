@@ -6,18 +6,121 @@
 //!   each row, its children plus their path counts, which exceeds the
 //!   distinct descendant count wherever marriage loops join two paths.
 //!
-//! Both sweep the stable depth-major order of
-//! [`crate::kinship::depth_order`], which puts every parent before its
-//! children, and index graph rows directly.  Counts do not depend on row
-//! labels, so they are the 0.9.3 Numba kernels' counts exactly.
+//! Both sweep parents first and index graph rows directly: the graph rows
+//! themselves when every parent row already precedes its children, else the
+//! stable depth-major order of [`crate::kinship::depth_order`].  Counts do
+//! not depend on row labels or sweep order, so they are the 0.9.3 Numba
+//! kernels' counts exactly.
 
 use crate::alloc::{self, Family};
 use crate::error::Error;
-use crate::kinship::depth_order::DepthOrder;
-use crate::kinship::KinshipPedigree;
+use crate::kinship::depth_order::ParentsFirst;
+use crate::relationships::{check_column_length, check_row_range};
 
 const SETS: Family = Family::LineageSets;
 const OUTPUT: Family = Family::LineageOutput;
+
+/// The parent columns the parents-first sweeps read, borrowed from the host
+/// for one call, with the structural depth they sort by when the rows are
+/// not already parents-first.  Depth is optional because a pedigree whose
+/// parent rows all precede their children is swept as it is and never
+/// needs it.
+#[derive(Clone, Copy)]
+pub struct ParentColumns<'a> {
+    mother: &'a [i32],
+    father: &'a [i32],
+    depth: Option<&'a [i32]>,
+    /// Every parent row precedes its child, so the rows sweep as they are.
+    parents_first: bool,
+}
+
+impl<'a> ParentColumns<'a> {
+    /// Check `father` has one entry per row and every parent row is `-1` or
+    /// a row of the pedigree, and note whether every parent row precedes its
+    /// child, in one pass; `depth` is checked where it is read.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::LengthMismatch`] and [`Error::ValueOutOfRange`], as the
+    /// relationship engine reports them.
+    pub fn try_new(
+        mother: &'a [i32],
+        father: &'a [i32],
+        depth: Option<&'a [i32]>,
+    ) -> Result<ParentColumns<'a>, Error> {
+        let n = mother.len();
+        check_column_length("father", father.len(), n)?;
+        let (mut in_range, mut parents_first) = (true, true);
+        for (row, (&m, &f)) in mother.iter().zip(father).enumerate() {
+            let (m, f) = (i64::from(m), i64::from(f));
+            in_range &= m >= -1 && f >= -1 && m < n as i64 && f < n as i64;
+            parents_first &= m < row as i64 && f < row as i64;
+        }
+        if !in_range {
+            check_row_range("mother", mother, n)?;
+            check_row_range("father", father, n)?;
+        }
+        Ok(ParentColumns {
+            mother,
+            father,
+            depth,
+            parents_first,
+        })
+    }
+
+    /// Columns a graph construction has already validated: every parent row
+    /// is `-1` or a row of the pedigree, and `parents_first` is what
+    /// construction found.  Only the lengths are re-checked, which keeps a
+    /// sweep of a few milliseconds to the one pass the 0.9.3 kernel made; a
+    /// broken promise can give wrong counts or a panic, never undefined
+    /// behaviour.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::LengthMismatch`] on `father`.
+    pub fn validated(
+        mother: &'a [i32],
+        father: &'a [i32],
+        depth: Option<&'a [i32]>,
+        parents_first: bool,
+    ) -> Result<ParentColumns<'a>, Error> {
+        check_column_length("father", father.len(), mother.len())?;
+        Ok(ParentColumns {
+            mother,
+            father,
+            depth,
+            parents_first,
+        })
+    }
+
+    pub fn len(&self) -> usize {
+        self.mother.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mother.is_empty()
+    }
+
+    pub(crate) fn mother(&self) -> &'a [i32] {
+        self.mother
+    }
+
+    pub(crate) fn father(&self) -> &'a [i32] {
+        self.father
+    }
+
+    /// The graph rows when they are parents-first, else the depth-major sort.
+    ///
+    /// # Errors
+    ///
+    /// As [`ParentsFirst::sorted`], when the rows need sorting.
+    pub(crate) fn parents_first(&self, family: Family) -> Result<ParentsFirst, Error> {
+        if self.parents_first {
+            return Ok(ParentsFirst::Rows);
+        }
+        ParentsFirst::sorted(self.mother, self.father, self.depth, family)
+    }
+}
 
 /// Distinct strict ancestors of every graph row, as int32.
 ///
@@ -29,11 +132,22 @@ const OUTPUT: Family = Family::LineageOutput;
 ///
 /// # Errors
 ///
-/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
-/// not above both parents', and [`Error::AllocationFailed`] for any buffer.
-pub fn distinct_ancestor_counts(ped: KinshipPedigree<'_>) -> Result<Vec<i32>, Error> {
+/// When the rows need sorting, [`Error::LengthMismatch`] on `depth` when it
+/// is absent or not one per row and [`Error::ValueOutOfRange`] when a row's
+/// depth is negative or not above both parents'; [`Error::AllocationFailed`]
+/// for any buffer.
+pub fn distinct_ancestor_counts(ped: ParentColumns<'_>) -> Result<Vec<i32>, Error> {
+    match ped.parents_first(SETS)? {
+        ParentsFirst::Rows => ancestors_in(&ped, 0..ped.len() as u32),
+        ParentsFirst::DepthMajor(sweep) => ancestors_in(&ped, sweep.order.iter().copied()),
+    }
+}
+
+fn ancestors_in(
+    ped: &ParentColumns<'_>,
+    rows: impl Iterator<Item = u32>,
+) -> Result<Vec<i32>, Error> {
     let n = ped.len();
-    let sweep = DepthOrder::build(&ped, SETS)?;
     let (mother, father) = (ped.mother(), ped.father());
     let mut remaining = alloc::filled(0u32, n, SETS, "uint32")?;
     for &p in mother.iter().chain(father) {
@@ -45,7 +159,7 @@ pub fn distinct_ancestor_counts(ped: KinshipPedigree<'_>) -> Result<Vec<i32>, Er
     let mut merged: Vec<u32> = Vec::new();
     let mut counts = alloc::filled(0i32, n, OUTPUT, "int32")?;
 
-    for &row in &sweep.order {
+    for row in rows {
         let i = row as usize;
         let side = |p: i32| -> &[u32] {
             if p < 0 {
@@ -100,25 +214,44 @@ fn union_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
 ///
 /// [`Error::ArithmeticOverflow`] when a count outgrows int64, as it does
 /// after about 63 generations of repeated sib mating;
-/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
-/// not above both parents'; and [`Error::AllocationFailed`] for any buffer.
-pub fn descendant_path_counts(ped: KinshipPedigree<'_>) -> Result<Vec<i64>, Error> {
-    let sweep = DepthOrder::build(&ped, OUTPUT)?;
+/// when the rows need sorting, [`Error::LengthMismatch`] or
+/// [`Error::ValueOutOfRange`] on `depth` as [`distinct_ancestor_counts`]
+/// reports them; and [`Error::AllocationFailed`] for any buffer.
+pub fn descendant_path_counts(ped: ParentColumns<'_>) -> Result<Vec<i64>, Error> {
+    match ped.parents_first(OUTPUT)? {
+        ParentsFirst::Rows => descendants_in(&ped, (0..ped.len() as u32).rev()),
+        ParentsFirst::DepthMajor(sweep) => descendants_in(&ped, sweep.order.iter().rev().copied()),
+    }
+}
+
+/// The reverse sweep over `rows`, children before parents.  Overflow is
+/// collected branch-free and reported once at the end: every add's carry is
+/// kept, so none is missed, and the counts are dropped when one occurred.
+fn descendants_in(
+    ped: &ParentColumns<'_>,
+    rows: impl Iterator<Item = u32>,
+) -> Result<Vec<i64>, Error> {
     let (mother, father) = (ped.mother(), ped.father());
     let mut counts = alloc::filled(0i64, ped.len(), OUTPUT, "int64")?;
-    let overflow = || Error::ArithmeticOverflow {
-        operation: "descendant_path_counts",
-        dtype: "int64",
-    };
-    for &row in sweep.order.iter().rev() {
+    let mut overflowed = false;
+    for row in rows {
         let i = row as usize;
-        let paths = counts[i].checked_add(1).ok_or_else(overflow)?;
+        let (paths, carry) = counts[i].overflowing_add(1);
+        overflowed |= carry;
         for p in [mother[i], father[i]] {
             if p >= 0 {
-                let p = p as usize;
-                counts[p] = counts[p].checked_add(paths).ok_or_else(overflow)?;
+                let count = &mut counts[p as usize];
+                let (sum, carry) = count.overflowing_add(paths);
+                *count = sum;
+                overflowed |= carry;
             }
         }
+    }
+    if overflowed {
+        return Err(Error::ArithmeticOverflow {
+            operation: "descendant_path_counts",
+            dtype: "int64",
+        });
     }
     Ok(counts)
 }
@@ -126,17 +259,17 @@ pub fn descendant_path_counts(ped: KinshipPedigree<'_>) -> Result<Vec<i64>, Erro
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kinship::KinshipPedigree;
     use crate::topology::structural_depth;
     use std::collections::BTreeSet;
 
     fn run<T>(
         mother: &[i32],
         father: &[i32],
-        kernel: fn(KinshipPedigree<'_>) -> Result<T, Error>,
+        kernel: fn(ParentColumns<'_>) -> Result<T, Error>,
     ) -> Result<T, Error> {
-        let twin = vec![-1; mother.len()];
         let depth = structural_depth(mother, father);
-        kernel(KinshipPedigree::try_new(mother, father, &twin, &depth).unwrap())
+        kernel(ParentColumns::try_new(mother, father, Some(&depth)).unwrap())
     }
 
     /// Distinct ancestors by explicit set closure, for comparison.
@@ -268,11 +401,11 @@ mod tests {
     }
 
     #[test]
-    fn a_shallow_depth_is_refused() {
-        let (m, f) = ([-1, -1, 0], [-1, -1, 1]);
-        let twin = [-1; 3];
+    fn a_shallow_depth_is_refused_when_the_rows_need_sorting() {
+        // Row 0 is the child of rows 1 and 2, so the sweep must sort by depth.
+        let (m, f) = ([1, -1, -1], [2, -1, -1]);
         let depth = [0, 0, 0];
-        let ped = KinshipPedigree::try_new(&m, &f, &twin, &depth).unwrap();
+        let ped = ParentColumns::try_new(&m, &f, Some(&depth)).unwrap();
         for result in [
             distinct_ancestor_counts(ped).map(|_| ()),
             descendant_path_counts(ped).map(|_| ()),
@@ -281,11 +414,32 @@ mod tests {
                 result,
                 Err(Error::ValueOutOfRange {
                     field: "depth",
-                    position: 2,
+                    position: 0,
                     ..
                 })
             ));
         }
+    }
+
+    #[test]
+    fn parents_first_rows_are_swept_without_reading_depth() {
+        let (m, f) = ([-1, -1, 0], [-1, -1, 1]);
+        let depth = [0, 0, 0];
+        for depth in [None, Some(&depth[..])] {
+            let ped = ParentColumns::try_new(&m, &f, depth).unwrap();
+            assert_eq!(distinct_ancestor_counts(ped).unwrap(), vec![0, 0, 2]);
+            assert_eq!(descendant_path_counts(ped).unwrap(), vec![1, 1, 0]);
+        }
+    }
+
+    #[test]
+    fn rows_that_need_sorting_need_a_depth() {
+        let (m, f) = ([1, -1, -1], [2, -1, -1]);
+        let ped = ParentColumns::try_new(&m, &f, None).unwrap();
+        assert!(matches!(
+            descendant_path_counts(ped),
+            Err(Error::LengthMismatch { field: "depth", .. })
+        ));
     }
 
     /// Which sweep reserves each of the four sweep families.
@@ -333,6 +487,7 @@ mod tests {
         let c = crate::relationships::testing::random_pedigree(n, 5);
         let depth = structural_depth(&c.mother, &c.father);
         let ped = KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &depth).unwrap();
+        let cols = ParentColumns::try_new(&c.mother, &c.father, Some(&depth)).unwrap();
         let cohort: Vec<i32> = depth.iter().map(|&d| d.min(3)).collect();
         let column: Vec<i64> = (0..n)
             .map(|r| {
@@ -345,9 +500,9 @@ mod tests {
             .collect();
         let run = |ped| match product.as_str() {
             "inbreeding" => inbreeding(ped).map(|v| v.len()),
-            "ancestors" => distinct_ancestor_counts(ped).map(|v| v.len()),
-            "descendants" => descendant_path_counts(ped).map(|v| v.len()),
-            "generations" => equivalent_generations(ped).map(|v| v.len()),
+            "ancestors" => distinct_ancestor_counts(cols).map(|v| v.len()),
+            "descendants" => descendant_path_counts(cols).map(|v| v.len()),
+            "generations" => equivalent_generations(cols).map(|v| v.len()),
             _ => founder_contribution_means(ped, &cohort, 4, &column, n).map(|v| v.len()),
         };
         // The floor aims the plant at an input-sized buffer.

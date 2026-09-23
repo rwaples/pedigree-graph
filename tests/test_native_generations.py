@@ -117,8 +117,9 @@ class TestBoundary:
             call(cohort=cohort[:-1])
         assert info.value.code == "length_mismatch"
 
-    def test_a_non_structural_depth_is_rejected(self):
-        graph = _graph("nuclear_full_sibs")
+    def test_a_non_structural_depth_is_rejected_when_the_rows_need_sorting(self):
+        graph = _graph("random_1k", seed=5)
+        assert not graph._built.rows_topological
         with pytest.raises(PedigreeValidationError) as info:
             _native.equivalent_generations(graph._built, np.zeros(graph.n_individuals, dtype=np.int32))
         assert info.value.code == "value_out_of_range"

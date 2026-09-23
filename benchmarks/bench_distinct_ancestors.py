@@ -97,15 +97,16 @@ def _closed_fixture(name: str) -> Fixture:
 def _counts(graph, _prepared) -> Measurement:
     """Checksum the counts, and describe the closure they represent."""
     counts = graph.distinct_ancestor_counts()
-    total = int(counts.sum(dtype=np.int64))
-    return Measurement(
-        checksum_array(counts),
-        {
+
+    def facts() -> dict[str, float | int]:
+        total = int(counts.sum(dtype=np.int64))
+        return {
             "total_ancestor_links": total,
             "max_ancestors": int(counts.max(initial=0)),
             "mean_ancestors": float(total / len(counts)) if len(counts) else 0.0,
-        },
-    )
+        }
+
+    return Measurement(lambda: checksum_array(counts), facts)
 
 
 SUITE = Suite(

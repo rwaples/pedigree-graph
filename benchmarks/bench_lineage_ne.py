@@ -99,7 +99,7 @@ def _record(result) -> Measurement:
 
 def _descendant_paths(graph) -> Measurement:
     counts = graph.descendant_path_counts()
-    return Measurement(checksum_array(counts), {"max_paths": int(counts.max(initial=0))})
+    return Measurement(lambda: checksum_array(counts), lambda: {"max_paths": int(counts.max(initial=0))})
 
 
 def _individual_delta_f(graph) -> Measurement:

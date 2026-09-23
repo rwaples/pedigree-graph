@@ -45,8 +45,8 @@ def _walk(graph, _prepared) -> Measurement:
     """Checksum every inbreeding coefficient, and surface its scale as readable facts."""
     coefficients = graph.inbreeding()
     return Measurement(
-        checksum_array(coefficients),
-        {"mean_F": float(coefficients.mean()), "max_F": float(coefficients.max())},
+        lambda: checksum_array(coefficients),
+        lambda: {"mean_F": float(coefficients.mean()), "max_F": float(coefficients.max())},
     )
 
 

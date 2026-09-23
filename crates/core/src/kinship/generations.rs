@@ -2,14 +2,17 @@
 //! Maignel's equivalent complete generations and the per-cohort mean
 //! founder-genome contributions.
 //!
-//! Both walk the stable depth-major order of [`super::depth_order`], graph
-//! rows ascending within a depth, and evaluate each value by the float64
-//! expression the 0.9.3 NumPy and Numba code used, in the same order.
+//! EqG sweeps parents first (the graph rows when they already are, else the
+//! stable depth-major order of [`super::depth_order`]); the founder means
+//! walk depth by depth, graph rows ascending within a depth.  Both evaluate
+//! each value by the float64 expression the 0.9.3 NumPy and Numba code
+//! used, in the same order.
 
-use super::depth_order::DepthOrder;
+use super::depth_order::{DepthOrder, ParentsFirst};
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
 use crate::error::Error;
+use crate::lineage::ParentColumns;
 use crate::relationships::check_column_length;
 
 /// Equivalent complete generations (Maignel, Boichard and Verrier 1996) of
@@ -18,14 +21,24 @@ use crate::relationships::check_column_length;
 ///
 /// # Errors
 ///
-/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
-/// not above both parents', and [`Error::AllocationFailed`] for any buffer.
-pub fn equivalent_generations(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
-    const OUTPUT: Family = Family::LineageOutput;
-    let sweep = DepthOrder::build(&ped, OUTPUT)?;
+/// When the rows need sorting, [`Error::LengthMismatch`] or
+/// [`Error::ValueOutOfRange`] on `depth` as
+/// [`crate::lineage::distinct_ancestor_counts`] reports them;
+/// [`Error::AllocationFailed`] for any buffer.
+pub fn equivalent_generations(ped: ParentColumns<'_>) -> Result<Vec<f64>, Error> {
+    match ped.parents_first(Family::LineageOutput)? {
+        ParentsFirst::Rows => generations_in(&ped, 0..ped.len() as u32),
+        ParentsFirst::DepthMajor(sweep) => generations_in(&ped, sweep.order.iter().copied()),
+    }
+}
+
+fn generations_in(
+    ped: &ParentColumns<'_>,
+    rows: impl Iterator<Item = u32>,
+) -> Result<Vec<f64>, Error> {
     let (mother, father) = (ped.mother(), ped.father());
-    let mut eqg = alloc::filled(0.0f64, ped.len(), OUTPUT, "float64")?;
-    for &row in &sweep.order {
+    let mut eqg = alloc::filled(0.0f64, ped.len(), Family::LineageOutput, "float64")?;
+    for row in rows {
         let i = row as usize;
         let mut v = 0.0f64;
         for p in [mother[i], father[i]] {
@@ -105,7 +118,7 @@ pub fn founder_contribution_means(
             operation: "founder_means",
             dtype: "float64",
         })?;
-    let sweep = DepthOrder::build(&ped, MEANS)?;
+    let sweep = DepthOrder::build(ped.mother(), ped.father(), ped.depth(), MEANS)?;
     let (mother, father, depth) = (ped.mother(), ped.father(), ped.depth());
 
     let mut size = alloc::filled(0usize, n_cohorts + 1, MEANS, "uint64")?;
@@ -166,7 +179,7 @@ mod tests {
     fn equivalent_generations_count_known_generations() {
         // 0..3 found; 4 = (0, 1), 5 = (2, 3), 6 = (4, 5), 7 = (4, -1).
         let (m, f) = ([-1, -1, -1, -1, 0, 2, 4, 4], [-1, -1, -1, -1, 1, 3, 5, -1]);
-        let eqg = with_ped(&m, &f, |p| equivalent_generations(p).unwrap());
+        let eqg = equivalent_generations(ParentColumns::try_new(&m, &f, None).unwrap()).unwrap();
         assert_eq!(eqg, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 1.0]);
     }
 

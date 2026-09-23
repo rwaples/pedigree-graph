@@ -8,9 +8,38 @@
 //! the order [`crate::topology::depth_major_order`] and a NumPy
 //! `flatnonzero(depth == d)` both give.
 
-use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
 use crate::error::Error;
+
+/// A parents-first sweep over the graph rows, for the kernels that need
+/// nothing else from their order.
+pub(crate) enum ParentsFirst {
+    /// Every parent row already precedes its children: sweep `0..n`, and
+    /// neither sort nor read `depth`.
+    Rows,
+    /// Sweep the stable depth-major order, `depth` checked structural.
+    DepthMajor(DepthOrder),
+}
+
+impl ParentsFirst {
+    /// The stable depth-major order on `depth`, for rows that are not
+    /// already parents-first.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::LengthMismatch`] on `depth` when it is absent or not one per
+    /// row, then as [`DepthOrder::build`].
+    pub(crate) fn sorted(
+        mother: &[i32],
+        father: &[i32],
+        depth: Option<&[i32]>,
+        family: Family,
+    ) -> Result<ParentsFirst, Error> {
+        let depth = depth.unwrap_or(&[]);
+        crate::relationships::check_column_length("depth", depth.len(), mother.len())?;
+        DepthOrder::build(mother, father, depth, family).map(ParentsFirst::DepthMajor)
+    }
+}
 
 /// Graph rows in stable depth-major order, bucketed by depth.
 pub(crate) struct DepthOrder {
@@ -29,9 +58,13 @@ impl DepthOrder {
     /// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative
     /// or not above both parents', before anything is allocated, and
     /// [`Error::AllocationFailed`] for either array.
-    pub(crate) fn build(ped: &KinshipPedigree<'_>, family: Family) -> Result<DepthOrder, Error> {
-        check_structural(ped)?;
-        let depth = ped.depth();
+    pub(crate) fn build(
+        mother: &[i32],
+        father: &[i32],
+        depth: &[i32],
+        family: Family,
+    ) -> Result<DepthOrder, Error> {
+        check_structural(mother, father, depth)?;
         let max_depth = depth.iter().copied().max().unwrap_or(0) as usize;
         let mut starts = alloc::filled(0usize, max_depth + 2, family, "uint64")?;
         for &d in depth {
@@ -60,10 +93,9 @@ impl DepthOrder {
 }
 
 /// Every depth is non-negative and strictly above both parents'.
-fn check_structural(ped: &KinshipPedigree<'_>) -> Result<(), Error> {
-    let depth = ped.depth();
+fn check_structural(mother: &[i32], father: &[i32], depth: &[i32]) -> Result<(), Error> {
     for (row, &d) in depth.iter().enumerate() {
-        let floor = [ped.mother()[row], ped.father()[row]]
+        let floor = [mother[row], father[row]]
             .into_iter()
             .filter(|&p| p >= 0)
             .map(|p| i64::from(depth[p as usize]) + 1)

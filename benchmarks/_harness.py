@@ -296,11 +296,21 @@ class Measurement:
     """What a timed arm returns.
 
     ``checksum`` is required, which makes "every config proves correctness, not
-    just speed" a structural property rather than a convention.
+    just speed" a structural property rather than a convention.  Either may be
+    a zero-argument callable, which the harness calls after the timed region:
+    hashing a result is verification, not the operation, and on a cell of a
+    few milliseconds it would otherwise dominate the wall and carry the arm
+    environments' own hashing speeds into the ratio.
     """
 
-    checksum: int
-    facts: Mapping[str, Any] = field(default_factory=dict)
+    checksum: int | Callable[[], int]
+    facts: Mapping[str, Any] | Callable[[], Mapping[str, Any]] = field(default_factory=dict)
+
+    def resolved(self) -> Measurement:
+        """This measurement with any deferred checksum or facts computed."""
+        checksum = self.checksum() if callable(self.checksum) else self.checksum
+        facts = self.facts() if callable(self.facts) else self.facts
+        return Measurement(checksum, facts)
 
 
 @dataclass(frozen=True)
@@ -766,6 +776,7 @@ def _measure_cell(suite: Suite, cell: Cell, environment: str) -> RunRecord:
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
     with PeakRss() as region:
         measurement = arm.run(graph, prepared.payload)
+    measurement = measurement.resolved()
 
     return RunRecord(
         cell=cell,

@@ -62,7 +62,8 @@ struct Topo {
 impl Topo {
     fn build(ped: &KinshipPedigree<'_>) -> Result<Topo, Error> {
         let n = ped.len();
-        let DepthOrder { order, starts } = DepthOrder::build(ped, SCRATCH)?;
+        let DepthOrder { order, starts } =
+            DepthOrder::build(ped.mother(), ped.father(), ped.depth(), SCRATCH)?;
         let mut inverse = alloc::filled(0u32, n, SCRATCH, "uint32")?;
         for (position, &row) in order.iter().enumerate() {
             inverse[row as usize] = position as u32;

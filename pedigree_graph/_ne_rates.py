@@ -40,6 +40,7 @@ from pedigree_graph._input import (
     _own,
     _own_native,
 )
+from pedigree_graph._lineage import sweep_depth
 from pedigree_graph._ne_common import (
     _genome_node_labels,
     _scalar_ne_from_log_regression,
@@ -304,7 +305,7 @@ def _equivalent_generations(pg: PedigreeGraph) -> np.ndarray:
     ``EqG_i = Σ over known parents p of (1/2 + EqG_p / 2)``: 0 for a founder,
     1 with two known founder parents.  A Rust core sweep over structural depth.
     """
-    return _own_native(_native.equivalent_generations(pg._built, pg.depth), np.float64)
+    return _own_native(_native.equivalent_generations(pg._built, sweep_depth(pg)), np.float64)
 
 
 def _individual_delta_f_from(
