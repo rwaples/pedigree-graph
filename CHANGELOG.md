@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.9.4
 
 - **Changed: `inbreeding`, `distinct_ancestor_counts` and
   `descendant_path_counts` run on the Rust core, as do the equivalent
