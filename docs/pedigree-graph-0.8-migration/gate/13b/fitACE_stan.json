@@ -1,0 +1,54 @@
+{
+  "unit": "fitACE_stan",
+  "stage": "13b",
+  "routing": "/tmp/claude-1000/-data-Documents-simACE/b66e791f-b473-47be-9aad-b3c76e1bd461/scratchpad/pg13b/wheel-site",
+  "cwd": "fitACE/fitACE_stan",
+  "started": "2026-09-23T09:10:02",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/tmp/claude-1000/-data-Documents-simACE/b66e791f-b473-47be-9aad-b3c76e1bd461/scratchpad/pg13b/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 1.0,
+      "max_rss_mib": 105.7,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/13b/fitACE_stan/routing.log",
+      "tail": [
+        "routed /tmp/claude-1000/-data-Documents-simACE/b66e791f-b473-47be-9aad-b3c76e1bd461/scratchpad/pg13b/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 103.3,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/13b/fitACE_stan/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 99.7,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/13b/fitACE_stan/format.log",
+      "tail": [
+        "8 files already formatted"
+      ]
+    },
+    {
+      "step": "import",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import fitace_stan, fitace, simace; print(fitace_stan.__version__)'",
+      "exit": 0,
+      "wall_s": 0.3,
+      "max_rss_mib": 104.1,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/13b/fitACE_stan/import.log",
+      "tail": [
+        "2026.9.1"
+      ]
+    }
+  ],
+  "ok": true
+}
