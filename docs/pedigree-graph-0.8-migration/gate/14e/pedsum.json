@@ -1,0 +1,96 @@
+{
+  "unit": "pedsum",
+  "stage": "14e",
+  "routing": "locked",
+  "cwd": "external/pedsum",
+  "started": "2026-09-23T14:59:11",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml python -c 'import pedigree_graph as p, sys;ok = '\"'\"'.pixi/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.7,
+      "max_rss_mib": 117.2,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14e/pedsum/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedsum/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 41.3,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14e/pedsum/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml ruff format --check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 41.6,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14e/pedsum/format.log",
+      "tail": [
+        "61 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 37.1,
+      "max_rss_mib": 328.1,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14e/pedsum/pytest.log",
+      "tail": [
+        "tests/test_effective_size.py: 9 warnings",
+        "tests/test_pair_counting_modes.py: 10 warnings",
+        "tests/test_sep_sniff.py: 5 warnings",
+        "tests/test_sex_concordance.py: 12 warnings",
+        "tests/test_sex_handling.py: 1 warning",
+        "tests/test_summary_split.py: 7 warnings",
+        "  /data/Documents/simACE/external/pedsum/pedsum/report.py:676: DeprecationWarning: the default behavior of `how='horizontal'` for `concat` is deprecated and will require equal heights in the next breaking release. Use `how='horizontal_extend'` to keep the current behavior.",
+        "  (Deprecated in version 1.42.1)",
+        "    annotated = pl.concat([idf, extras], how=\"horizontal\")",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "324 passed, 58 warnings in 35.71s"
+      ]
+    },
+    {
+      "step": "tsv",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml python -c 'import polars as pl; pl.read_parquet('\"'\"'/data/Documents/simACE/results/test/small_test/rep1/pedigree.parquet'\"'\"').write_csv('\"'\"'/tmp/pg08-gate-5qcfrgug/pedigree.tsv'\"'\"', separator='\"'\"'\\t'\"'\"')'",
+      "exit": 0,
+      "wall_s": 0.3,
+      "max_rss_mib": 54.4,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14e/pedsum/tsv.log",
+      "tail": []
+    },
+    {
+      "step": "cli-smoke",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml python pedigree_summary.py summarize --in /tmp/pg08-gate-5qcfrgug/pedigree.tsv --out /tmp/pg08-gate-5qcfrgug/pedsum-smoke",
+      "exit": 0,
+      "wall_s": 1.5,
+      "max_rss_mib": 230.8,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14e/pedsum/cli-smoke.log",
+      "tail": [
+        "14:59:50 INFO pedigree_summary: mating-pair summary in 0.00s",
+        "14:59:50 INFO pedigree_graph._relationship_counts: relationship_counts: max_degree=5, threads=1",
+        "14:59:50 INFO pedigree_graph._relationship_counts: relationship_counts total: 0.085s",
+        "14:59:50 INFO pedigree_summary: relationship pair counts (relationship_counts) in 0.09s",
+        "14:59:50 INFO pedigree_summary: inbreeding (F + n_ancestors) in 0.19s",
+        "14:59:50 INFO pedigree_summary: descendants in 0.00s",
+        "14:59:50 INFO pedigree_graph._ne_rates: mean_kinship_by_generation: n=5312, groups=6, unlabelled=0, 0.06s",
+        "14:59:50 INFO pedigree_summary: effective size (7 estimators) in 0.08s",
+        "14:59:50 INFO pedigree_summary: individual table built in 0.08s",
+        "14:59:50 INFO pedigree_summary: aggregate pedigree sections in 0.01s",
+        "14:59:50 INFO pedigree_summary: wrote /tmp/pg08-gate-5qcfrgug/pedsum-smoke/{summary.yaml, summary.extra.yaml}",
+        "14:59:51 INFO pedigree_summary: wrote annotated.tsv.gz in 0.03s"
+      ]
+    }
+  ],
+  "ok": true
+}
