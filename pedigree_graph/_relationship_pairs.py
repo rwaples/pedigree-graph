@@ -39,6 +39,16 @@ logger = logging.getLogger(__name__)
 EXECUTIONS = ("speed", "memory")
 
 
+def _should_compact_view(n_graph: int, n_view: int) -> bool:
+    """Use the measured compact path for sparse views of substantial graphs.
+
+    On random_30k, views through 10% were faster and used less peak RSS;
+    the 50% view had no reliable RAM advantage. Small graphs do not carry
+    enough full-engine setup cost to justify an extra closure build.
+    """
+    return n_graph >= 20_000 and n_view * 10 <= n_graph
+
+
 def check_execution(execution: str) -> str:
     """Return *execution* once it is one of :data:`EXECUTIONS`; raise ``ValueError`` otherwise."""
     if execution not in EXECUTIONS:
@@ -60,12 +70,23 @@ def view_relationship_pairs(view: PedigreeView, selection: RelationshipSelection
     if len(view) < 2:
         thread_budget()
         return _build_result({}, selection, view._coordinate_token)
-    blocks = _native_blocks(view._graph, selection, view._graph_to_view(), execution)
+    blocks = _native_blocks(
+        view._graph,
+        selection,
+        view._graph_to_view(),
+        execution,
+        compact=_should_compact_view(view._graph.n_individuals, len(view)),
+    )
     return _build_result(blocks, selection, view._coordinate_token)
 
 
 def _native_blocks(
-    graph: PedigreeGraph, selection: RelationshipSelection, view_rows: np.ndarray | None, execution: str
+    graph: PedigreeGraph,
+    selection: RelationshipSelection,
+    view_rows: np.ndarray | None,
+    execution: str,
+    *,
+    compact: bool = False,
 ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """The requested blocks from the core, or nothing when the selection is empty.
 
@@ -95,6 +116,7 @@ def _native_blocks(
         threads=threads,
         execution=execution,
         view_rows=view_rows,
+        compact=compact,
     )
     logger.info(
         "relationship_pairs total: %d pairs in %.3fs",

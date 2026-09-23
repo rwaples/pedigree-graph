@@ -20,6 +20,7 @@ import numpy as np
 
 from pedigree_graph import _native
 from pedigree_graph._registry import RELATIONSHIPS
+from pedigree_graph._relationship_pairs import _should_compact_view
 from pedigree_graph._threads import thread_budget
 from pedigree_graph.relationships import RelationshipCountResult
 
@@ -38,13 +39,19 @@ def relationship_counts(graph: PedigreeGraph, selection: RelationshipSelection) 
 
 def view_relationship_counts(view: PedigreeView, selection: RelationshipSelection) -> RelationshipCountResult:
     """Count the pairs of every requested category with both rows in *view*."""
+    if _should_compact_view(view._graph.n_individuals, len(view)):
+        return _count(view._graph, None, selection, compact_view_rows=view._graph_to_view())
     selected = np.zeros(view._graph.n_individuals, dtype=np.bool_)
     selected[view._graph_rows] = True
     return _count(view._graph, selected, selection)
 
 
 def _count(
-    graph: PedigreeGraph, selected: np.ndarray | None, selection: RelationshipSelection
+    graph: PedigreeGraph,
+    selected: np.ndarray | None,
+    selection: RelationshipSelection,
+    *,
+    compact_view_rows: np.ndarray | None = None,
 ) -> RelationshipCountResult:
     """Run the engine at the degree of the highest requested code and keep the requested codes.
 
@@ -58,12 +65,10 @@ def _count(
         threads = thread_budget()
         logger.info("relationship_counts: max_degree=%d, threads=%d", top, threads)
         start = time.perf_counter()
-        counted = _native.relationship_counts(
-            graph._built,
-            max_degree=top,
-            threads=threads,
-            selected=selected,
-        )
+        if compact_view_rows is None:
+            counted = _native.relationship_counts(graph._built, max_degree=top, threads=threads, selected=selected)
+        else:
+            counted = _native.compact_view_counts(graph._built, compact_view_rows, max_degree=top, threads=threads)
         logger.info("relationship_counts total: %.3fs", time.perf_counter() - start)
         values.update({code: counted[code] for code in requested})
     return RelationshipCountResult(values, requested, requested)

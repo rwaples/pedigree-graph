@@ -346,6 +346,32 @@ fn relationship_counts<'py>(
     Ok(values)
 }
 
+/// Exact view counts after compacting to the view's represented ancestry.
+#[pyfunction]
+#[pyo3(signature = (pedigree, view_rows, *, max_degree, threads))]
+fn compact_view_counts<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    view_rows: PyReadonlyArray1<'py, i32>,
+    max_degree: u8,
+    threads: usize,
+) -> PyResult<Bound<'py, PyDict>> {
+    let columns = EngineColumns::borrow(py, pedigree);
+    let ped = columns.pedigree(py)?;
+    let view = view_rows.as_slice()?;
+    check_same_length("view_rows", view.len(), ped.len())?;
+    let max_degree = checked_max_degree(py, max_degree)?;
+    let pool = checked_pool(py, threads)?;
+    let counts = py
+        .detach(|| pool.install(|| relationships::count_view_pairs_compact(&ped, max_degree, view)))
+        .map_err(|e| to_pyerr(py, e))?;
+    let values = PyDict::new(py);
+    for &cat in Category::ALL.iter() {
+        values.set_item(cat.code(), counts.get(cat) as i64)?;
+    }
+    Ok(values)
+}
+
 /// The oriented pairs of the `requested` categories, keyed by registry code
 /// in registry order, each an `(first, second)` pair of owned int32 arrays.
 ///
@@ -358,7 +384,7 @@ fn relationship_counts<'py>(
 /// the core without a copy and retain nothing else.  The GIL is released
 /// while classifying and assembling.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, requested, threads, execution, view_rows=None))]
+#[pyo3(signature = (pedigree, *, max_degree, requested, threads, execution, view_rows=None, compact=false))]
 fn relationship_pairs<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
@@ -367,6 +393,7 @@ fn relationship_pairs<'py>(
     threads: usize,
     execution: &str,
     view_rows: Option<PyReadonlyArray1<'py, i32>>,
+    compact: bool,
 ) -> PyResult<Bound<'py, PyDict>> {
     let columns = EngineColumns::borrow(py, pedigree);
     let ped = columns.pedigree(py)?;
@@ -390,11 +417,24 @@ fn relationship_pairs<'py>(
         }
         None => None,
     };
+    if compact && view.is_none() {
+        return Err(PyValueError::new_err("compact requires view_rows"));
+    }
     let pool = checked_pool(py, threads)?;
     let blocks = py
         .detach(|| {
             pool.install(|| {
-                relationships::pair_blocks(&ped, max_degree, categories, view, execution)
+                if compact {
+                    relationships::pair_blocks_compact(
+                        &ped,
+                        max_degree,
+                        categories,
+                        view.unwrap(),
+                        execution,
+                    )
+                } else {
+                    relationships::pair_blocks(&ped, max_degree, categories, view, execution)
+                }
             })
         })
         .map_err(|e| to_pyerr(py, e))?;
@@ -405,6 +445,44 @@ fn relationship_pairs<'py>(
         values.set_item(cat.code(), PyTuple::new(py, [first, second])?)?;
     }
     Ok(values)
+}
+
+/// Counts and per-person degree burden from one relationship traversal.
+/// `depth` is structural depth in graph rows; no pair blocks are returned.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, *, threads))]
+fn relationship_burden<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+    threads: usize,
+) -> PyResult<(
+    Bound<'py, PyDict>,
+    Bound<'py, PyArray1<u32>>,
+    Bound<'py, PyArray1<u64>>,
+)> {
+    let columns = EngineColumns::borrow(py, pedigree);
+    let ped = columns.pedigree(py)?;
+    let depth = depth.as_slice()?;
+    check_same_length("depth", depth.len(), ped.len())?;
+    if depth.iter().any(|&d| d < 0 || d as usize >= ped.len()) {
+        return Err(PyValueError::new_err(
+            "depth must be in the graph row range",
+        ));
+    }
+    let pool = checked_pool(py, threads)?;
+    let burden = py
+        .detach(|| pool.install(|| relationships::relationship_burden(&ped, depth)))
+        .map_err(|e| to_pyerr(py, e))?;
+    let categories = PyDict::new(py);
+    for (cat, count) in Category::ALL.iter().zip(burden.categories) {
+        categories.set_item(cat.code(), count)?;
+    }
+    Ok((
+        categories,
+        burden.per_person.into_pyarray(py),
+        burden.same_depth.into_pyarray(py),
+    ))
 }
 
 /// The recurrence's columns, borrowed from a graph's [`BuiltPedigree`] and
@@ -793,7 +871,9 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(build_pedigree, m)?)?;
     m.add_function(wrap_pyfunction!(configure_pool, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(compact_view_counts, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_pairs, m)?)?;
+    m.add_function(wrap_pyfunction!(relationship_burden, m)?)?;
     m.add_function(wrap_pyfunction!(pair_kinship, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_support_values, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_csc, m)?)?;

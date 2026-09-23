@@ -190,6 +190,15 @@ for the retained ancestral history rather than the original data set. See the
 [succinct data model](https://tskit.dev/tskit/docs/stable/data-model.html) and
 [`TreeSequence.simplify`](https://github.com/tskit-dev/tskit/blob/5aeadfa419b8ae03a6c43d1d2faf0acc8f88fd93/python/tskit/trees.py#L6973-L7050).
 
+#### Implementation in the `tskit-views-sinks` branch
+
+Small views now use a temporary compact pedigree with selected rows, their
+represented ancestors, and MZ partners. Original parent IDs and public view
+coordinates are preserved. The Python facade selects this path for views of at
+most 10% of graphs with at least 20,000 rows. See
+[`benchmarks/tskit_views_sinks.md`](../benchmarks/tskit_views_sinks.md) for
+measured time, peak RSS, closure sizes, and parity checks.
+
 #### Current seam
 
 `PedigreeView` owns graph-row to view-row coordinate maps, but the engine
@@ -250,6 +259,14 @@ kernel. See:
 
 The transferable principle is to separate one traversal/classification module
 from the representation of its result.
+
+#### Implementation in the `tskit-views-sinks` branch
+
+`relationship_burden()` now accumulates category counts, per-person degree
+counts, and same-depth related-pair counts in native O(N) arrays. The pedsum
+`tskit-burden-sink` branch consumes these arrays for its optional burden report
+without constructing pair lists. The benchmark and parity evidence is in
+[`benchmarks/tskit_views_sinks.md`](../benchmarks/tskit_views_sinks.md).
 
 #### Current seam
 

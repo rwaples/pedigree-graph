@@ -45,6 +45,7 @@ Public non-root modules:
     pedigree_graph.typing        — FrameLike, the structural table protocol
 """
 
+from pedigree_graph._burden import RelationshipBurden
 from pedigree_graph._core import PedigreeGraph
 from pedigree_graph._errors import (
     MissingMetadataError,
@@ -69,6 +70,7 @@ __all__ = [
     "PedigreeGraph",
     "PedigreeValidationError",
     "PedigreeView",
+    "RelationshipBurden",
     "RelationshipCategory",
     "RelationshipCountResult",
     "RelationshipPairBlock",

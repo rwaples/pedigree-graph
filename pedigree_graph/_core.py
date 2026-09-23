@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Literal, overload
 import numpy as np
 
 from pedigree_graph import _native
+from pedigree_graph._burden import relationship_burden as _relationship_burden
 from pedigree_graph._cohort_utils import generation_interval as _generation_interval
 from pedigree_graph._input import _own_native, host_columns, host_columns_from_arrays
 from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
 
     import scipy.sparse as sp
 
+    from pedigree_graph._burden import RelationshipBurden
     from pedigree_graph._frames import FrameLike
     from pedigree_graph._view import PedigreeView
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
@@ -385,6 +387,15 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             PedigreeValidationError: As :meth:`relationship_pairs`.
         """
         return _relationship_counts(self, RelationshipSelection.parse(max_degree, categories))
+
+    def relationship_burden(self) -> RelationshipBurden:
+        """Summarise closest-category pairs without materialising pair lists.
+
+        Counts cover all 23 categories. The read-only graph-row array has one
+        column per degree 1 through 5; MZ pairs contribute only to category
+        and same-depth counts. Peak output storage is O(N).
+        """
+        return _relationship_burden(self)
 
     def close_relative_counts(self) -> RelationshipCountResult:
         """Return exact MZ, MO, FO, FS, MHS and PHS pair counts.

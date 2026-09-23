@@ -1,6 +1,8 @@
 //! Relationship pairs and counts up to the fifth degree, one row at a time.
 
+mod burden;
 mod category;
+mod compact;
 mod csr;
 mod engine;
 mod multiplicity;
@@ -10,7 +12,9 @@ mod sibling_index;
 #[cfg(test)]
 pub(crate) mod testing;
 
+pub use burden::{relationship_burden, Burden};
 pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
+pub use compact::CompactView;
 pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};
 pub use multiplicity::Mult;
 pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};
@@ -274,6 +278,45 @@ pub fn count_pairs(
             result.map(|()| counts)
         })
         .try_reduce(Counts::default, |a, b| Ok(a.merge(b)))
+}
+
+/// Count view pairs after restricting engine storage to their ancestry.
+/// The compact pedigree is call-local; no result escapes in compact rows.
+pub fn count_view_pairs_compact(
+    ped: &Pedigree,
+    max_degree: MaxDegree,
+    view: &[i32],
+) -> Result<Counts, Error> {
+    assert_eq!(ped.len(), view.len());
+    pairs::check_view_map(view)?;
+    let compact = CompactView::build(ped, view)?;
+    let mut selected = crate::alloc::with_capacity(
+        compact.view_rows.len(),
+        crate::alloc::Family::RowSet,
+        "bool",
+    )?;
+    selected.extend(compact.view_rows.iter().map(|&row| row >= 0));
+    count_pairs(&compact.columns.try_borrow()?, max_degree, Some(&selected))
+}
+
+/// Emit view pairs using the same engine on an ancestry-compact pedigree.
+pub fn pair_blocks_compact(
+    ped: &Pedigree,
+    max_degree: MaxDegree,
+    requested: CategorySet,
+    view: &[i32],
+    execution: Execution,
+) -> Result<PairBlocks, Error> {
+    assert_eq!(ped.len(), view.len());
+    pairs::check_view_map(view)?;
+    let compact = CompactView::build(ped, view)?;
+    pair_blocks(
+        &compact.columns.try_borrow()?,
+        max_degree,
+        requested,
+        Some(&compact.view_rows),
+        execution,
+    )
 }
 
 /// Consecutive row ranges of [`ROWS_PER_TASK`] rows covering `0..n`.

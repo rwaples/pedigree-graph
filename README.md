@@ -94,6 +94,12 @@ kin_fs = pg.pair_kinship(first, second)
 counts = pg.relationship_counts(max_degree=3)
 K = pg.kinship_matrix()  # complete, CSC float32
 
+# One O(N)-memory pass for full-graph category counts and per-person
+# degree-1..5 burden, without materializing pair lists.
+burden = pg.relationship_burden()
+print(burden.category_counts["FS"])
+print(burden.per_person[2, 0])  # degree-1 relatives of graph row 2
+
 # Scalar counts for MZ, MO, FO, FS, MHS and PHS only, also exact
 close = pg.close_relative_counts()  # no degree/category selector
 assert close["FS"] == counts["FS"]

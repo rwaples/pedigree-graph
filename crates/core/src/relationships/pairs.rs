@@ -352,7 +352,7 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
 ///
 /// One pass, one byte per graph row.  Entries are `-1` for an unselected row,
 /// else the row's view index, each used once.
-fn check_view_map(map: &[i32]) -> Result<(), Error> {
+pub(super) fn check_view_map(map: &[i32]) -> Result<(), Error> {
     let mut seen = alloc::filled(false, map.len(), Family::ViewSortScratch, "bool")?;
     for (position, &value) in map.iter().enumerate() {
         if value < 0 {
