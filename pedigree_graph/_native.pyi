@@ -47,6 +47,14 @@ def relationship_counts(
     threads: int,
     selected: NDArray[np.bool_] | None = None,
 ) -> dict[str, int]: ...
+def compact_view_counts(
+    pedigree: BuiltPedigree,
+    view_rows: NDArray[np.int32],
+    /,
+    *,
+    max_degree: int,
+    threads: int,
+) -> dict[str, int]: ...
 def relationship_pairs(
     pedigree: BuiltPedigree,
     /,
@@ -56,7 +64,15 @@ def relationship_pairs(
     threads: int,
     execution: str,
     view_rows: NDArray[np.int32] | None = None,
+    compact: bool = False,
 ) -> dict[str, tuple[NDArray[np.int32], NDArray[np.int32]]]: ...
+def relationship_burden(
+    pedigree: BuiltPedigree,
+    depth: NDArray[np.int32],
+    /,
+    *,
+    threads: int,
+) -> tuple[dict[str, int], NDArray[np.uint32], NDArray[np.uint64]]: ...
 def pair_kinship(
     pedigree: BuiltPedigree,
     depth: NDArray[np.int32],
