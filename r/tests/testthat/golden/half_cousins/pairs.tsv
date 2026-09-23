@@ -1,0 +1,17 @@
+code	first	second	first_id	second_id
+MO	4	1	73	70
+MO	5	1	74	70
+MO	8	4	77	73
+MO	9	7	78	76
+FO	4	2	73	71
+FO	5	3	74	72
+FO	9	5	78	74
+FO	8	6	77	75
+MHS	4	5	73	74
+GP	8	1	77	70
+GP	9	1	78	70
+GP	8	2	77	71
+GP	9	3	78	72
+HAv	9	4	78	73
+HAv	8	5	77	74
+H1C	8	9	77	78

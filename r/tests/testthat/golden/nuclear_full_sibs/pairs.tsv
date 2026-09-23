@@ -1,0 +1,10 @@
+code	first	second	first_id	second_id
+MO	3	1	12	10
+MO	4	1	13	10
+MO	5	1	14	10
+FO	3	2	12	11
+FO	4	2	13	11
+FO	5	2	14	11
+FS	3	4	12	13
+FS	3	5	12	14
+FS	4	5	13	14
