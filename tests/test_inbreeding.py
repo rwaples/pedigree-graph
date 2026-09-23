@@ -13,7 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from conftest import parity_columns, parity_fixtures
-from test_inbreeding_kernel import ADR_0008_FIXTURES, _mz_frame
+from test_oracle_inbreeding import ADR_0008_FIXTURES, _mz_frame
 
 import pedigree_graph._core
 from pedigree_graph import PedigreeGraph
@@ -72,7 +72,7 @@ def test_deep_inbred_60g_holds_the_identity_inside_the_envelope():
 def test_second_call_returns_the_memo_without_recomputing(monkeypatch):
     graph = _graph(MZ_ONLY_LINK)
     first = graph.inbreeding()
-    monkeypatch.setattr(pedigree_graph._core, "_compute_F_meuwissen_luo", _forbid_kernel)
+    monkeypatch.setattr(pedigree_graph._native, "inbreeding", _forbid_kernel)
     assert graph.inbreeding() is first
 
 

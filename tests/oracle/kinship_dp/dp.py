@@ -42,9 +42,10 @@ from oracle.kinship_dp.allocator import (
 from oracle.kinship_dp.csc import _assemble_csc
 from oracle.kinship_dp.depth import _compute_last_direct_child_depth
 from oracle.kinship_dp.dp_depth import _capture_candidates_at_depth, _mz_twin_pass, _process_depth
+from oracle.remap import build_topology
 from pedigree_graph._cohorts import _densify_labels
 from pedigree_graph._errors import ResourceError
-from pedigree_graph._topology import build_topology, owned_readonly
+from pedigree_graph._topology import owned_readonly
 from pedigree_graph.summaries import GenerationKinshipSummary
 
 

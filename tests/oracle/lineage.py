@@ -1,5 +1,7 @@
 """Topological lineage primitives: per-row ancestor and descendant counts.
 
+Oracle: ``pedigree_graph._lineage_kernel`` as 0.9.3 shipped it, verbatim.
+
 These are graph properties of the pedigree DAG, independent of kinship
 arithmetic.  Two semantics live here:
 

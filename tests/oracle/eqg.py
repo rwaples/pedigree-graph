@@ -1,5 +1,7 @@
 """Equivalent complete generations (Maignel 1996), the one numba kernel left here.
 
+Oracle: ``pedigree_graph._kinship_depth`` as 0.9.3 shipped it, verbatim.
+
 Structural depth, the topological order and the kinship DP live in the Rust
 core (``pedigree_graph._native``); the DP's Python form is the test oracle
 under ``tests/oracle/kinship_dp``.  Depends only on numba/numpy.

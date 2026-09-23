@@ -1,5 +1,7 @@
 """Meuwissen-Luo F-only inbreeding kernel over the genome-node pedigree (PGQ-008, ADR 0008).
 
+Oracle: ``pedigree_graph._inbreeding_kernel`` as 0.9.3 shipped it, verbatim.
+
 The sparse ancestor-walk that computes per-individual inbreeding
 coefficients without materializing kinship.  Self-contained numba over the
 parent-index arrays; the graph supplies the depth-major order it sweeps in.

@@ -3,9 +3,9 @@
 The bodies of :meth:`PedigreeGraph.distinct_ancestor_counts`,
 :meth:`PedigreeGraph.descendant_path_counts`, and
 :meth:`PedigreeGraph.connected_component_ids`.  Each is computed once, stored
-on the graph, and handed back read-only.  The numba and scipy primitives live
-in :mod:`pedigree_graph._lineage_kernel`; this module owns the coordinate
-mapping, the memo, and the component labelling policy.
+on the graph, and handed back read-only.  The two counts are Rust core sweeps
+in graph rows; the components are SciPy.  This module owns the memo and the
+component labelling policy.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.sparse.csgraph import connected_components
 
-from pedigree_graph._lineage_kernel import _compute_n_ancestors, _compute_n_descendants
+from pedigree_graph import _native
+from pedigree_graph._input import _own_native
 from pedigree_graph._topology import readonly
 
 if TYPE_CHECKING:
@@ -26,18 +27,11 @@ if TYPE_CHECKING:
 def distinct_ancestor_counts(pg: PedigreeGraph) -> np.ndarray:
     """Distinct strict ancestors of every row, int32, read-only, memoised.
 
-    An ancestor reachable through several paths is counted once. The retiring
-    ancestor-set sweep needs parents before children, so it uses the private
-    topological order when the graph rows are not already ordered that way.
+    An ancestor reachable through several paths is counted once.
     """
     cached = pg._distinct_ancestor_counts
     if cached is None:
-        if pg._rows_are_topological:
-            counts = _compute_n_ancestors(pg.mother_rows, pg.father_rows, pg.n_individuals)
-        else:
-            m_idx, f_idx, _ = pg._topological_parents
-            counts = pg._topology.per_row_to_graph(_compute_n_ancestors(m_idx, f_idx, pg.n_individuals))
-        cached = readonly(np.ascontiguousarray(counts, dtype=np.int32))
+        cached = _own_native(_native.distinct_ancestor_counts(pg._built, pg.depth), np.int32)
         pg._distinct_ancestor_counts = cached
     return cached
 
@@ -48,18 +42,12 @@ def descendant_path_counts(pg: PedigreeGraph) -> np.ndarray:
     ``counts[v]`` is the number of walks down the pedigree from ``v``: the
     number of children plus the path counts of the children.  Equal to the
     distinct descendant count in a pedigree without marriage loops; larger
-    where a descendant reaches ``v`` through more than one child.  The sweep
-    needs parents before children, so it runs in the private topological
-    order when the input rows are not already ordered that way.
+    where a descendant reaches ``v`` through more than one child.  A count
+    past int64 raises ``ResourceError("arithmetic_overflow")``.
     """
     cached = pg._descendant_path_counts
     if cached is None:
-        if pg._rows_are_topological:
-            counts = _compute_n_descendants(pg.mother_rows, pg.father_rows, pg.n_individuals)
-        else:
-            m_idx, f_idx, _ = pg._topological_parents
-            counts = pg._topology.per_row_to_graph(_compute_n_descendants(m_idx, f_idx, pg.n_individuals))
-        cached = readonly(np.ascontiguousarray(counts, dtype=np.int64))
+        cached = _own_native(_native.descendant_path_counts(pg._built, pg.depth), np.int64)
         pg._descendant_path_counts = cached
     return cached
 

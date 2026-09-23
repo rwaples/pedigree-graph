@@ -11,7 +11,6 @@ import pytest
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
-from pedigree_graph._kinship_depth import _compute_eqg
 from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
     FamilySizeEntry,
@@ -20,7 +19,7 @@ from pedigree_graph._ne_family_size import (
     _sigma2_from_quadrants,
 )
 from pedigree_graph._ne_group_coancestry import GroupCoancestryByCohort, _group_coancestry_by_cohort
-from pedigree_graph._ne_rates import _summary_from_matrix, _summary_from_native
+from pedigree_graph._ne_rates import _equivalent_generations, _summary_from_matrix, _summary_from_native
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
     EffectiveSizeResults,
@@ -154,7 +153,7 @@ def test_toy1_full_sib_mating_F_theta_eqg():
 
     # EqG: founders 0; gen-1 with both founder parents → 1; gen-2 with two
     # gen-1 parents (each with EqG=1) → 1 + 0.5*(1+1) = 2.
-    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), np.asarray(pg.depth), pg.n_individuals)
+    eqg = _equivalent_generations(pg)
     assert eqg[0] == 0.0
     assert eqg[1] == 0.0
     assert eqg[2] == pytest.approx(1.0, abs=1e-12)

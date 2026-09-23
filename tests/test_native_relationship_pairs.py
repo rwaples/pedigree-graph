@@ -279,9 +279,11 @@ FAMILIES = tuple(_native.allocation_families())
 #: fails here instead of silently losing its case.
 COUNT_FAMILIES = frozenset({"parent_edges", "csr", "sibling_index", "accumulator", "row_set"})
 
-#: The families only the kinship walk and the kinship matrix DP reserve;
-#: ``test_native_pair_kinship`` and ``test_native_kinship_matrix`` hold those,
-#: and here a call that never reaches them has to succeed.
+#: The families only the kinship walk, the kinship matrix DP and the
+#: inbreeding, lineage and generation sweeps reserve; ``test_native_pair_kinship``,
+#: ``test_native_kinship_matrix``, ``test_native_inbreeding``,
+#: ``test_native_lineage`` and ``test_native_generations`` hold those, and here a
+#: call that never reaches them has to succeed.
 KINSHIP_FAMILIES = frozenset(
     {
         "kinship_memo",
@@ -291,6 +293,10 @@ KINSHIP_FAMILIES = frozenset(
         "kinship_csc",
         "kinship_sums",
         "kinship_scratch",
+        "inbreeding_walk",
+        "lineage_sets",
+        "lineage_output",
+        "founder_means",
     }
 )
 

@@ -11,6 +11,7 @@ source-of-truth / regression-test pointers.
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import tokenize
 from pathlib import Path
@@ -213,3 +214,18 @@ def test_no_delete_markers_remain():
     if tracked.returncode not in (0, 1):
         pytest.skip(f"git grep unavailable: {tracked.stderr.strip()}")
     assert tracked.returncode == 1, f"{marker} markers remain:\n" + tracked.stdout
+
+
+def test_the_package_does_not_import_numba():
+    """Numba left the runtime dependencies in 0.9.4; only the test oracles use it."""
+    offenders = []
+    for path in sorted(PKG_DIR.rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                modules = [node.module or ""]
+            else:
+                continue
+            offenders += [f"{path.name}:{node.lineno}" for m in modules if m.split(".")[0] == "numba"]
+    assert not offenders, "numba imported by the package:\n  " + "\n  ".join(offenders)

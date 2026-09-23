@@ -224,6 +224,13 @@ mod tests {
     }
 
     #[test]
+    fn one_row_as_both_parents_is_one_ancestor_and_two_paths() {
+        let (m, f) = ([-1, 0], [-1, 0]);
+        assert_eq!(run(&m, &f, distinct_ancestor_counts).unwrap(), vec![0, 1]);
+        assert_eq!(run(&m, &f, descendant_path_counts).unwrap(), vec![2, 0]);
+    }
+
+    #[test]
     fn an_empty_pedigree_counts_nothing() {
         assert!(run(&[], &[], distinct_ancestor_counts).unwrap().is_empty());
         assert!(run(&[], &[], descendant_path_counts).unwrap().is_empty());

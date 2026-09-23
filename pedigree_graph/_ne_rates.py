@@ -32,8 +32,14 @@ import numpy as np
 from pedigree_graph import _native
 from pedigree_graph._cohorts import ObservedCohorts, _densify_labels
 from pedigree_graph._errors import PedigreeValidationError
-from pedigree_graph._input import _INT32_MAX, _check_duplicate_rows, _coerce_row_selection, _FieldSpec, _own
-from pedigree_graph._kinship_depth import _compute_eqg
+from pedigree_graph._input import (
+    _INT32_MAX,
+    _check_duplicate_rows,
+    _coerce_row_selection,
+    _FieldSpec,
+    _own,
+    _own_native,
+)
 from pedigree_graph._ne_common import (
     _genome_node_labels,
     _scalar_ne_from_log_regression,
@@ -292,6 +298,15 @@ def _ne_from_delta_f(delta_f: np.ndarray) -> float | None:
     return 1.0 / (2.0 * mean) if mean > 0.0 else None
 
 
+def _equivalent_generations(pg: PedigreeGraph) -> np.ndarray:
+    """Maignel 1996 equivalent complete generations per graph row, read-only float64.
+
+    ``EqG_i = Σ over known parents p of (1/2 + EqG_p / 2)``: 0 for a founder,
+    1 with two known founder parents.  A Rust core sweep over structural depth.
+    """
+    return _own_native(_native.equivalent_generations(pg._built, pg.depth), np.float64)
+
+
 def _individual_delta_f_from(
     cohorts: ObservedCohorts,
     F: np.ndarray,
@@ -402,7 +417,7 @@ def ne_individual_delta_f(pg: PedigreeGraph, *, reference: object | None = None)
 
     where ``t_i`` is the individual's equivalent complete generations, the sum
     over its known ancestors of ``(1/2)^n`` for meiotic distance ``n``
-    (:func:`~pedigree_graph._kinship_depth._compute_eqg`).  A row is eligible
+    (:func:`_equivalent_generations`).  A row is eligible
     when ``t_i > 0``: a founder has ``t = 0`` and no rate.  Rows with
     ``F_i = 1`` are dropped as well, which is this package's guard and not the
     paper's — eq. 2 is finite there and would report ``ΔF_i = 1``.
@@ -451,5 +466,5 @@ def ne_individual_delta_f(pg: PedigreeGraph, *, reference: object | None = None)
     rows = None if reference is None else _reference_rows(pg, reference)
     cohorts = ObservedCohorts.for_graph(pg, "ne_individual_delta_f")
     F = pg._inbreeding_values()
-    eqg = _compute_eqg(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), np.asarray(pg.depth), pg.n_individuals)
+    eqg = _equivalent_generations(pg)
     return _individual_delta_f_from(cohorts, F, eqg, rows)

@@ -39,12 +39,9 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
-import numpy as np
-
 from pedigree_graph._cohort_utils import eligible_cohort_range, generation_interval
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._errors import MissingMetadataError
-from pedigree_graph._kinship_depth import _compute_eqg
 from pedigree_graph._ne_family_size import (
     _generation_family_table,
     _sex_column,
@@ -64,6 +61,7 @@ from pedigree_graph._ne_metadata import (
 )
 from pedigree_graph._ne_rates import (
     _coancestry_from,
+    _equivalent_generations,
     _generation_kinship_summary,
     _inbreeding_from,
     _individual_delta_f_from,
@@ -85,6 +83,8 @@ from pedigree_graph._threads import thread_budget
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
+
+    import numpy as np
 
     from pedigree_graph._cohort_utils import CohortWindow
     from pedigree_graph._core import PedigreeGraph
@@ -368,12 +368,7 @@ class _Prerequisites:
     def eqg(self) -> np.ndarray:
         return self._prerequisite(
             "eqg",
-            lambda: _compute_eqg(
-                np.asarray(self.pg.mother_rows),
-                np.asarray(self.pg.father_rows),
-                np.asarray(self.pg.depth),
-                self.pg.n_individuals,
-            ),
+            lambda: _equivalent_generations(self.pg),
         )
 
     def theta_summary(self) -> GenerationKinshipSummary:

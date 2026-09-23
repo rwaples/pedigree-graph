@@ -6,9 +6,10 @@ import numpy as np
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from oracle.remap import build_topology
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
-from pedigree_graph._topology import build_topology, structural_depth
+from pedigree_graph._topology import structural_depth
 from tests.oracle import topology as oracle
 
 

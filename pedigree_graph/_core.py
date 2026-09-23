@@ -22,8 +22,7 @@ import numpy as np
 
 from pedigree_graph import _native
 from pedigree_graph._cohort_utils import generation_interval as _generation_interval
-from pedigree_graph._inbreeding_kernel import _compute_F_meuwissen_luo
-from pedigree_graph._input import host_columns, host_columns_from_arrays
+from pedigree_graph._input import _own_native, host_columns, host_columns_from_arrays
 from pedigree_graph._kinship_matrix import PedigreeMatrixMethods
 from pedigree_graph._kinship_pairwise import graph_pair_kinship
 from pedigree_graph._lineage import connected_component_ids as _connected_component_ids
@@ -37,7 +36,6 @@ from pedigree_graph._relationship_pairs import relationship_pairs as _relationsh
 from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._streaming_counter import close_relative_counts as _close_relative_counts
 from pedigree_graph._threads import thread_budget
-from pedigree_graph._topology import build_topology, readonly
 from pedigree_graph._view import CoordinateToken, _build_view
 
 if TYPE_CHECKING:
@@ -46,7 +44,6 @@ if TYPE_CHECKING:
     import scipy.sparse as sp
 
     from pedigree_graph._frames import FrameLike
-    from pedigree_graph._topology import Topology
     from pedigree_graph._view import PedigreeView
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
     from pedigree_graph.summaries import GenerationKinshipSummary
@@ -153,37 +150,6 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         # (see _known_parent_edges_for); shared by the overlapping-generation
         # diagnostics so the full-pedigree edge scan runs once per side.
         self._known_parent_edges_cache: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-
-    @cached_property
-    def _topology(self) -> Topology:
-        """Structural depth plus the private stable depth-major row order.
-
-        Public coordinates are input rows in any acyclic order; the kernels
-        that need parents to precede children run in this order and their
-        outputs are mapped back.  Supplied generation labels never enter it.
-        """
-        return build_topology(self.depth)
-
-    @property
-    def _rows_are_topological(self) -> bool:
-        """True when every parent row precedes its child row in graph space.
-
-        Integer kernels whose only requirement is parents-before-children can
-        then sweep the graph arrays directly, with no permutation and no
-        scatter back.  The depth-major order is still used wherever pair and
-        matrix kinship must peel in the same coordinates.
-        """
-        return self._built.rows_topological
-
-    @cached_property
-    def _topological_parents(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """``(mother, father, twin)`` rewritten into the private topological order."""
-        topo = self._topology
-        return (
-            topo.to_topological(self.mother_rows),
-            topo.to_topological(self.father_rows),
-            topo.to_topological(self.twin_rows),
-        )
 
     def _known_parent_edges_for(
         self,
@@ -518,10 +484,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         point that commits.
         """
         if self._inbreeding is None:
-            topo = self._topology
-            m_idx, f_idx, tw_idx = self._topological_parents
-            F = _compute_F_meuwissen_luo(m_idx, f_idx, tw_idx, topo.gather(topo.depth), self.n_individuals)
-            self._inbreeding = readonly(topo.per_row_to_graph(F))
+            self._inbreeding = _own_native(_native.inbreeding(self._built, self.depth), np.float64)
         return self._inbreeding
 
     def distinct_ancestor_counts(self) -> np.ndarray:
@@ -555,6 +518,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
 
         Returns:
             A read-only int64 array of length ``n_individuals``, in graph rows.
+
+        Raises:
+            ResourceError: ``arithmetic_overflow`` when a count exceeds int64,
+                which about 63 generations of repeated sib mating reach.
         """
         thread_budget()
         return _descendant_path_counts(self)

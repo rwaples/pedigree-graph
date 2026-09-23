@@ -1,11 +1,12 @@
-"""Unit tests for the private topological order (slice 1b)."""
+"""Unit tests for the 0.9.3 host-side depth-major remap the Numba oracles sweep in."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
+from oracle.remap import Topology, build_topology, remap_rows
 
-from pedigree_graph._topology import Topology, build_topology, remap_rows, structural_depth
+from pedigree_graph._topology import structural_depth
 
 # 0, 1 and the disconnected 2 are founders; 3 = child(0, 1); 4 = child(3, 1).
 DEPTH_MAJOR_MOTHER = np.array([-1, -1, -1, 0, 3], dtype=np.int32)

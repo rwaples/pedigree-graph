@@ -11,6 +11,7 @@ use pedigree_graph_core::alloc::{self, Family};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
 use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree};
+use pedigree_graph_core::lineage;
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
 use pedigree_graph_core::topology::{self, Order};
@@ -570,6 +571,99 @@ fn generation_kinship_sums<'py>(
     Ok(sums.into_pyarray(py))
 }
 
+/// Inbreeding `F` per graph row, float64: the Meuwissen-Luo walk over the
+/// genome-node pedigree (ADR 0008), serial, with the GIL released.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, /))]
+fn inbreeding<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let values = py
+        .detach(|| kinship::inbreeding(ped))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(values.into_pyarray(py))
+}
+
+/// Distinct strict ancestors per graph row, int32.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, /))]
+fn distinct_ancestor_counts<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+) -> PyResult<Bound<'py, PyArray1<i32>>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let counts = py
+        .detach(|| lineage::distinct_ancestor_counts(ped))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(counts.into_pyarray(py))
+}
+
+/// Descendant paths per graph row, int64; a count past int64 raises
+/// `ResourceError("arithmetic_overflow")` rather than wrapping.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, /))]
+fn descendant_path_counts<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let counts = py
+        .detach(|| lineage::descendant_path_counts(ped))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(counts.into_pyarray(py))
+}
+
+/// Equivalent complete generations per graph row, float64 (Maignel 1996).
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, /))]
+fn equivalent_generations<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let values = py
+        .detach(|| kinship::equivalent_generations(ped))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(values.into_pyarray(py))
+}
+
+/// Per-cohort mean founder-genome contributions, float64, row-major
+/// `(cohort, genome)` of `n_cohorts * n_genomes`.  `cohort` is one int32
+/// cohort per graph row in `0..=n_cohorts` (`n_cohorts` for none);
+/// `founder_column` is the int64 genome column a founder row seeds, or `-1`.
+#[pyfunction]
+#[pyo3(signature = (pedigree, depth, cohort, n_cohorts, founder_column, n_genomes, /))]
+fn founder_contribution_means<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    depth: PyReadonlyArray1<'py, i32>,
+    cohort: PyReadonlyArray1<'py, i32>,
+    n_cohorts: usize,
+    founder_column: PyReadonlyArray1<'py, i64>,
+    n_genomes: usize,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let columns = KinshipColumns::borrow(py, pedigree, depth);
+    let ped = columns.pedigree(py)?;
+    let cohort = cohort.as_slice()?;
+    let founder_column = founder_column.as_slice()?;
+    let means = py
+        .detach(|| {
+            kinship::founder_contribution_means(ped, cohort, n_cohorts, founder_column, n_genomes)
+        })
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(means.into_pyarray(py))
+}
+
 /// The allocation family names, in `Family::ALL` order.
 ///
 /// The test seam's parametrisation reads this rather than keeping its own
@@ -661,6 +755,11 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(kinship_csc, m)?)?;
     m.add_function(wrap_pyfunction!(approximate_kinship_csc, m)?)?;
     m.add_function(wrap_pyfunction!(generation_kinship_sums, m)?)?;
+    m.add_function(wrap_pyfunction!(inbreeding, m)?)?;
+    m.add_function(wrap_pyfunction!(distinct_ancestor_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(descendant_path_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(equivalent_generations, m)?)?;
+    m.add_function(wrap_pyfunction!(founder_contribution_means, m)?)?;
     m.add_function(wrap_pyfunction!(allocation_families, m)?)?;
     m.add_function(wrap_pyfunction!(fail_next_allocation, m)?)?;
     m.add_class::<BuiltPedigree>()?;

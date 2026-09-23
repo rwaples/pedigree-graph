@@ -22,7 +22,6 @@ classifiers = [
 dependencies = [
     "numpy>=2.2,<3",
     "scipy>=1.14,<2",
-    "numba>=0.60,<1",
 ]
 
 [project.urls]
@@ -32,6 +31,9 @@ Changelog = "https://github.com/rwaples/pedigree-graph/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 test = [
+    # The verbatim Numba oracles under tests/oracle (numba left the runtime
+    # dependencies in 0.9.4, when its last kernels moved to the Rust core).
+    "numba>=0.60,<1",
     "pytest>=9,<10",
     "pytest-cov>=7,<8",
     "pytest-xdist>=3.8,<4",

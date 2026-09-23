@@ -17,7 +17,9 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
+from pedigree_graph import _native
 from pedigree_graph._cohorts import ObservedCohorts
+from pedigree_graph._input import _own_native
 from pedigree_graph._ne_common import _checked_founder_matrix, _genome_of
 from pedigree_graph._ne_metadata import _require_closed_parentage
 from pedigree_graph._ne_results import NeLTCResult
@@ -80,14 +82,15 @@ def _per_gen_founder_means(
     contributes 1 to its own genome; every other row takes the mean of its
     two parents' rows).
 
-    Computed by iterating the adjoint of the forward recursion.  For each
-    target cohort, propagate the cohort uniform vector ``1_{cohort} / N_b``
-    backward through child→parent edges one **structural depth** at a time,
-    deepest rows first: at depth ``d``, scatter ``0.5 · u[child]`` from each
-    child at that depth into its mother and father.  Depth, not the
-    generation label, orders the sweep, so labels that merge depths or put
-    a parent and child in one cohort only change the grouping, never the
-    ancestry.  What remains on the founder rows is summed per genome.
+    Computed by iterating the adjoint of the forward recursion, in the Rust
+    core.  For each target cohort, propagate the cohort uniform vector
+    ``1_{cohort} / N_b`` backward through child→parent edges one
+    **structural depth** at a time, deepest rows first: at depth ``d``,
+    scatter ``0.5 · u[child]`` from each child at that depth into its mother
+    and father.  Depth, not the generation label, orders the sweep, so labels
+    that merge depths or put a parent and child in one cohort only change the
+    grouping, never the ancestry.  What remains on the founder rows is summed
+    per genome.
 
     Time: O(N · k · depth).  Memory: O(N + n_genomes · k).
 
@@ -104,37 +107,15 @@ def _per_gen_founder_means(
     if cohorts is None:
         cohorts = ObservedCohorts.for_graph(pg, "ne_long_term_contributions")
     n_founders = int(founder_idx.shape[0])
-    n = pg.n_individuals
-    m_g = _checked_founder_matrix(cohorts.k, n_founders, "founder_means", np.float64, np.nan)
     if n_founders == 0 or cohorts.k == 0:
-        return FounderContributionMeans(m_g, founder_idx)
+        return FounderContributionMeans(
+            _checked_founder_matrix(cohorts.k, n_founders, "founder_means", np.float64, np.nan), founder_idx
+        )
 
-    mother = np.asarray(pg.mother_rows)
-    father = np.asarray(pg.father_rows)
-    depth = np.asarray(pg.depth)
-    columns = _founder_columns(pg, founder_idx)
-    founders = np.flatnonzero(columns >= 0)
-    founder_columns = columns[founders]
-    d_max = int(depth.max())
-    by_depth = [np.flatnonzero(depth == d) for d in range(d_max + 1)]
-
-    for b, in_b in enumerate(cohorts.members()):
-        u = np.zeros(n, dtype=np.float64)
-        u[in_b] = 1.0 / in_b.shape[0]
-        for d in range(int(depth[in_b].max()), 0, -1):
-            child = by_depth[d]
-            uc = 0.5 * u[child]
-            m = mother[child]
-            mask = m >= 0
-            if mask.any():
-                np.add.at(u, m[mask], uc[mask])  # perf: numba candidate
-            f = father[child]
-            mask = f >= 0
-            if mask.any():
-                np.add.at(u, f[mask], uc[mask])  # perf: numba candidate
-            u[child] = 0.0
-        m_g[b] = np.bincount(founder_columns, weights=u[founders], minlength=n_founders)
-
+    flat = _native.founder_contribution_means(
+        pg._built, pg.depth, cohorts.dense, cohorts.k, _founder_columns(pg, founder_idx), n_founders
+    )
+    m_g = _own_native(flat, np.float64).reshape(cohorts.k, n_founders)
     return FounderContributionMeans(m_g, founder_idx)
 
 

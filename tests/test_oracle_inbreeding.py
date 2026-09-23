@@ -1,4 +1,8 @@
-"""Hand-derived F tests for the Meuwissen-Luo kernel.
+"""Hand-derived F tests for the Meuwissen-Luo walk's 0.9.3 Numba oracle.
+
+The walk runs in the Rust core since 0.9.4; ``tests/oracle/inbreeding.py``
+keeps the Numba kernel verbatim and ``test_native_inbreeding.py`` holds the
+native walk to it, so these cases pin the oracle the differential test trusts.
 
 Covers founders, single-parent, classic non-trivial matings, deeper
 chains, and parity vs. the matrix kinship path.  The ADR 0008 fixtures pin
@@ -14,9 +18,9 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
+from oracle.inbreeding import _compute_F_meuwissen_luo
 
 from pedigree_graph import PedigreeGraph
-from pedigree_graph._inbreeding_kernel import _compute_F_meuwissen_luo
 from pedigree_graph._topology import structural_depth
 
 
