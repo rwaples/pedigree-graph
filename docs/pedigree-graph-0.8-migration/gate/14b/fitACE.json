@@ -1,0 +1,63 @@
+{
+  "unit": "fitACE",
+  "stage": "14b",
+  "routing": "/tmp/claude-1000/-data-Documents-simACE/6b6f9ba3-135e-4ed9-a8ad-17d53347d9fe/scratchpad/wheel14b/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-09-23T12:50:12",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/tmp/claude-1000/-data-Documents-simACE/6b6f9ba3-135e-4ed9-a8ad-17d53347d9fe/scratchpad/wheel14b/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 12.9,
+      "max_rss_mib": 109.7,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14b/fitACE/routing.log",
+      "tail": [
+        "routed /tmp/claude-1000/-data-Documents-simACE/6b6f9ba3-135e-4ed9-a8ad-17d53347d9fe/scratchpad/wheel14b/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 105.8,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14b/fitACE/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 106.0,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14b/fitACE/format.log",
+      "tail": [
+        "243 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 15.7,
+      "max_rss_mib": 373.0,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14b/fitACE/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "........................................................................ [ 18%]",
+        "........................................................................ [ 37%]",
+        "........................................................................ [ 56%]",
+        "........................................................................ [ 75%]",
+        "........................................................................ [ 93%]",
+        ".......................                                                  [100%]",
+        "383 passed in 14.39s"
+      ]
+    }
+  ],
+  "ok": true
+}
