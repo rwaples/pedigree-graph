@@ -13,6 +13,12 @@
 //!
 //! The layout never affects a value: the walker computes each key exactly
 //! once from its dependencies' stored bits whatever the table shape.
+//!
+//! The row vector is sized by the pedigree, not the query: 32 bytes a row
+//! before any slot is stored, 17 MB on a 536k-row pedigree, paid on every
+//! call.  Every consumer issues one bulk query per graph, which is the shape
+//! slice 13 measured; a caller looping single pairs on a large pedigree pays
+//! that fixed cost per call and should batch its pairs instead.
 
 use crate::alloc::{self, Family};
 use crate::error::Error;

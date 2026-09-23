@@ -165,6 +165,25 @@ class TestSupportValues:
         assert info.value.code == "kinship_support_asymmetric"
         assert dict(info.value.fields) == {"row": 0, "column": 4}
 
+    def test_a_lower_entry_without_an_upper_mirror_is_asymmetric(self):
+        graph = _graph("nuclear_full_sibs")
+        indptr = np.array([0, 2, 3, 4, 5, 6], dtype=np.int64)
+        indices = np.array([0, 4, 1, 2, 3, 4], dtype=np.int32)
+        with pytest.raises(PedigreeValidationError) as info:
+            _native.kinship_support_values(graph._built, graph.depth, indptr, indices)
+        assert info.value.code == "kinship_support_asymmetric"
+        assert dict(info.value.fields) == {"row": 4, "column": 0}
+
+    def test_an_indptr_that_stops_short_of_nnz_is_rejected(self):
+        graph = _graph("nuclear_full_sibs")
+        indptr = np.array([0, 1, 2, 3, 4, 4], dtype=np.int64)
+        indices = np.array([0, 1, 2, 3, 4], dtype=np.int32)
+        with pytest.raises(PedigreeValidationError) as info:
+            _native.kinship_support_values(graph._built, graph.depth, indptr, indices)
+        assert info.value.code == "value_out_of_range"
+        assert info.value.fields["field"] == "indptr"
+        assert info.value.fields["position"] == 5
+
     def test_an_unsorted_column_is_rejected(self):
         graph = _graph("nuclear_full_sibs")
         indptr = np.array([0, 2, 3, 4, 5, 7], dtype=np.int64)

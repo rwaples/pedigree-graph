@@ -4,6 +4,16 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Fixed (private): `_native.kinship_support_values` rejects every
+  malformed support it used to fill with zeros.** A lower entry with no
+  upper mirror now raises `kinship_support_asymmetric` (only the upper to
+  lower direction was checked), and an `indptr` that ends before
+  `len(indices)` raises `value_out_of_range` on its last position. The
+  public matrix path always builds a canonical symmetric support and was
+  never affected.
+
 ## v0.9.1
 
 - **Changed: `pair_kinship` runs on the Rust core** (slice 13; ADR 0005,
