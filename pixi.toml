@@ -28,3 +28,21 @@ pedigree-graph = { path = ".", editable = true, extras = ["test", "typecheck"] }
 # Bare `pixi run pytest` stays serial and unpinned, which is what -v, -s and
 # --pdb need since xdist captures output and breaks the debugger.
 test = "pytest -n 6 --dist worksteal"
+
+# The R package under r/ (slice 16, plans/pedigree-graph-slice-16-r-package.md
+# in simACE). Its own environment so the default one never pulls in R; it
+# reuses the Rust pin above. `r-install` builds r/ in place into the env's
+# library; `r-test` runs its testthat suite against that install.
+[feature.r.dependencies]
+r-base = "4.5.*"
+r-testthat = ">=3.2"
+r-matrix = "*"
+c-compiler = "*"
+make = "*"
+
+[feature.r.tasks]
+r-install = "R CMD INSTALL --no-multiarch --preclean r"
+r-test = { cmd = "Rscript -e 'testthat::test_local(\"r\", stop_on_failure = TRUE)'", depends-on = ["r-install"] }
+
+[environments]
+r = { features = ["r"], no-default-feature = false }

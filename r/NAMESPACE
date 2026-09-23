@@ -1,0 +1,6 @@
+useDynLib(pedigreegraph, .registration = TRUE)
+export(pedigree_graph)
+export(relationship_categories)
+export(configure_threads)
+export(thread_budget)
+S3method(print, pedigree_graph)

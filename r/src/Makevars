@@ -1,0 +1,16 @@
+TARGET_DIR = ./rust/target
+LIBDIR = $(TARGET_DIR)/release
+STATLIB = $(LIBDIR)/libpedigreegraph.a
+PKG_LIBS = -L$(LIBDIR) -lpedigreegraph
+
+all: $(SHLIB)
+
+$(SHLIB): $(STATLIB)
+
+$(STATLIB):
+	cargo build --lib --release --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR)
+
+clean:
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS)
+
+.PHONY: all clean $(STATLIB)

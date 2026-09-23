@@ -1,0 +1,28 @@
+[package]
+name = "pedigree-graph-r"
+# Kept equal to [workspace.package].version in the repository root; this crate
+# is excluded from that workspace so the R source tarball builds without it.
+version = "0.9.4"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/rwaples/pedigree-graph"
+publish = false
+description = "extendr host binding for pedigree-graph-core (ADR 0007)"
+
+[lib]
+name = "pedigreegraph"
+crate-type = ["staticlib"]
+
+[dependencies]
+# Points outside r/, so r/ installs only in place (pixi run -e r r-install) until
+# tools/r_build_tarball.sh stages the core into the tarball (slice 16c).
+pedigree-graph-core = { path = "../../../crates/core" }
+extendr-api = "0.9"
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+# The workspace's release profile, repeated because profiles are not inherited
+# outside a workspace: one codegen unit (gate/15a/NOTES.md).
+[profile.release]
+opt-level = 3
+debug = 1
+codegen-units = 1
