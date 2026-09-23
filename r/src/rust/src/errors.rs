@@ -33,6 +33,20 @@ impl HostError {
         }
     }
 
+    /// A capacity the binding itself enforces (an R representation limit).
+    pub fn resource(
+        code: &'static str,
+        message: String,
+        fields: Vec<(&'static str, Robj)>,
+    ) -> HostError {
+        HostError {
+            class: "resource",
+            code: Some(code),
+            message,
+            fields,
+        }
+    }
+
     /// API misuse: a bad argument, with no code and no fields.
     pub fn usage(message: String) -> HostError {
         HostError {

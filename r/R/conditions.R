@@ -20,3 +20,11 @@
   )
   stop(condition)
 }
+
+# A usage error raised on the R side, for arguments R checks itself.
+.pg_usage <- function(message, call = sys.call(-1L)) {
+  stop(structure(
+    class = c("pedigree_graph_usage_error", "pedigree_graph_error", "error", "condition"),
+    list(message = message, call = call, code = NA_character_, fields = list())
+  ))
+}

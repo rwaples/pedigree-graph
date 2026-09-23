@@ -19,6 +19,7 @@ crate-type = ["staticlib"]
 pedigree-graph-core = { path = "../../../crates/core" }
 extendr-api = "0.9"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
+rayon = "1.10"
 
 # The workspace's release profile, repeated because profiles are not inherited
 # outside a workspace: one codegen unit (gate/15a/NOTES.md).

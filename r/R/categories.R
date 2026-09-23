@@ -10,3 +10,6 @@
 relationship_categories <- function() {
   as.data.frame(.native_relationship_categories(), stringsAsFactors = FALSE)
 }
+
+# The 23 codes in registry order, the levels of every pair frame's `code`.
+.pg_codes <- function() .native_relationship_categories()$code

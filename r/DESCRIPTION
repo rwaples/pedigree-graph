@@ -8,7 +8,7 @@ Description: Exact pedigree relationship pairs, pedigree-expected kinship and
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.2)
-Imports: Matrix
+Imports: Matrix, methods, stats
 Suggests: testthat (>= 3.0.0)
 Config/testthat/edition: 3
 SystemRequirements: Cargo (Rust's package manager), rustc >= 1.85

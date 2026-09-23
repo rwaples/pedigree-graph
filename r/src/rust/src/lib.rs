@@ -7,6 +7,7 @@
 mod errors;
 mod graph;
 mod input;
+mod kernels;
 mod threads;
 
 use errors::{finish, HostError};
@@ -42,6 +43,46 @@ fn build_pedigree(
 #[extendr]
 fn check_graph(native: Robj, seal: Robj) -> Robj {
     finish(graph::verified(&native, &seal).map(|_| true.into()))
+}
+
+/// Pairs of the selected categories; see `kernels::relationship_pairs`.
+#[extendr]
+fn relationship_pairs(
+    native: Robj,
+    seal: Robj,
+    max_degree: Robj,
+    categories: Robj,
+    execution: &str,
+    ids: bool,
+) -> Robj {
+    finish(kernels::relationship_pairs(
+        &native,
+        &seal,
+        &max_degree,
+        &categories,
+        execution,
+        ids,
+    ))
+}
+
+/// Kinship per 1-based row pair.
+#[extendr]
+fn pair_kinship(native: Robj, seal: Robj, first: Robj, second: Robj) -> Robj {
+    finish(kernels::pair_kinship(&native, &seal, &first, &second))
+}
+
+/// Inbreeding per row.
+#[extendr]
+fn inbreeding(native: Robj, seal: Robj) -> Robj {
+    finish(kernels::inbreeding(&native, &seal))
+}
+
+/// The upper-triangle kinship matrix slots; `max_nnz` (`NULL` normally)
+/// lowers the entry cap for tests.
+#[extendr]
+fn kinship_matrix(native: Robj, seal: Robj, max_nnz: Robj) -> Robj {
+    let max_nnz = max_nnz.as_real().map(|v| v as usize);
+    finish(kernels::kinship_matrix(&native, &seal, max_nnz))
 }
 
 /// Record a thread budget; R passes `n` as a double (or `NaN` for a non-number).
@@ -103,6 +144,10 @@ fn relationship_categories() -> Robj {
 extendr_module! {
     mod pedigreegraph;
     fn build_pedigree;
+    fn relationship_pairs;
+    fn pair_kinship;
+    fn inbreeding;
+    fn kinship_matrix;
     fn check_graph;
     fn configure_threads;
     fn thread_budget;

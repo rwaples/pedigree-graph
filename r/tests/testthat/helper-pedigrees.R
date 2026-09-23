@@ -25,9 +25,10 @@ expect_pg_error <- function(expr, class, code = NULL) {
 }
 
 # Run R code in a fresh process, for state committed once per process.
-run_rscript <- function(code, env = character()) {
+run_rscript <- function(code, env = character(), timeout = 60) {
   script <- tempfile(fileext = ".R")
   on.exit(unlink(script))
   writeLines(c("library(pedigreegraph)", code), script)
-  system2(file.path(R.home("bin"), "Rscript"), script, stdout = TRUE, stderr = TRUE, env = env)
+  system2(file.path(R.home("bin"), "Rscript"), script, stdout = TRUE, stderr = TRUE, env = env,
+          timeout = timeout)
 }

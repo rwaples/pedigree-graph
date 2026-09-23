@@ -15,13 +15,7 @@
 #' @export
 pedigree_graph <- function(data, sex_encoding = "simace") {
   if (!is.list(data)) {
-    stop(structure(
-      class = c("pedigree_graph_usage_error", "pedigree_graph_error", "error", "condition"),
-      list(
-        message = "`data` must be a data frame or a named list of columns",
-        call = sys.call(), code = NA_character_, fields = list()
-      )
-    ))
+    .pg_usage("`data` must be a data frame or a named list of columns", call = sys.call())
   }
   if (!is.character(sex_encoding) || length(sex_encoding) != 1L || is.na(sex_encoding)) {
     sex_encoding <- ""
@@ -40,13 +34,7 @@ pedigree_graph <- function(data, sex_encoding = "simace") {
 # The graph's native fields after their seal checks out; every kernel starts here.
 .pg_native <- function(pg, call = sys.call(-1L)) {
   if (!inherits(pg, "pedigree_graph")) {
-    stop(structure(
-      class = c("pedigree_graph_usage_error", "pedigree_graph_error", "error", "condition"),
-      list(
-        message = "`pg` must be a graph built by pedigree_graph()",
-        call = call, code = NA_character_, fields = list()
-      )
-    ))
+    .pg_usage("`pg` must be a graph built by pedigree_graph()", call = call)
   }
   .pg_call(.native_check_graph(pg$native, pg$seal), call = call)
   pg$native

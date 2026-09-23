@@ -95,6 +95,7 @@ version = "0.9.4"
 dependencies = [
  "extendr-api",
  "pedigree-graph-core",
+ "rayon",
  "xxhash-rust",
 ]
 
