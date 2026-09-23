@@ -385,6 +385,7 @@ fn compact_view_counts<'py>(
 /// while classifying and assembling.
 #[pyfunction]
 #[pyo3(signature = (pedigree, *, max_degree, requested, threads, execution, view_rows=None, compact=false))]
+#[allow(clippy::too_many_arguments)]
 fn relationship_pairs<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
@@ -447,6 +448,15 @@ fn relationship_pairs<'py>(
     Ok(values)
 }
 
+/// What [`relationship_burden`] hands back: category counts keyed by code,
+/// the per-person degree-1..5 counts (row-major, five per graph row) and the
+/// related-pair count per structural depth.
+type BurdenArrays<'py> = (
+    Bound<'py, PyDict>,
+    Bound<'py, PyArray1<u32>>,
+    Bound<'py, PyArray1<u64>>,
+);
+
 /// Counts and per-person degree burden from one relationship traversal.
 /// `depth` is structural depth in graph rows; no pair blocks are returned.
 #[pyfunction]
@@ -456,11 +466,7 @@ fn relationship_burden<'py>(
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
     threads: usize,
-) -> PyResult<(
-    Bound<'py, PyDict>,
-    Bound<'py, PyArray1<u32>>,
-    Bound<'py, PyArray1<u64>>,
-)> {
+) -> PyResult<BurdenArrays<'py>> {
     let columns = EngineColumns::borrow(py, pedigree);
     let ped = columns.pedigree(py)?;
     let depth = depth.as_slice()?;

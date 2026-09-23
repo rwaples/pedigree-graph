@@ -80,6 +80,7 @@ ROOT_EXPORTS = (
     "PedigreeGraph",
     "PedigreeValidationError",
     "PedigreeView",
+    "RelationshipBurden",
     "RelationshipCategory",
     "RelationshipCountResult",
     "RelationshipPairBlock",

@@ -25,10 +25,25 @@ live on the corresponding GitHub release pages.
   `install.packages(<url>, repos = NULL, type = "source")` given a Rust
   toolchain. CRAN and binary builds are not offered yet.
 - **Added (core): `kinship_csc_upper`**, the upper triangle of the complete
-  kinship matrix, for hosts that store one triangle. The Python products
-  are unchanged.
-- **Unchanged: the Python API and its outputs.** This release adds the R
-  host; the wheel's behavior is that of 0.9.4.
+  kinship matrix, for hosts that store one triangle. The Python kinship
+  products are unchanged.
+- **Added: `PedigreeGraph.relationship_burden()` and `RelationshipBurden`**
+  (root export). One Rust traversal through degree 5 returns the
+  closest-category count of all 23 categories, a read-only
+  `(n_individuals, 5)` uint32 array of distinct relatives per graph row at
+  degrees 1 to 5 (MZ pairs count only in the category and same-depth
+  totals), and the related-pair count per structural depth, without
+  materialising pair lists. On `random_300k` it peaks at 126 MiB against
+  620 MiB for the pairs it summarises, at 3.95 s against 3.45 s
+  (`benchmarks/tskit_views_sinks.md`).
+- **Changed: sparse views run on a compact pedigree.** A view's
+  `relationship_pairs` and `relationship_counts` restrict the engine to the
+  selected rows' represented ancestry (and MZ partners) when the view holds
+  at most 10% of a graph of at least 20,000 rows. Results are unchanged;
+  parity tests compare every category against the full engine. On a 1% view
+  of `random_300k`, pairs took 52 ms at 97 MiB against 181 ms at 120 MiB
+  (a single run; the 30k medians are in the benchmark note).
+- **Unchanged: every other Python API and output.**
 
 ## v0.9.4
 
