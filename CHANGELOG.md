@@ -4,6 +4,32 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.10.0
+
+- **Added: the R package `pedigreegraph`** (slice 16; ADR 0007 as amended),
+  under `r/`, on the same Rust core. `pedigree_graph(df)` builds from
+  integer, whole-number double or `bit64::integer64` columns (`NA` is a
+  missing parent) and returns a list that survives `saveRDS` and forked
+  workers; its kernel inputs are sealed, and an edited graph is refused
+  with code `graph_modified`. `relationship_pairs()` returns one long data
+  frame whose `code` factor always has all 23 levels, with 1-based rows and
+  ids in the input's type; `pair_kinship()`, `inbreeding()` and
+  `kinship_matrix()` (a `Matrix::dsCMatrix` named by id) complete it.
+  Errors are classed conditions (`pedigree_graph_validation_error` and so
+  on) carrying `code` and 1-based `fields`; `configure_threads()` and
+  `thread_budget()` follow the Python rules. R matches Python byte for byte
+  on 120 of 120 products across 16 pedigrees up to 536k rows
+  (`docs/pedigree-graph-0.8-migration/gate/16b/NOTES.md`). The source
+  tarball vendors every crate and passes `R CMD check --as-cran` with the
+  network disabled; it is attached to the GitHub release and installs with
+  `install.packages(<url>, repos = NULL, type = "source")` given a Rust
+  toolchain. CRAN and binary builds are not offered yet.
+- **Added (core): `kinship_csc_upper`**, the upper triangle of the complete
+  kinship matrix, for hosts that store one triangle. The Python products
+  are unchanged.
+- **Unchanged: the Python API and its outputs.** This release adds the R
+  host; the wheel's behavior is that of 0.9.4.
+
 ## v0.9.4
 
 - **Changed: `inbreeding`, `distinct_ancestor_counts` and

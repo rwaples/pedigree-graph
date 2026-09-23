@@ -380,3 +380,52 @@ pass was the difference on sweeps of a few milliseconds.
 **Build.** The release profile uses one codegen unit: under sixteen, adding
 this slice's modules moved the unchanged generation-summary DP's inlining and
 cost it 12%. Record: `docs/pedigree-graph-0.8-migration/gate/15a/NOTES.md`.
+
+## Amended 2026-09-23 (slice 16, the R package)
+
+The R milestone shipped as 0.10.0 (as the slice-12 amendment renumbered it).
+The surface is the one above, with four departures, each chosen for R users
+over a literal port (simACE `plans/pedigree-graph-slice-16-r-package.md`).
+
+**Name.** The package is `pedigreegraph`. R package names cannot contain `_`
+or `-`, and `pedigree.graph` reads as S3 dispatch. The constructor keeps the
+name `pedigree_graph()`.
+
+**Relationship pairs are one long data frame, not a named list of 23.**
+Columns `code`, `first`, `second` (1-based graph rows) and, by default,
+`first_id`, `second_id` in the id type the graph was built from. `code` is a
+factor whose levels are all 23 registry codes in registry order, so every
+category is present in the object's structure (correctness gate 1) and
+`table()`/`split()` show the empty ones; requested status is
+`attr(pairs, "requested")`, a named logical over the 23 codes, and roles come
+from `relationship_categories()`. A frame cannot exceed R's int32 row count,
+so a larger result is refused as a resource error
+(`pairs_exceed_frame_rows`) rather than truncated.
+
+**The kinship matrix is a `dsCMatrix`, not a `dgCMatrix`.** It stores the
+upper triangle, from a core product that assembles only row <= column
+(`kinship_csc_upper`), with ids as dimnames. The int32 entry cap therefore
+applies to upper entries; the DP's row store is the full matrix either way,
+so core peak falls from about 16 to 12 bytes per nonzero, not by half.
+
+**No release tool; a test instead.** R's `DESCRIPTION` and the binding crate
+(its own workspace, so the source tarball builds without this one) repeat
+`[workspace.package].version`; `tests/test_r_version_agreement.py` and the
+publish workflow's version check fail a bump that misses either.
+
+Two R-specific rules have no Python counterpart. The graph is an ordinary R
+list, so it survives `saveRDS` and forked workers, which an external pointer
+would not; kernels trust its columns only through a seal, an xxh3-64 over
+every field they read (by R `SEXPTYPE`, so saved graphs outlive extendr
+upgrades), and an edited graph is refused as `graph_modified`. Failures cross
+the boundary as data and become classed conditions in R, so nothing raises or
+unwinds through R's longjmp; row and column fields are 1-based there.
+
+The source tarball is staged by `tools/r_build_tarball.sh` (core copied in,
+every crate vendored into `vendor.tar.xz`, authors in `inst/AUTHORS`) and
+passes `R CMD check --as-cran` with the network disabled; CI checks it on
+every change and the publish workflow attaches it to the GitHub release.
+Parity: the goldens `r/tests/testthat/golden/` and 120/120 byte-identical
+products on the study pedigrees (`gate/16b/NOTES.md`). CRAN submission and
+binary builds (R-universe needs a staged tree, since the core lives outside
+`r/`) remain deferred.

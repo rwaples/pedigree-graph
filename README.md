@@ -51,6 +51,34 @@ suite keeps as oracles.
 Pandas is optional and only needed if you pass DataFrames to the
 constructors.
 
+### R
+
+The R package `pedigreegraph` (under `r/`) runs the same Rust core. Each
+GitHub release from v0.10.0 carries its source tarball, which bundles every
+Rust dependency and builds offline given a Rust toolchain (`rustc >= 1.85`):
+
+```r
+install.packages(
+  "https://github.com/rwaples/pedigree-graph/releases/download/v0.10.0/pedigreegraph_0.10.0.tar.gz",
+  repos = NULL, type = "source"
+)
+library(pedigreegraph)
+pg <- pedigree_graph(data.frame(
+  id = 1:6, mother = c(NA, NA, 1, 1, NA, 3), father = c(NA, NA, 2, 2, NA, 5)
+))
+pairs <- relationship_pairs(pg, max_degree = 3)    # one row per pair
+pairs$kinship <- pair_kinship(pg, pairs$first, pairs$second)
+K <- kinship_matrix(pg)                            # Matrix::dsCMatrix
+F <- inbreeding(pg)
+```
+
+It covers construction, relationship pairs, pairwise kinship, the complete
+kinship matrix and inbreeding; views, counts, lineage and effective size are
+Python-only for now. For development, the `r` pixi environment carries R:
+`pixi run -e r r-test` installs `r/` in place and runs its tests,
+`pixi run -e r r-doc` regenerates `r/man/`, and
+`pixi run -e r tools/r_build_tarball.sh` builds the source tarball.
+
 ## Usage
 
 ```python
