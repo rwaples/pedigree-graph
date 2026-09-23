@@ -1,4 +1,5 @@
-# Release pipeline for the ADR 0007 maturin wheels and sdist, gated on the Cargo workspace version.
+# Release pipeline for the ADR 0007 maturin wheels and sdist and the R source
+# tarball (slice 16c), gated on the Cargo workspace version.
 name: Publish
 
 on:
@@ -37,8 +38,17 @@ jobs:
             echo "::error file=Cargo.toml::tag ${GITHUB_REF_NAME} implies version ${tag}, but [workspace.package].version is ${version}"
             exit 1
           fi
+          # The R package repeats the version (tests/test_r_version_agreement.py).
+          description="$(sed -n 's/^Version:[[:space:]]*//p' r/DESCRIPTION)"
+          binding="$(sed -n '/^\[package\]/,/^\[/{s/^version = "\(.*\)"$/\1/p}' r/src/rust/Cargo.toml)"
+          for pair in "r/DESCRIPTION:${description}" "r/src/rust/Cargo.toml:${binding}"; do
+            if [ "${pair#*:}" != "$version" ]; then
+              echo "::error file=${pair%%:*}::carries version '${pair#*:}', but [workspace.package].version is ${version}"
+              exit 1
+            fi
+          done
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "Workspace version ${version} matches tag ${GITHUB_REF_NAME}"
+          echo "Workspace version ${version} matches tag ${GITHUB_REF_NAME} and the R package"
 
   wheels:
     name: Build ${{ matrix.artifact }}
@@ -200,3 +210,76 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  r-tarball:
+    name: Build and check the R source tarball
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Install the R dependencies
+        run: Rscript -e 'install.packages(c("Matrix", "testthat"))'
+
+      - name: Build the tarball
+        run: tools/r_build_tarball.sh dist-r
+
+      - name: Check the tarball with the network disabled
+        working-directory: dist-r
+        run: |
+          # ADR 0007: the tarball compiles offline. A network namespace drops
+          # every interface; the check itself runs as the runner user.
+          sudo unshare --net -- sudo --preserve-env -u "$(id -un)" \
+            env _R_CHECK_CRAN_INCOMING_REMOTE_=false \
+            "$(command -v R)" CMD check --as-cran --no-manual \
+            "pedigreegraph_${{ needs.check-version.outputs.version }}.tar.gz"
+          if grep -q '^Status:.*\(ERROR\|WARNING\)' pedigreegraph.Rcheck/00check.log; then
+            echo "::error::R CMD check reported an ERROR or WARNING"
+            exit 1
+          fi
+
+      - name: Upload the tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: r-tarball
+          path: dist-r/pedigreegraph_*.tar.gz
+          if-no-files-found: error
+
+  github-release:
+    name: Create the GitHub release with the R tarball
+    needs: [check-version, r-tarball, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Download the R tarball
+        uses: actions/download-artifact@v8
+        with:
+          name: r-tarball
+          path: dist-r/
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          # The release notes are this version's CHANGELOG section.
+          awk -v heading="## v${VERSION}" '
+            index($0, heading) == 1 { keep = 1; next }
+            keep && /^## / { exit }
+            keep { print }
+          ' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "::error file=CHANGELOG.md::no '## v${VERSION}' section"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" "dist-r/pedigreegraph_${VERSION}.tar.gz" \
+            --verify-tag --title "pedigree-graph ${VERSION}" --notes-file notes.md

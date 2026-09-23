@@ -1,4 +1,5 @@
-# Continuous integration for the ADR 0007 host-neutral Rust core and maturin packaging.
+# Continuous integration for the ADR 0007 host-neutral Rust core, maturin
+# packaging, and the R package (slice 16c).
 name: CI
 
 on:
@@ -64,6 +65,46 @@ jobs:
 
       - name: Run the Rust test suite
         run: pixi run cargo test --release
+
+  r:
+    name: R binding lint, offline tarball check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - name: Install the R dependencies
+        run: Rscript -e 'install.packages(c("Matrix", "testthat"))'
+
+      - name: Check the binding crate's formatting and lints
+        working-directory: r/src/rust
+        run: |
+          cargo fmt --check
+          cargo clippy --release --all-targets -- -D warnings
+
+      - name: Build the source tarball
+        run: tools/r_build_tarball.sh dist-r
+
+      - name: Check the tarball with the network disabled
+        working-directory: dist-r
+        run: |
+          # ADR 0007: the tarball compiles offline. A network namespace drops
+          # every interface; the check itself runs as the runner user.
+          tarball="$(ls pedigreegraph_*.tar.gz)"
+          sudo unshare --net -- sudo --preserve-env -u "$(id -un)" \
+            env _R_CHECK_CRAN_INCOMING_REMOTE_=false \
+            "$(command -v R)" CMD check --as-cran --no-manual "$tarball"
+          if grep -q '^Status:.*\(ERROR\|WARNING\)' pedigreegraph.Rcheck/00check.log; then
+            echo "::error::R CMD check reported an ERROR or WARNING"
+            exit 1
+          fi
 
   python:
     name: Python lint, types, and fast tests

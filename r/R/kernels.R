@@ -19,6 +19,14 @@
 #'   offspring; see [relationship_categories()]); for a symmetric one
 #'   `first < second`.  `attr(pairs, "requested")` is a named logical over
 #'   the 23 codes; a code that was not requested has no rows.
+#' @examples
+#' pg <- pedigree_graph(data.frame(
+#'   id = 1:6, mother = c(NA, NA, 1, 1, NA, 3), father = c(NA, NA, 2, 2, NA, 5)
+#' ))
+#' pairs <- relationship_pairs(pg, max_degree = 3)
+#' pairs
+#' table(pairs$code)[1:8]
+#' relationship_pairs(pg, categories = c("FS", "GP"), ids = FALSE)
 #' @export
 relationship_pairs <- function(pg, max_degree = NULL, categories = NULL,
                                execution = "speed", ids = TRUE) {
@@ -52,6 +60,13 @@ relationship_pairs <- function(pg, max_degree = NULL, categories = NULL,
 #'   example the `first` and `second` columns of [relationship_pairs()]).
 #' @return A double vector, one kinship per pair; values are the core's
 #'   float32 recurrence, exactly representable as doubles.
+#' @examples
+#' pg <- pedigree_graph(data.frame(
+#'   id = 1:6, mother = c(NA, NA, 1, 1, NA, 3), father = c(NA, NA, 2, 2, NA, 5)
+#' ))
+#' pairs <- relationship_pairs(pg, max_degree = 2)
+#' pairs$kinship <- pair_kinship(pg, pairs$first, pairs$second)
+#' pairs
 #' @export
 pair_kinship <- function(pg, first, second) {
   native <- .pg_native(pg)
@@ -62,6 +77,12 @@ pair_kinship <- function(pg, first, second) {
 #'
 #' @param pg A graph from [pedigree_graph()].
 #' @return A double vector of `F`, one per input row, in input order.
+#' @examples
+#' # 5 is the child of full sibs 3 and 4.
+#' pg <- pedigree_graph(data.frame(
+#'   id = 1:5, mother = c(NA, NA, 1, 1, 3), father = c(NA, NA, 2, 2, 4)
+#' ))
+#' inbreeding(pg)
 #' @export
 inbreeding <- function(pg) {
   native <- .pg_native(pg)
@@ -77,6 +98,13 @@ inbreeding <- function(pg) {
 #'   rows and columns in input order and named by id.  A matrix with more
 #'   than 2^31 - 1 stored entries is refused with a
 #'   `pedigree_graph_resource_error` (code `csc_index_overflow`).
+#' @examples
+#' pg <- pedigree_graph(data.frame(
+#'   id = 1:6, mother = c(NA, NA, 1, 1, NA, 3), father = c(NA, NA, 2, 2, NA, 5)
+#' ))
+#' K <- kinship_matrix(pg)
+#' K
+#' K["6", "1"]
 #' @export
 kinship_matrix <- function(pg) .pg_kinship_matrix(pg, NULL)
 

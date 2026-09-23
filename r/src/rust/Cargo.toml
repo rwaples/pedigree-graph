@@ -1,8 +1,8 @@
 [package]
 name = "pedigree-graph-r"
 # Kept equal to [workspace.package].version in the repository root; this crate
-# is excluded from that workspace so the R source tarball builds without it.
-version = "0.9.4"
+# is its own workspace (below) so the R source tarball builds without that one.
+version = "0.10.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/rwaples/pedigree-graph"
@@ -20,6 +20,10 @@ pedigree-graph-core = { path = "../../../crates/core" }
 extendr-api = "0.9"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 rayon = "1.10"
+
+# Its own workspace root, so cargo never adopts it into an enclosing one: the
+# repository's, or any a user unpacks the source tarball under.
+[workspace]
 
 # The workspace's release profile, repeated because profiles are not inherited
 # outside a workspace: one codegen unit (gate/15a/NOTES.md).

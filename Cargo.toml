@@ -1,11 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["crates/core", "crates/python"]
-# The R binding builds from its own lock inside the R source tarball (slice 16).
-exclude = ["r/src/rust"]
 
 [workspace.package]
-version = "0.9.4"
+version = "0.10.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/rwaples/pedigree-graph"

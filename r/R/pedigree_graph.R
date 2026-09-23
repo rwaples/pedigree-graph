@@ -12,6 +12,14 @@
 #' @return An object of class `pedigree_graph`.  `$id` holds the ids in the
 #'   type they were given; `$native` and `$seal` are internal and must not be
 #'   edited (a modified graph is refused with code `graph_modified`).
+#' @examples
+#' df <- data.frame(
+#'   id = 1:6,
+#'   mother = c(NA, NA, 1, 1, NA, 3),
+#'   father = c(NA, NA, 2, 2, NA, 5)
+#' )
+#' pg <- pedigree_graph(df)
+#' pg
 #' @export
 pedigree_graph <- function(data, sex_encoding = "simace") {
   if (!is.list(data)) {

@@ -1,7 +1,10 @@
 Package: pedigreegraph
 Title: Pedigree Relationships and Kinship on a Rust Core
-Version: 0.9.4
-Authors@R: person("Ryan", "Waples", email = "ryan.waples@gmail.com", role = c("aut", "cre"))
+Version: 0.10.0
+Authors@R: c(
+    person("Ryan", "Waples", email = "ryan.waples@gmail.com", role = c("aut", "cre", "cph")),
+    person("Authors of the bundled Rust crates", role = c("ctb", "cph"),
+           comment = "see inst/AUTHORS in the source tarball"))
 Description: Exact pedigree relationship pairs, pedigree-expected kinship and
     inbreeding, computed by the Rust core shared with the 'pedigree-graph'
     Python package.
@@ -11,6 +14,10 @@ Depends: R (>= 4.2)
 Imports: Matrix, methods, stats
 Suggests: testthat (>= 3.0.0)
 Config/testthat/edition: 3
-SystemRequirements: Cargo (Rust's package manager), rustc >= 1.85
+SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.85)
+Copyright: Ryan Waples for the package; the bundled Rust crates in
+    src/rust/vendor.tar.xz are copyright their authors, listed with their
+    licenses in inst/AUTHORS.
 URL: https://github.com/rwaples/pedigree-graph
 BugReports: https://github.com/rwaples/pedigree-graph/issues
+Config/roxygen2/version: 8.1.0

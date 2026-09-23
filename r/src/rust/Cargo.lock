@@ -84,14 +84,14 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pedigree-graph-core"
-version = "0.9.4"
+version = "0.10.0"
 dependencies = [
  "rayon",
 ]
 
 [[package]]
 name = "pedigree-graph-r"
-version = "0.9.4"
+version = "0.10.0"
 dependencies = [
  "extendr-api",
  "pedigree-graph-core",

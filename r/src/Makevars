@@ -1,16 +1,45 @@
+# Builds the extendr crate under rust/ into a static library.
+#
+# In a source tarball (tools/r_build_tarball.sh) the crate's dependencies,
+# pedigree-graph-core included, are vendored in rust/vendor.tar.xz and the
+# build runs offline; in the repository checkout it resolves them normally.
+# CARGO_HOME stays inside the build so nothing is written to the user's home,
+# jobs are capped at 2 as CRAN asks, and rustc's version is logged first.
 TARGET_DIR = ./rust/target
 LIBDIR = $(TARGET_DIR)/release
 STATLIB = $(LIBDIR)/libpedigreegraph.a
 PKG_LIBS = -L$(LIBDIR) -lpedigreegraph
 
-all: $(SHLIB)
+CARGO_HOME = $(CURDIR)/.cargo
+PATH_WITH_CARGO = $(PATH):$(HOME)/.cargo/bin
+
+all: $(SHLIB) rust_clean
 
 $(SHLIB): $(STATLIB)
 
 $(STATLIB):
-	cargo build --lib --release --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR)
+	@PATH="$(PATH_WITH_CARGO)" command -v cargo >/dev/null 2>&1 || \
+	  { echo "cargo not found: install Rust from https://rustup.rs (rustc >= 1.85)"; exit 1; }
+	@echo "using $$(PATH="$(PATH_WITH_CARGO)" rustc --version)"
+	@echo "using $$(PATH="$(PATH_WITH_CARGO)" cargo --version)"
+	if [ -f ./rust/vendor.tar.xz ]; then \
+	  tar --no-same-owner -xJf ./rust/vendor.tar.xz -C ./rust && \
+	  mkdir -p $(CARGO_HOME) && \
+	  sed 's|^directory = "vendor"|directory = "$(CURDIR)/rust/vendor"|' ./rust/vendor-config.toml > $(CARGO_HOME)/config.toml && \
+	  export CARGO_HOME=$(CARGO_HOME) PATH="$(PATH_WITH_CARGO)" && \
+	  cargo build -j 2 --offline --locked --lib --release \
+	    --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR); \
+	else \
+	  export PATH="$(PATH_WITH_CARGO)" && \
+	  cargo build -j 2 --lib --release --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR); \
+	fi
+
+# Only a tarball build removes what it unpacked and built; a checkout keeps
+# its target dir for incremental builds.
+rust_clean: $(SHLIB)
+	if [ -f ./rust/vendor.tar.xz ]; then rm -Rf $(CARGO_HOME) ./rust/vendor $(TARGET_DIR); fi
 
 clean:
-	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS)
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS) $(CARGO_HOME) ./rust/vendor
 
-.PHONY: all clean $(STATLIB)
+.PHONY: all rust_clean clean $(STATLIB)

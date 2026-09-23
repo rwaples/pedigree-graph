@@ -6,6 +6,8 @@
 #' `nominal_kinship`.
 #'
 #' @return A data frame with 23 rows.
+#' @examples
+#' relationship_categories()
 #' @export
 relationship_categories <- function() {
   as.data.frame(.native_relationship_categories(), stringsAsFactors = FALSE)

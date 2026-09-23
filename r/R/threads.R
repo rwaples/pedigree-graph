@@ -10,6 +10,8 @@
 #' @param n A whole number >= 1.
 #' @return `configure_threads()` returns `NULL` invisibly;
 #'   `thread_budget()` returns the committed budget.
+#' @examples
+#' thread_budget()
 #' @export
 configure_threads <- function(n) {
   if (!is.numeric(n) || length(n) != 1L || is.na(n)) n <- NaN
