@@ -53,10 +53,22 @@ pub enum Family {
     /// The DP's per-row scratch: permutation, depth buckets, retirement
     /// schedule, gathered labels and staged relatives.
     KinshipScratch,
+    /// The inbreeding walk's depth-major order, per-row path sums, `F`,
+    /// Mendelian variances and frontier, and its touched list.
+    InbreedingWalk,
+    /// The distinct-ancestor sweep's depth-major order, child counters,
+    /// merge scratch and per-row sorted ancestor sets.
+    LineageSets,
+    /// The per-row outputs of the descendant-path and equivalent-generation
+    /// sweeps and their depth-major order.
+    LineageOutput,
+    /// The founder-contribution sweep's order, adjoint vector and
+    /// `(cohort, genome)` means.
+    FounderMeans,
 }
 
 impl Family {
-    pub const ALL: [Family; 16] = [
+    pub const ALL: [Family; 20] = [
         Family::ParentEdges,
         Family::Csr,
         Family::SiblingIndex,
@@ -73,6 +85,10 @@ impl Family {
         Family::KinshipCsc,
         Family::KinshipSums,
         Family::KinshipScratch,
+        Family::InbreedingWalk,
+        Family::LineageSets,
+        Family::LineageOutput,
+        Family::FounderMeans,
     ];
 
     /// The `operation` field of the error.
@@ -94,6 +110,10 @@ impl Family {
             Family::KinshipCsc => "kinship_csc",
             Family::KinshipSums => "kinship_sums",
             Family::KinshipScratch => "kinship_scratch",
+            Family::InbreedingWalk => "inbreeding_walk",
+            Family::LineageSets => "lineage_sets",
+            Family::LineageOutput => "lineage_output",
+            Family::FounderMeans => "founder_means",
         }
     }
 

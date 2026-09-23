@@ -27,11 +27,11 @@
 //! translates stored columns through the permutation, so every output
 //! column's rows come out ascending without a sort.
 
+use super::depth_order::DepthOrder;
 use super::pairwise::KinshipPedigree;
 use super::rows::{Owned, RowStore};
 use crate::alloc::{self, Family};
 use crate::error::Error;
-use crate::topology::{self, Order};
 
 /// The three arrays of a symmetric CSC matrix in graph rows: `indptr` of
 /// `n + 1` int32, `indices` and float32 `data` of `nnz`, rows ascending
@@ -62,18 +62,11 @@ struct Topo {
 impl Topo {
     fn build(ped: &KinshipPedigree<'_>) -> Result<Topo, Error> {
         let n = ped.len();
-        let depth = ped.depth();
-        check_structural(ped)?;
-        let (order, inverse) = match topology::depth_major_order_in(depth, SCRATCH)? {
-            Order::Identity => (
-                alloc::collect(0..n as u32, SCRATCH, "uint32")?,
-                alloc::collect(0..n as u32, SCRATCH, "uint32")?,
-            ),
-            Order::Permuted { order, inverse } => (
-                alloc::collect(order.iter().map(|&r| r as u32), SCRATCH, "uint32")?,
-                alloc::collect(inverse.iter().map(|&r| r as u32), SCRATCH, "uint32")?,
-            ),
-        };
+        let DepthOrder { order, starts } = DepthOrder::build(ped, SCRATCH)?;
+        let mut inverse = alloc::filled(0u32, n, SCRATCH, "uint32")?;
+        for (position, &row) in order.iter().enumerate() {
+            inverse[row as usize] = position as u32;
+        }
         let gather = |rows: &[i32]| -> Result<Vec<i32>, Error> {
             alloc::collect(
                 order.iter().map(|&r| {
@@ -91,14 +84,6 @@ impl Topo {
         let mother = gather(ped.mother())?;
         let father = gather(ped.father())?;
         let twin = gather(ped.twin())?;
-        let max_depth = depth.iter().copied().max().unwrap_or(0) as usize;
-        let mut starts = alloc::filled(0usize, max_depth + 2, SCRATCH, "uint64")?;
-        for &d in depth {
-            starts[d as usize + 1] += 1;
-        }
-        for d in 1..starts.len() {
-            starts[d] += starts[d - 1];
-        }
         Ok(Topo {
             n,
             order,
@@ -151,29 +136,6 @@ impl Topo {
         }
         Ok((starts, rows))
     }
-}
-
-/// Every depth is non-negative and strictly above both parents'.
-fn check_structural(ped: &KinshipPedigree<'_>) -> Result<(), Error> {
-    let depth = ped.depth();
-    for (row, &d) in depth.iter().enumerate() {
-        let floor = [ped.mother()[row], ped.father()[row]]
-            .into_iter()
-            .filter(|&p| p >= 0)
-            .map(|p| i64::from(depth[p as usize]) + 1)
-            .max()
-            .unwrap_or(0);
-        if i64::from(d) < floor {
-            return Err(Error::ValueOutOfRange {
-                field: "depth",
-                position: row,
-                value: i64::from(d),
-                minimum: floor,
-                maximum: i64::from(i32::MAX),
-            });
-        }
-    }
-    Ok(())
 }
 
 /// What a DP run produces beyond its rows.

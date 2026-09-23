@@ -193,6 +193,13 @@ pub enum Error {
         /// The element type, in NumPy spelling, e.g. `"int32"`.
         dtype: &'static str,
     },
+    /// An integer result outgrew its dtype.
+    ArithmeticOverflow {
+        /// What the engine was computing, e.g. `"descendant_path_counts"`.
+        operation: &'static str,
+        /// The dtype that overflowed, in NumPy spelling.
+        dtype: &'static str,
+    },
     /// The package thread pool is already configured with another size.
     ThreadPoolConflict {
         /// The size the pool was built with.
@@ -275,6 +282,7 @@ impl Error {
             | Error::KinshipSupportAsymmetric { .. } => ErrorClass::Validation,
             Error::PedigreeTooLarge { .. } => ErrorClass::Resource,
             Error::AllocationFailed { .. } => ErrorClass::Resource,
+            Error::ArithmeticOverflow { .. } => ErrorClass::Resource,
             Error::CscIndexOverflow { .. } => ErrorClass::Resource,
             Error::KinshipThresholdOutOfRange { .. } => ErrorClass::Usage,
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => {
@@ -301,6 +309,7 @@ impl Error {
             Error::BirthYearTopology { .. } => "birth_year_topology",
             Error::PedigreeTooLarge { .. } => "pedigree_too_large",
             Error::AllocationFailed { .. } => "allocation_failed",
+            Error::ArithmeticOverflow { .. } => "arithmetic_overflow",
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => "",
             Error::MaxDegreeOutOfRange { .. } => "max_degree_out_of_range",
             Error::KinshipSupportUnsorted { .. } => "kinship_support_unsorted",
@@ -430,6 +439,9 @@ impl Error {
                 ("requested_elements", int(*requested_elements)),
                 ("dtype", Str(dtype)),
             ],
+            Error::ArithmeticOverflow { operation, dtype } => {
+                vec![("operation", Str(operation)), ("dtype", Str(dtype))]
+            }
             Error::ThreadPoolConflict { .. }
             | Error::ThreadPoolUnavailable { .. }
             | Error::InvalidViewMap { .. } => vec![],
@@ -593,6 +605,9 @@ impl std::fmt::Display for Error {
                 "could not allocate {} {dtype} elements for {operation}",
                 grouped(*requested_elements)
             ),
+            Error::ArithmeticOverflow { operation, dtype } => {
+                write!(f, "{operation} overflowed {dtype}")
+            }
             Error::ThreadPoolConflict {
                 configured,
                 requested,

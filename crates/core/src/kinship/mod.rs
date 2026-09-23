@@ -7,11 +7,20 @@
 //! [`generation_kinship_sums`]) run the depth-major DP of [`matrix`] over
 //! the row storage of [`rows`]; every entry they produce is the bit the
 //! pairwise walk returns for the same pair.
+//!
+//! Beside them live the sweeps that share the DP's stable depth-major order
+//! ([`depth_order`]) but not its values: the Meuwissen-Luo inbreeding walk
+//! ([`inbreeding()`]) and the two Ne prerequisites of [`generations`].
 
+pub(crate) mod depth_order;
+pub mod generations;
+pub mod inbreeding;
 pub mod matrix;
 pub mod memo;
 pub mod pairwise;
 pub mod rows;
 
+pub use generations::{equivalent_generations, founder_contribution_means};
+pub use inbreeding::inbreeding;
 pub use matrix::{approximate_kinship_csc, generation_kinship_sums, kinship_csc, Csc};
 pub use pairwise::{pair_kinship, support_values, KinshipPedigree};
