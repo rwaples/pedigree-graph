@@ -22,6 +22,7 @@
 //! missing/external distinction the domain model draws is a separate concern
 //! and does not change any order this module computes.
 
+use crate::alloc::{self, Family};
 use crate::error::Error;
 use std::collections::VecDeque;
 
@@ -124,13 +125,20 @@ pub fn structural_depth(mother: &[i32], father: &[i32]) -> Vec<i32> {
 /// common already-ordered graph allocates nothing.  Otherwise a counting sort
 /// keyed by depth is naturally stable and runs in `O(n + max_depth)`.
 pub fn depth_major_order(depth: &[i32]) -> Order {
+    depth_major_order_in(depth, Family::ViewSortScratch).expect("infallible allocation")
+}
+
+/// [`depth_major_order`] with its three arrays reserved through `family`,
+/// so a kernel that permutes a large pedigree reports a refused
+/// reservation as [`Error::AllocationFailed`] instead of aborting.
+pub fn depth_major_order_in(depth: &[i32], family: Family) -> Result<Order, Error> {
     if depth.windows(2).all(|w| w[0] <= w[1]) {
-        return Order::Identity;
+        return Ok(Order::Identity);
     }
     let n = depth.len();
     let max_depth = depth.iter().copied().max().unwrap_or(0) as usize;
 
-    let mut starts = vec![0usize; max_depth + 2];
+    let mut starts = alloc::filled(0usize, max_depth + 2, family, "uint64")?;
     for &d in depth {
         starts[d as usize + 1] += 1;
     }
@@ -138,15 +146,15 @@ pub fn depth_major_order(depth: &[i32]) -> Order {
         starts[bucket] += starts[bucket - 1];
     }
 
-    let mut order = vec![0i64; n];
-    let mut inverse = vec![0i64; n];
+    let mut order = alloc::filled(0i64, n, family, "int64")?;
+    let mut inverse = alloc::filled(0i64, n, family, "int64")?;
     for (row, &d) in depth.iter().enumerate() {
         let position = starts[d as usize];
         starts[d as usize] += 1;
         order[position] = row as i64;
         inverse[row] = position as i64;
     }
-    Order::Permuted { order, inverse }
+    Ok(Order::Permuted { order, inverse })
 }
 
 /// One deterministic cycle witness, or `None` when the parent edges are acyclic.

@@ -3,8 +3,16 @@
 //! [`pair_kinship`] evaluates requested pairs and [`support_values`] fills a
 //! symmetric CSC support; both walk the same memoised recurrence through
 //! [`pairwise::Walker`], one memo per call, nothing retained (ADR 0007).
+//! The three matrix products ([`kinship_csc`], [`approximate_kinship_csc`],
+//! [`generation_kinship_sums`]) run the depth-major DP of [`matrix`] over
+//! the row storage of [`rows`]; every entry they produce is the bit the
+//! pairwise walk returns for the same pair.
 
+pub mod matrix;
 pub mod memo;
 pub mod pairwise;
+pub mod rows;
 
+pub use matrix::{approximate_kinship_csc, generation_kinship_sums, kinship_csc, Csc};
 pub use pairwise::{pair_kinship, support_values, KinshipPedigree};
+pub use rows::Layout;

@@ -64,6 +64,22 @@ impl<'a> KinshipPedigree<'a> {
     pub fn is_empty(&self) -> bool {
         self.mother.is_empty()
     }
+
+    pub fn mother(&self) -> &'a [i32] {
+        self.mother
+    }
+
+    pub fn father(&self) -> &'a [i32] {
+        self.father
+    }
+
+    pub fn twin(&self) -> &'a [i32] {
+        self.twin
+    }
+
+    pub fn depth(&self) -> &'a [i32] {
+        self.depth
+    }
 }
 
 /// Bit 63 marks a compute item; the low 64 bits otherwise pack `lo << 32 | hi`.

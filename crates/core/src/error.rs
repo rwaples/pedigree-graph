@@ -226,6 +226,20 @@ pub enum Error {
         /// The entry's column.
         column: usize,
     },
+    /// The symmetric CSC a kinship matrix would assemble has more entries
+    /// than an int32 index can address.
+    CscIndexOverflow {
+        /// The entry count the DP produced.
+        nnz: u64,
+        /// The largest count an int32 `indptr` can end at.
+        maximum: i64,
+    },
+    /// The caller asked for a propagation threshold that is not finite or
+    /// not in `[0, 1]`.
+    KinshipThresholdOutOfRange {
+        /// The threshold as given, rendered.
+        value: String,
+    },
     /// The graph-to-view map is not a partial permutation of view rows.
     InvalidViewMap {
         /// The graph row carrying the offending entry.
@@ -261,6 +275,8 @@ impl Error {
             | Error::KinshipSupportAsymmetric { .. } => ErrorClass::Validation,
             Error::PedigreeTooLarge { .. } => ErrorClass::Resource,
             Error::AllocationFailed { .. } => ErrorClass::Resource,
+            Error::CscIndexOverflow { .. } => ErrorClass::Resource,
+            Error::KinshipThresholdOutOfRange { .. } => ErrorClass::Usage,
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => {
                 ErrorClass::Usage
             }
@@ -289,7 +305,10 @@ impl Error {
             Error::MaxDegreeOutOfRange { .. } => "max_degree_out_of_range",
             Error::KinshipSupportUnsorted { .. } => "kinship_support_unsorted",
             Error::KinshipSupportAsymmetric { .. } => "kinship_support_asymmetric",
-            Error::InvalidViewMap { .. } | Error::UnknownSexEncoding { .. } => "",
+            Error::CscIndexOverflow { .. } => "csc_index_overflow",
+            Error::KinshipThresholdOutOfRange { .. }
+            | Error::InvalidViewMap { .. }
+            | Error::UnknownSexEncoding { .. } => "",
         }
     }
 
@@ -427,7 +446,12 @@ impl Error {
             Error::KinshipSupportAsymmetric { row, column } => {
                 vec![("row", int(*row)), ("column", int(*column))]
             }
-            Error::UnknownSexEncoding { .. } => Vec::new(),
+            Error::CscIndexOverflow { nnz, maximum } => {
+                vec![("nnz", Int(*nnz as i64)), ("maximum", Int(*maximum))]
+            }
+            Error::KinshipThresholdOutOfRange { .. } | Error::UnknownSexEncoding { .. } => {
+                Vec::new()
+            }
         }
     }
 }
@@ -602,6 +626,14 @@ impl std::fmt::Display for Error {
             Error::KinshipSupportAsymmetric { row, column } => write!(
                 f,
                 "kinship support entry ({row}, {column}) has no mirror at ({column}, {row})"
+            ),
+            Error::CscIndexOverflow { nnz, maximum } => write!(
+                f,
+                "kinship matrix nnz exceeds the int32 CSC index range ({nnz} > {maximum})"
+            ),
+            Error::KinshipThresholdOutOfRange { value } => write!(
+                f,
+                "min_propagated_kinship must be finite and in [0, 1], got {value}"
             ),
             Error::UnknownSexEncoding { name } => write!(
                 f,

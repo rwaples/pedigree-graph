@@ -746,8 +746,15 @@ mod tests {
             Family::ViewSortScratch => view,
             Family::TaskChunk => execution == Some(Execution::Speed),
             Family::TaskTable | Family::PairBlock => execution.is_some(),
-            // Reserved only by the kinship walk; its own seam test covers them.
-            Family::KinshipMemo | Family::KinshipStack | Family::KinshipOutput => false,
+            // Reserved only by the kinship walk and the kinship matrix DP;
+            // their own seam tests cover them.
+            Family::KinshipMemo
+            | Family::KinshipStack
+            | Family::KinshipOutput
+            | Family::KinshipRows
+            | Family::KinshipCsc
+            | Family::KinshipSums
+            | Family::KinshipScratch => false,
             _ => true,
         }
     }

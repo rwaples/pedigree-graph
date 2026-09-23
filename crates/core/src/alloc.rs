@@ -42,10 +42,21 @@ pub enum Family {
     KinshipStack,
     /// The pairwise-kinship output, per pair or per support entry.
     KinshipOutput,
+    /// The kinship DP's row storage and its growth, and the compacted
+    /// candidate support of the approximate matrix.
+    KinshipRows,
+    /// A kinship matrix's `indptr`, `indices` and `data`, and the per-column
+    /// counts and cursors that assemble them.
+    KinshipCsc,
+    /// The per-bucket sum vector of the generation summary.
+    KinshipSums,
+    /// The DP's per-row scratch: permutation, depth buckets, retirement
+    /// schedule, gathered labels and staged relatives.
+    KinshipScratch,
 }
 
 impl Family {
-    pub const ALL: [Family; 12] = [
+    pub const ALL: [Family; 16] = [
         Family::ParentEdges,
         Family::Csr,
         Family::SiblingIndex,
@@ -58,6 +69,10 @@ impl Family {
         Family::KinshipMemo,
         Family::KinshipStack,
         Family::KinshipOutput,
+        Family::KinshipRows,
+        Family::KinshipCsc,
+        Family::KinshipSums,
+        Family::KinshipScratch,
     ];
 
     /// The `operation` field of the error.
@@ -75,6 +90,10 @@ impl Family {
             Family::KinshipMemo => "kinship_memo",
             Family::KinshipStack => "kinship_stack",
             Family::KinshipOutput => "kinship_output",
+            Family::KinshipRows => "kinship_rows",
+            Family::KinshipCsc => "kinship_csc",
+            Family::KinshipSums => "kinship_sums",
+            Family::KinshipScratch => "kinship_scratch",
         }
     }
 
