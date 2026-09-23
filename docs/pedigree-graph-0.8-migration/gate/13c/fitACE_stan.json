@@ -1,0 +1,54 @@
+{
+  "unit": "fitACE_stan",
+  "stage": "13c",
+  "routing": "locked",
+  "cwd": "fitACE/fitACE_stan",
+  "started": "2026-09-23T09:43:37",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml python -c 'import pedigree_graph as p, sys;ok = '\"'\"'.pixi/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.9,
+      "max_rss_mib": 107.1,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/13c/fitACE_stan/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/fitACE/.pixi/envs/default/lib/python3.13/site-packages/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml ruff check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 106.5,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/13c/fitACE_stan/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 105.2,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/13c/fitACE_stan/format.log",
+      "tail": [
+        "8 files already formatted"
+      ]
+    },
+    {
+      "step": "import",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml python -c 'import fitace_stan, fitace, simace; print(fitace_stan.__version__)'",
+      "exit": 0,
+      "wall_s": 0.3,
+      "max_rss_mib": 103.6,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/13c/fitACE_stan/import.log",
+      "tail": [
+        "2026.9.1"
+      ]
+    }
+  ],
+  "ok": true
+}
