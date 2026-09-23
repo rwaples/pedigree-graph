@@ -1,0 +1,43 @@
+{
+  "unit": "fitACE_pcgc",
+  "stage": "14d",
+  "routing": "/tmp/claude-1000/-data-Documents-simACE/6b6f9ba3-135e-4ed9-a8ad-17d53347d9fe/scratchpad/wheel14d/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-09-23T14:30:50",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/tmp/claude-1000/-data-Documents-simACE/6b6f9ba3-135e-4ed9-a8ad-17d53347d9fe/scratchpad/wheel14d/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.9,
+      "max_rss_mib": 105.8,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14d/fitACE_pcgc/routing.log",
+      "tail": [
+        "routed /tmp/claude-1000/-data-Documents-simACE/6b6f9ba3-135e-4ed9-a8ad-17d53347d9fe/scratchpad/wheel14d/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider fitACE_pcgc/tests",
+      "exit": 0,
+      "wall_s": 7.2,
+      "max_rss_mib": 339.0,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/14d/fitACE_pcgc/pytest.log",
+      "tail": [
+        "    r_cpp = fit_pcgc(**kw, backend=\"cpp\", threads=1)",
+        "",
+        "tests/test_cpp_parity.py::TestCppParityHermite::test_ace_medium_threaded",
+        "  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:236: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.",
+        "    r_ref = fit_pcgc(**kw, backend=\"reference\")",
+        "",
+        "tests/test_cpp_parity.py::TestCppParityHermite::test_ace_medium_threaded",
+        "  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:237: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.",
+        "    r_cpp = fit_pcgc(**kw, backend=\"cpp\", threads=4)",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "211 passed, 4 skipped, 53 warnings in 5.52s"
+      ]
+    }
+  ],
+  "ok": true
+}
