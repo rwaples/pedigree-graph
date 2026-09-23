@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.9.2
 
 - **Changed: `kinship_matrix`, `approximate_kinship_matrix` and
   `mean_kinship_by_generation` run on the Rust core** (slice 14; ADR 0007
