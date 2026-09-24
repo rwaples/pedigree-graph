@@ -1,0 +1,251 @@
+ne_inbreeding:
+  ne: 510.5910678358543
+  generations:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  mean_f_per_gen:
+  - 0.0
+  - 0.0
+  - 0.0015188335358444715
+  - 0.00075
+  - 0.0020546875
+  - 0.0046171875
+  transition_from:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  transition_to:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  ne_per_gen:
+  - null
+  - 329.2
+  - null
+  - 382.9461077844311
+  - 194.72103658536585
+  slope: -0.0009792572402789093
+  n_generations_used: 5
+  expected: null
+ne_coancestry:
+  reason: not_requested
+  code: null
+  fields: {}
+ne_variance_family_size:
+  ne: 857.8438253070441
+  parent_generations:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  ne_per_transition:
+  - 999.8960083090955
+  - 1023.8193216781481
+  - 1030.477566592565
+  - 740.2489837826048
+  - 653.4208471364506
+  - null
+  v_mm:
+  - 0.9715007108162539
+  - 0.9373946677717916
+  - 1.0358109419785089
+  - 1.1799549267559784
+  - 1.2795876802859636
+  - null
+  v_mf:
+  - 0.9100521265252932
+  - 1.0252935488327117
+  - 1.1034360690182823
+  - 1.1171027920370604
+  - 1.1311525832328855
+  - null
+  v_fm:
+  - 0.8581923386801437
+  - 1.1233355306526036
+  - 1.2399331744588853
+  - 1.301163373011287
+  - 1.2958479649768728
+  - null
+  v_ff:
+  - 0.964769647696477
+  - 1.0484435655167361
+  - 1.3255288307987125
+  - 1.247540352093686
+  - 1.4310984948099563
+  - null
+  cov_m:
+  - -0.1282579078308256
+  - -0.15603674540682405
+  - -0.07277523381027966
+  - 0.08376528525520635
+  - 0.17354836028097598
+  - null
+  cov_f:
+  - -0.19512195121951212
+  - -0.14770380136233785
+  - 0.08544824705795626
+  - 0.1904965522554796
+  - 0.31306560648484766
+  - null
+  expected: 734.8531831921724
+ne_sex_ratio:
+  ne: 869.1291193875146
+  generations:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  ne_per_gen:
+  - 737.9945799457995
+  - 750.8388814913449
+  - 822.726609963548
+  - 999.6
+  - 999.676
+  - 999.6
+  n_male_per_gen:
+  - 368
+  - 381
+  - 419
+  - 490
+  - 491
+  - 490
+  n_female_per_gen:
+  - 370
+  - 370
+  - 404
+  - 510
+  - 509
+  - 510
+  expected: 1000.0
+ne_individual_delta_f:
+  ne: 508.9220425764713
+  generations:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  ne_per_gen:
+  - null
+  - null
+  - 618.7321498401167
+  - 1860.4574968887684
+  - 929.5223475215316
+  - 508.9220425764713
+  mean_eqg_per_gen:
+  - null
+  - 1.0
+  - 2.0
+  - 3.0
+  - 4.0
+  - 5.0
+  n_used_per_gen:
+  - 0
+  - 751
+  - 823
+  - 1000
+  - 1000
+  - 1000
+  standard_error: 89.9293149957147
+  n_reference: 1000
+  reference_generation: 5
+  ne_unrelated_founders: 408.77514581429585
+  expected: 918.5664789902155
+ne_long_term_contributions:
+  ne: 870.5647108432914
+  n_effective_founders: 435.2823554216457
+  sum_c_squared: 0.0022973593750000004
+  max_delta_final: 0.0012812500000000011
+  asymptote_reached: false
+  n_cohorts: 6
+  final_generation: 5
+  expected: 847.1646941789329
+ne_hill_overlapping:
+  ne: 857.8438253070441
+  generation_interval: 1.0
+  collapses_to_ne_v: true
+  T_m: null
+  T_f: null
+  N1_m: null
+  N1_f: null
+  Vk_m: null
+  Vk_f: null
+  kbar_m: null
+  kbar_f: null
+  Ne_m: null
+  Ne_f: null
+  vk_scaled: false
+  cohort_window: null
+  n_eligible_cohorts: 0
+  n_excluded_right_censored: 0
+  n_excluded_left_censored: 0
+  n_unknown_birth_year: 0
+  cohort_years: null
+  ne_per_cohort: null
+  Ne_m_per_cohort: null
+  Ne_f_per_cohort: null
+  Vk_m_per_cohort: null
+  Vk_f_per_cohort: null
+  N1_m_per_cohort: null
+  N1_f_per_cohort: null
+  age_table: null
+  n_offspring_pairs: 0
+  expected: 734.8531831921724
+ne_group_coancestry:
+  ne: 901.2063128251356
+  generations:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  mean_group_coancestry_per_gen:
+  - 0.0006802721088435374
+  - 0.0012615842039497257
+  - 0.0017963785486696038
+  - 0.002290850277217461
+  - 0.002858301145092418
+  - 0.0034981076020321245
+  n_genomes_per_gen:
+  - 735
+  - 749
+  - 818
+  - 993
+  - 996
+  - 996
+  transition_from:
+  - 0
+  - 1
+  - 2
+  - 3
+  - 4
+  transition_to:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 5
+  ne_per_gen:
+  - 859.5380487555576
+  - 933.7593279143433
+  - 1009.36369444499
+  - 879.1150090747918
+  - 779.2526068151848
+  slope: -0.0005548119147463372
+  n_generations_used: 5
+  census_ratio: 1.32977303070761
+  expected: null

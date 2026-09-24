@@ -1,0 +1,50 @@
+{
+  "unit": "tetraher_simace",
+  "stage": "16e",
+  "routing": "own-manifest",
+  "cwd": "fitACE/tetraher_simace",
+  "started": "2026-09-24T09:23:04",
+  "steps": [
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 106.5,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/16e/tetraher_simace/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml ruff format --check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 108.6,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/16e/tetraher_simace/format.log",
+      "tail": [
+        "2 files already formatted"
+      ]
+    },
+    {
+      "step": "ldak-runs",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml sh -c './ldak6.2.simace 2>&1 | grep -q \"LDAK - Software\"'",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 108.6,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/16e/tetraher_simace/ldak-runs.log",
+      "tail": []
+    },
+    {
+      "step": "ldak-is-fork",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml sh -c 'grep -qa -- \"--simace-grouping\" ldak6.2.simace'",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 109.9,
+      "log": "external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/16e/tetraher_simace/ldak-is-fork.log",
+      "tail": []
+    }
+  ],
+  "ok": true
+}
