@@ -1,9 +1,10 @@
-"""Architecture guardrails (PGQ-010).
+"""Architecture guardrails.
 
-Lightweight, in-suite checks that keep the structural improvements from
-PGQ-001..009 from silently eroding.  The one rule enforced here: no
-production module grows past its line budget unnoticed.  New code should
-land in a new focused module, not extend an oversized one.
+In-suite checks that keep structural rules from eroding: module line budgets,
+the frozen root exports, deleted names staying deleted, generation labels off
+the structural path, a numba-free package, and every parallel Rust kernel
+paired with a test that its output is bit-identical across thread budgets
+(ADR 0007).
 
 See ``docs/architecture.md`` for the module map and the per-contract
 source-of-truth / regression-test pointers.
@@ -12,7 +13,6 @@ source-of-truth / regression-test pointers.
 from __future__ import annotations
 
 import ast
-import subprocess
 import tokenize
 from pathlib import Path
 
@@ -26,7 +26,7 @@ PKG_DIR = Path(pedigree_graph.__file__).parent
 # over pushing an existing one past this.
 DEFAULT_MAX_LINES = 1000
 
-# Reviewed exceptions: filename -> its own cap.  Empty since slice 7 deleted
+# Reviewed exceptions: filename -> its own cap.  Empty since 0.8.0 deleted
 # the 0.7.1 adapters from ``_core.py``; prefer extracting read-only
 # collaborators (ADR 0002) over adding an entry.
 ALLOWLIST: dict[str, int] = {}
@@ -70,7 +70,7 @@ def test_allowlist_entries_are_still_needed():
 
 
 # ---------------------------------------------------------------------------
-# Namespace freeze (ADR 0006, slice 7)
+# Namespace freeze (ADR 0006)
 # ---------------------------------------------------------------------------
 
 ROOT_EXPORTS = (
@@ -89,9 +89,13 @@ ROOT_EXPORTS = (
     "configure_threads",
 )
 
-# Names the 0.7.1 surface exposed and 0.8.0 deleted.  Frozen parity
-# generators keep them because they only run against a 0.7.1 checkout.
+# Names deleted from the public or internal surface, which must not come back.
+# Frozen parity generators keep the 0.8.0 ones because they only run against a
+# 0.7.1 checkout.  String literals are prose to the sweep, so a test asserting
+# an old key is absent from ``ALL_EFFECTIVE_SIZE_ESTIMATORS`` still reads
+# naturally.
 REMOVED_NAMES = (
+    # 0.8.0: the 0.7.1 surface.
     "compute_pair_kinship",
     "compute_inbreeding",
     "compute_all_ne",
@@ -109,16 +113,10 @@ REMOVED_NAMES = (
     "_legacy_view",
     "_kinship_cache",
     "streaming_exact",
-)
-
-# Names 0.9 deleted with the Caballero-Toro estimator (issue #15, ADR 0012)
-# and the approximate relationship counter (issue #17, amended ADR 0011).
-# The Caballero-Toro names must not reintroduce the unsupported statistic or
-# its founder-reach weighting fields. The relationship estimator was replaced
-# by exact close-relative counts without an old-name alias.
-# String literals are prose to the sweep, so a test asserting the old key is
-# absent from ``ALL_EFFECTIVE_SIZE_ESTIMATORS`` still reads naturally.
-REMOVED_NAMES_0_9 = (
+    # 0.9.0: the Caballero-Toro estimator and its founder-reach weighting
+    # fields (issue #15, ADR 0012), and the approximate relationship counter,
+    # replaced by exact close-relative counts with no old-name alias (issue
+    # #17, ADR 0011).
     "estimate_relationship_counts",
     "ne_caballero_toro",
     "NeCaballeroToroResult",
@@ -175,9 +173,9 @@ def test_frame_like_lives_in_the_typing_module():
 
 
 def test_removed_names_do_not_reappear():
-    names = frozenset(REMOVED_NAMES + REMOVED_NAMES_0_9)
+    names = frozenset(REMOVED_NAMES)
     offenders = [use for path in _swept_files() for use in _identifier_uses(path, names)]
-    assert not offenders, "names deleted in 0.8.0 or 0.9 back in the tree:\n  " + "\n  ".join(offenders)
+    assert not offenders, "deleted names back in the tree:\n  " + "\n  ".join(offenders)
 
 
 # Every module that reads the ``generation_labels`` property.  The rule this
@@ -203,20 +201,6 @@ def test_generation_labels_stay_off_the_structural_path():
     assert readers == GENERATION_LABEL_READERS
 
 
-def test_no_delete_markers_remain():
-    marker = "0.8.0-" + "DELETE"
-    tracked = subprocess.run(
-        ["git", "grep", "-n", marker, "--", ".", ":!CHANGELOG.md"],
-        cwd=REPO_DIR,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if tracked.returncode not in (0, 1):
-        pytest.skip(f"git grep unavailable: {tracked.stderr.strip()}")
-    assert tracked.returncode == 1, f"{marker} markers remain:\n" + tracked.stdout
-
-
 def test_the_package_does_not_import_numba():
     """Numba left the runtime dependencies in 0.9.4; only the test oracles use it."""
     offenders = []
@@ -230,3 +214,41 @@ def test_the_package_does_not_import_numba():
                 continue
             offenders += [f"{path.name}:{node.lineno}" for m in modules if m.split(".")[0] == "numba"]
     assert not offenders, "numba imported by the package:\n  " + "\n  ".join(offenders)
+
+
+# Every core module that runs work on the Rayon pool, mapped to the test that
+# its output is bit-identical at thread budgets 1 and 4 (ADR 0007, "Threads and
+# determinism").  A new parallel module fails the first test until it is mapped
+# here, and a mapped test that is renamed or deleted fails the second.
+CORE_SRC = REPO_DIR / "crates" / "core" / "src"
+PARALLEL_MODULES = {
+    "relationships/pairs.rs": "tests/test_native_relationship_pairs.py::TestProcessWidePool::"
+    "test_blocks_are_identical_under_every_thread_budget",
+    "relationships/mod.rs": "tests/test_native_relationship_counts.py::TestSelectorsAndErrors::"
+    "test_counts_are_the_same_under_every_thread_budget",
+    "relationships/burden.rs": "tests/test_compact_view_and_burden.py::"
+    "test_burden_is_bit_identical_under_every_thread_budget",
+}
+# The pool itself: it builds and installs the Rayon pool and runs no kernel.
+POOL_INFRASTRUCTURE = frozenset({"pool.rs"})
+PARALLEL_MARKERS = ("rayon", "crate::pool", "par_iter", "par_chunks", "par_sort")
+
+
+def test_every_parallel_core_module_is_mapped():
+    parallel = {
+        path.relative_to(CORE_SRC).as_posix()
+        for path in CORE_SRC.rglob("*.rs")
+        if "bin" not in path.relative_to(CORE_SRC).parts
+        and any(marker in path.read_text() for marker in PARALLEL_MARKERS)
+    }
+    assert parallel == set(PARALLEL_MODULES) | POOL_INFRASTRUCTURE
+
+
+@pytest.mark.parametrize("test_id", sorted(PARALLEL_MODULES.values()))
+def test_every_mapped_cross_budget_test_exists(test_id):
+    file, *scope = test_id.split("::")
+    nodes = ast.parse((REPO_DIR / file).read_text()).body
+    for name in scope:
+        match = [n for n in nodes if isinstance(n, (ast.ClassDef, ast.FunctionDef)) and n.name == name]
+        assert match, f"{test_id}: {name} not found"
+        nodes = match[0].body

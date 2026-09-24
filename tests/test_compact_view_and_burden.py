@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from _support import CHILD_PRELUDE, _run_child
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, _native
 
@@ -122,3 +123,21 @@ def test_sparse_large_view_uses_compact_path_without_changing_public_results() -
         np.testing.assert_array_equal(got[code].first_rows, expected[code][0])
         np.testing.assert_array_equal(got[code].second_rows, expected[code][1])
         assert counts[code] == len(got[code])
+
+
+def test_burden_is_bit_identical_under_every_thread_budget() -> None:
+    """Budgets 1 and 4 give the same bytes; the pool is built once per process, so each runs in its own."""
+    body = """
+        burden = graph.relationship_burden()
+        digest = hashlib.sha256()
+        digest.update(np.array(list(burden.category_counts.values()), dtype=np.uint64).tobytes())
+        digest.update(np.ascontiguousarray(burden.per_person).tobytes())
+        digest.update(np.ascontiguousarray(burden.same_depth_pairs).tobytes())
+        print(thread_budget(), int(burden.per_person.sum()), digest.hexdigest())
+    """
+    one = _run_child(CHILD_PRELUDE, body, PEDIGREE_GRAPH_THREADS="1").split()
+    four = _run_child(CHILD_PRELUDE, body, PEDIGREE_GRAPH_THREADS="4").split()
+    assert one[0] == "1"
+    assert four[0] == "4"
+    assert int(one[1]) > 0
+    assert one[1:] == four[1:]
