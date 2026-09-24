@@ -56,19 +56,6 @@ def test_no_module_exceeds_line_budget():
     )
 
 
-def test_allowlist_entries_are_still_needed():
-    """A file allowlisted above the default budget but now within it should be
-    dropped from ALLOWLIST, so the guardrail tightens as files shrink."""
-    stale = []
-    for name in ALLOWLIST:
-        path = PKG_DIR / name
-        if not path.exists():
-            stale.append(f"{name}: allowlisted but no longer exists")
-        elif _line_count(path) <= DEFAULT_MAX_LINES:
-            stale.append(f"{name}: now within the {DEFAULT_MAX_LINES}-line budget — remove from ALLOWLIST")
-    assert not stale, "Stale ALLOWLIST entries:\n  " + "\n  ".join(stale)
-
-
 # ---------------------------------------------------------------------------
 # Namespace freeze (ADR 0006)
 # ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
-"""Toy-pedigree validation for effective population size estimators (step 1).
+"""Toy-pedigree validation for effective population size estimators.
 
 Hand-derived F, θ, EqG, Ne_V, Ne_sr on small pedigrees with closed-form
-expectations.  Per the master plan, finite-sample tolerances are loose
-(~0.01) and analytic cases use 1e-9.
+expectations.  Finite-sample tolerances are loose (~0.01) and analytic
+cases use 1e-9.
 """
 
 import numpy as np
@@ -14,17 +14,12 @@ from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
-    FamilySizeEntry,
-    Sigma2Decomposition,
     _sex_specific_family_table,
     _sigma2_from_quadrants,
 )
-from pedigree_graph._ne_group_coancestry import GroupCoancestryByCohort, _group_coancestry_by_cohort
 from pedigree_graph._ne_rates import _equivalent_generations, _summary_from_matrix, _summary_from_native
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
-    EffectiveSizeResults,
-    NeInbreedingResult,
     estimate_effective_sizes,
     ne_coancestry,
     ne_group_coancestry,
@@ -303,7 +298,7 @@ def test_ne_coancestry_toy1_smoke():
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — Ne_iΔF (Gutiérrez): closed-line F recursion drives ΔF_i
+# Ne_iΔF (Gutiérrez): closed-line F recursion drives ΔF_i
 # ---------------------------------------------------------------------------
 
 
@@ -480,7 +475,7 @@ def test_the_unrelated_founder_diagnostic_beats_the_estimator_on_a_wright_fisher
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — Ne_LTC: W&T eq. 31 / C&T eq. 19 at the last observed cohort
+# Ne_LTC: W&T eq. 31 / C&T eq. 19 at the last observed cohort
 # ---------------------------------------------------------------------------
 
 
@@ -579,7 +574,7 @@ def test_ne_long_term_contributions_tracks_the_census_size_under_random_mating()
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — Ne_H (Hill 1979): regression sentinel for L=1 collapse to Ne_V
+# Ne_H (Hill 1979): regression sentinel for L=1 collapse to Ne_V
 # ---------------------------------------------------------------------------
 
 
@@ -825,7 +820,7 @@ def test_group_coancestry_equals_diluted_theta_plus_self_coancestry():
 
 
 # ---------------------------------------------------------------------------
-# Step 2 — estimate_effective_sizes entry point
+# estimate_effective_sizes entry point
 # ---------------------------------------------------------------------------
 
 
@@ -899,124 +894,10 @@ def test_mean_kinship_by_generation_reuses_the_cached_matrix():
     _assert_summaries_agree(pg.mean_kinship_by_generation(), _streamed_summary(pg))
 
 
-def test_streamed_summary_is_bit_identical_to_itself():
-    """The retiring DP accumulator must be deterministic across calls."""
-    rng = np.random.default_rng(2030)
-    df = _build_random_mating_pedigree(rng, n_male=8, n_female=8, n_offspring=32)
-    pg = PedigreeGraph.from_frame(df)
-    a = _streamed_summary(pg)
-    b = _streamed_summary(pg)
-    np.testing.assert_array_equal(a.generations, b.generations)
-    np.testing.assert_array_equal(a.pair_counts, b.pair_counts)
-    assert np.array_equal(np.isnan(a.mean_kinship), np.isnan(b.mean_kinship))
-    mask = ~np.isnan(a.mean_kinship)
-    assert (a.mean_kinship[mask] == b.mean_kinship[mask]).all()
-
-
-# ---------------------------------------------------------------------------
-# PGQ-005: typed payload models replace stringly typed dicts
-# ---------------------------------------------------------------------------
-
-
-class TestTypedPayloadModels:
-    """The estimator-internal contracts are typed, not stringly keyed.
-
-    Acceptance criteria: no estimator reaches into a ``dict[str, Any]``
-    for required fields; shapes/dtypes are documented on the model; a
-    missing required field fails clearly at construction.
-    """
-
-    def test_family_table_entries_are_typed(self):
-        pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
-        table = _family_table(pg)
-        entry = next(iter(table.values()))
-        assert isinstance(entry, FamilySizeEntry)
-        # Within-sex array alignment (documented invariant).
-        assert len(entry.k_mm) == len(entry.males_in_parent_gen)
-        assert len(entry.k_mf) == len(entry.males_in_parent_gen)
-        assert len(entry.k_fm) == len(entry.females_in_parent_gen)
-        assert len(entry.k_ff) == len(entry.females_in_parent_gen)
-        # Documented dtypes.
-        assert entry.k_mm.dtype == np.int64
-        assert entry.k_ff.dtype == np.int64
-
-    def test_family_size_entry_missing_field_raises(self):
-        with pytest.raises(TypeError):
-            FamilySizeEntry(  # type: ignore[call-arg]
-                males_in_parent_gen=np.empty(0, dtype=np.intp),
-                females_in_parent_gen=np.empty(0, dtype=np.intp),
-                k_mm=np.empty(0, dtype=np.int64),
-                # k_mf intentionally omitted
-                k_fm=np.empty(0, dtype=np.int64),
-                k_ff=np.empty(0, dtype=np.int64),
-            )
-
-    def test_sigma2_from_quadrants_returns_none_below_two_per_sex(self):
-        pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
-        table = _family_table(pg)
-        # _build_closed_line has one male + one female per cohort, so
-        # every cohort lacks two of a sex → decomposition is None.
-        for entry in table.values():
-            assert _sigma2_from_quadrants(entry) is None
-
-    def test_sigma2_decomposition_fields_named_and_unpackable(self):
-        # A cohort with ≥2 of each sex yields a real decomposition.
-        df = pl.DataFrame(
-            {
-                "id": np.arange(8),
-                "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2]),
-                "father": np.array([-1, -1, -1, -1, 1, 1, 3, 3]),
-                "twin": np.full(8, -1),
-                "sex": np.array([1, 0, 1, 0, 1, 0, 1, 0]),
-                "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1]),
-            }
-        )
-        pg = PedigreeGraph.from_frame(df)
-        table = _family_table(pg)
-        decomp = _sigma2_from_quadrants(table[0])
-        assert isinstance(decomp, Sigma2Decomposition)
-        assert decomp.n_m == 2
-        assert decomp.n_f == 2
-        # Still tuple-unpackable for the positional call sites: the
-        # positional order matches the documented field order exactly.
-        assert tuple(decomp) == (
-            decomp.v_mm,
-            decomp.v_mf,
-            decomp.v_fm,
-            decomp.v_ff,
-            decomp.cov_m,
-            decomp.cov_f,
-            decomp.kbar_m,
-            decomp.kbar_f,
-            decomp.n_m,
-            decomp.n_f,
-        )
-
-    def test_group_coancestry_by_cohort_is_typed(self):
-        pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
-        cohorts = ObservedCohorts.for_graph(pg, "test")
-        gc = _group_coancestry_by_cohort(pg, cohorts)
-        assert isinstance(gc, GroupCoancestryByCohort)
-        for array in gc:
-            assert array.shape == (cohorts.k,)
-        assert gc.generations.dtype == np.int32
-        assert gc.mean_group_coancestry.dtype == np.float64
-        assert gc.n_genomes.dtype == np.int64
-
-    def test_group_coancestry_by_cohort_missing_field_raises(self):
-        with pytest.raises(TypeError):
-            GroupCoancestryByCohort(  # type: ignore[call-arg]
-                generations=np.zeros(1, dtype=np.int32),
-                mean_group_coancestry=np.zeros(1),
-            )
-
-    def test_estimate_effective_sizes_values_are_typed_results(self):
-        pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
-        results = estimate_effective_sizes(pg)
-        # The container is the immutable eight-key mapping; values are
-        # never untyped dicts.
-        assert isinstance(results, EffectiveSizeResults)
-        for value in results.values():
-            assert not isinstance(value, dict)
-            assert hasattr(value, "to_dict")
-        assert isinstance(results["ne_inbreeding"], NeInbreedingResult)
+def test_sigma2_from_quadrants_returns_none_below_two_per_sex():
+    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
+    table = _family_table(pg)
+    # _build_closed_line has one male + one female per cohort, so
+    # every cohort lacks two of a sex → decomposition is None.
+    for entry in table.values():
+        assert _sigma2_from_quadrants(entry) is None

@@ -292,6 +292,16 @@ class TestMzValidation:
         fields = _mz_fields(data, "mz_parent_mismatch")
         assert fields == {"row": 3, "id": 13, "twin_id": 14, "parent_roles": ("mother",)}
 
+    def test_parent_mismatch_in_both_roles(self):
+        data = {
+            "id": [0, 1, 2, 3, 4],
+            "mother": [-1, -1, 0, 0, 1],
+            "father": [-1, -1, 1, 1, 0],
+            "twin": [-1, -1, -1, 4, 3],
+        }
+        fields = _mz_fields(data, "mz_parent_mismatch")
+        assert fields == {"row": 3, "id": 3, "twin_id": 4, "parent_roles": ("mother", "father")}
+
     def test_shared_external_parent_is_not_a_mismatch(self):
         pg = PedigreeGraph.from_frame(_twins(mother=[-1, -1, 900, 900]))
         assert pg.mother_ids.tolist() == [-1, -1, 900, 900]
@@ -313,31 +323,3 @@ class TestMzValidation:
     def test_sex_mismatch_skipped_when_sex_is_absent(self):
         pg = PedigreeGraph.from_frame(_twins())
         assert pg.sex is None
-
-
-# Both fixtures used to fail inside the inbreeding walk; MZ validation now rejects them
-# at construction, so no constructor can hand the kernels a broken pair.
-_MIGRATED_IDS = [0, 1, 2, 3, 4]
-_MIGRATED_MOTHERS = [-1, -1, 0, 0, 1]
-_MIGRATED_FATHERS = [-1, -1, 1, 1, 0]
-
-
-class TestMigratedInbreedingFixtures:
-    def test_nonreciprocal_reference(self):
-        data = {
-            "id": _MIGRATED_IDS,
-            "mother": _MIGRATED_MOTHERS,
-            "father": _MIGRATED_FATHERS,
-            "twin": [-1, -1, 3, -1, -1],
-        }
-        assert _mz_fields(data, "mz_nonreciprocal") == {"row": 2, "id": 2, "twin_id": 3}
-
-    def test_parent_mismatch_in_both_roles(self):
-        data = {
-            "id": _MIGRATED_IDS,
-            "mother": _MIGRATED_MOTHERS,
-            "father": _MIGRATED_FATHERS,
-            "twin": [-1, -1, -1, 4, 3],
-        }
-        fields = _mz_fields(data, "mz_parent_mismatch")
-        assert fields == {"row": 3, "id": 3, "twin_id": 4, "parent_roles": ("mother", "father")}

@@ -1,7 +1,5 @@
 """Tests for pedigree_graph relationship extraction."""
 
-import logging
-
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -18,10 +16,8 @@ from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph, PedigreeValidationError, PedigreeView, _native
 
-logger = logging.getLogger(__name__)
 
-
-def _reference_relationship_pairs(df, seed: int = 42) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+def _reference_relationship_pairs(df) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """Independent pandas derivation of the seven original categories, the golden for the engine.
 
     Deliberately pandas: an independent derivation of the same pairs using a
@@ -138,19 +134,6 @@ def _reference_relationship_pairs(df, seed: int = 42) -> dict[str, tuple[np.ndar
     gp_parent = gp_parent[valid_gp]
     gp_gp = gp_gp[valid_gp]
 
-    unique_gp_arr = np.unique(gp_gp)
-    if len(unique_gp_arr) > 100000:
-        logger.info(
-            "extract_relationship_pairs: %d grandparents exceed 100K cap, sampling subset",
-            len(unique_gp_arr),
-        )
-        rng = np.random.default_rng(seed)
-        selected_gp = rng.choice(unique_gp_arr, 100000, replace=False)
-        gp_mask = np.isin(gp_gp, selected_gp)
-        gp_child = gp_child[gp_mask]
-        gp_parent = gp_parent[gp_mask]
-        gp_gp = gp_gp[gp_mask]
-
     sort_idx = np.argsort(gp_gp, kind="mergesort")
     gp_child = gp_child[sort_idx]
     gp_parent = gp_parent[sort_idx]
@@ -212,7 +195,7 @@ class TestGoldenComparison:
         small fixture (N=1000, G=3), the cap shouldn't trigger, so they should be equal.
         """
         df = small_pedigree
-        reference = _reference_relationship_pairs(df, seed=42)
+        reference = _reference_relationship_pairs(df)
         new = PedigreeGraph.from_frame(df).relationship_pairs(max_degree=4)
 
         exact_keys = [
@@ -403,16 +386,6 @@ class TestStructuralCorrectness:
             sib_set = _pairs_to_set(*pairs[key])
             overlap = twin_set & sib_set
             assert len(overlap) == 0, f"Overlap between 'MZ twin' and '{key}': {len(overlap)} pairs"
-
-
-class TestNoSubsamplingLoss:
-    """The new implementation should not subsample cousins."""
-
-    def test_exact_cousin_count(self, small_pedigree):
-        """Verify cousin count is deterministic (no RNG-dependent cap)."""
-        pairs1 = PedigreeGraph.from_frame(small_pedigree).relationship_pairs(max_degree=3)
-        pairs2 = PedigreeGraph.from_frame(small_pedigree).relationship_pairs(max_degree=3)
-        assert len(pairs1["1C"]) == len(pairs2["1C"])
 
 
 class TestEdgeCases:

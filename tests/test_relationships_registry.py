@@ -10,8 +10,6 @@ import dataclasses
 import math
 import typing
 
-import numpy as np
-import polars as pl
 import pytest
 
 import pedigree_graph
@@ -75,20 +73,6 @@ DEGREE_PRECEDENCE = {
     4: ("GGGP", "HGAv", "GGAv", "H1C", "1C1R"),
     5: ("G3GP", "HGGAv", "G3Av", "H1C1R", "1C2R", "2C"),
 }
-
-
-def small_pedigree():
-    """The three-generation pedigree from ``test_relationship_plan.py``."""
-    return pl.DataFrame(
-        {
-            "id": np.arange(10),
-            "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2, 4, 6]),
-            "father": np.array([-1, -1, -1, -1, 1, 1, 3, 3, 5, 7]),
-            "twin": np.full(10, -1),
-            "sex": np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 0]),
-            "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2]),
-        }
-    )
 
 
 class TestRegistryShape:

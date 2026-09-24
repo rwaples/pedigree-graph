@@ -228,7 +228,7 @@ def test_per_gen_founder_means_matches_reference(parity_pedigree: PedigreeGraph)
 
 
 def _kernel_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
-    """The generation kinship summary straight from the core's retiring DP, no graph caches."""
+    """The generation kinship summary straight from the core's streaming DP, no graph caches."""
     return _summary_from_native(pg, np.asarray(pg.generation_labels))
 
 
@@ -244,7 +244,7 @@ def test_the_public_summary_is_the_streamed_one(parity_pedigree: PedigreeGraph) 
     assert pg.mean_kinship_by_generation() == _kernel_summary(pg)
 
 
-def test_retiring_summary_matches_the_matrix_walk(parity_pedigree: PedigreeGraph) -> None:
+def test_streamed_summary_matches_the_matrix_walk(parity_pedigree: PedigreeGraph) -> None:
     pg = parity_pedigree
     streamed = pg.mean_kinship_by_generation()
     walked = _summary_from_matrix(
@@ -598,8 +598,8 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
 
 
 @pytest.mark.slow
-def test_ltc_runs_at_scale_old_code_could_not() -> None:
-    """N=2000, G=10 — old dense code allocated ~2.6 GB; new path is fine.
+def test_ltc_tracks_the_census_size_at_n2000_g10() -> None:
+    """Ne_LTC at N=2000, G=10.
 
     Wray & Thompson 1990 eq. 31 reduces to ``ne = 2/Σc²`` at ``μ_r = 1``,
     which tracks the census size on a Wright-Fisher pedigree.  This seed
@@ -632,12 +632,12 @@ def test_ltc_runs_at_scale_old_code_could_not() -> None:
 def test_streaming_ne_coancestry_recovery_at_n2000_g8() -> None:
     """Stationary random-mating Ne_C from the streaming path matches Ne_V.
 
-    Phase-2 precision check: at n_per_gen=2000, G=8 the streaming Ne_C
+    Precision check: at n_per_gen=2000, G=8 the streaming Ne_C
     should land within 15% of Ne_V (Caballero variance Ne), since under
     balanced-sex random mating the two estimators converge to the same
     target.  Catches float32 precision regressions in the streaming
     accumulator — earlier evidence of bias would surface as a >15%
-    divergence here long before Phase-5c (N=10M) would show the same
+    divergence here long before a 10M-row run would show the same
     pattern at much higher cost.
     """
     rng = np.random.default_rng(2026)

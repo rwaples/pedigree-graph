@@ -1,14 +1,14 @@
-"""``_native.relationship_pairs`` equals the matrix engine's ``relationship_pairs`` block for block.
+"""The boundary contract of the raw ``_native.relationship_pairs`` binding.
 
 The binding is the seam pair extraction crosses (ADR 0006 and 0007): the
-Rust row-streaming engine classifies, orients, and
-assembles; Python keeps the selector and the result type.  These tests hold
-the raw binding against the in-tree matrix oracle on every parity fixture,
-selector, receiver, and execution, and pin the boundary contract: owned
-int32 arrays, registry-ordered keys, both executions element for element
-equal, and structured errors instead of aborts.  Anything that needs a
-different package pool runs in a fresh interpreter, because the pool is
-built once per process.
+Rust row-streaming engine classifies, orients, and assembles; Python keeps
+the selector and the result type.  The public API calls this binding
+directly, so its values are held against the oracle in
+``test_relationship_pairs_execution``; these tests pin what only the raw
+binding shows: owned int32 arrays, registry-ordered keys, both executions
+element for element equal, and structured errors instead of aborts.
+Anything that needs a different package pool runs in a fresh interpreter,
+because the pool is built once per process.
 """
 
 from __future__ import annotations
@@ -21,82 +21,24 @@ import textwrap
 import numpy as np
 import pytest
 from _support import CHILD_PRELUDE, _run_child
-from conftest import parity_columns, parity_fixtures
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, _native
 from pedigree_graph._threads import thread_budget
 
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
-EXECUTIONS = ("speed", "memory")
-SELECTORS = (
-    {"max_degree": 0},
-    {"max_degree": 1},
-    {"max_degree": 3},
-    {"max_degree": 5},
-    {"categories": ["FS"]},
-    {"categories": ["1C", "Av"]},
-    {"categories": ["H1C1R", "MO", "2C"]},
-)
 
-
-def _native_pairs(receiver, execution: str, **selector):
-    """The binding's result for *receiver* and *selector*, as the facade will call it."""
+def _native_pairs(graph: PedigreeGraph, execution: str, **selector):
+    """The binding's result for *graph* and *selector*, as the facade calls it."""
     from pedigree_graph._selection import RelationshipSelection
 
     selection = RelationshipSelection.parse(selector.get("max_degree"), selector.get("categories"))
-    graph = receiver if isinstance(receiver, PedigreeGraph) else receiver._graph
-    view_rows = None if isinstance(receiver, PedigreeGraph) else receiver._graph_to_view()
     return _native.relationship_pairs(
         graph._built,
         max_degree=selection.top_degree or 0,
         requested=list(selection.ordered),
         threads=thread_budget(),
         execution=execution,
-        view_rows=view_rows,
+        view_rows=None,
     )
-
-
-def _assert_matches_oracle(receiver, **selector) -> None:
-    expected = receiver.relationship_pairs(**selector)
-    for execution in EXECUTIONS:
-        got = _native_pairs(receiver, execution, **selector)
-        assert tuple(got) == tuple(RELATIONSHIPS)
-        for code, block in expected.items():
-            first, second = got[code]
-            assert first.dtype == np.int32
-            assert second.dtype == np.int32
-            if block.requested:
-                np.testing.assert_array_equal(first, block.first_rows, err_msg=f"{code} first {execution}")
-                np.testing.assert_array_equal(second, block.second_rows, err_msg=f"{code} second {execution}")
-            else:
-                assert len(first) == 0
-                assert len(second) == 0
-
-
-@pytest.mark.parametrize("name", FIXTURE_NAMES)
-@pytest.mark.parametrize("selector", SELECTORS, ids=str)
-def test_graph_blocks_equal_the_matrix_engine(name, selector):
-    graph = PedigreeGraph.from_frame(parity_columns(FIXTURES[name]))
-    _assert_matches_oracle(graph, **selector)
-
-
-@pytest.mark.parametrize("name", FIXTURE_NAMES)
-@pytest.mark.parametrize("seed", [3, 4])
-def test_view_blocks_equal_the_matrix_engine(name, seed):
-    graph = PedigreeGraph.from_frame(parity_columns(FIXTURES[name]))
-    n = graph.n_individuals
-    rows = np.random.default_rng(seed).permutation(n)[: max(n // 2, min(n, 2))]
-    view = graph.view(rows=rows)
-    for selector in SELECTORS:
-        _assert_matches_oracle(view, **selector)
-
-
-def test_reversed_and_tiny_views_match(small_pedigree):
-    graph = PedigreeGraph.from_frame(small_pedigree)
-    n = graph.n_individuals
-    _assert_matches_oracle(graph.view(rows=np.arange(n)[::-1]), max_degree=5)
-    _assert_matches_oracle(graph.view(rows=np.array([n - 1, 0])), max_degree=5)
 
 
 class TestBoundary:
@@ -122,6 +64,7 @@ class TestBoundary:
         graph = PedigreeGraph.from_frame(small_pedigree)
         pairs = _native_pairs(graph, "memory", max_degree=5)
         counts = graph.relationship_counts(max_degree=5)
+        assert tuple(pairs) == tuple(RELATIONSHIPS)
         assert {code: len(pairs[code][0]) for code in RELATIONSHIPS} == dict(counts)
 
     def test_malformed_arguments_raise_before_any_work(self, small_pedigree):

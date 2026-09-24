@@ -54,7 +54,7 @@ features = ["pyo3/extension-module"]
 strip = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "benchmarks/tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
@@ -79,6 +79,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["B011", "RUF012", "D"]
 "tests/**/*.py" = ["D"]
+"benchmarks/tests/*.py" = ["B011", "RUF012", "D"]
 
 [tool.ruff.lint.flake8-type-checking]
 strict = true

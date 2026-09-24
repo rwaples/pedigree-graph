@@ -15,7 +15,7 @@ python benchmarks/bench_estimate_counts.py --repeat 5 --out benchmarks/reports/c
 
 - **Measure through the harness.** Do not write a driver into `/tmp`. A number
   whose method is not committed cannot be re-derived, and
-  `tests/test_benchmark_contract.py` fails a tracked note that cites one.
+  `benchmarks/tests/test_benchmark_contract.py` fails a tracked note that cites one.
 - **Never sample RSS from a Python thread.** A native kernel that holds the
   GIL for its whole call starves the sampler; the measurement that showed it
   was a `@numba.njit` kernel. Measured against a 2.77 s

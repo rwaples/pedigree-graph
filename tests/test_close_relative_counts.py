@@ -125,8 +125,7 @@ def test_does_not_build_pairs(small_graph, monkeypatch):
     assert all(result[code] == reference[code] for code in result.requested)
 
 
-def test_old_api_and_selectors_are_removed(small_graph):
-    assert not hasattr(small_graph, "estimate_relationship_counts")
+def test_takes_no_selector_and_has_no_view_form(small_graph):
     assert not hasattr(small_graph.view(rows=np.array([0])), "close_relative_counts")
     with pytest.raises(TypeError):
         small_graph.close_relative_counts(max_degree=2)  # type: ignore[call-arg]

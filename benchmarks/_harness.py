@@ -12,7 +12,7 @@ memory measurement that could not work.  Making the correct path shorter to
 write than the wrong one is the point.
 
 It cannot prevent a future script from importing nothing and measuring badly.
-Python has no mechanism for that.  ``tests/test_benchmark_contract.py`` catches
+Python has no mechanism for that.  ``benchmarks/tests/test_benchmark_contract.py`` catches
 the two symptoms that reached tracked artifacts last time: a note citing a
 ``/tmp`` driver as its method, and a result file with no environment.
 

@@ -129,7 +129,7 @@ def _ne_close(a, b):
 @_HEAVY
 @given(arrays=pedigree_arrays())
 def test_ne_coancestry_streamed_and_matrix_theta_agree(arrays):
-    # The default streams theta from the retiring DP; a graph that already
+    # The default streams theta from the native summary DP; a graph that already
     # caches the complete kinship matrix walks that instead.  Both routes must
     # produce the same coancestry-rate Ne and the same per-cohort theta.
     ids, mother, father, sex = arrays

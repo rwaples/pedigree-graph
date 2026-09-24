@@ -32,9 +32,12 @@ FIXTURE_NAMES = sorted(FIXTURES)
 EXECUTIONS = ("speed", "memory")
 SELECTORS = (
     {"max_degree": 0},
+    {"max_degree": 1},
     {"max_degree": 2},
+    {"max_degree": 3},
     {"max_degree": 5},
     {"categories": ["FS"]},
+    {"categories": ["1C", "Av"]},
     {"categories": ["2C", "MO", "H1C1R"]},
     {"categories": []},
 )

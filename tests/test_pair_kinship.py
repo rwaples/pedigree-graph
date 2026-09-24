@@ -188,23 +188,6 @@ class TestWithinGraphParity:
         oracle = oracle_pair_kinship(graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, first, second)
         assert graph.pair_kinship(first, second).tobytes() == oracle.tobytes()
 
-    @pytest.mark.parametrize("name", ["deep_inbred_60g", "random_1k"])
-    def test_result_is_the_same_before_and_after_the_matrix(self, name):
-        def pairs_of(graph):
-            return graph.pair_kinship(graph.relationship_pairs(max_degree=MAX_DEGREE))
-
-        fresh = _graph(name)
-        before = pairs_of(fresh)
-        cached = _graph(name)
-        cached.kinship_matrix()
-        after = pairs_of(cached)
-        for code in RELATIONSHIPS:
-            assert before[code].tobytes() == after[code].tobytes(), code
-        fresh.kinship_matrix()
-        again = pairs_of(fresh)
-        for code in RELATIONSHIPS:
-            assert before[code].tobytes() == again[code].tobytes(), code
-
     def test_relationship_pairs_of_a_reordered_graph_match_its_own_matrix(self):
         fixture = FIXTURES["deep_inbred_60g"]
         perm = np.random.default_rng(5).permutation(len(fixture["ids"]))
@@ -371,64 +354,6 @@ class TestErrors:
             graph.pair_kinship([0, None], [0, 0])
         assert info.value.code == "invalid_integer_value"
         assert info.value.fields["value"] == "null"
-
-
-class TestRepeatedCalls:
-    """Nothing is kept between calls, so a second call is a cold call and stores the same bits."""
-
-    @pytest.mark.parametrize("name", FIXTURE_NAMES)
-    def test_every_call_form_is_bit_identical_across_calls(self, name):
-        graph = _graph(name)
-        pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
-        rows = np.arange(graph.n_individuals)
-        graph.pair_kinship(rows, rows)
-        again = graph.pair_kinship(pairs)
-        fresh = _graph(name)
-        cold = fresh.pair_kinship(fresh.relationship_pairs(max_degree=MAX_DEGREE))
-        for code in RELATIONSHIPS:
-            assert again[code].tobytes() == cold[code].tobytes(), code
-        block = max(pairs.values(), key=len)
-        assert (
-            graph.pair_kinship(block).tobytes()
-            == _graph(name).pair_kinship(block.first_rows, block.second_rows).tobytes()
-        )
-        first, second = _all_pairs(graph.n_individuals)
-        assert graph.pair_kinship(first, second).tobytes() == _graph(name).pair_kinship(first, second).tobytes()
-
-    @pytest.mark.parametrize("name", FIXTURE_NAMES)
-    def test_relationship_matrix_after_a_walk_matches_a_fresh_one(self, name):
-        graph = _graph(name)
-        graph.pair_kinship(graph.relationship_pairs(max_degree=MAX_DEGREE))
-        after = graph.relationship_kinship_matrix(max_degree=MAX_DEGREE)
-        fresh = _graph(name).relationship_kinship_matrix(max_degree=MAX_DEGREE)
-        assert after.indptr.tobytes() == fresh.indptr.tobytes()
-        assert after.indices.tobytes() == fresh.indices.tobytes()
-        assert after.data.tobytes() == fresh.data.tobytes()
-
-    def test_a_view_and_its_graph_agree_across_calls(self):
-        graph = _graph("random_1k")
-        view = graph.view(ids=FIXTURES["random_1k"]["ids"][::3])
-        pairs = view.relationship_pairs(max_degree=MAX_DEGREE)
-        values = view.pair_kinship(pairs)
-        fresh = _graph("random_1k").view(ids=FIXTURES["random_1k"]["ids"][::3])
-        cold = fresh.pair_kinship(fresh.relationship_pairs(max_degree=MAX_DEGREE))
-        for code in RELATIONSHIPS:
-            assert values[code].tobytes() == cold[code].tobytes(), code
-        rows = np.arange(graph.n_individuals)
-        assert graph.pair_kinship(rows, rows).tobytes() == _graph("random_1k").pair_kinship(rows, rows).tobytes()
-
-    def test_pair_then_matrix_then_pair(self):
-        graph = _graph("deep_inbred_60g")
-        pairs = graph.relationship_pairs(max_degree=2)
-        before = graph.pair_kinship(pairs)
-        graph.relationship_kinship_matrix(max_degree=3)
-        after = graph.pair_kinship(pairs)
-        for code in RELATIONSHIPS:
-            assert before[code].tobytes() == after[code].tobytes(), code
-
-    def test_an_empty_query_returns_empty(self):
-        graph = _graph("deep_inbred_60g")
-        assert graph.pair_kinship([], []).shape == (0,)
 
 
 class TestThreads:

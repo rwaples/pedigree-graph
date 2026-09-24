@@ -102,7 +102,7 @@ class Selection:
 
 NOT_SLOW: Final[Selection] = Selection("not_slow", ("-m", "not slow"))
 FULL: Final[Selection] = Selection("full", ())
-WARM_UP: Final[Selection] = Selection("warm_up", ("tests/test_benchmark_contract.py",))
+WARM_UP: Final[Selection] = Selection("warm_up", ("benchmarks/tests/test_benchmark_contract.py",))
 
 
 @dataclass(frozen=True)
