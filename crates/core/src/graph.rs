@@ -218,15 +218,14 @@ fn check_length(field: &'static str, values: &[i64], n: usize) -> Result<(), Err
 /// `duplicate_id` naming the smallest repeated id and all its rows.
 fn check_duplicate_ids(ids: &[i64], index: &IdIndex) -> Result<(), Error> {
     let sorted = index.sorted();
-    let repeats = sorted.windows(2).filter(|pair| pair[0] == pair[1]).count();
-    if repeats == 0 {
-        return Ok(());
-    }
-    let duplicated = sorted
+    let Some(duplicated) = sorted
         .windows(2)
         .find(|pair| pair[0] == pair[1])
         .map(|pair| pair[0])
-        .expect("a repeat was counted");
+    else {
+        return Ok(());
+    };
+    let repeats = sorted.windows(2).filter(|pair| pair[0] == pair[1]).count();
     let rows = ids
         .iter()
         .enumerate()

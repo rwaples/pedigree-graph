@@ -138,6 +138,11 @@ impl<'a> Walker<'a> {
     }
 
     /// Kinship of rows `a` and `b`, walking whatever the memo lacks.
+    #[expect(
+        clippy::expect_used,
+        reason = "a COMPUTE item is pushed beneath its dependencies, so each is memoised \
+                  before it is read, and the root, pushed first, resolves last"
+    )]
     pub fn resolve(&mut self, a: i32, b: i32) -> Result<f32, Error> {
         let (rlo, rhi) = canon(a, b);
         if let Some(v) = self.memo.get(rlo, rhi) {

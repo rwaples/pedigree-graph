@@ -468,7 +468,12 @@ fn approximate_with<S: RowStore>(topo: &Topo, threshold: f64) -> Result<Csc, Err
         },
     )?;
     pass1.run()?;
-    let Sink::Harvest { indptr, cols } = pass1.sink else {
+    #[expect(
+        clippy::unreachable,
+        reason = "pass1 was built with Sink::Harvest and run() never replaces its sink"
+    )]
+    let Sink::Harvest { indptr, cols } = pass1.sink
+    else {
         unreachable!()
     };
     drop(pass1.store);
@@ -485,7 +490,12 @@ fn approximate_with<S: RowStore>(topo: &Topo, threshold: f64) -> Result<Csc, Err
         },
     )?;
     pass2.run()?;
-    let Sink::Capture { indptr, cols, vals } = pass2.sink else {
+    #[expect(
+        clippy::unreachable,
+        reason = "pass2 was built with Sink::Capture and run() never replaces its sink"
+    )]
+    let Sink::Capture { indptr, cols, vals } = pass2.sink
+    else {
         unreachable!()
     };
     drop(pass2.store);
@@ -564,7 +574,12 @@ fn sums_with<S: RowStore>(
         },
     )?;
     dp.run()?;
-    let Sink::Sums { sums, .. } = dp.sink else {
+    #[expect(
+        clippy::unreachable,
+        reason = "dp was built with Sink::Sums and run() never replaces its sink"
+    )]
+    let Sink::Sums { sums, .. } = dp.sink
+    else {
         unreachable!()
     };
     Ok(sums)
