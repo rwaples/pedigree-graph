@@ -1,0 +1,63 @@
+{
+  "unit": "fitACE",
+  "stage": "17b",
+  "routing": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/17b/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-09-24T14:13:33",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/17b/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.4,
+      "max_rss_mib": 104.9,
+      "log": "external/pedigree-graph/docs/release-gates/17b/fitACE/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/17b/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 104.4,
+      "log": "external/pedigree-graph/docs/release-gates/17b/fitACE/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 107.0,
+      "log": "external/pedigree-graph/docs/release-gates/17b/fitACE/format.log",
+      "tail": [
+        "243 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 15.5,
+      "max_rss_mib": 400.4,
+      "log": "external/pedigree-graph/docs/release-gates/17b/fitACE/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "........................................................................ [ 18%]",
+        "........................................................................ [ 37%]",
+        "........................................................................ [ 56%]",
+        "........................................................................ [ 75%]",
+        "........................................................................ [ 93%]",
+        ".......................                                                  [100%]",
+        "383 passed in 14.58s"
+      ]
+    }
+  ],
+  "ok": true
+}

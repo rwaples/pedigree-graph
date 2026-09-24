@@ -1,0 +1,763 @@
+Using workflow specific profile profiles/default for setting default command line arguments.
+Assuming unrestricted shared filesystem usage.
+
+SNAKEMAKE
+=========
+  Date: 2026-09-24 14:12:51
+  Workflow ID: bf4ac954-e040-404e-bcfc-30bec7709fef
+  Platform: Linux-7.1.5-76070105-generic-x86_64-with-glibc2.39
+  Host: pop-os
+  User: ryanw
+  Snakemake version: 9.25.2
+  Python version: 3.13.15 | packaged by conda-forge | (main, Sep  2 2026, 22:01:58) [GCC 15.3.0]
+  Command: /data/Documents/simACE/.pixi/envs/default/bin/snakemake --cores 4 --forceall results/test/small_test/scenario.done results/test/small_test/validate.done results/test/small_test/stats.done results/test/small_test/effective_size.done
+  Snakefile: /data/Documents/simACE/Snakefile
+  Base directory: /data/Documents/simACE
+  Run directory: /data/Documents/simACE
+  Working directory: /data/Documents/simACE
+  Config file(s): ['config/_default.yaml']
+  Config MD5: 81bf734388ea717d23fa2344f3b89536
+
+Building DAG of jobs...
+Using shell: /usr/bin/bash
+Provided cores: 4
+Rules claiming more threads will be scaled down.
+Provided resources: mem_mb=Resource("mem_mb", 30000)
+Conda environments: ignored
+Job stats:
+job                            count
+---------------------------  -------
+emit_params                        4
+simulate_pedigree_liability        4
+phenotype                          4
+censor_weibull                     4
+ascertainment                      4
+analyze                            4
+effective_size_phenotype           3
+effective_size_scenario            1
+gather_report_summary              1
+plot_phenotype                     1
+assemble_scenario_atlas            1
+plot_validation                    1
+stats_scenario                     1
+scenario                           1
+validate_scenario                  1
+total                             35
+
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:51 2026]
+localrule simulate_pedigree_liability:
+    output: results/test/small_test/rep1/pedigree.full.parquet
+    log: logs/test/small_test/rep1/simulate.log
+    jobid: 2
+    benchmark: benchmarks/test/small_test/rep1/simulate.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=1
+    threads: 4
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[small_test/rep1] INFO: Starting simulation: N=1000, G_ped=6, seed=12042
+[small_test/rep1] INFO: Generation 0: 10 twins, mean family size 2.45 [mating=0.0s, reproduce=0.2s, fill=0.0s, total=0.2s]
+[small_test/rep1] INFO: Generation 1: 14 twins, mean family size 2.56 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep1] INFO: Generation 2: 16 twins, mean family size 2.43 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep1] INFO: Generation 3: 8 twins, mean family size 2.49 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep1] INFO: Generation 4: 10 twins, mean family size 2.51 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep1] INFO: Generation 5: 14 twins, mean family size 2.48 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep1] INFO: Generation 6: 8 twins, mean family size 2.46 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep1] INFO: Generation 7: 8 twins, mean family size 2.48 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep1] INFO: Simulation complete in 0.2s: pedigree has 6000 individuals
+[Thu Sep 24 14:12:52 2026]
+Finished jobid: 2 (Rule: simulate_pedigree_liability)
+1 of 35 steps (3%) done
+Select jobs to execute...
+Execute 4 jobs...
+
+[Thu Sep 24 14:12:52 2026]
+localrule emit_params:
+    output: results/test/small_test/rep3/params.yaml
+    log: logs/test/small_test/rep3/emit_params.log
+    jobid: 18
+    benchmark: benchmarks/test/small_test/rep3/emit_params.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=3
+    resources: tmpdir=/tmp, runtime=1, mem_mb=200, mem=200 MB, mem_mib=191
+[Thu Sep 24 14:12:52 2026]
+localrule emit_params:
+    output: results/test/small_test/rep2/params.yaml
+    log: logs/test/small_test/rep2/emit_params.log
+    jobid: 12
+    benchmark: benchmarks/test/small_test/rep2/emit_params.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=2
+    resources: tmpdir=/tmp, runtime=1, mem_mb=200, mem=200 MB, mem_mib=191
+[Thu Sep 24 14:12:52 2026]
+localrule emit_params:
+    output: results/test/coverage_scenario/rep1/params.yaml
+    log: logs/test/coverage_scenario/rep1/emit_params.log
+    jobid: 24
+    benchmark: benchmarks/test/coverage_scenario/rep1/emit_params.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=coverage_scenario, rep=1
+    resources: tmpdir=/tmp, runtime=1, mem_mb=200, mem=200 MB, mem_mib=191
+[Thu Sep 24 14:12:52 2026]
+localrule emit_params:
+    output: results/test/small_test/rep1/params.yaml
+    log: logs/test/small_test/rep1/emit_params.log
+    jobid: 6
+    benchmark: benchmarks/test/small_test/rep1/emit_params.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=1
+    resources: tmpdir=/tmp, runtime=1, mem_mb=200, mem=200 MB, mem_mib=191
+Select jobs to execute...
+[Thu Sep 24 14:12:52 2026]
+Finished jobid: 18 (Rule: emit_params)
+2 of 35 steps (6%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:52 2026]
+localrule phenotype:
+    input: results/test/small_test/rep1/pedigree.full.parquet
+    output: results/test/small_test/rep1/trait.raw.parquet
+    log: logs/test/small_test/rep1/phenotype.log
+    jobid: 4
+    benchmark: benchmarks/test/small_test/rep1/phenotype.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=1
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:52 2026]
+Finished jobid: 24 (Rule: emit_params)
+3 of 35 steps (9%) done
+[Thu Sep 24 14:12:52 2026]
+Finished jobid: 12 (Rule: emit_params)
+4 of 35 steps (11%) done
+Select jobs to execute...
+[Thu Sep 24 14:12:52 2026]
+Finished jobid: 6 (Rule: emit_params)
+5 of 35 steps (14%) done
+[small_test/rep1] INFO: Running phenotype simulation for 6000 individuals
+[small_test/rep1] INFO: Phenotype simulation complete in 0.2s: 3000 individuals
+[Thu Sep 24 14:12:53 2026]
+Finished jobid: 4 (Rule: phenotype)
+6 of 35 steps (17%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:53 2026]
+localrule simulate_pedigree_liability:
+    output: results/test/small_test/rep2/pedigree.full.parquet
+    log: logs/test/small_test/rep2/simulate.log
+    jobid: 8
+    benchmark: benchmarks/test/small_test/rep2/simulate.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=2
+    threads: 4
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[small_test/rep2] INFO: Starting simulation: N=1000, G_ped=6, seed=12043
+[small_test/rep2] INFO: Generation 0: 18 twins, mean family size 2.52 [mating=0.0s, reproduce=0.2s, fill=0.0s, total=0.2s]
+[small_test/rep2] INFO: Generation 1: 16 twins, mean family size 2.53 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep2] INFO: Generation 2: 16 twins, mean family size 2.51 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep2] INFO: Generation 3: 10 twins, mean family size 2.46 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep2] INFO: Generation 4: 14 twins, mean family size 2.41 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep2] INFO: Generation 5: 10 twins, mean family size 2.42 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep2] INFO: Generation 6: 10 twins, mean family size 2.36 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep2] INFO: Generation 7: 10 twins, mean family size 2.53 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep2] INFO: Simulation complete in 0.2s: pedigree has 6000 individuals
+[Thu Sep 24 14:12:54 2026]
+Finished jobid: 8 (Rule: simulate_pedigree_liability)
+7 of 35 steps (20%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:54 2026]
+localrule simulate_pedigree_liability:
+    output: results/test/small_test/rep3/pedigree.full.parquet
+    log: logs/test/small_test/rep3/simulate.log
+    jobid: 14
+    benchmark: benchmarks/test/small_test/rep3/simulate.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=3
+    threads: 4
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[small_test/rep3] INFO: Starting simulation: N=1000, G_ped=6, seed=12044
+[small_test/rep3] INFO: Generation 0: 16 twins, mean family size 2.43 [mating=0.0s, reproduce=0.2s, fill=0.0s, total=0.2s]
+[small_test/rep3] INFO: Generation 1: 4 twins, mean family size 2.46 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep3] INFO: Generation 2: 10 twins, mean family size 2.39 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep3] INFO: Generation 3: 4 twins, mean family size 2.53 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep3] INFO: Generation 4: 12 twins, mean family size 2.49 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep3] INFO: Generation 5: 10 twins, mean family size 2.42 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep3] INFO: Generation 6: 16 twins, mean family size 2.43 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep3] INFO: Generation 7: 10 twins, mean family size 2.34 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[small_test/rep3] INFO: Simulation complete in 0.2s: pedigree has 6000 individuals
+[Thu Sep 24 14:12:55 2026]
+Finished jobid: 14 (Rule: simulate_pedigree_liability)
+8 of 35 steps (23%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:55 2026]
+localrule simulate_pedigree_liability:
+    output: results/test/coverage_scenario/rep1/pedigree.full.parquet
+    log: logs/test/coverage_scenario/rep1/simulate.log
+    jobid: 23
+    benchmark: benchmarks/test/coverage_scenario/rep1/simulate.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=coverage_scenario, rep=1
+    threads: 4
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[coverage_scenario/rep1] INFO: Starting simulation: N=2000, G_ped=4, seed=1234
+[coverage_scenario/rep1] INFO: Metropolis: 1214/9712 proposals (12.5%), M=1214, err1=0.00005, err2=0.00007, err12=0.00015, err21=0.00014
+[coverage_scenario/rep1] INFO: Generation 0: 46 twins, mean family size 2.40 [mating=0.3s, reproduce=0.0s, fill=0.0s, total=0.3s]
+[coverage_scenario/rep1] INFO: Metropolis: 1268/10144 proposals (12.5%), M=1268, err1=0.00004, err2=0.00000, err12=0.00004, err21=0.00016
+[coverage_scenario/rep1] INFO: Generation 1: 44 twins, mean family size 2.45 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[coverage_scenario/rep1] INFO: Metropolis: 1260/10080 proposals (12.5%), M=1260, err1=0.00026, err2=0.00004, err12=0.00004, err21=0.00011
+[coverage_scenario/rep1] INFO: Generation 2: 56 twins, mean family size 2.47 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[coverage_scenario/rep1] INFO: Metropolis: 1272/10184 proposals (12.5%), M=1273, err1=0.00007, err2=0.00007, err12=0.00005, err21=0.00004
+[coverage_scenario/rep1] INFO: Generation 3: 64 twins, mean family size 2.42 [mating=0.0s, reproduce=0.0s, fill=0.0s, total=0.0s]
+[coverage_scenario/rep1] INFO: Simulation complete in 0.3s: pedigree has 8000 individuals
+[Thu Sep 24 14:12:56 2026]
+Finished jobid: 23 (Rule: simulate_pedigree_liability)
+9 of 35 steps (26%) done
+Execute 4 jobs...
+
+[Thu Sep 24 14:12:56 2026]
+localrule phenotype:
+    input: results/test/coverage_scenario/rep1/pedigree.full.parquet
+    output: results/test/coverage_scenario/rep1/trait.raw.parquet
+    log: logs/test/coverage_scenario/rep1/phenotype.log
+    jobid: 26
+    benchmark: benchmarks/test/coverage_scenario/rep1/phenotype.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=coverage_scenario, rep=1
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:56 2026]
+localrule censor_weibull:
+    input: results/test/small_test/rep1/trait.raw.parquet, results/test/small_test/rep1/pedigree.full.parquet
+    output: results/test/small_test/rep1/trait.full.parquet
+    log: logs/test/small_test/rep1/censor_weibull.log
+    jobid: 3
+    benchmark: benchmarks/test/small_test/rep1/censor_weibull.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=1
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:56 2026]
+localrule phenotype:
+    input: results/test/small_test/rep3/pedigree.full.parquet
+    output: results/test/small_test/rep3/trait.raw.parquet
+    log: logs/test/small_test/rep3/phenotype.log
+    jobid: 16
+    benchmark: benchmarks/test/small_test/rep3/phenotype.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=3
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:56 2026]
+localrule phenotype:
+    input: results/test/small_test/rep2/pedigree.full.parquet
+    output: results/test/small_test/rep2/trait.raw.parquet
+    log: logs/test/small_test/rep2/phenotype.log
+    jobid: 10
+    benchmark: benchmarks/test/small_test/rep2/phenotype.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=2
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[small_test/rep1] INFO: Running censoring for 3000 individuals
+[small_test/rep1] INFO: Prevalence after censoring: trait1=0.072, trait2=0.181
+[small_test/rep1] INFO: Censoring complete in 0.0s: 3000 individuals
+[Thu Sep 24 14:12:56 2026]
+Finished jobid: 3 (Rule: censor_weibull)
+10 of 35 steps (29%) done
+Removing temporary output results/test/small_test/rep1/trait.raw.parquet.
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:56 2026]
+localrule ascertainment:
+    input: results/test/small_test/rep1/pedigree.full.parquet, results/test/small_test/rep1/trait.full.parquet
+    output: results/test/small_test/rep1/pedigree.parquet, results/test/small_test/rep1/trait.parquet
+    log: logs/test/small_test/rep1/ascertainment.log
+    jobid: 1
+    benchmark: benchmarks/test/small_test/rep1/ascertainment.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=1
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[small_test/rep3] INFO: Running phenotype simulation for 6000 individuals
+[coverage_scenario/rep1] INFO: Running phenotype simulation for 8000 individuals
+[small_test/rep2] INFO: Running phenotype simulation for 6000 individuals
+[small_test/rep1] INFO: Ascertainment: ped 6000 → 5312, trait 3000 → 3000 (dropout=0.000, pass-through (N_sample=0, pool=3000)) in 0.00s (seed=12042)
+[Thu Sep 24 14:12:56 2026]
+Finished jobid: 1 (Rule: ascertainment)
+11 of 35 steps (31%) done
+Select jobs to execute...
+[small_test/rep3] INFO: Phenotype simulation complete in 0.3s: 3000 individuals
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:56 2026]
+localrule effective_size_phenotype:
+    input: results/test/small_test/rep1/pedigree.parquet, results/test/small_test/rep1/trait.parquet, results/test/small_test/rep1/params.yaml
+    output: results/test/small_test/rep1/effective_size.yaml
+    log: logs/test/small_test/rep1/effective_size.log
+    jobid: 30
+    benchmark: benchmarks/test/small_test/rep1/effective_size.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=1
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[coverage_scenario/rep1] INFO: Phenotype simulation complete in 0.3s: 6000 individuals
+[small_test/rep2] INFO: Phenotype simulation complete in 0.3s: 3000 individuals
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 16 (Rule: phenotype)
+12 of 35 steps (34%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:57 2026]
+localrule censor_weibull:
+    input: results/test/small_test/rep3/trait.raw.parquet, results/test/small_test/rep3/pedigree.full.parquet
+    output: results/test/small_test/rep3/trait.full.parquet
+    log: logs/test/small_test/rep3/censor_weibull.log
+    jobid: 15
+    benchmark: benchmarks/test/small_test/rep3/censor_weibull.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=3
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 26 (Rule: phenotype)
+13 of 35 steps (37%) done
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:57 2026]
+localrule censor_weibull:
+    input: results/test/coverage_scenario/rep1/trait.raw.parquet, results/test/coverage_scenario/rep1/pedigree.full.parquet
+    output: results/test/coverage_scenario/rep1/trait.full.parquet
+    log: logs/test/coverage_scenario/rep1/censor_weibull.log
+    jobid: 25
+    benchmark: benchmarks/test/coverage_scenario/rep1/censor_weibull.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=coverage_scenario, rep=1
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 10 (Rule: phenotype)
+14 of 35 steps (40%) done
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:57 2026]
+localrule censor_weibull:
+    input: results/test/small_test/rep2/trait.raw.parquet, results/test/small_test/rep2/pedigree.full.parquet
+    output: results/test/small_test/rep2/trait.full.parquet
+    log: logs/test/small_test/rep2/censor_weibull.log
+    jobid: 9
+    benchmark: benchmarks/test/small_test/rep2/censor_weibull.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=2
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[small_test/rep3] INFO: Running censoring for 3000 individuals
+[coverage_scenario/rep1] INFO: Running censoring for 6000 individuals
+[small_test/rep3] INFO: Prevalence after censoring: trait1=0.073, trait2=0.181
+[small_test/rep3] INFO: Censoring complete in 0.0s: 3000 individuals
+[coverage_scenario/rep1] INFO: Prevalence after censoring: trait1=0.014, trait2=0.033
+[coverage_scenario/rep1] INFO: Censoring complete in 0.0s: 6000 individuals
+[small_test/rep2] INFO: Running censoring for 3000 individuals
+[small_test/rep2] INFO: Prevalence after censoring: trait1=0.068, trait2=0.182
+[small_test/rep2] INFO: Censoring complete in 0.0s: 3000 individuals
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 25 (Rule: censor_weibull)
+15 of 35 steps (43%) done
+Removing temporary output results/test/coverage_scenario/rep1/trait.raw.parquet.
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:57 2026]
+localrule ascertainment:
+    input: results/test/coverage_scenario/rep1/pedigree.full.parquet, results/test/coverage_scenario/rep1/trait.full.parquet
+    output: results/test/coverage_scenario/rep1/pedigree.parquet, results/test/coverage_scenario/rep1/trait.parquet
+    log: logs/test/coverage_scenario/rep1/ascertainment.log
+    jobid: 27
+    benchmark: benchmarks/test/coverage_scenario/rep1/ascertainment.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=coverage_scenario, rep=1
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 15 (Rule: censor_weibull)
+16 of 35 steps (46%) done
+Removing temporary output results/test/small_test/rep3/trait.raw.parquet.
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:57 2026]
+localrule ascertainment:
+    input: results/test/small_test/rep3/pedigree.full.parquet, results/test/small_test/rep3/trait.full.parquet
+    output: results/test/small_test/rep3/pedigree.parquet, results/test/small_test/rep3/trait.parquet
+    log: logs/test/small_test/rep3/ascertainment.log
+    jobid: 13
+    benchmark: benchmarks/test/small_test/rep3/ascertainment.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=3
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 9 (Rule: censor_weibull)
+17 of 35 steps (49%) done
+Removing temporary output results/test/small_test/rep2/trait.raw.parquet.
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:57 2026]
+localrule ascertainment:
+    input: results/test/small_test/rep2/pedigree.full.parquet, results/test/small_test/rep2/trait.full.parquet
+    output: results/test/small_test/rep2/pedigree.parquet, results/test/small_test/rep2/trait.parquet
+    log: logs/test/small_test/rep2/ascertainment.log
+    jobid: 7
+    benchmark: benchmarks/test/small_test/rep2/ascertainment.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=2
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 30 (Rule: effective_size_phenotype)
+18 of 35 steps (51%) done
+Select jobs to execute...
+[coverage_scenario/rep1] INFO: Ascertainment: ped 8000 → 7632, trait 6000 → 6000 (dropout=0.000, pass-through (N_sample=0, pool=6000)) in 0.00s (seed=1234)
+[small_test/rep3] INFO: Ascertainment: ped 6000 → 5304, trait 3000 → 3000 (dropout=0.000, pass-through (N_sample=0, pool=3000)) in 0.00s (seed=12044)
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 27 (Rule: ascertainment)
+19 of 35 steps (54%) done
+[small_test/rep2] INFO: Ascertainment: ped 6000 → 5331, trait 3000 → 3000 (dropout=0.000, pass-through (N_sample=0, pool=3000)) in 0.00s (seed=12043)
+[Thu Sep 24 14:12:57 2026]
+Finished jobid: 13 (Rule: ascertainment)
+20 of 35 steps (57%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:57 2026]
+localrule effective_size_phenotype:
+    input: results/test/small_test/rep3/pedigree.parquet, results/test/small_test/rep3/trait.parquet, results/test/small_test/rep3/params.yaml
+    output: results/test/small_test/rep3/effective_size.yaml
+    log: logs/test/small_test/rep3/effective_size.log
+    jobid: 32
+    benchmark: benchmarks/test/small_test/rep3/effective_size.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=3
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+[Thu Sep 24 14:12:58 2026]
+Finished jobid: 7 (Rule: ascertainment)
+21 of 35 steps (60%) done
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:58 2026]
+localrule effective_size_phenotype:
+    input: results/test/small_test/rep2/pedigree.parquet, results/test/small_test/rep2/trait.parquet, results/test/small_test/rep2/params.yaml
+    output: results/test/small_test/rep2/effective_size.yaml
+    log: logs/test/small_test/rep2/effective_size.log
+    jobid: 31
+    benchmark: benchmarks/test/small_test/rep2/effective_size.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=2
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[Thu Sep 24 14:12:58 2026]
+Finished jobid: 32 (Rule: effective_size_phenotype)
+22 of 35 steps (63%) done
+[Thu Sep 24 14:12:58 2026]
+Finished jobid: 31 (Rule: effective_size_phenotype)
+23 of 35 steps (66%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:12:58 2026]
+localrule analyze:
+    input: results/test/small_test/rep1/pedigree.full.parquet, results/test/small_test/rep1/params.yaml, results/test/small_test/rep1/trait.full.parquet, results/test/small_test/rep1/trait.parquet, results/test/small_test/rep1/pedigree.parquet
+    output: results/test/small_test/rep1/report.yaml, results/test/small_test/rep1/plot_payload.yaml, results/test/small_test/rep1/plotting_sample.parquet
+    log: logs/test/small_test/rep1/analyze.log
+    jobid: 5
+    benchmark: benchmarks/test/small_test/rep1/analyze.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=1
+    threads: 4
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[small_test/rep1] INFO: Analyze phase 1/3: validating results/test/small_test/rep1/pedigree.full.parquet
+[small_test/rep1] INFO: Validation complete: 40/40 checks passed
+[small_test/rep1] INFO: Analyze phase 2/3: phenotyped-population summaries on results/test/small_test/rep1/trait.full.parquet
+[small_test/rep1] INFO: Analyze phase 3/3: stats on results/test/small_test/rep1/trait.parquet
+[small_test/rep1] INFO: Metadata stats completed in 0.0s
+[small_test/rep1] INFO: Incidence stats completed in 0.0s
+[small_test/rep1] INFO: Censoring stats completed in 0.0s
+[small_test/rep1] INFO: Extracting relationship pairs...
+[small_test/rep1] INFO: Relationship pairs extracted in 0.0s: MZ: 15, MO: 2000, FO: 2000, FS: 2348, MHS: 1426, PHS: 1010, GP: 3982, Av: 6197, GGP: 0, HAv: 6372, GAv: 6168, 1C: 9422
+[small_test/rep1] INFO: Relationship context completed in 0.0s
+[small_test/rep1] INFO: Pedigree pair counts (from same graph): MZ: 25, MO: 4574, FO: 4574, FS: 3290, MHS: 1960, PHS: 1513, GP: 15250, Av: 10491, GGP: 23833, HAv: 11125, GAv: 15499, 1C: 11509
+[small_test/rep1] INFO: Pedigree stats completed in 0.0s
+[small_test/rep1] INFO: Computing mate liability correlations...
+[small_test/rep1] INFO: Fast correlation stats completed in 0.0s
+[small_test/rep1] INFO: Computing tetrachoric correlations in parallel...
+[small_test/rep1] WARNING: tetrachoric_corr_se: n_pairs=15 < 50, SE may be unreliable
+[small_test/rep1] WARNING: tetrachoric_corr_se: n_pairs=15 < 50, SE may be unreliable
+[small_test/rep1] WARNING: tetrachoric_corr_se: n_pairs=15 < 50, SE may be unreliable
+[small_test/rep1] INFO: All MLE correlations computed in 0.0s
+[small_test/rep1] INFO: Curated report written to results/test/small_test/rep1/report.yaml
+[small_test/rep1] INFO: Plot payload written to results/test/small_test/rep1/plot_payload.yaml
+[small_test/rep1] INFO: Plotting sample (3000 rows) written to results/test/small_test/rep1/plotting_sample.parquet
+[Thu Sep 24 14:13:00 2026]
+Finished jobid: 5 (Rule: analyze)
+24 of 35 steps (69%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:13:00 2026]
+localrule analyze:
+    input: results/test/small_test/rep3/pedigree.full.parquet, results/test/small_test/rep3/params.yaml, results/test/small_test/rep3/trait.full.parquet, results/test/small_test/rep3/trait.parquet, results/test/small_test/rep3/pedigree.parquet
+    output: results/test/small_test/rep3/report.yaml, results/test/small_test/rep3/plot_payload.yaml, results/test/small_test/rep3/plotting_sample.parquet
+    log: logs/test/small_test/rep3/analyze.log
+    jobid: 17
+    benchmark: benchmarks/test/small_test/rep3/analyze.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=3
+    threads: 4
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[small_test/rep3] INFO: Analyze phase 1/3: validating results/test/small_test/rep3/pedigree.full.parquet
+[small_test/rep3] INFO: Validation complete: 40/40 checks passed
+[small_test/rep3] INFO: Analyze phase 2/3: phenotyped-population summaries on results/test/small_test/rep3/trait.full.parquet
+[small_test/rep3] INFO: Analyze phase 3/3: stats on results/test/small_test/rep3/trait.parquet
+[small_test/rep3] INFO: Metadata stats completed in 0.0s
+[small_test/rep3] INFO: Incidence stats completed in 0.0s
+[small_test/rep3] INFO: Censoring stats completed in 0.0s
+[small_test/rep3] INFO: Extracting relationship pairs...
+[small_test/rep3] INFO: Relationship pairs extracted in 0.0s: MZ: 18, MO: 2000, FO: 2000, FS: 2314, MHS: 1042, PHS: 1162, GP: 3994, Av: 6330, GGP: 0, HAv: 5938, GAv: 6285, 1C: 9729
+[small_test/rep3] INFO: Relationship context completed in 0.0s
+[small_test/rep3] INFO: Pedigree pair counts (from same graph): MZ: 26, MO: 4580, FO: 4580, FS: 3341, MHS: 1527, PHS: 1625, GP: 15257, Av: 11093, GGP: 23871, HAv: 10388, GAv: 16716, 1C: 11988
+[small_test/rep3] INFO: Pedigree stats completed in 0.0s
+[small_test/rep3] INFO: Computing mate liability correlations...
+[small_test/rep3] INFO: Fast correlation stats completed in 0.0s
+[small_test/rep3] INFO: Computing tetrachoric correlations in parallel...
+[small_test/rep3] WARNING: tetrachoric_corr_se: n_pairs=18 < 50, SE may be unreliable
+[small_test/rep3] WARNING: tetrachoric_corr_se: n_pairs=11 < 50, SE may be unreliable
+[small_test/rep3] WARNING: tetrachoric_corr_se: n_pairs=18 < 50, SE may be unreliable
+[small_test/rep3] WARNING: tetrachoric_corr_se: n_pairs=18 < 50, SE may be unreliable
+[small_test/rep3] WARNING: tetrachoric_corr_se: n_pairs=11 < 50, SE may be unreliable
+[small_test/rep3] INFO: All MLE correlations computed in 0.0s
+[small_test/rep3] INFO: Curated report written to results/test/small_test/rep3/report.yaml
+[small_test/rep3] INFO: Plot payload written to results/test/small_test/rep3/plot_payload.yaml
+[small_test/rep3] INFO: Plotting sample (3000 rows) written to results/test/small_test/rep3/plotting_sample.parquet
+[Thu Sep 24 14:13:02 2026]
+Finished jobid: 17 (Rule: analyze)
+25 of 35 steps (71%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:13:02 2026]
+localrule analyze:
+    input: results/test/small_test/rep2/pedigree.full.parquet, results/test/small_test/rep2/params.yaml, results/test/small_test/rep2/trait.full.parquet, results/test/small_test/rep2/trait.parquet, results/test/small_test/rep2/pedigree.parquet
+    output: results/test/small_test/rep2/report.yaml, results/test/small_test/rep2/plot_payload.yaml, results/test/small_test/rep2/plotting_sample.parquet
+    log: logs/test/small_test/rep2/analyze.log
+    jobid: 11
+    benchmark: benchmarks/test/small_test/rep2/analyze.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test, rep=2
+    threads: 4
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[small_test/rep2] INFO: Analyze phase 1/3: validating results/test/small_test/rep2/pedigree.full.parquet
+[small_test/rep2] INFO: Validation complete: 40/40 checks passed
+[small_test/rep2] INFO: Analyze phase 2/3: phenotyped-population summaries on results/test/small_test/rep2/trait.full.parquet
+[small_test/rep2] INFO: Analyze phase 3/3: stats on results/test/small_test/rep2/trait.parquet
+[small_test/rep2] INFO: Metadata stats completed in 0.0s
+[small_test/rep2] INFO: Incidence stats completed in 0.0s
+[small_test/rep2] INFO: Censoring stats completed in 0.0s
+[small_test/rep2] INFO: Extracting relationship pairs...
+[small_test/rep2] INFO: Relationship pairs extracted in 0.0s: MZ: 15, MO: 2000, FO: 2000, FS: 2349, MHS: 1189, PHS: 1155, GP: 4000, Av: 6218, GGP: 0, HAv: 6210, GAv: 6294, 1C: 9514
+[small_test/rep2] INFO: Relationship context completed in 0.0s
+[small_test/rep2] INFO: Pedigree pair counts (from same graph): MZ: 23, MO: 4584, FO: 4584, FS: 3350, MHS: 1638, PHS: 1680, GP: 15306, Av: 10866, GGP: 23937, HAv: 10828, GAv: 16373, 1C: 11742
+[small_test/rep2] INFO: Pedigree stats completed in 0.0s
+[small_test/rep2] INFO: Computing mate liability correlations...
+[small_test/rep2] INFO: Fast correlation stats completed in 0.0s
+[small_test/rep2] INFO: Computing tetrachoric correlations in parallel...
+[small_test/rep2] WARNING: tetrachoric_corr_se: n_pairs=15 < 50, SE may be unreliable
+[small_test/rep2] WARNING: tetrachoric_corr_se: n_pairs=15 < 50, SE may be unreliable
+[small_test/rep2] WARNING: tetrachoric_corr_se: n_pairs=15 < 50, SE may be unreliable
+[small_test/rep2] WARNING: tetrachoric_corr_se: n_pairs=10 < 50, SE may be unreliable
+[small_test/rep2] WARNING: tetrachoric_corr_se: n_pairs=10 < 50, SE may be unreliable
+[small_test/rep2] INFO: All MLE correlations computed in 0.0s
+[small_test/rep2] INFO: Curated report written to results/test/small_test/rep2/report.yaml
+[small_test/rep2] INFO: Plot payload written to results/test/small_test/rep2/plot_payload.yaml
+[small_test/rep2] INFO: Plotting sample (3000 rows) written to results/test/small_test/rep2/plotting_sample.parquet
+[Thu Sep 24 14:13:04 2026]
+Finished jobid: 11 (Rule: analyze)
+26 of 35 steps (74%) done
+Execute 1 jobs...
+
+[Thu Sep 24 14:13:04 2026]
+localrule analyze:
+    input: results/test/coverage_scenario/rep1/pedigree.full.parquet, results/test/coverage_scenario/rep1/params.yaml, results/test/coverage_scenario/rep1/trait.full.parquet, results/test/coverage_scenario/rep1/trait.parquet, results/test/coverage_scenario/rep1/pedigree.parquet
+    output: results/test/coverage_scenario/rep1/report.yaml, results/test/coverage_scenario/rep1/plot_payload.yaml, results/test/coverage_scenario/rep1/plotting_sample.parquet
+    log: logs/test/coverage_scenario/rep1/analyze.log
+    jobid: 22
+    benchmark: benchmarks/test/coverage_scenario/rep1/analyze.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=coverage_scenario, rep=1
+    threads: 4
+    resources: tmpdir=/tmp, runtime=5, mem_mb=4000, mem=4 GB, mem_mib=3815
+Select jobs to execute...
+[coverage_scenario/rep1] INFO: Analyze phase 1/3: validating results/test/coverage_scenario/rep1/pedigree.full.parquet
+[coverage_scenario/rep1] WARNING: FAILED half_sibs.half_sib_shared_C2: PHS shared C2 correlation: -0.1181 (expected: ~0, tol: 0.0823)
+[coverage_scenario/rep1] INFO: Validation complete: 33/34 checks passed
+[coverage_scenario/rep1] INFO: Analyze phase 2/3: phenotyped-population summaries on results/test/coverage_scenario/rep1/trait.full.parquet
+[coverage_scenario/rep1] INFO: Analyze phase 3/3: stats on results/test/coverage_scenario/rep1/trait.parquet
+[coverage_scenario/rep1] INFO: Metadata stats completed in 0.0s
+[coverage_scenario/rep1] INFO: Incidence stats completed in 0.0s
+[coverage_scenario/rep1] INFO: Censoring stats completed in 0.0s
+[coverage_scenario/rep1] INFO: Extracting relationship pairs...
+[coverage_scenario/rep1] INFO: Relationship pairs extracted in 0.0s: MZ: 82, MO: 4000, FO: 4000, FS: 4689, MHS: 2350, PHS: 2363, GP: 7987, Av: 12443, GGP: 0, HAv: 12814, GAv: 12383, 1C: 12951
+[coverage_scenario/rep1] INFO: Relationship context completed in 0.0s
+[coverage_scenario/rep1] INFO: Pedigree pair counts (from same graph): MZ: 98, MO: 6000, FO: 6000, FS: 4689, MHS: 2350, PHS: 2363, GP: 15976, Av: 12443, GGP: 15945, HAv: 12814, GAv: 12383, 1C: 12951
+[coverage_scenario/rep1] INFO: Pedigree stats completed in 0.0s
+[coverage_scenario/rep1] INFO: Computing mate liability correlations...
+[coverage_scenario/rep1] INFO: Fast correlation stats completed in 0.0s
+[coverage_scenario/rep1] INFO: Computing tetrachoric correlations in parallel...
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=22 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=38 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=22 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=28 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=28 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=38 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=32 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=32 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=44 < 50, SE may be unreliable
+[coverage_scenario/rep1] WARNING: tetrachoric_corr_se: n_pairs=44 < 50, SE may be unreliable
+[coverage_scenario/rep1] INFO: All MLE correlations computed in 0.0s
+[coverage_scenario/rep1] INFO: Curated report written to results/test/coverage_scenario/rep1/report.yaml
+[coverage_scenario/rep1] INFO: Plot payload written to results/test/coverage_scenario/rep1/plot_payload.yaml
+[coverage_scenario/rep1] INFO: Plotting sample (6000 rows) written to results/test/coverage_scenario/rep1/plotting_sample.parquet
+[Thu Sep 24 14:13:06 2026]
+Finished jobid: 22 (Rule: analyze)
+27 of 35 steps (77%) done
+Removing temporary output results/test/coverage_scenario/rep1/plotting_sample.parquet.
+Execute 3 jobs...
+
+[Thu Sep 24 14:13:06 2026]
+localrule gather_report_summary:
+    input: results/test/small_test/rep1/report.yaml, results/test/small_test/rep2/report.yaml, results/test/small_test/rep3/report.yaml, results/test/coverage_scenario/rep1/report.yaml
+    output: results/test/report_summary.tsv
+    log: logs/test/gather_report_summary.log
+    jobid: 21
+    benchmark: benchmarks/test/gather_report_summary.tsv
+    reason: Forced execution
+    wildcards: folder=test
+    resources: tmpdir=/tmp, runtime=5, mem_mb=1000, mem=1 GB, mem_mib=954
+[Thu Sep 24 14:13:06 2026]
+localrule effective_size_scenario:
+    input: results/test/small_test/rep1/effective_size.yaml, results/test/small_test/rep2/effective_size.yaml, results/test/small_test/rep3/effective_size.yaml
+    output: results/test/small_test/effective_size.done
+    jobid: 29
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test
+    resources: tmpdir=/tmp
+[Thu Sep 24 14:13:06 2026]
+localrule plot_phenotype:
+    input: results/test/small_test/rep1/report.yaml, results/test/small_test/rep2/report.yaml, results/test/small_test/rep3/report.yaml, results/test/small_test/rep1/plot_payload.yaml, results/test/small_test/rep2/plot_payload.yaml, results/test/small_test/rep3/plot_payload.yaml, results/test/small_test/rep1/plotting_sample.parquet, results/test/small_test/rep2/plotting_sample.parquet, results/test/small_test/rep3/plotting_sample.parquet
+    output: results/test/small_test/plots/pedigree_counts.ped.png, results/test/small_test/plots/pedigree_counts.png, results/test/small_test/plots/family_structure.png, results/test/small_test/plots/mate_correlation.png, results/test/small_test/plots/cross_trait.png, results/test/small_test/plots/heritability.by_generation.png, results/test/small_test/plots/am_equilibrium.png, results/test/small_test/plots/ge_covariance.by_generation.png, results/test/small_test/plots/snp_like_h2.by_generation.png, results/test/small_test/plots/observed_h2.png, results/test/small_test/plots/liability_violin.phenotype.png, results/test/small_test/plots/liability_components.by_generation.png, results/test/small_test/plots/mortality.png, results/test/small_test/plots/age_at_onset_death.png, results/test/small_test/plots/censoring.png, results/test/small_test/plots/cumulative_incidence.phenotype.png, results/test/small_test/plots/cumulative_incidence_aj.phenotype.png, results/test/small_test/plots/cumulative_incidence.by_sex.png, results/test/small_test/plots/censoring_confusion.png, results/test/small_test/plots/censoring_cascade.png, results/test/small_test/plots/parent_offspring_liability.by_generation.png, results/test/small_test/plots/heritability.by_sex.by_generation.png, results/test/small_test/plots/liability_vs_aoo.png, results/test/small_test/plots/tetrachoric.phenotype.png, results/test/small_test/plots/tetrachoric.phenotype.by_sex.png, results/test/small_test/plots/cross_trait.phenotype.png, results/test/small_test/plots/cross_trait.phenotype.t2.png, results/test/small_test/plots/joint_affected.phenotype.png, results/test/small_test/plots/cross_trait_tetrachoric.png, results/test/small_test/plots/liability_violin.phenotype.by_generation.png, results/test/small_test/plots/liability_violin.phenotype.by_sex.by_generation.png, results/test/small_test/plots/cumulative_incidence.by_sex.by_generation.png, results/test/small_test/plots/tetrachoric.phenotype.by_generation.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.by_generation.png
+    log: logs/test/small_test/plot_phenotype.log
+    jobid: 19
+    benchmark: benchmarks/test/small_test/plot_phenotype.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test
+    resources: tmpdir=/tmp, runtime=5, mem_mb=2000, mem=2 GB, mem_mib=1908
+Touching output file results/test/small_test/effective_size.done.
+[Thu Sep 24 14:13:06 2026]
+Finished jobid: 29 (Rule: effective_size_scenario)
+28 of 35 steps (80%) done
+INFO: Gathered 4 report summaries -> results/test/report_summary.tsv
+[Thu Sep 24 14:13:07 2026]
+Finished jobid: 21 (Rule: gather_report_summary)
+29 of 35 steps (83%) done
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:13:07 2026]
+localrule plot_validation:
+    input: results/test/report_summary.tsv
+    output: results/test/plots/family_size.png, results/test/plots/twin_rate.png, results/test/plots/half_sib_proportions.png, results/test/plots/consanguineous_matings.png, results/test/plots/variance_components.png, results/test/plots/correlations_A.png, results/test/plots/correlations_phenotype.png, results/test/plots/heritability_estimates.png, results/test/plots/cross_trait_correlations.png, results/test/plots/summary_bias.png, results/test/plots/runtime.png, results/test/plots/memory.png, results/test/plots/atlas.html
+    log: logs/test/plot_validation.log
+    jobid: 28
+    benchmark: benchmarks/test/plot_validation.tsv
+    reason: Forced execution
+    wildcards: folder=test
+    resources: tmpdir=/tmp, runtime=5, mem_mb=1000, mem=1 GB, mem_mib=954
+INFO: Generating validation plots in results/test/plots
+[small_test] INFO: Pedigree counts plot saved to results/test/small_test/plots/pedigree_counts.ped.png
+[small_test] INFO: Pedigree counts plot saved to results/test/small_test/plots/pedigree_counts.png
+INFO: HTML atlas saved to results/test/plots/atlas.html (12 plots)
+[Thu Sep 24 14:13:12 2026]
+Finished jobid: 28 (Rule: plot_validation)
+30 of 35 steps (86%) done
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:13:12 2026]
+localrule validate_scenario:
+    input: results/test/small_test/rep1/report.yaml, results/test/small_test/rep2/report.yaml, results/test/small_test/rep3/report.yaml, results/test/report_summary.tsv, results/test/plots/atlas.html
+    output: results/test/small_test/validate.done
+    jobid: 34
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test
+    resources: tmpdir=/tmp
+Touching output file results/test/small_test/validate.done.
+[Thu Sep 24 14:13:12 2026]
+Finished jobid: 34 (Rule: validate_scenario)
+31 of 35 steps (89%) done
+/data/Documents/simACE/simace/plotting/plot_heritability.py:737: UserWarning: Glyph 114 (r) missing from font(s) Nimbus Sans.
+  fig.tight_layout(rect=(0, 0, 1, 0.97))
+/data/Documents/simACE/simace/plotting/plot_heritability.py:737: UserWarning: Glyph 75 (K) missing from font(s) Nimbus Sans.
+  fig.tight_layout(rect=(0, 0, 1, 0.97))
+/data/Documents/simACE/simace/plotting/plot_utils.py:202: UserWarning: Glyph 114 (r) missing from font(s) Nimbus Sans.
+  plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
+/data/Documents/simACE/simace/plotting/plot_utils.py:202: UserWarning: Glyph 75 (K) missing from font(s) Nimbus Sans.
+  plt.savefig(output_path, dpi=dpi, bbox_inches="tight")
+[small_test] INFO: Phenotype plots saved to results/test/small_test/plots
+[Thu Sep 24 14:13:28 2026]
+Finished jobid: 19 (Rule: plot_phenotype)
+32 of 35 steps (91%) done
+Removing temporary output results/test/small_test/rep1/plotting_sample.parquet.
+Removing temporary output results/test/small_test/rep2/plotting_sample.parquet.
+Removing temporary output results/test/small_test/rep3/plotting_sample.parquet.
+Select jobs to execute...
+Execute 2 jobs...
+
+[Thu Sep 24 14:13:28 2026]
+localrule stats_scenario:
+    input: results/test/small_test/rep1/report.yaml, results/test/small_test/rep2/report.yaml, results/test/small_test/rep3/report.yaml, results/test/small_test/plots/pedigree_counts.ped.png, results/test/small_test/plots/pedigree_counts.png, results/test/small_test/plots/family_structure.png, results/test/small_test/plots/mate_correlation.png, results/test/small_test/plots/cross_trait.png, results/test/small_test/plots/heritability.by_generation.png, results/test/small_test/plots/am_equilibrium.png, results/test/small_test/plots/ge_covariance.by_generation.png, results/test/small_test/plots/snp_like_h2.by_generation.png, results/test/small_test/plots/observed_h2.png, results/test/small_test/plots/liability_violin.phenotype.png, results/test/small_test/plots/liability_components.by_generation.png, results/test/small_test/plots/mortality.png, results/test/small_test/plots/age_at_onset_death.png, results/test/small_test/plots/censoring.png, results/test/small_test/plots/cumulative_incidence.phenotype.png, results/test/small_test/plots/cumulative_incidence_aj.phenotype.png, results/test/small_test/plots/cumulative_incidence.by_sex.png, results/test/small_test/plots/censoring_confusion.png, results/test/small_test/plots/censoring_cascade.png, results/test/small_test/plots/parent_offspring_liability.by_generation.png, results/test/small_test/plots/heritability.by_sex.by_generation.png, results/test/small_test/plots/liability_vs_aoo.png, results/test/small_test/plots/tetrachoric.phenotype.png, results/test/small_test/plots/tetrachoric.phenotype.by_sex.png, results/test/small_test/plots/cross_trait.phenotype.png, results/test/small_test/plots/cross_trait.phenotype.t2.png, results/test/small_test/plots/joint_affected.phenotype.png, results/test/small_test/plots/cross_trait_tetrachoric.png, results/test/small_test/plots/liability_violin.phenotype.by_generation.png, results/test/small_test/plots/liability_violin.phenotype.by_sex.by_generation.png, results/test/small_test/plots/cumulative_incidence.by_sex.by_generation.png, results/test/small_test/plots/tetrachoric.phenotype.by_generation.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.by_generation.png
+    output: results/test/small_test/stats.done
+    jobid: 33
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test
+    resources: tmpdir=/tmp
+[Thu Sep 24 14:13:28 2026]
+localrule assemble_scenario_atlas:
+    input: results/test/small_test/plots/pedigree_counts.ped.png, results/test/small_test/plots/pedigree_counts.png, results/test/small_test/plots/family_structure.png, results/test/small_test/plots/mate_correlation.png, results/test/small_test/plots/cross_trait.png, results/test/small_test/plots/heritability.by_generation.png, results/test/small_test/plots/am_equilibrium.png, results/test/small_test/plots/ge_covariance.by_generation.png, results/test/small_test/plots/snp_like_h2.by_generation.png, results/test/small_test/plots/observed_h2.png, results/test/small_test/plots/liability_violin.phenotype.png, results/test/small_test/plots/liability_components.by_generation.png, results/test/small_test/plots/mortality.png, results/test/small_test/plots/age_at_onset_death.png, results/test/small_test/plots/censoring.png, results/test/small_test/plots/cumulative_incidence.phenotype.png, results/test/small_test/plots/cumulative_incidence_aj.phenotype.png, results/test/small_test/plots/cumulative_incidence.by_sex.png, results/test/small_test/plots/censoring_confusion.png, results/test/small_test/plots/censoring_cascade.png, results/test/small_test/plots/parent_offspring_liability.by_generation.png, results/test/small_test/plots/heritability.by_sex.by_generation.png, results/test/small_test/plots/liability_vs_aoo.png, results/test/small_test/plots/tetrachoric.phenotype.png, results/test/small_test/plots/tetrachoric.phenotype.by_sex.png, results/test/small_test/plots/cross_trait.phenotype.png, results/test/small_test/plots/cross_trait.phenotype.t2.png, results/test/small_test/plots/joint_affected.phenotype.png, results/test/small_test/plots/cross_trait_tetrachoric.png, results/test/small_test/plots/liability_violin.phenotype.by_generation.png, results/test/small_test/plots/liability_violin.phenotype.by_sex.by_generation.png, results/test/small_test/plots/cumulative_incidence.by_sex.by_generation.png, results/test/small_test/plots/tetrachoric.phenotype.by_generation.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.by_generation.png, results/test/small_test/rep1/params.yaml, results/test/small_test/rep1/report.yaml, results/test/small_test/rep2/report.yaml, results/test/small_test/rep3/report.yaml, results/test/small_test/rep1/plot_payload.yaml, results/test/small_test/rep2/plot_payload.yaml, results/test/small_test/rep3/plot_payload.yaml
+    output: results/test/small_test/plots/atlas.html
+    log: logs/test/small_test/assemble_atlas.log
+    jobid: 20
+    benchmark: benchmarks/test/small_test/assemble_atlas.tsv
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test
+    resources: tmpdir=/tmp, runtime=5, mem_mb=1000, mem=1 GB, mem_mib=954
+Touching output file results/test/small_test/stats.done.
+[Thu Sep 24 14:13:28 2026]
+Finished jobid: 33 (Rule: stats_scenario)
+33 of 35 steps (94%) done
+[small_test] INFO: HTML atlas saved to results/test/small_test/plots/atlas.html (35 plots)
+[Thu Sep 24 14:13:29 2026]
+Finished jobid: 20 (Rule: assemble_scenario_atlas)
+34 of 35 steps (97%) done
+Select jobs to execute...
+Execute 1 jobs...
+
+[Thu Sep 24 14:13:29 2026]
+localrule scenario:
+    input: results/test/small_test/rep1/pedigree.parquet, results/test/small_test/rep1/trait.full.parquet, results/test/small_test/rep1/trait.parquet, results/test/small_test/rep1/report.yaml, results/test/small_test/rep1/plot_payload.yaml, results/test/small_test/rep2/pedigree.parquet, results/test/small_test/rep2/trait.full.parquet, results/test/small_test/rep2/trait.parquet, results/test/small_test/rep2/report.yaml, results/test/small_test/rep2/plot_payload.yaml, results/test/small_test/rep3/pedigree.parquet, results/test/small_test/rep3/trait.full.parquet, results/test/small_test/rep3/trait.parquet, results/test/small_test/rep3/report.yaml, results/test/small_test/rep3/plot_payload.yaml, results/test/small_test/plots/pedigree_counts.ped.png, results/test/small_test/plots/pedigree_counts.png, results/test/small_test/plots/family_structure.png, results/test/small_test/plots/mate_correlation.png, results/test/small_test/plots/cross_trait.png, results/test/small_test/plots/heritability.by_generation.png, results/test/small_test/plots/am_equilibrium.png, results/test/small_test/plots/ge_covariance.by_generation.png, results/test/small_test/plots/snp_like_h2.by_generation.png, results/test/small_test/plots/observed_h2.png, results/test/small_test/plots/liability_violin.phenotype.png, results/test/small_test/plots/liability_components.by_generation.png, results/test/small_test/plots/mortality.png, results/test/small_test/plots/age_at_onset_death.png, results/test/small_test/plots/censoring.png, results/test/small_test/plots/cumulative_incidence.phenotype.png, results/test/small_test/plots/cumulative_incidence_aj.phenotype.png, results/test/small_test/plots/cumulative_incidence.by_sex.png, results/test/small_test/plots/censoring_confusion.png, results/test/small_test/plots/censoring_cascade.png, results/test/small_test/plots/parent_offspring_liability.by_generation.png, results/test/small_test/plots/heritability.by_sex.by_generation.png, results/test/small_test/plots/liability_vs_aoo.png, results/test/small_test/plots/tetrachoric.phenotype.png, results/test/small_test/plots/tetrachoric.phenotype.by_sex.png, results/test/small_test/plots/cross_trait.phenotype.png, results/test/small_test/plots/cross_trait.phenotype.t2.png, results/test/small_test/plots/joint_affected.phenotype.png, results/test/small_test/plots/cross_trait_tetrachoric.png, results/test/small_test/plots/liability_violin.phenotype.by_generation.png, results/test/small_test/plots/liability_violin.phenotype.by_sex.by_generation.png, results/test/small_test/plots/cumulative_incidence.by_sex.by_generation.png, results/test/small_test/plots/tetrachoric.phenotype.by_generation.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.png, results/test/small_test/plots/cumulative_incidence_aj.by_sex.by_generation.png, results/test/small_test/plots/atlas.html, results/test/report_summary.tsv, results/test/plots/atlas.html
+    output: results/test/small_test/scenario.done
+    jobid: 0
+    reason: Forced execution
+    wildcards: folder=test, scenario=small_test
+    resources: tmpdir=/tmp
+Touching output file results/test/small_test/scenario.done.
+[Thu Sep 24 14:13:29 2026]
+Finished jobid: 0 (Rule: scenario)
+35 of 35 steps (100%) done
+Complete log(s): /data/Documents/simACE/.snakemake/log/2026-09-24T141250.945853.snakemake.log

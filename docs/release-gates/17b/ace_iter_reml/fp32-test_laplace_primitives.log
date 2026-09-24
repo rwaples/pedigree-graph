@@ -1,0 +1,7 @@
+compute_w_prime: checked 44 of 50 entries (rest hit w_floor)
+[PASS] compute_w_prime FD match (max rel err < 1e-3)  max_rel_err=0.000000
+diag(H⁻¹) vs dense: mean_rel_err=0.00350397  max_rel_err=0.0110182
+[PASS] compute_diag_hinv Hutchinson matches dense (mean < 5%)  mean_rel=0.003504
+[PASS] compute_diag_hinv Hutchinson matches dense (max < 25%)  max_rel=0.011018
+
+3 passed, 0 failed.

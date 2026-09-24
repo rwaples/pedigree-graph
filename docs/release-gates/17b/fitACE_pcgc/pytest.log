@@ -1,0 +1,179 @@
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [ 33%]
+...............................s.s.................s.................... [ 66%]
+.........................s.............................................  [100%]
+=============================== warnings summary ===============================
+tests/test_cpp_parity.py::TestCppParity::test_ace_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:83: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(**kw, backend="reference")
+
+tests/test_cpp_parity.py::TestCppParity::test_ace_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:84: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(**kw, backend="numba")
+
+tests/test_cpp_parity.py::TestCppParity::test_ace_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:85: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_cpp = fit_pcgc(**kw, backend="cpp", threads=1)
+
+tests/test_continuous_perf.py::TestContinuousPerf::test_tiny_under_budget[reference]
+tests/test_continuous_perf.py::TestContinuousPerf::test_tiny_under_budget[numba]
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_continuous_perf.py:37: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    _ = fit_pcgc(
+
+tests/test_continuous_perf.py::TestContinuousPerf::test_tiny_under_budget[reference]
+tests/test_continuous_perf.py::TestContinuousPerf::test_tiny_under_budget[numba]
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_continuous_perf.py:47: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r = fit_pcgc(
+
+tests/test_meta_diagnostics.py::TestPCGCResultDiagnostics::test_numba_matches_reference_structure
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_meta_diagnostics.py:61: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(
+
+tests/test_cpp_parity.py::TestCppParity::test_ae_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:101: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(**kw, backend="reference")
+
+tests/test_cpp_parity.py::TestCppParity::test_ae_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:102: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(**kw, backend="numba")
+
+tests/test_cpp_parity.py::TestCppParity::test_ae_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:103: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_cpp = fit_pcgc(**kw, backend="cpp", threads=1)
+
+tests/test_meta_diagnostics.py::TestConvention4Fields::test_hermite2_populates_trivial_bivnor_fields
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_meta_diagnostics.py:250: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r = fit_pcgc(
+
+tests/test_meta_diagnostics.py::TestPCGCResultDiagnostics::test_cpp_matches_python_structure
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_meta_diagnostics.py:92: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_cpp = fit_pcgc(
+
+tests/test_cpp_parity.py::TestCppParity::test_ace_many_blocks
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:117: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(**kw, backend="reference")
+
+tests/test_cpp_parity.py::TestCppParity::test_ace_many_blocks
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:118: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(**kw, backend="numba")
+
+tests/test_cpp_parity.py::TestCppParity::test_ace_many_blocks
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:119: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_cpp = fit_pcgc(**kw, backend="cpp", threads=1)
+
+tests/test_meta_diagnostics.py::TestConvention4Fields::test_golan_populates_trivial_newton_and_bivnor_fields
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_meta_diagnostics.py:276: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r = fit_pcgc(
+
+tests/test_numba_parity.py::TestNumbaParity::test_ace_tiny
+tests/test_numba_parity.py::TestNumbaParity::test_ace_with_threshold
+tests/test_numba_parity.py::TestNumbaParity::test_ace_many_blocks
+tests/test_numba_parity.py::TestNumbaParity::test_ae_tiny
+tests/test_numba_parity.py::TestNumbaParity::test_ace_small
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_numba_parity.py:56: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(y, A, kinship_C=C, backend="reference", **kwargs)
+
+tests/test_numba_parity.py::TestNumbaParity::test_ace_tiny
+tests/test_numba_parity.py::TestNumbaParity::test_ace_with_threshold
+tests/test_numba_parity.py::TestNumbaParity::test_ace_many_blocks
+tests/test_numba_parity.py::TestNumbaParity::test_ae_tiny
+tests/test_numba_parity.py::TestNumbaParity::test_ace_small
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_numba_parity.py:57: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(y, A, kinship_C=C, backend="numba", **kwargs)
+
+tests/test_numba_parity.py::TestNumbaParityHermite::test_ace_tiny
+tests/test_numba_parity.py::TestNumbaParityHermite::test_ae_tiny
+tests/test_numba_parity.py::TestNumbaParityHermite::test_ace_small
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_numba_parity.py:223: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(y, A, kinship_C=C, backend="reference", **kwargs)
+
+tests/test_numba_parity.py::TestNumbaParityHermite::test_ace_tiny
+tests/test_numba_parity.py::TestNumbaParityHermite::test_ae_tiny
+tests/test_numba_parity.py::TestNumbaParityHermite::test_ace_small
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_numba_parity.py:224: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(y, A, kinship_C=C, backend="numba", **kwargs)
+
+tests/test_numba_parity.py::TestNumbaParity::test_determinism_numba
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_numba_parity.py:128: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r1 = fit_pcgc(
+
+tests/test_numba_parity.py::TestNumbaParity::test_determinism_numba
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_numba_parity.py:137: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r2 = fit_pcgc(
+
+tests/test_rare_k_correction.py::TestOrder1ByteEquality::test_order1_newton_iters_zero_and_steps_field_zero
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_rare_k_correction.py:337: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r = fit_pcgc(
+
+tests/test_rare_k_correction.py::TestMomentResidual::test_residual_near_zero_at_convergence
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_rare_k_correction.py:237: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    result = fit_pcgc(
+
+tests/test_cpp_parity.py::TestCppParity::test_ace_medium
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:135: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(**kw, backend="reference")
+
+tests/test_cpp_parity.py::TestCppParity::test_ace_medium
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:136: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(**kw, backend="numba")
+
+tests/test_cpp_parity.py::TestCppParity::test_ace_medium
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:137: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_cpp = fit_pcgc(**kw, backend="cpp", threads=1)
+
+tests/test_cpp_parity.py::TestCppParity::test_cpp_wall_under_budget
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:159: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r = fit_pcgc(
+
+tests/test_numba_parity.py::TestNumbaParityHermite::test_hermite_shifts_estimates_vs_order1
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_numba_parity.py:187: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_golan = fit_pcgc(
+
+tests/test_numba_parity.py::TestNumbaParityHermite::test_hermite_shifts_estimates_vs_order1
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_numba_parity.py:196: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_hermite = fit_pcgc(
+
+tests/test_rare_k_correction.py::TestCleanCellSafety::test_low_truth_c_zero_preserved
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_rare_k_correction.py:312: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_golan = fit_pcgc(**kw, hermite_order=1)
+
+tests/test_rare_k_correction.py::TestCleanCellSafety::test_low_truth_c_zero_preserved
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_rare_k_correction.py:313: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_hermite = fit_pcgc(**kw, hermite_order=2)
+
+tests/test_cpp_parity.py::TestCppParityHermite::test_ace_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:197: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(**kw, backend="reference")
+
+tests/test_cpp_parity.py::TestCppParityHermite::test_ace_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:198: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(**kw, backend="numba")
+
+tests/test_cpp_parity.py::TestCppParityHermite::test_ace_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:199: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_cpp = fit_pcgc(**kw, backend="cpp", threads=1)
+
+tests/test_cpp_parity.py::TestCppParityHermite::test_ae_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:218: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(**kw, backend="reference")
+
+tests/test_cpp_parity.py::TestCppParityHermite::test_ae_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:219: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_nb = fit_pcgc(**kw, backend="numba")
+
+tests/test_cpp_parity.py::TestCppParityHermite::test_ae_tiny
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:220: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_cpp = fit_pcgc(**kw, backend="cpp", threads=1)
+
+tests/test_cpp_parity.py::TestCppParityHermite::test_ace_medium_threaded
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:236: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_ref = fit_pcgc(**kw, backend="reference")
+
+tests/test_cpp_parity.py::TestCppParityHermite::test_ace_medium_threaded
+  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:237: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.
+    r_cpp = fit_pcgc(**kw, backend="cpp", threads=4)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+211 passed, 4 skipped, 53 warnings in 4.68s

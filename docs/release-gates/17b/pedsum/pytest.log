@@ -1,0 +1,22 @@
+........................................................................ [ 22%]
+........................................................................ [ 44%]
+........................................................................ [ 66%]
+........................s..s.s.......................................... [ 88%]
+.....................................                                    [100%]
+=============================== warnings summary ===============================
+tests/test_07_redesign.py: 7 warnings
+tests/test_09_sex_source.py: 1 warning
+tests/test_annotated_tsv.py: 4 warnings
+tests/test_birth_year.py: 2 warnings
+tests/test_effective_size.py: 9 warnings
+tests/test_pair_counting_modes.py: 10 warnings
+tests/test_sep_sniff.py: 5 warnings
+tests/test_sex_concordance.py: 12 warnings
+tests/test_sex_handling.py: 1 warning
+tests/test_summary_split.py: 7 warnings
+  /data/Documents/simACE/external/pedsum/pedsum/report.py:676: DeprecationWarning: the default behavior of `how='horizontal'` for `concat` is deprecated and will require equal heights in the next breaking release. Use `how='horizontal_extend'` to keep the current behavior.
+  (Deprecated in version 1.42.1)
+    annotated = pl.concat([idf, extras], how="horizontal")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+322 passed, 3 skipped, 58 warnings in 17.82s

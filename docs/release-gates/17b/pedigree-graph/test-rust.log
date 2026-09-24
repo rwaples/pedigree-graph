@@ -1,0 +1,175 @@
+✨ Pixi task (test-rust in default): cargo test --release
+   Compiling pyo3-ffi v0.29.2
+   Compiling pyo3 v0.29.2
+   Compiling numpy v0.29.0
+   Compiling pedigree-graph-python v0.10.0 (/data/Documents/simACE/external/pedigree-graph/crates/python)
+    Finished `release` profile [optimized + debuginfo] target(s) in 7.38s
+     Running unittests src/lib.rs (target/release/deps/pedigree_graph_core-683888b57056d77d)
+
+running 121 tests
+test alloc::tests::families_round_trip_through_their_names ... ok
+test error::tests::cycle_is_a_validation_error ... ok
+test error::tests::grouping_handles_every_leading_group_width ... ok
+test error::tests::max_rows_is_the_int32_capacity ... ok
+test error::tests::no_ids_render_as_the_empty_tuple ... ok
+test error::tests::one_id_renders_with_a_trailing_comma ... ok
+test error::tests::pedigree_too_large_is_a_resource_error ... ok
+test error::tests::row_count_renders_thousands_grouped ... ok
+test error::tests::three_ids_render_in_witness_order ... ok
+test error::tests::two_ids_render_comma_space_separated ... ok
+test graph::tests::a_cycle_is_reported_after_the_id_checks ... ok
+test graph::tests::a_negative_id_is_out_of_range_with_the_id_bounds ... ok
+test graph::tests::a_trio_resolves_its_rows_and_is_topological ... ok
+test graph::tests::a_wholly_unknown_optional_column_collapses_to_none ... ok
+test graph::tests::an_empty_pedigree_builds ... ok
+test graph::tests::an_external_co_twin_forms_no_pair ... ok
+test graph::tests::an_external_parent_keeps_its_id_and_has_no_row ... ok
+test graph::tests::an_unknown_encoding_is_usage_not_validation ... ok
+test graph::tests::birth_year_topology_reports_the_mother_role_first_with_its_count ... ok
+test graph::tests::children_first_input_is_not_topological_but_valid ... ok
+test graph::tests::duplicate_id_names_the_smallest_repeated_id_and_every_row ... ok
+test graph::tests::mz_checks_run_in_contract_order ... ok
+test graph::tests::plink_sex_reports_its_own_range_and_maps_onto_the_stored_encoding ... ok
+test graph::tests::same_parent_id_includes_an_external_id ... ok
+test graph::tests::the_id_index_resolves_negative_and_unknown_ids_to_minus_one ... ok
+test graph::tests::the_row_limit_is_checked_first ... ok
+test graph::tests::unknown_birth_years_constrain_nothing ... ok
+test kinship::generations::tests::an_unlabelled_row_joins_no_cohort ... ok
+test kinship::generations::tests::cohort_and_founder_column_ranges_are_checked ... ok
+test kinship::generations::tests::equivalent_generations_count_known_generations ... ok
+test kinship::generations::tests::founder_means_split_each_genome_by_mendelian_halves ... ok
+test kinship::inbreeding::tests::a_child_of_mz_co_twins_counts_them_as_one_genome ... ok
+test kinship::inbreeding::tests::a_shallow_depth_is_refused ... ok
+test kinship::inbreeding::tests::full_sib_offspring_is_a_quarter_inbred ... ok
+test kinship::inbreeding::tests::parent_offspring_mating_is_a_quarter_inbred ... ok
+test kinship::inbreeding::tests::the_touched_list_starts_at_the_numba_walks_room ... ok
+test kinship::inbreeding::tests::repeated_full_sib_mating_approaches_one ... ok
+test kinship::matrix::tests::a_founder_above_depth_zero_keeps_its_diagonal ... ok
+test kinship::matrix::tests::a_permuted_graph_gives_the_permuted_matrix ... ok
+test kinship::matrix::tests::a_retired_row_stays_retired ... ok
+test kinship::matrix::tests::an_empty_pedigree_gives_empty_products ... ok
+test kinship::matrix::tests::generation_sums_match_the_matrix_walk ... ok
+test kinship::matrix::tests::malformed_inputs_are_rejected_before_any_work ... ok
+test kinship::matrix::tests::mz_twins_share_the_self_value_on_every_path ... ok
+test kinship::matrix::tests::nnz_past_int32_is_an_overflow_error ... ok
+test kinship::matrix::tests::seam_child ... ok
+test kinship::memo::tests::stores_and_grows ... ok
+test kinship::pairwise::tests::endpoints_outside_the_pedigree_are_rejected ... ok
+test kinship::pairwise::tests::nuclear_family_has_the_textbook_values ... ok
+test kinship::pairwise::tests::mz_twins_take_the_self_formula ... ok
+test kinship::pairwise::tests::seam_child ... ok
+test kinship::pairwise::tests::sib_mating_child_is_inbred ... ok
+test kinship::pairwise::tests::support_fills_both_triangles_from_the_upper ... ok
+test kinship::matrix::tests::approximate_at_zero_is_the_complete_matrix_and_higher_prunes ... ok
+test kinship::pairwise::tests::support_rejects_an_unsorted_column ... ok
+test kinship::pairwise::tests::support_whose_indptr_stops_short_of_nnz_is_rejected ... ok
+test kinship::pairwise::tests::support_with_a_lower_entry_and_no_upper_mirror_is_asymmetric ... ok
+test kinship::pairwise::tests::support_without_a_mirror_is_asymmetric ... ok
+test kinship::matrix::tests::the_complete_matrix_is_the_pairwise_recurrence ... ok
+test lineage::tests::a_marriage_loop_counts_a_shared_ancestor_once_and_its_paths_twice ... ok
+test kinship::rows::tests::owned_rows_append_overwrite_and_retire ... ok
+test kinship::inbreeding::tests::f_is_twice_the_self_kinship_less_one ... ok
+test lineage::tests::a_path_count_past_int64_is_an_overflow_error ... ok
+test lineage::tests::a_shallow_depth_is_refused_when_the_rows_need_sorting ... ok
+test lineage::tests::an_empty_pedigree_counts_nothing ... ok
+test lineage::tests::one_row_as_both_parents_is_one_ancestor_and_two_paths ... ok
+test lineage::tests::parents_first_rows_are_swept_without_reading_depth ... ok
+test lineage::tests::rows_that_need_sorting_need_a_depth ... ok
+test lineage::tests::seam_child ... ok
+test pool::tests::same_size_is_a_no_op_and_a_different_size_conflicts ... ok
+test relationships::category::tests::roles_exist_exactly_for_asymmetric_categories ... ok
+test relationships::multiplicity::tests::multiplicity_is_a_homomorphism ... ok
+test kinship::inbreeding::tests::row_labels_do_not_change_a_value ... ok
+test relationships::engine::tests::degree_cutoff_stops_the_fold_and_the_count ... ok
+test relationships::engine::tests::mz_co_twins_are_twins_not_sibs ... ok
+test relationships::engine::tests::nuclear_family_splits_parent_roles ... ok
+test relationships::engine::tests::a_mother_who_is_also_a_grandmother_counts_once_as_mother ... ok
+test relationships::engine::tests::a_selection_counts_only_pairs_inside_it_but_classifies_through_everyone ... ok
+test relationships::pairs::tests::a_dual_valid_half_avuncular_pair_keeps_the_lower_row_first ... ok
+test relationships::pairs::tests::a_dual_valid_pair_keeps_the_lower_row_first ... ok
+test relationships::pairs::tests::a_view_keeps_pairs_through_unselected_intermediates_and_sorts_in_view_space ... ok
+test relationships::pairs::tests::a_view_map_that_repeats_or_overruns_a_row_is_rejected ... ok
+test relationships::pairs::tests::lineal_categories_put_the_descendant_first ... ok
+test relationships::pairs::tests::parent_roles_put_the_offspring_first ... ok
+test relationships::pairs::tests::seam_child ... ok
+test relationships::pairs::tests::symmetric_blocks_store_the_lower_row_first_in_graph_and_view_rows ... ok
+test relationships::pairs::tests::removed_cousins_put_the_junior_cousin_first ... ok
+test relationships::sets::tests::union_into_reuses_the_buffer ... ok
+test relationships::tests::a_row_index_below_minus_one_is_out_of_range ... ok
+test relationships::tests::a_row_index_outside_the_pedigree_is_out_of_range ... ok
+test relationships::tests::a_short_column_is_a_length_mismatch ... ok
+test relationships::tests::empty_columns_borrow ... ok
+test relationships::tests::max_degree_rejects_a_degree_the_engine_cannot_count ... ok
+test relationships::tests::parent_ids_are_unconstrained_because_a_parent_may_have_no_row ... ok
+test relationships::tests::well_formed_columns_borrow ... ok
+test relationships::tests::try_new_checks_the_five_slices_directly ... ok
+test topology::tests::a_descendant_tail_is_excluded_from_the_witness ... ok
+test topology::tests::a_self_parent_is_its_own_witness ... ok
+test topology::tests::a_single_parent_chain_deepens_every_step ... ok
+test relationships::pairs::tests::avuncular_categories_put_the_niece_first ... ok
+test topology::tests::a_two_row_cycle_is_rotated_to_the_smallest_id ... ok
+test topology::tests::an_acyclic_graph_has_no_witness ... ok
+test topology::tests::an_empty_graph_is_the_identity ... ok
+test topology::tests::children_first_fixture_is_reversed_stably ... ok
+test topology::tests::cyclic_input_terminates_instead_of_looping ... ok
+test topology::tests::depth_major_fixture_needs_no_permutation ... ok
+test topology::tests::one_absent_parent_still_deepens_the_child ... ok
+test topology::tests::permuted_fixture_is_reordered_by_depth ... ok
+test topology::tests::the_walk_takes_the_smaller_id_parent ... ok
+test topology::tests::ties_within_a_depth_keep_row_order ... ok
+test topology::tests::validate_accepts_an_acyclic_graph ... ok
+test topology::tests::validate_reports_the_witness_as_a_cycle_error ... ok
+test relationships::sets::tests::union_into_matches_a_naive_merge ... ok
+test lineage::tests::a_refused_allocation_of_any_sweep_family_is_an_error ... ok
+test kinship::pairwise::tests::a_refused_allocation_of_any_kinship_family_is_an_error ... ok
+test relationships::pairs::tests::graph_blocks_are_strictly_increasing_in_canonical_key ... ok
+test lineage::tests::counts_match_the_brute_force_in_either_row_order ... ok
+test kinship::matrix::tests::a_refused_allocation_of_any_matrix_family_is_an_error ... ok
+test relationships::pairs::tests::block_lengths_equal_counts_and_requests_filter_blocks ... ok
+test relationships::pairs::tests::thread_count_does_not_change_blocks ... ok
+test relationships::pairs::tests::a_refused_allocation_of_any_family_is_an_error ... ok
+
+test result: ok. 121 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.38s
+
+     Running unittests src/bin/pgr_bench_pairs.rs (target/release/deps/pgr_bench_pairs-7c34cfd97524c7b4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgr_count.rs (target/release/deps/pgr_count-e66e676abedff772)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kinship.rs (target/release/deps/kinship-e42577d6305ef2fc)
+
+running 4 tests
+test the_upper_csc_refuses_past_its_cap_on_upper_entries ... ok
+test support_values_match_pair_kinship_on_a_dense_small_fixture ... ok
+test the_walk_matches_the_oracle_on_every_fixture ... ok
+test the_upper_csc_is_the_upper_triangle_of_the_complete_one_on_every_fixture ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.38s
+
+     Running tests/parity.rs (target/release/deps/parity-8073118ccd93dd18)
+
+running 2 tests
+test counts_match_relationship_counts_four_threads ... ok
+test counts_match_relationship_counts_single_thread ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+
+     Running unittests src/lib.rs (target/release/deps/pedigree_graph_native-1006c2415c5e0ea0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests pedigree_graph_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

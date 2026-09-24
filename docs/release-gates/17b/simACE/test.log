@@ -1,0 +1,55 @@
+✨ Pixi task (test): pytest -n 6 --dist worksteal: (Full pytest suite on 6 xdist workers, one numba/BLAS thread each)
+============================= test session starts ==============================
+platform linux -- Python 3.13.15, pytest-9.1.1, pluggy-1.6.0
+rootdir: /data/Documents/simACE
+configfile: pyproject.toml
+testpaths: tests
+plugins: xdist-3.8.0, cov-7.1.0, hypothesis-6.168.1
+created: 6/6 workers
+6 workers [1358 items]
+
+........................................................................ [  5%]
+........................................................................ [ 10%]
+........................................................................ [ 15%]
+........................................................................ [ 21%]
+........................................................................ [ 26%]
+........................................................................ [ 31%]
+........................................................................ [ 37%]
+........................................................................ [ 42%]
+........................................................................ [ 47%]
+........................................................................ [ 53%]
+........................................................................ [ 58%]
+........................................................................ [ 63%]
+........................................................................ [ 68%]
+........................................................................ [ 74%]
+........................................................................ [ 79%]
+........................................................................ [ 84%]
+........................................................................ [ 90%]
+........................................................................ [ 95%]
+..............................................................           [100%]
+=============================== warnings summary ===============================
+tests/core/test_numba_utils_properties.py::test_linregress_core_python_jit_parity
+  /data/Documents/simACE/simace/core/_numba_utils.py:174: RuntimeWarning: divide by zero encountered in scalar divide
+    t_stat = slope / stderr
+
+tests/core/test_parquet_properties.py::test_parquet_roundtrip_modulo_narrowing
+  /data/Documents/simACE/tests/core/test_parquet_properties.py:73: RuntimeWarning: overflow encountered in cast
+    df[c].to_numpy().astype(np.float32),
+
+tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_runs_without_error
+tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_runs_without_error
+tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_both_nonzero_no_crash
+tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_both_nonzero_no_crash
+  /data/Documents/simACE/.pixi/envs/default/lib/python3.13/site-packages/seaborn/matrix.py:243: PendingDeprecationWarning: The set_bad function will be deprecated in a future version. Use cmap.with_extremes(bad=...) or Colormap(bad=...) instead.
+    self.cmap.set_bad(bad)
+
+tests/plotting/test_plot_smoke.py::TestPlotCorrelationsExpanded::test_plot_observed_heritability_has_under_construction_watermark
+  /data/Documents/simACE/simace/plotting/plot_heritability.py:737: UserWarning: Glyph 114 (r) missing from font(s) Nimbus Sans.
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+
+tests/plotting/test_plot_smoke.py::TestPlotCorrelationsExpanded::test_plot_observed_heritability_has_under_construction_watermark
+  /data/Documents/simACE/simace/plotting/plot_heritability.py:737: UserWarning: Glyph 75 (K) missing from font(s) Nimbus Sans.
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================= 1358 passed, 2 skipped, 8 warnings in 22.92s =================

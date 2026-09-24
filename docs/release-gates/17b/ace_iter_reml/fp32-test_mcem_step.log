@@ -1,0 +1,48 @@
+[INF phenotype_layer t+8.293e-06s] liability_mean layer: K=0.3000 tau=0.524 l_case=1.528 l_ctrl=-0.655 n_case=20 n_ctrl=20 emp_K=0.5000
+[WRN phenotype_layer t+8.4165e-05s] empirical case fraction (0.5000) differs from supplied K (0.3000) by > 0.05 absolute — possible case-control ascertainment.  Phase 1 does not correct for this; supplied K is used for scaling. See Lee et al. 2011 for the correction recipe.
+[INF phenotype_layer t+0.000133386s] liability_mcem layer: K=0.3000 tau=0.524 n=40; warm-start from Mills-ratio imputation
+[PASS] MCEM tr(V⁻¹·A) exact  got=37.7359  expected=37.7358  |err|=2.03704e-06  tol=0.0001
+[PASS] MCEM tr(V⁻¹·C) exact  got=22.6415  expected=22.6415  |err|=2.12192e-06  tol=0.0001
+[PASS] MCEM tr(V⁻¹·E) exact  got=75.4717  expected=75.4717  |err|=4.07408e-06  tol=0.0001
+  [info] grad=[5.70971, 3.42583, 11.4194]  exact=[5.58812, 3.35287, 11.1762]  mc_stderr_norm=0.439618  tol_per_k=2.28432
+[PASS] MCEM grad_A vs closed form  got=5.70971  expected=5.58812  |err|=0.121594  tol=2.28432
+[PASS] MCEM grad_C vs closed form  got=3.42583  expected=3.35287  |err|=0.0729567  tol=2.28432
+[PASS] MCEM grad_E vs closed form  got=11.4194  expected=11.1762  |err|=0.243189  tol=2.28432
+[PASS] MCEM step rel to σ²[0] ≤ δ_trust  got=0.166667  expected=0  |err|=0.166667  tol=0.25
+[PASS] MCEM step rel to σ²[1] ≤ δ_trust  got=0.2  expected=0  |err|=0.2  tol=0.25
+[PASS] MCEM step rel to σ²[2] ≤ δ_trust  got=0.166667  expected=0  |err|=0.166667  tol=0.25
+[PASS] MCEM n_samples_used echo  got=500  expected=500  |err|=0  tol=0
+[INF phenotype_layer t+0.00627415s] liability_mean layer: K=0.3000 tau=0.524 l_case=1.528 l_ctrl=-0.655 n_case=10 n_ctrl=10 emp_K=0.5000
+[WRN phenotype_layer t+0.00629717s] empirical case fraction (0.5000) differs from supplied K (0.3000) by > 0.05 absolute — possible case-control ascertainment.  Phase 1 does not correct for this; supplied K is used for scaling. See Lee et al. 2011 for the correction recipe.
+[INF phenotype_layer t+0.00630973s] liability_mcem layer: K=0.3000 tau=0.524 n=20; warm-start from Mills-ratio imputation
+[PASS] MCEM determinism σ²_next[0]  got=0.34  expected=0.34  |err|=0  tol=0
+[PASS] MCEM determinism grad[0]  got=2.51698  expected=2.51698  |err|=0  tol=0
+[PASS] MCEM determinism σ²_next[1]  got=0.116  expected=0.116  |err|=0  tol=0
+[PASS] MCEM determinism grad[1]  got=1.00679  expected=1.00679  |err|=0  tol=0
+[PASS] MCEM determinism σ²_next[2]  got=0.48  expected=0.48  |err|=0  tol=0
+[PASS] MCEM determinism grad[2]  got=5.03395  expected=5.03395  |err|=0  tol=0
+[INF phenotype_layer t+0.00701629s] liability_mean layer: K=0.3000 tau=0.524 l_case=1.528 l_ctrl=-0.655 n_case=20 n_ctrl=20 emp_K=0.5000
+[WRN phenotype_layer t+0.00705973s] empirical case fraction (0.5000) differs from supplied K (0.3000) by > 0.05 absolute — possible case-control ascertainment.  Phase 1 does not correct for this; supplied K is used for scaling. See Lee et al. 2011 for the correction recipe.
+[INF phenotype_layer t+0.00708659s] liability_mcem layer: K=0.3000 tau=0.524 n=40; warm-start from Mills-ratio imputation
+[PASS] MCEM cov_q symmetry [0,1]  got=54.7315  expected=54.7315  |err|=0  tol=1e-10
+[PASS] MCEM cov_q symmetry [0,2]  got=165.31  expected=165.31  |err|=0  tol=1e-10
+[PASS] MCEM cov_q symmetry [1,2]  got=93.4555  expected=93.4555  |err|=0  tol=1e-10
+[PASS] MCEM cov_q diag[0] > 0  got=114.048
+[PASS] MCEM cov_q diag[1] > 0  got=37.8231
+[PASS] MCEM cov_q diag[2] > 0  got=277.736
+[PASS] MCEM cov_q |ρ[0,1]| < 0.999  ρ=0.833326
+[PASS] MCEM cov_q |ρ[0,2]| < 0.999  ρ=0.928838
+[PASS] MCEM cov_q |ρ[1,2]| < 0.999  ρ=0.911823
+[PASS] MCEM Louis I_obs SPD  diag=[6.83332,2.16031,14.1581]
+[PASS] MCEM Louis SEs finite + positive  var=[1.03513,4.20436,0.712641]
+[INF phenotype_layer t+0.0108637s] liability_mean layer: K=0.3000 tau=0.524 l_case=1.528 l_ctrl=-0.655 n_case=20 n_ctrl=20 emp_K=0.5000
+[WRN phenotype_layer t+0.0109216s] empirical case fraction (0.5000) differs from supplied K (0.3000) by > 0.05 absolute — possible case-control ascertainment.  Phase 1 does not correct for this; supplied K is used for scaling. See Lee et al. 2011 for the correction recipe.
+[INF phenotype_layer t+0.010947s] liability_mcem layer: K=0.3000 tau=0.524 n=40; warm-start from Mills-ratio imputation
+  [info] TI n_grid=20  wall=0.103294s
+  [info] log_p_ref: TI=-30.8972  truth=-30.8972
+  [info] log_r:    TI=-32.565  truth=-32.5218  stderr=0.0367809
+[PASS] TI log_p_ref (closed form)  got=-30.8972  expected=-30.8972  |err|=2.13163e-14  tol=1e-09
+[PASS] TI log_r vs diagonal-V truth  got=-32.565  expected=-32.5218  |err|=0.0432484  tol=0.160343
+[PASS] TI stderr finite and non-negative (0.0367809)
+
+30 passed, 0 failed.

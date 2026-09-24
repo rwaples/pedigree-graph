@@ -1,0 +1,20 @@
+14:16:11 INFO pedigree_summary: read 5312 rows from /tmp/consumer-gate-94pz2fbh/pedigree.tsv in 0.01s
+14:16:11 INFO pedigree_summary: parsed 5312 ids; five random ids: 1921, 2175, 3402, 4069, 5203
+14:16:11 INFO pedigree_summary: sex parsed: encoding=default, female={0} (n=2673), male={1} (n=2639), unknown=0
+14:16:11 INFO pedigree_summary: validated 5312 rows in 0.03s
+14:16:11 INFO pedigree_summary: load+validate in 0.03s
+14:16:11 INFO pedigree_summary: built PedigreeGraph in 0.00s
+14:16:11 INFO pedigree_summary: size+structure in 0.00s
+14:16:11 INFO pedigree_summary: sibship sizes in 0.00s
+14:16:11 INFO pedigree_summary: mating-pair summary in 0.00s
+14:16:11 INFO pedigree_graph._relationship_counts: relationship_counts: max_degree=5, threads=1
+14:16:11 INFO pedigree_graph._relationship_counts: relationship_counts total: 0.058s
+14:16:11 INFO pedigree_summary: relationship pair counts (relationship_counts) in 0.06s
+14:16:11 INFO pedigree_summary: inbreeding (F + n_ancestors) in 0.00s
+14:16:11 INFO pedigree_summary: descendants in 0.00s
+14:16:11 INFO pedigree_graph._ne_rates: mean_kinship_by_generation: n=5312, groups=6, unlabelled=0, 0.04s
+14:16:11 INFO pedigree_summary: effective size (7 estimators) in 0.05s
+14:16:11 INFO pedigree_summary: individual table built in 0.05s
+14:16:11 INFO pedigree_summary: aggregate pedigree sections in 0.01s
+14:16:11 INFO pedigree_summary: wrote /tmp/consumer-gate-94pz2fbh/pedsum-smoke/{summary.yaml, summary.extra.yaml}
+14:16:11 INFO pedigree_summary: wrote annotated.tsv.gz in 0.03s
