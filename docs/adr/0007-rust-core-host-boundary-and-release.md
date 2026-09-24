@@ -127,8 +127,6 @@ graph object, read-only.
 * Kinship CSC arrays, the generation sums, inbreeding, and lineage vectors
   follow the same shape: one transfer, cached read-only on the host graph,
   no native cache.
-* No unbounded caches for arbitrary pairwise requests or arbitrary
-  category/view query combinations.
 * No compatibility cache field names remain public or test-observable.
 * Relationship result objects never retain the graph.
 
