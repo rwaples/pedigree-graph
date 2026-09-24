@@ -1,7 +1,7 @@
 """Consistency test: the pedigree-graph release gate covers every family check unit.
 
 simACE's ``tools/family_repos.py`` is the single source of the family membership list;
-``tools/pg08_release_gate.py`` here spells its units out by hand, because each one
+``tools/consumer_gate.py`` here spells its units out by hand, because each one
 carries bespoke steps (a pytest path, a C++ binary, a Snakemake smoke) that the
 manifest does not describe.  The 0.9.0 release found the gate two units short --
 ``fitACE_stan`` and ``tetraher_simace`` had been added to the family and never
@@ -28,8 +28,8 @@ if not (_UMBRELLA_TOOLS / "family_repos.py").is_file():
 sys.path.insert(0, str(_UMBRELLA_TOOLS))
 sys.path.insert(0, str(_PG / "tools"))
 
+from consumer_gate import units  # noqa: E402
 from family_repos import all_repos  # noqa: E402  (needs the sys.path tweak above)
-from pg08_release_gate import units  # noqa: E402
 
 
 def test_gate_units_are_exactly_the_family() -> None:

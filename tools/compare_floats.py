@@ -1,12 +1,12 @@
-"""Compare two ``pg09_byte_parity.sh`` output dirs, parsing the files whose hashes differ.
+"""Compare two ``byte_parity.sh`` output dirs, parsing the files whose hashes differ.
 
-    python tools/pg09_compare_floats.py <baseline-dir> <candidate-dir>
+    python tools/compare_floats.py <baseline-dir> <candidate-dir>
 
 Each dir holds the ``manifest.txt`` the probe wrote (``sha256sum`` lines) and
 the files it kept.  A file whose hash matches is ``identical``.  One whose hash
 differs is parsed on both sides, YAML by tree and TSV or text by tab-separated
 cell, and every pair of numbers is compared: integers exactly, floats against
-``|b - a| <= atol + rtol * |a|`` with ``rtol 1e-9, atol 1e-12`` (plan D2), with
+``|b - a| <= atol + rtol * |a|`` with ``rtol 1e-9, atol 1e-12``, with
 the maximum relative and absolute difference reported so a stage note can say
 "identical" or "within tolerance, max x".  Anything else (strings, ``null``,
 row or key structure) must match exactly.  A differing file that was not kept,

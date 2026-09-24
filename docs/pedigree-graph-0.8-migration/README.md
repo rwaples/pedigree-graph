@@ -1,5 +1,19 @@
 # pedigree-graph 0.7.1 to 0.8.0: measured consumer migration
 
+**Closed archive.** This directory is the record of the 0.8.0 to 0.10.0
+migration: the 0.7.1 to 0.8.0 comparison below and the per-slice gate records
+under `gate/` (9a to 16e). Nothing new is written here; release gates since
+then go to `docs/release-gates/<stage>/`. The notes use the tool names of
+their time:
+
+| In these notes | Now |
+|---|---|
+| `tools/pg08_release_gate.py` | `tools/consumer_gate.py` |
+| `tools/pg08_wheel_gate.sh` | `tools/consumer_gate.py run --wheel-ref <ref>` |
+| `tools/pg09_byte_parity.sh` | `tools/byte_parity.sh` |
+| `tools/pg09_compare_floats.py` | `tools/compare_floats.py` |
+| `tools/pg08_migration_diff.py`, `pg08_write_pedigree_100k.py`, `pg13/14/15_study_*.py` | removed; last present at `3adf97d` |
+
 Slice 8 of the pedigree-graph 0.8.0 plan migrated simACE, fitACE,
 fitACE_epimight, and pedsum. 0.8 corrects kinship values and classifies each
 pair under one closest category, so byte parity was never the gate. This
@@ -14,8 +28,7 @@ directory holds the rerunnable comparison instead.
 Regenerate either side with the tool's `snapshot` subcommand after rebuilding
 the smoke scenario (`results/test/small_test`, simACE targets plus the fitACE
 `grm`, `pcgc`, `iter_reml_fp{32,64}`, `pafgrs`, and `exports` targets); the
-tool's docstring has the commands. Until slice 9b refreshes the locks, every
-run needs `PYTHONPATH=external/pedigree-graph pixi run --frozen`.
+tool's docstring has the commands (the tool is removed; see the table above).
 
 ## What moved, and why
 

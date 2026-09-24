@@ -1,44 +1,50 @@
 #!/usr/bin/env python
-"""Run a pedigree-graph release gate across the family and record evidence.
+"""Run pedigree-graph's release gate across the family and record evidence.
 
-Written for the 0.8.0 release and reused for every one since; 0.9.0 is the
-current subject.  All thirteen family check units of ``tools/family_repos.py``
-are covered, which ``tests/test_consumer_gate_covers_family.py`` enforces.
+All thirteen family check units of simACE's ``tools/family_repos.py`` are
+covered, which ``tests/test_consumer_gate_covers_family.py`` enforces.  Each
+unit runs from its own pixi manifest; the ``--routing`` argument, not the
+consumer locks, decides which pedigree-graph build the consumers import, and
+every routed unit starts by asserting where ``pedigree_graph.__file__`` lives.
 
-Each unit runs from its own pixi manifest with ``--frozen`` (the consumer locks
-still pin the previous pedigree-graph until the new wheel is on PyPI, so the
-``--routing`` argument, not the lock, decides which build is under test).
-Consumers are routed to a pedigree-graph build via
-``PYTHONPATH`` and every unit starts with an assertion that the routed
-``pedigree_graph.__file__`` lives where the run says it does::
+Before a release, build the candidate and route the consumers through it::
 
-    # 9a: consumers import the source checkout
-    pixi run --frozen python external/pedigree-graph/tools/pg08_release_gate.py run --stage 9a --routing source
+    pixi run --frozen python external/pedigree-graph/tools/consumer_gate.py run --stage 0.11.0-rc --wheel-ref HEAD
 
-    # 9b: consumers import an installed wheel (pip install --target <dir>)
-    pixi run --frozen python external/pedigree-graph/tools/pg08_release_gate.py run --stage 9b --routing /path/to/wheel-site
+``--wheel-ref`` first runs the build stage: a clean worktree at the ref, the
+wheel and sdist built there (``cp313-abi3`` tag and version checked), each
+installed into its own venv and import-checked, the package's own fast suite
+run against the installed wheel from outside the tree, and the wheel
+installed with ``pip install --target`` into ``<work>/wheel-site``.  Any
+failure there stops the run before the consumer units, which then import from
+that site.  After the release is on PyPI and the consumers are relocked::
 
-    # 9c: consumers import the locked env (no PYTHONPATH)
-    pixi run python external/pedigree-graph/tools/pg08_release_gate.py run --stage 9c --routing locked
+    pixi run python external/pedigree-graph/tools/consumer_gate.py run --stage 0.11.0 --routing locked
 
-    pixi run python external/pedigree-graph/tools/pg08_release_gate.py run --stage 9a --unit fitACE_tetraher --slow
-    pixi run python external/pedigree-graph/tools/pg08_release_gate.py list
+Other routings: ``--routing source`` (the checkout on ``PYTHONPATH``) or
+``--routing <dir>`` (an existing ``--target`` install).  ``--unit`` picks
+units, ``--slow`` adds slow-marked steps, ``list`` prints the units, and
+``summary --stage S`` prints one line per recorded unit.
 
-One JSON record per unit goes to ``external/pedigree-graph/docs/pedigree-graph-0.8-migration/gate/<stage>/``
-with the full per-step logs beside it; reruns overwrite only the units they ran.
-``summary`` prints one line per recorded unit.
+Records go to ``external/pedigree-graph/docs/release-gates/<stage>/``: one
+JSON per unit with its per-step logs beside it, plus ``build.json`` from the
+build stage; reruns overwrite only what they ran.  Build products stay under
+``target/consumer-gate/<stage>`` (``--work`` overrides).
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,7 +57,7 @@ sys.path.insert(0, str(UMBRELLA / "tools"))
 from family_repos import ROOT  # noqa: E402
 
 assert ROOT == UMBRELLA, f"family_repos.ROOT {ROOT} is not this checkout's umbrella {UMBRELLA}"
-EVIDENCE = PG_SOURCE / "docs" / "pedigree-graph-0.8-migration" / "gate"
+EVIDENCE = PG_SOURCE / "docs" / "release-gates"
 SMOKE = "results/test/small_test"
 LOG_TAIL = 12
 
@@ -107,8 +113,8 @@ def units() -> tuple[Unit, ...]:
                 Step("ruff", ("ruff", "check")),
                 Step("format", ("ruff", "format", "--check")),
                 Step("ty", ("ty", "check")),
-                Step("pytest", _pytest("tests", extra=("-m", "not slow"))),
-                Step("pytest-slow", _pytest("tests", extra=("-m", "slow")), slow=True),
+                Step("test-all", ("test-all",)),
+                Step("test-rust", ("test-rust",)),
             ),
             routed=False,
         ),
@@ -314,6 +320,151 @@ def run_unit(unit: Unit, routing: str, stage: str, slow: bool, tmp: Path) -> dic
     return record
 
 
+# The installed-artifact import check: the package and its native module resolve
+# inside the venv's site-packages, ship their typing files, agree on the
+# version, and expose every root name and public submodule.
+CHECK_INSTALL = """
+import importlib.metadata as m, pathlib, sys
+import pedigree_graph as p
+venv = sys.argv[1]
+file = pathlib.Path(p.__file__).resolve()
+assert str(file).startswith(str(pathlib.Path(venv).resolve()) + "/"), file
+assert "site-packages" in file.parts, file
+assert (file.parent / "py.typed").is_file(), "py.typed missing"
+assert (file.parent / "_native.pyi").is_file(), "_native.pyi missing"
+import pedigree_graph._native as native
+assert str(pathlib.Path(native.__file__).resolve()).startswith(str(file.parent) + "/"), native.__file__
+version = m.version("pedigree-graph")
+assert native.core_version() == version, (native.core_version(), version)
+names = [getattr(p, n) for n in p.__all__]
+import pedigree_graph.relationships, pedigree_graph.summaries, pedigree_graph.effective_size, pedigree_graph.typing
+print("installed", version, file, native.__file__, len(names), "root names")
+"""
+
+
+class BuildFailed(SystemExit):
+    """A build-stage check failed; the consumer units do not run."""
+
+
+def _sh(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
+    print("+", shlex.join(str(a) for a in argv), flush=True)
+    return subprocess.run([str(a) for a in argv], check=True, **kwargs)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _only(pattern: str, where: Path) -> Path:
+    found = sorted(where.glob(pattern))
+    if len(found) != 1:
+        raise BuildFailed(f"expected one {pattern} under {where}, found {[p.name for p in found]}")
+    return found[0]
+
+
+def _check_install(py: Path, venv: Path, artifact: Path, env: dict[str, str]) -> str:
+    shutil.rmtree(venv, ignore_errors=True)
+    _sh([py, "-m", "venv", venv], env=env)
+    _sh([venv / "bin" / "pip", "install", "--quiet", artifact], env=env)
+    # cwd is the work dir: ``python -c`` puts the cwd on sys.path, and from the
+    # repository root that would import the source package instead.
+    out = _sh(
+        [venv / "bin" / "python", "-c", CHECK_INSTALL, venv],
+        cwd=venv.parent,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    print(out.stdout, end="")
+    return out.stdout.strip()
+
+
+def build_stage(ref: str, work: Path, stage: str) -> Path:
+    """Build and check the wheel at *ref*; return the ``--target`` site the consumers import."""
+    py = PG_SOURCE / ".pixi" / "envs" / "default" / "bin" / "python"
+    if not py.is_file():
+        raise BuildFailed(f"no interpreter at {py} (pixi install in {PG_SOURCE} first)")
+    # The pixi env carries cargo and maturin.  The build must not inherit a
+    # test-hooks requirement: installed artifacts never carry the feature.
+    env = {k: v for k, v in os.environ.items() if k != "PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS"}
+    env["PATH"] = f"{py.parent}{os.pathsep}{env.get('PATH', '')}"
+    if shutil.which("cargo", path=env["PATH"]) is None:
+        raise BuildFailed(f"no cargo on PATH after prepending {py.parent}")
+
+    work.mkdir(parents=True, exist_ok=True)
+    clean = work / "clean"
+    if clean.exists():
+        _sh(["git", "-C", PG_SOURCE, "worktree", "remove", "--force", clean])
+    _sh(["git", "-C", PG_SOURCE, "worktree", "add", "--detach", clean, ref])
+    head = _sh(["git", "-C", clean, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    if _sh(["git", "-C", clean, "status", "--porcelain"], capture_output=True, text=True).stdout:
+        raise BuildFailed("clean worktree is dirty")
+    version = tomllib.loads((clean / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+    print(f"building version {version} from {head}", flush=True)
+
+    dist, build_venv = work / "dist", work / "build-venv"
+    shutil.rmtree(dist, ignore_errors=True)
+    shutil.rmtree(build_venv, ignore_errors=True)
+    _sh([py, "-m", "venv", build_venv], env=env)
+    _sh([build_venv / "bin" / "pip", "install", "--quiet", "build"], env=env)
+    _sh([build_venv / "bin" / "python", "-m", "build", "--outdir", dist], cwd=clean, env=env)
+    wheel, sdist = _only("*.whl", dist), _only("*.tar.gz", dist)
+    if not wheel.name.startswith(f"pedigree_graph-{version}-cp313-abi3-"):
+        raise BuildFailed(f"wheel {wheel.name} is not pedigree_graph-{version}-cp313-abi3-*")
+    if sdist.name != f"pedigree_graph-{version}.tar.gz":
+        raise BuildFailed(f"sdist {sdist.name} does not carry version {version}")
+
+    wheel_venv = work / "wheel-venv"
+    installs = {
+        "wheel": _check_install(py, wheel_venv, wheel, env),
+        "sdist": _check_install(py, work / "sdist-venv", sdist, env),
+    }
+
+    # The package's own fast suite against the installed wheel.  cwd is the work
+    # dir, outside the clean tree, so neither pytest nor the fresh child processes
+    # the thread tests spawn can pick up the source package over site-packages;
+    # the fixtures resolve relative to the test files.
+    _sh([wheel_venv / "bin" / "pip", "install", "--quiet", f"pedigree-graph[test]@file://{wheel}"], env=env)
+    log = work / "wheel-pytest.log"
+    with log.open("w") as fh:
+        pytest_rc = subprocess.run(
+            [
+                str(wheel_venv / "bin" / "python"),
+                *("-m", "pytest", "-q", "-p", "no:cacheprovider", "-m", "not slow"),
+                *("--rootdir", str(clean), "-c", str(clean / "pyproject.toml"), str(clean / "tests")),
+            ],
+            cwd=work,
+            env=env,
+            stdout=fh,
+            stderr=subprocess.STDOUT,
+            check=False,
+        ).returncode
+    pytest_tail = log.read_text(errors="replace").splitlines()[-3:]
+    print("\n".join(pytest_tail), flush=True)
+
+    site = work / "wheel-site"
+    shutil.rmtree(site, ignore_errors=True)
+    _sh([py, "-m", "pip", "install", "--quiet", "--no-deps", "--target", site, wheel], env=env)
+
+    record = {
+        "ref": ref,
+        "head": head,
+        "version": version,
+        "wheel": {"file": wheel.name, "sha256": _sha256(wheel)},
+        "sdist": {"file": sdist.name, "sha256": _sha256(sdist)},
+        "installs": installs,
+        "wheel_pytest_exit": pytest_rc,
+        "wheel_pytest_tail": pytest_tail,
+        "wheel_site": str(site),
+    }
+    out = EVIDENCE / stage
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "build.json").write_text(json.dumps(record, indent=2) + "\n")
+    if pytest_rc != 0:
+        raise BuildFailed(f"the package suite failed against the installed wheel (exit {pytest_rc}); see {log}")
+    return site
+
+
 def summary(stage: str) -> int:
     """Print one line per recorded unit; exit 1 if any failed."""
     rows = sorted((EVIDENCE / stage).glob("*.json"))
@@ -341,7 +492,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("list", help="print the units and their steps")
     r = sub.add_parser("run", help="run units and write evidence records")
     r.add_argument("--stage", required=True, help="evidence subdirectory, e.g. 9a")
-    r.add_argument("--routing", required=True, help="'source', 'locked', or a directory holding an installed wheel")
+    route = r.add_mutually_exclusive_group(required=True)
+    route.add_argument("--routing", help="'source', 'locked', or a directory holding an installed wheel")
+    route.add_argument("--wheel-ref", help="build and check the wheel at this git ref, then route through it")
+    r.add_argument("--work", type=Path, help="build-stage work dir (default: target/consumer-gate/<stage>)")
     r.add_argument("--unit", nargs="*", help="labels to run (default: all)")
     r.add_argument("--slow", action="store_true", help="include the slow-marked steps")
     s = sub.add_parser("summary", help="one line per recorded unit")
@@ -363,8 +517,12 @@ def main(argv: list[str] | None = None) -> int:
         if unknown:
             raise SystemExit(f"unknown units: {sorted(unknown)}")
         selected = tuple(u for u in selected if u.label in args.unit)
-    with tempfile.TemporaryDirectory(prefix="pg08-gate-") as tmp:
-        records = [run_unit(unit, args.routing, args.stage, args.slow, Path(tmp)) for unit in selected]
+    routing = args.routing
+    if args.wheel_ref:
+        work = (args.work or PG_SOURCE / "target" / "consumer-gate" / args.stage).resolve()
+        routing = str(build_stage(args.wheel_ref, work, args.stage))
+    with tempfile.TemporaryDirectory(prefix="consumer-gate-") as tmp:
+        records = [run_unit(unit, routing, args.stage, args.slow, Path(tmp)) for unit in selected]
     failed = [r["unit"] for r in records if not r["ok"]]
     print("failed units:", failed or "none")
     return 1 if failed else 0

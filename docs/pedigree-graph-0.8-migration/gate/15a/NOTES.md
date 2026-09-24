@@ -127,3 +127,5 @@ run happens after the relock (15c), since the consumers install the wheel.
 * `codegen-units = 1` in the release profile, not in the plan.
 * The harness change moves verification hashing out of the timed region for
   every benchmark that opts in; the three slice 15 benchmarks do.
+
+`tools/pg15_study_lineage.py` was removed in the 1.0 stabilization cleanup (2026-09-24); it was last present at `3adf97d`.

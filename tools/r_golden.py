@@ -1,4 +1,4 @@
-"""Write the R package's golden files from the Python package (slice 16b).
+"""Write the R package's golden files from the Python package.
 
 The R binding and the Python one call the same Rust core, so these goldens
 catch binding bugs: a lost 1-based offset, a wrong order, a lossy promotion,

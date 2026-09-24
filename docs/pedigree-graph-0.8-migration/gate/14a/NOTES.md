@@ -160,3 +160,5 @@ The host ran at 2600 MHz under `performance` before, during and after the
 sweep (`/proc/cpuinfo` under a busy loop, no PROCHOT clamp); the first
 one-second probe of the day read 800 MHz while the cores ramped and was
 repeated over four seconds before anything was timed.
+
+`tools/pg14_study_matrix.py` was removed in the 1.0 stabilization cleanup (2026-09-24); it was last present at `3adf97d`.

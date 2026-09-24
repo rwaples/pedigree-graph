@@ -1,4 +1,4 @@
-"""Compare the R package with the Python package beyond the goldens (slice 16b).
+"""Compare the R package with the Python package beyond the goldens.
 
 The goldens (``tools/r_golden.py``) ship in the R tarball and so cover only
 small fixtures.  This gate runs the larger core fixtures and the simACE study

@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
-# Byte-parity probe across a pedigree-graph relock (0.8.3 -> 0.9.0 and on).
+# Byte-parity probe across a pedigree-graph relock.
 #
-#   external/pedigree-graph/tools/pg09_byte_parity.sh <out-dir>
+#   external/pedigree-graph/tools/byte_parity.sh <out-dir>
 #
-# 0.9.0 moved relationship_pairs onto the Rust engine and promised element-for-
-# element identical blocks, so unlike the 0.7.1 -> 0.8.0 migration the consumer
-# outputs must match byte for byte. Two artifacts carry the pair contract
-# furthest into consumer space: simACE's curated report.yaml (relationship
-# correlations and counts) and fitACE's pairwise_relatedness.tsv (the canonical
-# pair list itself). Slice 14 (0.9.2) moved the kinship matrix DP, so two
-# more products join: fitACE's sparse GRM (the grm_matrix rule at its default
-# grm_min_kinship of 0.001, the approximate matrix) and the generation kinship
-# summary of the same pedigree, written as text. Slice 15 (0.9.4) moved
-# inbreeding, the lineage counts, EqG and the founder means, so two more join:
-# fitACE's exports/inbreeding.tsv (F > 0 rows) and simACE's effective_size.yaml
-# (the eight Ne records, an opt-in target outside report.yaml's chain). All
-# are rebuilt from scratch on the smoke scenario and hashed. Float products may
-# legitimately move within rtol 1e-9; tools/pg09_compare_floats.py parses two
-# manifest dirs and reports the largest relative difference when hashes differ.
+# Rebuilds, from scratch on simACE's smoke scenario, the consumer products that
+# carry pedigree-graph's results furthest into consumer space, and hashes them:
+#   - simACE report.yaml: relationship correlations and counts;
+#   - simACE effective_size.yaml: the eight Ne records (an opt-in target
+#     outside report.yaml's chain);
+#   - fitACE exports/pairwise_relatedness.tsv: the canonical pair list;
+#   - fitACE grm/A.grm.sp.bin and A.grm.id: the sparse GRM, i.e. the
+#     approximate kinship matrix at the grm_matrix rule's default
+#     grm_min_kinship of 0.001;
+#   - fitACE exports/inbreeding.tsv: the F > 0 rows;
+#   - mean_kinship_by_generation.txt: the generation kinship summary of the
+#     same pedigree, computed here and written as float64 bit patterns.
 #
 # Run it once under the old locks and once after the relock, then diff the two
-# manifests. Each run uses whichever pedigree-graph the pixi env resolves; the
-# caller sets that, this script only builds and hashes.
+# manifests. A release that promises unchanged results needs them identical
+# except for report.yaml's simace_version provenance line. Where hashes differ,
+# tools/compare_floats.py parses both dirs and reports the largest relative
+# difference, for products whose floats may legitimately move within rtol 1e-9.
+# Each run uses whichever pedigree-graph the pixi envs resolve; the caller sets
+# that, this script only builds and hashes.
 set -euo pipefail
 
 OUT="$(realpath -m "${1:?out dir}")"

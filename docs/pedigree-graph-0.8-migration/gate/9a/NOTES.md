@@ -65,3 +65,5 @@ fitACE `write_pedigree(min_kinship=0.001)` on a generated 101k-row pedigree
 (seed 100000, `gate/9a/write_pedigree_100k.json`): 293.9 s, peak RSS
 21.97 GiB, 2.7 GB sparse GRM. Runnable on the 30 GiB box; the RSS is the
 approximate matrix's complete DP pass and is the practical ceiling here.
+
+`tools/pg08_migration_diff.py` and `tools/pg08_write_pedigree_100k.py` were removed in the 1.0 stabilization cleanup (2026-09-24); both were last present at `3adf97d`.

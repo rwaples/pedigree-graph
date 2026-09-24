@@ -120,3 +120,5 @@ sweep (2600 MHz on every core); no PROCHOT clamp was in effect.
 - pk-300k has no wheel baseline (timeout) and no flat measurement (memory),
   as above.
 - The rkm-536k RSS target, as above.
+
+`tools/pg13_study_kinship.py` was removed in the 1.0 stabilization cleanup (2026-09-24); it was last present at `3adf97d`.
