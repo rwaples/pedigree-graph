@@ -44,8 +44,8 @@ reimplementing these ideas from scratch.
 |---:|---|---|---|---|
 | 1 | Select the kinship algorithm from the query shape | Very high for dense or overlapping pair support | Mechanisms exist separately | Violating ADR 0009 value semantics |
 | 2 | Add matrix-free kinship products and reductions | Very high for iterative fitting and summaries | One specialised reduction exists | Floating-point equivalence |
-| 3 | Simplify small views to relevant ancestry | Potentially very high for small subsets | New | Closure construction can cost more than it saves |
-| 4 | Generalise the Rust row engine with result sinks | High when pairs are only an intermediate | Count sink exists; pair sink is planned | Duplicating classification semantics in sinks |
+| 3 | Simplify small views to relevant ancestry | Potentially very high for small subsets | Shipped in 0.10.0 | Closure construction can cost more than it saves |
+| 4 | Generalise the Rust row engine with result sinks | High when pairs are only an intermediate | Count, pair and burden sinks shipped (burden in 0.10.0) | Duplicating classification semantics in sinks |
 | 5 | Finish the columnar, zero-copy native core | Moderate directly; foundational for the others | Accepted, partially implemented | Porting without algorithmic improvement |
 
 ### 1. Select the kinship algorithm from the query shape
@@ -190,25 +190,25 @@ for the retained ancestral history rather than the original data set. See the
 [succinct data model](https://tskit.dev/tskit/docs/stable/data-model.html) and
 [`TreeSequence.simplify`](https://github.com/tskit-dev/tskit/blob/5aeadfa419b8ae03a6c43d1d2faf0acc8f88fd93/python/tskit/trees.py#L6973-L7050).
 
-#### Implementation in the `tskit-views-sinks` branch
+#### Implementation (0.10.0)
 
-Small views now use a temporary compact pedigree with selected rows, their
+Small views use a temporary compact pedigree with selected rows, their
 represented ancestors, and MZ partners. Original parent IDs and public view
 coordinates are preserved. The Python facade selects this path for views of at
 most 10% of graphs with at least 20,000 rows. See
 [`benchmarks/tskit_views_sinks.md`](../benchmarks/tskit_views_sinks.md) for
 measured time, peak RSS, closure sizes, and parity checks.
 
-#### Current seam
+#### Seam before 0.10.0
 
 `PedigreeView` owns graph-row to view-row coordinate maps, but the engine
-classifies relationships in the full graph and discards pairs whose endpoints
-are not selected. Since slice 12 both halves are in
-`crates/core/src/relationships/pairs.rs`: rows outside the view are skipped
-per row, and survivors are relabelled and re-sorted by the view-space key.
-A small view therefore still pays full-graph classification cost.
+classified relationships in the full graph and discarded pairs whose endpoints
+were not selected (`crates/core/src/relationships/pairs.rs`): rows outside the
+view were skipped per row, and survivors were relabelled and re-sorted by the
+view-space key. A small view therefore paid full-graph classification cost.
+Views above the compact threshold still take this path.
 
-#### Proposed module
+#### Module as proposed (shipped as `crates/core/src/relationships/compact.rs`)
 
 Add an internal query simplifier that constructs a compact, immutable working
 pedigree containing:
@@ -260,21 +260,20 @@ kernel. See:
 The transferable principle is to separate one traversal/classification module
 from the representation of its result.
 
-#### Implementation in the `tskit-views-sinks` branch
+#### Implementation (0.10.0)
 
-`relationship_burden()` now accumulates category counts, per-person degree
-counts, and same-depth related-pair counts in native O(N) arrays. The pedsum
-`tskit-burden-sink` branch consumes these arrays for its optional burden report
-without constructing pair lists. The benchmark and parity evidence is in
+`relationship_burden()` accumulates category counts, per-person degree
+counts, and same-depth related-pair counts in native O(N) arrays
+(`crates/core/src/relationships/burden.rs`). pedsum consumes these arrays for
+its burden report without constructing pair lists. The benchmark and parity evidence is in
 [`benchmarks/tskit_views_sinks.md`](../benchmarks/tskit_views_sinks.md).
 
 #### Current seam
 
-The Rust engine in `crates/core/src/relationships/` already classifies one row
-at a time with O(N) global state and bounded per-thread scratch. Its current
-output is a count sink. ADR 0010 states that the production pair engine should
-reuse this traversal with a pair sink rather than create a separate
-implementation.
+The Rust engine in `crates/core/src/relationships/` classifies one row at a
+time with O(N) global state and bounded per-thread scratch. The same traversal
+feeds three sinks: exact counts, pair blocks (`relationship_pairs`, as ADR 0010
+requires, rather than a separate implementation), and the burden sums.
 
 Recorded release-build measurements for all 23 categories were:
 
@@ -283,8 +282,8 @@ Recorded release-build measurements for all 23 categories were:
 | 2 million | 12 | 6.7 s | 302 MiB |
 | 20 million | 12 | 83 s | 2.86 GiB |
 
-These measurements establish the row traversal as a strong base; they do not
-measure the proposed sinks.
+These measurements establish the row traversal as a strong base; they predate
+the pair and burden sinks.
 
 #### Proposed module boundary
 
@@ -410,7 +409,7 @@ that structure:
 4. scatter requested root values back to caller order.
 
 A compact representation could use row offsets plus one `int32 lo` and one
-`float32` value per distinct state. Since slice 13 the memo is already
+`float32` value per distinct state. Since 0.9.1 the memo is already
 row-bucketed: one small open-addressing table of `(hi: u32, value: f32)`
 slots per lower row, 8 bytes a slot, grown one row at a time
 (`crates/core/src/kinship/memo.rs`). That layout took the 0.9.0 flat table's
@@ -447,7 +446,7 @@ which either wall time or peak memory improves materially.
 
 ### K2. Instrument and tune the existing hash memo first
 
-*Largely answered by slice 13's bake-off.* The 0.9.0 memo mapped a canonical
+*Largely answered by the 0.9.1 bake-off.* The 0.9.0 memo mapped a canonical
 key directly with `idx = key & mask`, without mixing the key bits, and the
 Rust port of that table matched the wheel within 12 to 25 percent, so the
 Python overhead was not the bottleneck; the per-row layout that replaced it
@@ -471,7 +470,7 @@ the original canonical key is still stored and compared.
 The 0.9.0 `_memo_grow` allocated a complete doubled table and rehashed every
 entry; the per-row layout doubles one row's table at a time, which is the
 no-predecessor-copy requirement of
-[ADR 0007](adr/0007-rust-core-host-boundary-and-release.md) as amended. A standard Rust
+[ADR 0007](adr/0007-rust-core-host-boundary-and-release.md). A standard Rust
 hash map is not automatically better: its entry alignment, control bytes, load
 factor, and growth peak all need measurement against the current structure of
 arrays.
@@ -529,7 +528,7 @@ and ULP differences rather than asserting bit parity.
 
 ### K4. Iterate contiguous depth spans instead of scanning all rows
 
-Done in slice 14. The numba DP scanned all `n` rows at every depth for
+Done in 0.9.2. The numba DP scanned all `n` rows at every depth for
 candidate capture, the MZ pass and parent-row processing; the Rust port
 (`Topo::starts` and `Topo::retirement` in `crates/core/src/kinship/matrix.rs`)
 bucket rows by depth and by retirement depth once, so each depth touches only

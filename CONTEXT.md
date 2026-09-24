@@ -1,6 +1,6 @@
 # pedigree-graph
 
-Sparse-matrix pedigree relationship extraction and kinship computation. A
+Pedigree relationship extraction and kinship on a Rust row-streaming core. A
 pedigree is a parent→child DAG of individuals; this context is the vocabulary
 for the relationships between individuals and the two coordinate systems used
 to name them.
@@ -101,6 +101,20 @@ The one relationship category a pair is reported under when it satisfies
 several: the lowest degree, then the earliest in registry order. Category
 definitions decide membership; closest-category precedence decides reporting.
 _Avoid_: fold (as a noun for the rule), exclusivity, dedup, "the exclusions"
+
+**Relationship burden**:
+Per individual, the number of relatives at each degree from 1 to 5, each pair
+counted under its **closest category**, with the per-category totals and the
+count of related pairs whose members share a **structural depth**. MZ co-twins
+count in the category totals but not in the per-degree counts.
+_Avoid_: relative count (without saying per person), load
+
+**Compact view**:
+The call-local pedigree a sparse view query runs on instead of the full graph:
+the view's individuals plus the ancestry their relationships pass through, in
+graph-row order. It is an execution detail; results always come back in
+**view-space**.
+_Avoid_: subgraph, subsample (for the execution pedigree)
 
 **Nominal kinship**:
 The kinship coefficient implied by a relationship category's `(up, down,

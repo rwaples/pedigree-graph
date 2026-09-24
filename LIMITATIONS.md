@@ -4,52 +4,44 @@ Current scaling and correctness limitations of the relationship-pair
 engines. Read before choosing between `relationship_pairs`,
 `relationship_counts` and `close_relative_counts` on pair-dense pedigrees.
 
-## Pair *lists* are O(answer size); pair *counts* are O(N)
+## Pair *lists* are O(answer size); counts and burden are O(N)
 
-Since 0.8.3 ``PedigreeGraph.relationship_counts`` and
-``PedigreeView.relationship_counts`` run in the Rust row-streaming engine
-(ADR 0010): every pair is classified in its own row and counted, no pair
-list exists, and peak memory is linear in the pedigree size (2.9 GiB for
-2.1 billion pairs on a 20M-row pedigree).  The rest of this section is
-about ``relationship_pairs``, which materialises every pair as an
-``(idx1, idx2)`` array.  Its memory is proportional to the total
-relationship-pair count, **not** the pedigree size.
+``PedigreeGraph.relationship_counts`` and ``PedigreeView.relationship_counts``
+run in the Rust row-streaming engine (ADR 0010): every pair is classified in
+its own row and counted, no pair list exists, and peak memory is linear in
+the pedigree size (2.9 GiB for 2.1 billion pairs on a 20M-row pedigree).
+``PedigreeGraph.relationship_burden`` streams the same engine into
+per-person counts of relatives at degrees 1 to 5, also without a pair list.
+
+``relationship_pairs`` is different: it returns every pair, as two int32
+row arrays per category, so the result alone costs 8 bytes per pair and its
+memory is proportional to the total relationship-pair count, **not** the
+pedigree size.  Assembly adds to that: ``execution="speed"`` (the default)
+peaks at about 2.3 times the result, and ``execution="memory"`` at the result
+plus engine state, for roughly twice the wall time.  The blocks are identical
+either way.
 
 ### Worst case: prolific-stallion livestock pedigrees
 
-Stallion-driven half-sib density is the engine's hard wall.  On a real
-horse-breed pedigree (783K individuals, one all-time-great stallion
-siring 2,500 horses, top-sire grand-offspring set ~50K):
+Stallion-driven half-sib density is where pair lists stop being practical.
+On a real horse-breed pedigree (783K individuals, one all-time-great stallion
+siring 2,500 horses, top-sire grand-offspring set ~50K) the paternal
+half-sib pairs alone number ~156 M, about 1.2 GB as a pair block, and a
+degree-5 list is far larger again, dominated by cousins through the one
+stallion grandparent.
 
-- Paternal half-sib pair count = ~156 M
-- ``_half_sib_matrix`` materialisation = ~312 M nonzeros (~3 GB) just
-  for the symmetric MHS+PHS matrix
-- Per-grandparent grandchild bucket for ``_cousin_pairs`` enumeration
-  reaches ``C(50K, 2) ≈ 1.25 B`` candidate pairs through one stallion
-  grandparent (~10 GB of int64 keys)
-- ``_A2 @ _A3.T`` for 1C1R / H1C1R has row nnz ~2,500 (one stallion's
-  great-grandchildren spread); chunk sizes blow up at default
-  ``chunk_rows``
+### What to use instead
 
-``relationship_pairs`` OOMs on this pedigree well before producing a
-list, even on 30 GB hosts, in ``A_f @ A_f.T`` (the PHS sparse product).
-
-### Operational workarounds
-
-1. ``pedsum --no-pairs`` skips the pair-counting stage entirely.  The
-   horse pedigree completes in ~30s with 1 GB peak RSS this way,
-   producing every other section (size structure, family, mating,
-   lineage, founder contribution, inbreeding, effective size) but
-   returning stub values for the 23 relationship counts (``pairs: {}``
-   and ``relationship_summary.computed: false``).
-
-2. ``PedigreeGraph.relationship_counts(max_degree=5)`` counts all 23
-   categories exactly without materialising pair lists. Use this when
-   counts, rather than pair coordinates, are the goal.
-
-3. ``PedigreeGraph.close_relative_counts()`` uses scalar sibling-group
-   arithmetic and parent-edge counts for six exact categories only.
-   See the coverage contract below.
+1. ``relationship_counts(max_degree=5)`` counts all 23 categories exactly
+   without materialising pairs.  Use it when counts, not pair coordinates,
+   are the goal.
+2. ``relationship_burden()`` gives each person's count of relatives by
+   degree, again without materialising pairs.
+3. ``close_relative_counts()`` uses scalar sibling-group arithmetic and
+   parent-edge counts for six exact categories only.  See the coverage
+   contract below.
+4. When a list is needed, ``execution="memory"`` lowers the peak to the
+   result plus engine state.
 
 ## ``close_relative_counts`` precision and coverage
 
@@ -68,7 +60,7 @@ fields. The old ``estimate_relationship_counts`` method is removed.
 not included. Use ``relationship_counts`` for those categories and for
 counts restricted to a ``PedigreeView``. Both counting methods use O(N)
 memory; the scalar method needs no adjacency powers or pair arrays.
-See the amendment to ADR 0011 for the API decision.
+See ADR 0011 for the API decision.
 
 ## ``distinct_ancestor_counts`` memory follows its live parent frontier
 
@@ -99,26 +91,32 @@ This matches the standard convention but can surprise callers who
 expect half-founders to contribute to half-sib counts on the
 "missing" side.  They don't.
 
-## View pair lists still enumerate the full graph
+## View pair lists
 
-``PedigreeView.relationship_pairs`` extracts full-graph pairs before
-projecting them onto the view. A small view therefore does not protect
-pair-list extraction from full-pedigree memory costs.
-
-Use ``PedigreeView.relationship_counts`` when only counts are needed.
-It passes a row mask to the Rust engine and builds no pair list.
+``PedigreeView.relationship_pairs`` and ``PedigreeView.relationship_counts``
+classify every pair through the view's ancestry, so unselected relatives
+still connect selected ones.  For a sparse view (at most a tenth of a graph
+of at least 20,000 rows) both first restrict the engine to the ancestry the
+view needs (``_should_compact_view`` in ``pedigree_graph/_relationship_pairs.py``);
+otherwise the engine runs over the full graph and keeps the pairs with both
+rows selected.  Either way a view pair list costs its own answer size, and
+view counts build no pair list.
 
 ## What this file does NOT cover
 
 - Historical scalar lineal-count performance. Those formulas are removed;
   current lineal counts use ``relationship_counts``.
-- F (inbreeding coefficient) scaling — covered by
-  ``pedigree_graph._inbreeding_kernel``.
-- Effective size estimator scaling — covered by
-  ``pedigree_graph._effective_size`` and the ``skip_ne_coancestry``
-  knob.
+- F (inbreeding coefficient) scaling: the Meuwissen-Luo walk runs in the
+  Rust core (``crates/core/src/kinship/inbreeding.rs``).
+- Effective size estimator scaling: see ``pedigree_graph.effective_size``;
+  ``ne_coancestry`` runs the kinship DP and is the expensive one.
 
 ## Last updated
+
+2026-09-24 — pair-list section rewritten for the Rust engine (the SciPy
+matrix internals it described are gone), ``relationship_burden`` and the
+``execution`` modes added, pedsum's retired ``--no-pairs`` workaround dropped,
+and the compact view path described.
 
 2026-09-23 — ``distinct_ancestor_counts`` runs on the Rust core (0.9.4);
 the Numba runtime cost is gone.

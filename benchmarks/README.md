@@ -16,8 +16,9 @@ python benchmarks/bench_estimate_counts.py --repeat 5 --out benchmarks/reports/c
 - **Measure through the harness.** Do not write a driver into `/tmp`. A number
   whose method is not committed cannot be re-derived, and
   `tests/test_benchmark_contract.py` fails a tracked note that cites one.
-- **Never sample RSS from a Python thread.** A `@numba.njit` kernel holds the
-  GIL for its whole call, so the sampler is starved. Measured against a 2.77 s
+- **Never sample RSS from a Python thread.** A native kernel that holds the
+  GIL for its whole call starves the sampler; the measurement that showed it
+  was a `@numba.njit` kernel. Measured against a 2.77 s
   kernel it ran for 1 of an expected 553 ticks and reported 358 MiB against a
   true 759 MiB. Use `PeakRss`, which reads the kernel's `VmHWM`.
 - **Fixture parameters come from `tests/parity/pedigrees.py`.** `parity_fixture`
@@ -46,8 +47,10 @@ sweep still has complete cells. Use it when a single cell runs for hours.
 
 ## Not a benchmark
 
-`profile_pedigree_graph.py` is an exploratory profiler that attributes cost
-across scipy, numba and Python layers in one process. It has no baseline and no
-gate, so it borrows `PeakRss` and nothing else.
+`profile_pedigree_graph.py` is an exploratory profiler from before the Rust
+core: it attributes cost across scipy, numba and Python layers in one process,
+and the first two are no longer in the package, so its layer split is a record
+of that era rather than a current attribution. It has no baseline and no gate,
+so it borrows `PeakRss` and nothing else.
 
 `threshold_structure/` is a frozen investigation, kept as evidence.

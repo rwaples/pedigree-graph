@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "pedigree-graph"
 dynamic = ["version"]
-description = "Sparse-matrix pedigree relationship extraction and kinship computation"
+description = "Pedigree relationship extraction and kinship on a Rust row-streaming core"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

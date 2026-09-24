@@ -1,11 +1,12 @@
 # pedigree-graph
 
-Sparse-matrix pedigree relationship extraction and kinship computation.
+Pedigree relationship extraction and kinship on a Rust core, with Python and
+R bindings.
 
-Builds parent→child CSR adjacency matrices and extracts relationship
-categories using sparse matrix algebra (`A @ A.T` for siblings,
-`A² @ A²ᵀ` for cousins, etc.).  Each relationship type is parameterised
-by `(up, down, n_ancestors)`:
+A row-streaming engine classifies every relationship pair up to the fifth
+degree one individual at a time, so its working memory is linear in the
+pedigree size; pair lists, counts, and per-person burden all come from it.
+Each relationship type is parameterised by `(up, down, n_ancestors)`:
 
 - `up`: meioses from the first member (the junior role: offspring, descendant, niece_nephew, junior_cousin) up to the common ancestor(s); collateral categories are stored `up ≥ down`
 - `down`: meioses from common ancestor(s) down to individual B
