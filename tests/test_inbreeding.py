@@ -2,7 +2,9 @@
 
 On the ADR 0008 fixtures F is exactly ``2 * phi(i, i) - 1`` against both the
 ``pair_kinship`` self pair and the ``kinship_matrix`` diagonal, and matches the
-hand-derived values the fixture table carries.  Sixty generations of accumulated
+hand-derived values the fixture table carries; the classic matings (sib,
+half-sib, parent-offspring, the Crow & Kimura closed line) carry their
+textbook values.  Sixty generations of accumulated
 inbreeding hold that identity inside ``2**-22``.  The array is float64 and
 read-only, and it is computed once: a second call hands back the same object
 without re-entering the kernel, and the call commits the package thread budget.
@@ -11,6 +13,7 @@ without re-entering the kernel, and the call commits the package thread budget.
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 import pytest
 from _support import ADR_0008_FIXTURES, _mz_frame
 from conftest import parity_columns, parity_fixtures
@@ -67,6 +70,56 @@ def test_deep_inbred_60g_holds_the_identity_inside_the_envelope():
     F = graph.inbreeding()
     assert np.abs(F - _self_kinship_identity(graph)).max() <= DEEP_ENVELOPE
     assert np.abs(F - _diagonal_identity(graph)).max() <= DEEP_ENVELOPE
+
+
+@pytest.mark.parametrize(
+    ("mother", "father", "expected"),
+    [
+        ([-1, -1, -1], [-1, -1, -1], [0.0, 0.0, 0.0]),  # founders
+        ([-1, -1, 0, -1], [-1, -1, -1, 0], [0.0] * 4),  # one known parent breaks every path
+        ([-1, -1, 0, 0, 2], [-1, -1, 1, 1, 3], [0, 0, 0, 0, 0.25]),  # full-sib mating
+        ([-1, -1, -1, 0, 0, 3], [-1, -1, -1, 1, 2, 4], [0, 0, 0, 0, 0, 0.125]),  # half-sib mating
+        ([-1, -1, 0, 0], [-1, -1, 1, 2], [0, 0, 0, 0.25]),  # mother x her child
+        (  # Crow & Kimura full-sib closed line: F_5 = 5/8 - 1/32
+            [-1, -1, 0, 0, 2, 2, 4, 4, 6, 6, 8],
+            [-1, -1, 1, 1, 3, 3, 5, 5, 7, 7, 9],
+            [0, 0, 0, 0, 0.25, 0.25, 0.375, 0.375, 0.5, 0.5, 0.59375],
+        ),
+        ([-1, *range(14)], [-1] * 15, [0.0] * 15),  # 15-generation single-parent chain
+    ],
+    ids=["founders", "one_parent", "full_sib", "half_sib", "parent_offspring", "closed_line", "chain_15"],
+)
+def test_hand_derived_values(mother, father, expected):
+    n = len(mother)
+    F = PedigreeGraph.from_arrays(
+        ids=np.arange(n), mother_ids=np.array(mother), father_ids=np.array(father)
+    ).inbreeding()
+    np.testing.assert_allclose(F, expected, rtol=0, atol=1e-12)
+
+
+def test_skip_generation_edges_match_the_matrix_diagonal():
+    # 8 = (3, 6) mates across a generation gap.
+    pg = PedigreeGraph.from_arrays(
+        ids=np.arange(10),
+        mother_ids=np.array([-1, -1, -1, -1, 1, 1, 5, 3, 3, 7]),
+        father_ids=np.array([-1, -1, -1, -1, 0, 0, 4, 2, 6, 6]),
+    )
+    np.testing.assert_allclose(pg.inbreeding(), _diagonal_identity(pg), atol=1e-12)
+
+
+@pytest.mark.parametrize("strip_twins", [False, True])
+def test_shipped_parquet_matches_the_matrix_diagonal(small_pedigree, strip_twins):
+    if strip_twins:
+        small_pedigree = small_pedigree.with_columns(pl.lit(-1).cast(small_pedigree.schema["twin"]).alias("twin"))
+    pg = PedigreeGraph.from_frame(small_pedigree)
+    np.testing.assert_allclose(pg.inbreeding(), _diagonal_identity(pg), atol=1e-10)
+
+
+def test_absent_co_twin_is_not_an_mz_pair():
+    # Co-twin outside the subsample remaps to -1: the row is an ordinary individual.
+    full = _mz_frame([0, 1, 2, 3, 4], [-1, -1, 0, 0, 2], [-1, -1, 1, 1, 3], [-1, -1, 3, 2, -1])
+    F = PedigreeGraph.from_frame(full.filter(pl.col("id") != 3)).inbreeding()
+    assert F[3] == 0.0
 
 
 def test_second_call_returns_the_memo_without_recomputing(monkeypatch):

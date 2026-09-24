@@ -43,9 +43,12 @@ class TestParsing:
         with pytest.raises(TypeError, match="must be str"):
             RelationshipSelection.parse(None, ["FS", 3])
 
-    def test_an_out_of_range_cutoff_is_rejected(self):
-        with pytest.raises(PedigreeValidationError, match="max_degree"):
-            RelationshipSelection.parse(6, None)
+    @pytest.mark.parametrize("max_degree", [-1, 6])
+    def test_an_out_of_range_cutoff_is_rejected(self, max_degree):
+        with pytest.raises(PedigreeValidationError, match="max_degree") as info:
+            RelationshipSelection.parse(max_degree, None)
+        assert info.value.code == "max_degree_out_of_range"
+        assert dict(info.value.fields) == {"value": max_degree, "minimum": 0, "maximum": 5}
 
     def test_an_integer_like_cutoff_is_accepted(self):
         assert RelationshipSelection.parse(np.int64(1), None).top_degree == 1
@@ -55,9 +58,11 @@ class TestParsing:
         with pytest.raises(TypeError):
             RelationshipSelection.parse(value, None)
 
-    def test_an_unknown_code_is_rejected(self):
-        with pytest.raises(PedigreeValidationError, match="unknown"):
-            RelationshipSelection.parse(None, ["cousin"])
+    def test_unknown_codes_are_rejected_sorted(self):
+        with pytest.raises(PedigreeValidationError, match="unknown") as info:
+            RelationshipSelection.parse(None, ["FS", "zz", "aa"])
+        assert info.value.code == "unknown_relationship_category"
+        assert info.value.fields["codes"] == ("aa", "zz")
 
 
 class TestResolvedCodes:

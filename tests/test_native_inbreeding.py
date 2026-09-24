@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
+from _support import _PAIRWISE_FIXTURES, ADR_0008_FIXTURES, CHILD_PRELUDE, _mz_frame, _run_child
 from conftest import FIXTURE_NAMES, parity_graph
 from oracle.inbreeding import _compute_F_meuwissen_luo
 from oracle.remap import build_topology
@@ -49,6 +49,21 @@ def test_f_matches_the_oracle(name, seed, record_property):
 def test_mz_and_inbred_constructions_match_the_oracle(build):
     graph = PedigreeGraph.from_frame(build())
     np.testing.assert_allclose(_native.inbreeding(graph._built, graph.depth), _oracle_F(graph), rtol=RTOL, atol=ATOL)
+
+
+@pytest.mark.parametrize("case", ADR_0008_FIXTURES, ids=[case[0] for case in ADR_0008_FIXTURES])
+def test_adr_0008_constructions_match_the_oracle(case):
+    _name, mother, father, twin, _expected = case
+    graph = PedigreeGraph.from_frame(_mz_frame(list(range(len(mother))), mother, father, twin))
+    np.testing.assert_allclose(_native.inbreeding(graph._built, graph.depth), _oracle_F(graph), rtol=RTOL, atol=ATOL)
+
+
+def test_the_oracle_handles_selfing():
+    """Selfing (``same_parent_id``) is refused at construction, so no differential reaches it; pin it here."""
+    mother = father = np.array([-1, 0], dtype=np.int32)
+    depth = np.array([0, 1], dtype=np.int32)
+    F = _compute_F_meuwissen_luo(mother, father, np.full(2, -1, dtype=np.int32), depth, 2)
+    assert F[1] == 0.5
 
 
 class TestBoundary:

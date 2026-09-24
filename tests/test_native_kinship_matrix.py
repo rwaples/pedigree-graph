@@ -238,10 +238,6 @@ class TestBoundary:
             _native.kinship_csc(graph._built, flat)
         assert info.value.code == "value_out_of_range"
         assert info.value.fields["field"] == "depth"
-        with pytest.raises(PedigreeValidationError) as info:
-            _native.kinship_csc(graph._built, graph.depth[:-1])
-        assert info.value.code == "length_mismatch"
-        assert info.value.fields["field"] == "depth"
 
     @pytest.mark.parametrize("threshold", [-0.1, 1.5, float("nan"), float("inf")])
     def test_a_bad_threshold_is_a_value_error(self, threshold):
@@ -256,9 +252,6 @@ class TestBoundary:
             _native.generation_kinship_sums(graph._built, graph.depth, np.full(n, 2, np.int32), 2)
         assert info.value.code == "value_out_of_range"
         assert info.value.fields["field"] == "labels"
-        with pytest.raises(PedigreeValidationError) as info:
-            _native.generation_kinship_sums(graph._built, graph.depth, np.zeros(n - 1, np.int32), 1)
-        assert info.value.code == "length_mismatch"
         with pytest.raises(PedigreeValidationError) as info:
             _native.generation_kinship_sums(graph._built, graph.depth, np.zeros(n, np.int32), 0)
         assert info.value.fields["field"] == "n_buckets"

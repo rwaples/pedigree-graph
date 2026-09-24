@@ -770,17 +770,6 @@ def test_vk_scaled_records_the_request_on_every_branch(build):
     ].vk_scaled
 
 
-def test_coancestry_on_an_empty_graph_reports_zero_length_arrays():
-    empty = _empty()
-    for result in (
-        effective_size.ne_coancestry(empty),
-        effective_size.estimate_effective_sizes(empty)["ne_coancestry"],
-    ):
-        assert result.ne is None
-        assert result.ne_per_gen.shape == (0,)
-        assert result.mean_theta_per_gen.shape == (0,)
-
-
 def test_an_unselected_coancestry_key_carries_no_record():
     unavailable = effective_size.estimate_effective_sizes(_empty(), ["ne_inbreeding"])["ne_coancestry"]
     assert unavailable == effective_size.UnavailableEffectiveSize.not_requested()

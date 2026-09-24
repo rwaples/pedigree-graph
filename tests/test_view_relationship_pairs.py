@@ -9,11 +9,7 @@ view canonical key.  Fixtures and predicates are those of
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 import zlib
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -23,14 +19,11 @@ from conftest import FIXTURE_NAMES, FIXTURES, parity_graph
 from oracle.relationship_pairs import canonical_keys, check_exclusive
 from relationship_predicates import AncestorWalk
 
-import pedigree_graph
-from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelationshipCountResult
-from pedigree_graph._view import CoordinateToken
+from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError
 
 if TYPE_CHECKING:
     from pedigree_graph import PedigreeView, RelationshipPairs
 
-PARITY_DIR = Path(__file__).resolve().parent / "parity"
 SELECTIONS = ("identity", "reversed", "shuffled_half", "every_other_id", "single_row", "empty")
 
 
@@ -198,12 +191,6 @@ class TestTokens:
         two = graph.view(rows=[0, 1, 2, 3]).relationship_pairs(max_degree=5)
         assert one["FS"]._coordinate_token is not two["FS"]._coordinate_token
 
-    def test_no_public_attribute_is_a_token(self):
-        result = parity_graph("avuncular_and_cousins").view(rows=[0, 1]).relationship_pairs(max_degree=1)
-        for owner in (result, result["FS"]):
-            public = [name for name in dir(owner) if not name.startswith("_")]
-            assert not any(isinstance(getattr(owner, name), CoordinateToken) for name in public)
-
 
 @pytest.fixture(params=["populated", "empty"])
 def any_view(request) -> PedigreeView:
@@ -212,73 +199,14 @@ def any_view(request) -> PedigreeView:
 
 
 class TestSelectorErrors:
-    def test_both_selectors(self, any_view):
-        with pytest.raises(TypeError):
-            any_view.relationship_pairs(max_degree=2, categories=["FS"])
+    """Parsing is ``RelationshipSelection``'s (test_relationship_selection); each view endpoint reaches it."""
 
-    def test_neither_selector(self, any_view):
-        with pytest.raises(TypeError):
-            any_view.relationship_pairs()
-
-    def test_bare_string(self, any_view):
-        with pytest.raises(TypeError):
-            any_view.relationship_pairs(categories="FS")
-
-    def test_unknown_code(self, any_view):
-        with pytest.raises(PedigreeValidationError) as info:
-            any_view.relationship_pairs(categories=["ZZ", "FS", "AA"])
-        assert info.value.code == "unknown_relationship_category"
-        assert info.value.fields["codes"] == ("AA", "ZZ")
-
-    @pytest.mark.parametrize("max_degree", [-1, 6])
-    def test_max_degree_out_of_range(self, any_view, max_degree):
-        with pytest.raises(PedigreeValidationError) as info:
-            any_view.relationship_pairs(max_degree=max_degree)
-        assert info.value.code == "max_degree_out_of_range"
-        assert info.value.fields == {"value": max_degree, "minimum": 0, "maximum": 5}
-
-    def test_counts_raise_the_same_way(self, any_view):
-        with pytest.raises(TypeError):
-            any_view.relationship_counts()
-        with pytest.raises(PedigreeValidationError) as info:
-            any_view.relationship_counts(categories=["ZZ"])
-        assert info.value.code == "unknown_relationship_category"
-
-
-class TestThreads:
-    """The view result is the same for every thread budget.
-
-    The package pool is built once per process, so each budget runs in a
-    fresh interpreter.
-    """
-
-    def test_budget_of_four_matches_the_one_thread_result(self):
-        script = (
-            "import hashlib, sys\n"
-            f"sys.path.insert(0, {str(PARITY_DIR)!r})\n"
-            "import numpy as np, pedigrees\n"
-            "from pedigree_graph import PedigreeGraph\n"
-            "fx = pedigrees.build_random('random_1k', pedigrees.RANDOM_FIXTURES['random_1k'])\n"
-            "graph = PedigreeGraph.from_frame({'id': fx['ids'], 'mother': fx['mother'], 'father': fx['father'],"
-            " 'twin': fx['twin'], 'sex': fx['sex']})\n"
-            "rows = np.random.default_rng(4).permutation(graph.n_individuals)[:500]\n"
-            "digest = hashlib.sha256()\n"
-            "for code, block in graph.view(rows=rows).relationship_pairs(max_degree=5).items():\n"
-            "    digest.update(block.first_rows.tobytes()); digest.update(block.second_rows.tobytes())\n"
-            "print(digest.hexdigest())\n"
-        )
-        digests = []
-        for threads in ("1", "4"):
-            result = subprocess.run(
-                [sys.executable, "-c", script],
-                env={**os.environ, "PEDIGREE_GRAPH_THREADS": threads},
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            assert result.returncode == 0, result.stderr
-            digests.append(result.stdout.strip())
-        assert digests[0] == digests[1]
+    def test_pairs_and_counts_route_through_the_shared_parse(self, any_view):
+        for call in (any_view.relationship_pairs, any_view.relationship_counts):
+            with pytest.raises(PedigreeValidationError) as info:
+                call(categories=["ZZ", "FS", "AA"])
+            assert info.value.code == "unknown_relationship_category"
+            assert info.value.fields["codes"] == ("AA", "ZZ")
 
 
 class TestCounts:
@@ -286,14 +214,6 @@ class TestCounts:
     def receiver(self, request):
         graph = parity_graph("random_1k")
         return graph if request.param == "graph" else graph.view(rows=np.arange(graph.n_individuals)[::3])
-
-    def test_counts_are_block_lengths_and_none_when_unrequested(self, receiver):
-        pairs = receiver.relationship_pairs(categories=["FS", "1C", "GP"])
-        counts = receiver.relationship_counts(categories=["FS", "1C", "GP"])
-        assert isinstance(counts, RelationshipCountResult)
-        for code in CODES:
-            assert counts[code] == (len(pairs[code]) if code in {"FS", "1C", "GP"} else None), code
-        assert counts["FS"] > 0
 
     def test_code_sets(self, receiver):
         counts = receiver.relationship_counts(max_degree=2)
@@ -321,14 +241,3 @@ class TestCounts:
         assert "MZ=" in text
         assert "FS=" in text
         assert "GP=" not in text
-
-    def test_view_counts_equal_the_filtered_graph_counts(self, full_results):
-        graph = parity_graph("random_1k")
-        view = graph.view(rows=np.arange(graph.n_individuals)[::3])
-        expected = _expected(full_results["random_1k"], view)
-        counts = view.relationship_counts(max_degree=5)
-        assert dict(counts) == {code: len(expected[code][0]) for code in CODES}
-
-    def test_root_export(self):
-        assert pedigree_graph.RelationshipCountResult is RelationshipCountResult
-        assert "RelationshipCountResult" in pedigree_graph.__all__

@@ -151,12 +151,14 @@ class TestProcessWidePool:
     def test_blocks_are_identical_under_every_thread_budget(self):
         body = """
             codes = list(graph.relationship_counts(max_degree=5))
-            pairs = _native.relationship_pairs(
-                graph._built, max_degree=5, requested=codes, threads=thread_budget(), execution="speed", view_rows=view
-            )
             digest = hashlib.sha256()
-            for code, (first, second) in pairs.items():
-                digest.update(first.tobytes()); digest.update(second.tobytes())
+            for view_rows in (None, view):
+                pairs = _native.relationship_pairs(
+                    graph._built, max_degree=5, requested=codes, threads=thread_budget(), execution="speed",
+                    view_rows=view_rows,
+                )
+                for code, (first, second) in pairs.items():
+                    digest.update(first.tobytes()); digest.update(second.tobytes())
             print(thread_budget(), digest.hexdigest())
         """
         one = _run_child(CHILD_PRELUDE, body, PEDIGREE_GRAPH_THREADS="1").split()

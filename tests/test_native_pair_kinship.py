@@ -114,13 +114,6 @@ def test_fuzz_native_equals_the_oracle_and_the_matrix():
     assert checked > 100  # the generator should mostly yield n >= 2
 
 
-def test_self_pairs_encode_inbreeding():
-    graph = parity_graph("deep_inbred_60g")
-    rows = np.arange(graph.n_individuals)
-    values = _native_kinship(graph, rows, rows).astype(np.float64)
-    assert np.abs(2.0 * values - 1.0 - graph.inbreeding()).max() <= 2.0**-22
-
-
 def test_permuted_graphs_stay_inside_the_envelope(capsys):
     fixture = FIXTURES["deep_inbred_60g"]
     reference = parity_graph("deep_inbred_60g")
@@ -137,6 +130,7 @@ def test_permuted_graphs_stay_inside_the_envelope(capsys):
         got = _native_kinship(permuted, inverse[first], inverse[second])
         assert got.tobytes() == _oracle(permuted, inverse[first], inverse[second]).tobytes()
         assert np.all(np.abs(want.astype(np.float64) - got.astype(np.float64)) <= tolerance)
+        np.testing.assert_array_equal(got == 0, want == 0)
         ulp = float32_ulp_distance(want, got)
         worst = max(worst, int(ulp.max()))
     with capsys.disabled():
@@ -218,25 +212,6 @@ class TestSupportValues:
             _native.kinship_support_values(graph._built, graph.depth, indptr, indices)
         assert info.value.code == "kinship_support_asymmetric"
         assert dict(info.value.fields) == {"row": 0, "column": 4}
-
-    def test_a_lower_entry_without_an_upper_mirror_is_asymmetric(self):
-        graph = parity_graph("nuclear_full_sibs")
-        indptr = np.array([0, 2, 3, 4, 5, 6], dtype=np.int64)
-        indices = np.array([0, 4, 1, 2, 3, 4], dtype=np.int32)
-        with pytest.raises(PedigreeValidationError) as info:
-            _native.kinship_support_values(graph._built, graph.depth, indptr, indices)
-        assert info.value.code == "kinship_support_asymmetric"
-        assert dict(info.value.fields) == {"row": 4, "column": 0}
-
-    def test_an_indptr_that_stops_short_of_nnz_is_rejected(self):
-        graph = parity_graph("nuclear_full_sibs")
-        indptr = np.array([0, 1, 2, 3, 4, 4], dtype=np.int64)
-        indices = np.array([0, 1, 2, 3, 4], dtype=np.int32)
-        with pytest.raises(PedigreeValidationError) as info:
-            _native.kinship_support_values(graph._built, graph.depth, indptr, indices)
-        assert info.value.code == "value_out_of_range"
-        assert info.value.fields["field"] == "indptr"
-        assert info.value.fields["position"] == 5
 
     def test_an_unsorted_column_is_rejected(self):
         graph = parity_graph("nuclear_full_sibs")

@@ -175,18 +175,8 @@ def test_random_pedigrees_match_the_matrix_engine(columns, max_degree):
 
 class TestSelectorsAndErrors:
     def test_the_selectors_are_validated_as_for_pairs(self, small_pedigree):
-        graph = PedigreeGraph.from_frame(small_pedigree)
-        with pytest.raises(TypeError, match="exactly one of max_degree") as selector_error:
-            graph.relationship_counts()
-        assert "relationship_pairs" not in str(selector_error.value)
-        with pytest.raises(TypeError):
-            graph.relationship_counts(max_degree=2, categories=["FS"])
-        with pytest.raises(TypeError):
-            graph.relationship_counts(categories="FS")
-        with pytest.raises(PedigreeValidationError, match="max_degree"):
-            graph.relationship_counts(max_degree=6)
         with pytest.raises(PedigreeValidationError, match="unknown"):
-            graph.relationship_counts(categories=["cousin"])
+            PedigreeGraph.from_frame(small_pedigree).relationship_counts(categories=["cousin"])
 
     def test_the_result_iterates_every_code_in_registry_order(self, small_pedigree):
         counts = PedigreeGraph.from_frame(small_pedigree).relationship_counts(categories=["FS"])

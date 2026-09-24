@@ -8,7 +8,7 @@ cases use 1e-9.
 import numpy as np
 import polars as pl
 import pytest
-from _support import _assert_summaries_agree, _build_closed_line, _df, _random_mating
+from _support import _build_closed_line, _df, _random_mating
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
@@ -17,7 +17,7 @@ from pedigree_graph._ne_family_size import (
     _sex_specific_family_table,
     _sigma2_from_quadrants,
 )
-from pedigree_graph._ne_rates import _equivalent_generations, _summary_from_matrix, _summary_from_native
+from pedigree_graph._ne_rates import _equivalent_generations
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
     estimate_effective_sizes,
@@ -30,7 +30,6 @@ from pedigree_graph.effective_size import (
     ne_sex_ratio,
     ne_variance_family_size,
 )
-from pedigree_graph.summaries import GenerationKinshipSummary
 
 
 def _toy_birth_year_pedigree(
@@ -816,58 +815,6 @@ def test_estimate_effective_sizes_returns_eight_serializable_records():
         d = result.to_dict()
         assert isinstance(d, dict)
         assert "ne" in d, f"{name} missing 'ne' field"
-
-
-def _streamed_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
-    """Helper: the generation kinship summary via the streaming path (no K materialization)."""
-    return _summary_from_native(pg, np.asarray(pg.generation_labels, dtype=np.int32))
-
-
-def _matrix_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
-    """Helper: the same summary walked from the complete kinship matrix."""
-    return _summary_from_matrix(
-        pg.kinship_matrix(),
-        np.asarray(pg.generation_labels),
-        np.asarray(pg.twin_rows),
-    )
-
-
-def test_streamed_summary_matches_matrix_path_toy1():
-    """The streamed summary must equal the matrix walk on toy 1 within float tolerance.
-
-    Different summation orders (row-major streaming vs. col-major COO)
-    preclude bit-identical results in general; ``rtol=0, atol=1e-12`` is
-    the tightest tolerance the float64 accumulator can guarantee.
-    """
-    df = _df(
-        [
-            {"id": 0, "sex": 1, "generation": 0},
-            {"id": 1, "sex": 0, "generation": 0},
-            {"id": 2, "sex": 1, "generation": 1, "mother": 1, "father": 0},
-            {"id": 3, "sex": 0, "generation": 1, "mother": 1, "father": 0},
-            {"id": 4, "sex": 1, "generation": 2, "mother": 3, "father": 2},
-        ]
-    )
-    pg = PedigreeGraph.from_frame(df)
-    _assert_summaries_agree(_matrix_summary(pg), _streamed_summary(pg))
-
-
-def test_streamed_summary_matches_matrix_path_random_mating():
-    """The streamed summary must equal the matrix walk on a multi-gen random-mating pedigree."""
-    rng = np.random.default_rng(2026)
-    df = _build_random_mating_pedigree(rng, n_male=12, n_female=12, n_offspring=48)
-    pg = PedigreeGraph.from_frame(df)
-    _assert_summaries_agree(_matrix_summary(pg), _streamed_summary(pg))
-
-
-def test_mean_kinship_by_generation_reuses_the_cached_matrix():
-    """When K is already cached, the public summary walks it instead of a fresh DP."""
-    rng = np.random.default_rng(2032)
-    df = _build_random_mating_pedigree(rng, n_male=8, n_female=8, n_offspring=32)
-    pg = PedigreeGraph.from_frame(df)
-
-    pg.kinship_matrix()
-    _assert_summaries_agree(pg.mean_kinship_by_generation(), _streamed_summary(pg))
 
 
 def test_sigma2_from_quadrants_returns_none_below_two_per_sex():

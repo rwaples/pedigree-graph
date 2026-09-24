@@ -1,24 +1,19 @@
 """``PedigreeGraph.relationship_pairs`` and its result types (ADR 0006).
 
-Fixtures come from ``tests/parity/pedigrees.py``; the frozen 0.7.1 pair arrays
-in ``tests/data/parity_v0.7.1`` are the parity-locked membership oracle, and
-``relationship_predicates.AncestorWalk`` checks orientation without the engine.
+Fixtures come from ``tests/parity/pedigrees.py``.  Membership is locked by the
+v0.8 golden (``test_relationship_pairs_golden``) and held to the SciPy oracle by
+``test_relationship_pairs_execution``; ``relationship_predicates.AncestorWalk``
+checks orientation without the engine.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import hashlib
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
-import pedigrees
 import pytest
 from _support import ASYMMETRIC, CODES, SYMMETRIC, _ped_double_first_cousins
 from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, parity_graph
@@ -27,10 +22,6 @@ from relationship_predicates import AncestorWalk
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelationshipPairs
 from pedigree_graph._view import CoordinateToken
-
-PARITY_DIR = Path(__file__).resolve().parent / "parity"
-BASELINE_DIR = Path(__file__).resolve().parent / "data" / "parity_v0.7.1"
-BASELINE = json.loads((BASELINE_DIR / "manifest.json").read_text())["fixtures"]
 
 if TYPE_CHECKING:
     import polars as pl
@@ -44,28 +35,6 @@ def _unordered(first: np.ndarray, second: np.ndarray) -> set[tuple[int, int]]:
 
 def _oriented(block: RelationshipPairBlock) -> list[tuple[int, int]]:
     return list(zip(block.first_rows.tolist(), block.second_rows.tolist(), strict=True))
-
-
-def _frozen_pairs(name: str) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """The frozen 0.7.1 pair arrays for *name*, checked against the input hash they were taken from."""
-    entry = BASELINE[name]
-    assert pedigrees.input_hash(FIXTURES[name]) == entry["input_hash"], name
-    with np.load(BASELINE_DIR / entry["file"]) as npz:
-        return {code: (npz[f"pairs/{code}/first"], npz[f"pairs/{code}/second"]) for code in CODES}
-
-
-def _folded_oracle(name: str) -> tuple[dict[str, set[tuple[int, int]]], dict[str, int]]:
-    """0.7.1 membership folded by registry precedence; also how many pairs each code lost."""
-    frozen = _frozen_pairs(name)
-    seen: set[tuple[int, int]] = set()
-    folded: dict[str, set[tuple[int, int]]] = {}
-    removed: dict[str, int] = {}
-    for code in CODES:
-        pairs = _unordered(*frozen[code])
-        folded[code] = pairs - seen
-        removed[code] = len(pairs & seen)
-        seen |= pairs
-    return folded, removed
 
 
 @pytest.fixture(scope="module")
@@ -162,44 +131,13 @@ class TestResultShape:
         assert text.startswith("RelationshipPairs(")
         assert "FS=3" in text
 
-    def test_root_exports(self):
-        import pedigree_graph
-
-        assert "RelationshipPairs" in pedigree_graph.__all__
-        assert "RelationshipPairBlock" in pedigree_graph.__all__
-        assert pedigree_graph.relationships.RelationshipPairs is RelationshipPairs
-
 
 class TestSelectors:
-    def test_both_selectors_is_a_type_error(self):
-        with pytest.raises(TypeError):
-            parity_graph("nuclear_full_sibs").relationship_pairs(max_degree=1, categories=["FS"])
-
-    def test_neither_selector_is_a_type_error(self):
-        with pytest.raises(TypeError):
-            parity_graph("nuclear_full_sibs").relationship_pairs()
-
-    def test_bare_string_is_a_type_error(self):
-        with pytest.raises(TypeError):
-            parity_graph("nuclear_full_sibs").relationship_pairs(categories="FS")
-
-    def test_non_string_code_is_a_type_error(self):
-        with pytest.raises(TypeError):
-            parity_graph("nuclear_full_sibs").relationship_pairs(categories=["FS", 3])  # ty: ignore[invalid-argument-type]
-
     def test_unknown_code(self):
         with pytest.raises(PedigreeValidationError) as info:
             parity_graph("nuclear_full_sibs").relationship_pairs(categories=["FS", "zz", "aa"])
         assert info.value.code == "unknown_relationship_category"
         assert info.value.fields["codes"] == ("aa", "zz")
-
-    @pytest.mark.parametrize("max_degree", [-1, 6])
-    def test_max_degree_out_of_range(self, max_degree):
-        with pytest.raises(PedigreeValidationError) as info:
-            parity_graph("nuclear_full_sibs").relationship_pairs(max_degree=max_degree)
-        assert info.value.code == "max_degree_out_of_range"
-        assert info.value.fields["value"] == max_degree
-        assert (info.value.fields["minimum"], info.value.fields["maximum"]) == (0, 5)
 
     def test_empty_categories_computes_nothing(self):
         result = parity_graph("avuncular_and_cousins").relationship_pairs(categories=())
@@ -254,19 +192,6 @@ class TestDependencyClosure:
         full = full_results[name][code]
         np.testing.assert_array_equal(alone.first_rows, full.first_rows)
         np.testing.assert_array_equal(alone.second_rows, full.second_rows)
-
-
-class TestMembershipAndPrecedence:
-    @pytest.mark.parametrize("name", FIXTURE_NAMES)
-    def test_matches_the_folded_0_7_1_oracle(self, full_results, name):
-        folded, _ = _folded_oracle(name)
-        for code, block in full_results[name].items():
-            assert _unordered(block.first_rows, block.second_rows) == folded[code], code
-
-    def test_the_fold_removes_pairs_on_the_backcross_fixture(self):
-        _, removed = _folded_oracle("backcross_and_selfing_like")
-        assert sum(removed.values()) > 0
-        assert removed["GP"] > 0
 
 
 class TestOrientation:
@@ -373,23 +298,6 @@ class TestCheckExclusive:
         blocks["MO"] = dataclasses.replace(blocks["MO"], first_rows=first[::-1].copy(), second_rows=second[::-1].copy())
         with pytest.raises(AssertionError, match="not strictly sorted"):
             check_exclusive(RelationshipPairs(blocks))
-
-
-BLOCK_DIGEST_SCRIPT = """
-import hashlib, sys
-sys.path.insert(0, {parity!r})
-import pedigrees
-from pedigree_graph import PedigreeGraph, configure_threads
-configure_threads({threads})
-fx = pedigrees.build_random("random_1k", pedigrees.RANDOM_FIXTURES["random_1k"])
-graph = PedigreeGraph.from_frame({{"id": fx["ids"], "mother": fx["mother"], "father": fx["father"], "twin": fx["twin"], "sex": fx["sex"]}})
-digest = hashlib.sha256()
-for code, block in graph.relationship_pairs(max_degree=5).items():
-    digest.update(code.encode())
-    digest.update(block.first_rows.tobytes())
-    digest.update(block.second_rows.tobytes())
-print(digest.hexdigest())
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -722,21 +630,6 @@ class TestSecondCousinFullVsHalf:
         # fmt: on
         graph = PedigreeGraph.from_frame({"id": np.arange(25), "mother": np.array(mother), "father": np.array(father)})
         assert _unordered(*graph.relationship_pairs(max_degree=5)["2C"]) == {(10, 11)}
-
-
-class TestThreads:
-    """The blocks are the same for every thread budget; each budget runs in a fresh interpreter."""
-
-    @staticmethod
-    def _digest_in_fresh_process(threads: int) -> str:
-        env = dict(os.environ)
-        env.pop("PEDIGREE_GRAPH_THREADS", None)
-        script = BLOCK_DIGEST_SCRIPT.format(parity=str(PARITY_DIR), threads=threads)
-        proc = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, check=True)
-        return proc.stdout.strip()
-
-    def test_thread_budget_does_not_change_the_blocks(self):
-        assert self._digest_in_fresh_process(1) == self._digest_in_fresh_process(4)
 
 
 def _digest(result: RelationshipPairs) -> str:

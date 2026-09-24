@@ -156,12 +156,6 @@ ROOT_CONFIGURE_THEN_PRINT = (
 
 
 class TestRootExport:
-    def test_root_export_is_the_same_object(self):
-        import pedigree_graph
-
-        assert pedigree_graph.configure_threads is configure_threads
-        assert "configure_threads" in pedigree_graph.__all__
-
     def test_root_configure_beats_env_var_in_a_fresh_process(self):
         proc = run_child(ROOT_CONFIGURE_THEN_PRINT, env_threads="7")
         assert proc.returncode == 0

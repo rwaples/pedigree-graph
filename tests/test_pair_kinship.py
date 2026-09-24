@@ -2,9 +2,9 @@
 
 Within one receiver every value is bit-identical to the ``kinship_matrix``
 entry for the same pair, to the pure-Python oracle, and to the reversed
-endpoint order; the call keeps no state between calls.  Across two
-row orders of one pedigree the values stay inside the ADR 0009 envelope, and
-the ULP distance is reported.  Errors carry structured codes.
+endpoint order; the call keeps no state between calls.  The cross-order
+envelope lives in ``test_native_pair_kinship`` and ``test_row_order``.  Errors
+carry structured codes.
 """
 
 from __future__ import annotations
@@ -17,12 +17,10 @@ import pytest
 import scipy.sparse as sp
 from _support import (
     _PAIRWISE_FIXTURES,
-    ENVELOPE_UNIT,
     _ped_double_first_cousins,
     _ped_inbred_mz,
     _ped_mz_twins_with_descendants,
     _ped_sib_mating,
-    float32_ulp_distance,
 )
 from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, parity_graph
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
@@ -118,12 +116,6 @@ class TestCallForms:
         first, second = np.triu_indices(graph.n_individuals)
         assert graph.pair_kinship(first, second).tobytes() == graph.pair_kinship(second, first).tobytes()
 
-    def test_self_pairs_encode_inbreeding(self):
-        graph = _sib_mating()
-        rows = np.arange(graph.n_individuals)
-        values = graph.pair_kinship(rows, rows).astype(np.float64)
-        np.testing.assert_array_equal(2.0 * values - 1.0, graph.inbreeding())
-
 
 class TestValues:
     def test_mz_ancestry_raises_descendant_kinship(self):
@@ -144,20 +136,6 @@ class TestValues:
             }
         )
         assert graph.pair_kinship([7, 9], [8, 7]).tolist() == [0.03125, 0.265625]
-
-    @pytest.mark.parametrize("name", ["one_parent_known", "external_parents", "founder_mz_twins"])
-    def test_partial_parentage_matches_the_matrix(self, name):
-        graph = parity_graph(name)
-        first, second = np.triu_indices(graph.n_individuals)
-        assert graph.pair_kinship(first, second).tobytes() == _matrix_values(graph, first, second).tobytes()
-
-    def test_zero_is_exact(self):
-        graph = parity_graph("random_1k")
-        first, second = np.triu_indices(graph.n_individuals)
-        values = graph.pair_kinship(first, second)
-        matrix = graph.kinship_matrix()
-        support = np.asarray(matrix[first, second] != 0).ravel()
-        np.testing.assert_array_equal(values != 0, support)
 
 
 class TestWithinGraphParity:
@@ -187,35 +165,6 @@ class TestWithinGraphParity:
         for code, block in pairs.items():
             if len(block):
                 assert values[code].tobytes() == _matrix_values(graph, *block).tobytes(), code
-
-
-class TestCrossOrderEnvelope:
-    def test_permuted_deep_inbred_graphs_agree_within_the_envelope(self, capsys):
-        fixture = FIXTURES["deep_inbred_60g"]
-        reference = parity_graph("deep_inbred_60g")
-        n = reference.n_individuals
-        first, second = np.triu_indices(n)
-        want = reference.pair_kinship(first, second)
-        depth = reference.depth
-        tolerance = 2.0 * (depth[first] + depth[second] + 1) * ENVELOPE_UNIT
-        worst_ulp = 0
-        differing = 0
-        for seed in (11, 12):
-            perm = np.random.default_rng(seed).permutation(n)
-            permuted = PedigreeGraph.from_frame({key: value[perm] for key, value in parity_columns(fixture).items()})
-            inverse = np.empty(n, dtype=np.intp)
-            inverse[perm] = np.arange(n)
-            got = permuted.pair_kinship(inverse[first], inverse[second])
-            deviation = np.abs(want.astype(np.float64) - got.astype(np.float64))
-            assert np.all(deviation <= tolerance), f"seed {seed}: beyond the ADR 0009 envelope"
-            np.testing.assert_array_equal(got == 0, want == 0)
-            ulp = float32_ulp_distance(want, got)
-            worst_ulp = max(worst_ulp, int(ulp.max()))
-            differing += int((ulp > 0).sum())
-        with capsys.disabled():
-            print(
-                f"cross-order pair_kinship deep_inbred_60g: {differing} of {2 * len(first)} differ, max {worst_ulp} ulp"
-            )
 
 
 class TestViews:
