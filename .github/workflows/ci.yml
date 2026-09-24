@@ -96,9 +96,11 @@ jobs:
         working-directory: dist-r
         run: |
           # ADR 0007: the tarball compiles offline. A network namespace drops
-          # every interface; the check itself runs as the runner user.
+          # every interface; the check itself runs as the runner user. Both
+          # sudos keep the environment, or R_LIBS_USER (where setup-r
+          # installed testthat and Matrix) is lost.
           tarball="$(ls pedigreegraph_*.tar.gz)"
-          sudo unshare --net -- sudo --preserve-env -u "$(id -un)" \
+          sudo --preserve-env unshare --net -- sudo --preserve-env -u "$(id -un)" \
             env _R_CHECK_CRAN_INCOMING_REMOTE_=false \
             "$(command -v R)" CMD check --as-cran --no-manual "$tarball"
           if grep -q '^Status:.*\(ERROR\|WARNING\)' pedigreegraph.Rcheck/00check.log; then
