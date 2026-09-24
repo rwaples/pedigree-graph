@@ -1,8 +1,8 @@
-"""Deterministic pedigree inputs shared by the 0.7.1 baseline generator and the
-0.8 differential tests.
+"""Deterministic pedigree inputs shared by the golden generators and the differential tests.
 
-This module must import nothing from ``pedigree_graph`` so that the same file
-runs unchanged inside a ``v0.7.1`` worktree and on the ``v0.8`` branch.
+This module imports nothing from ``pedigree_graph``: it was first written to
+run unchanged inside a ``v0.7.1`` worktree, and the frozen input hashes every
+golden records depend on it building the same arrays.
 
 Every fixture is a dict of input-aligned NumPy arrays: ``ids`` (int64),
 ``mother``/``father``/``twin`` (int64, ``-1`` missing; an ID absent from

@@ -1,79 +1,49 @@
-# 0.7.1 parity baseline
+# Structural golden lock (retired the 0.7.1 baseline)
 
-`tests/data/parity_v0.7.1/` holds pedigree-graph 0.7.1 outputs frozen at tag
-`v0.7.1` (`9469a3c`). The 0.8 slices compare against it (plan:
-`simACE/plans/pedigree-graph-0.8.0-slices-v2.md`, preflight item 4).
+`tests/data/structure_v0.10/` freezes the structural outputs the 0.7.1 parity
+baseline used to lock, captured through the public API:
 
-## Files
+- `depth`, `n_ancestors` (`distinct_ancestor_counts`, int32), `n_descendants`
+  (`descendant_path_counts` as int32; `deep_inbred_60g` overflows int32 and
+  records `n_descendants_overflow` instead of an array);
+- `approx_support`: the upper-triangle support of
+  `approximate_kinship_matrix(min_propagated_kinship=0.001)`;
+- `complete_support` and `complete_values` from `kinship_matrix()`, small
+  fixtures only;
+- `subsample/rows`, the seeded view selection (`pedigrees.subsample_selection`,
+  seed 7), and the new-only `view_pairs/<code>`:
+  `view(ids=...).relationship_pairs(max_degree=5)` on that selection.
 
-- `pedigrees.py` builds every input deterministically and imports nothing from
-  `pedigree_graph`, so it runs unchanged under 0.7.1 and 0.8.
-- `generate_baseline.py` runs the 0.7.1 API against a package root you name and
-  refuses to run if `pedigree_graph` resolves anywhere else. It is frozen at
-  base commit `aa71c35`; the 0.8 branch deleted the API it calls, so the suite
-  never executes it and only imports its hashing helpers and constants.
-- `capture_v08.py` reproduces the generator's `(arrays, summary)` layout
-  through the 0.8 API, so the frozen hashes compare bit for bit wherever 0.8
-  preserves the value. Its module docstring lists the mapping per section.
-- `manifest.json` records the generator version, package commit, fixture
-  parameters, SHA-256 of every input, and SHA-256 of every output.
-- One `<fixture>.npz` per small fixture with the full arrays. Large fixtures
-  have hashes and counts only.
+Small fixtures (motifs, `small_pedigree`, `random_1k`, `deep_inbred_60g`) keep
+their arrays in one `.npz` each; `random_30k` keeps counts and hashes only.
+Every key in `manifest.json` records its `sha256` and `v0_7_1_sha256`: the
+digest the 0.7.1 baseline (`v0.7.1`, `9469a3c`) held for the same key, or
+`null` for `view_pairs/*`.  All 123 carried digests were equal when the lock was
+captured; `tests/test_structure_golden.py` re-asserts that, replays the small
+fixtures array for array, and replays `random_30k` by hash under
+`@pytest.mark.slow`.
 
-`tests/test_parity_v071.py` replays `capture_v08.capture` against the
-installed package and asserts every count and hash in `manifest.json` except
-`streaming_counts` (see below).
+What 0.7.1 also froze and this lock does not carry: its pair blocks before the
+ADR 0006 precedence fold, which only the SciPy oracle could produce (public
+pairs are locked by `relationship_pairs_v0.8`, and the oracle is held to the
+engine by `test_relationship_pairs_execution`); pair kinship over those blocks
+(locked by `pair_kinship_v0.9`); and inbreeding, per-generation mean kinship
+and approximate-matrix values, which ADR 0008, issue #25 and ADR 0009 redefined
+and hand-derived tests now pin.  The 0.7.1 baseline, its generator and
+`test_parity_v071.py` remain in git history.
 
 ## Regenerate
 
 ```bash
-git worktree add ../pedigree-graph-v0.7.1 v0.7.1
-pixi run python tests/parity/generate_baseline.py --package-root ../pedigree-graph-v0.7.1
+pixi run python tests/parity/generate_structure.py
 ```
 
-Regeneration must reproduce every hash in `manifest.json`. Bump
-`GENERATOR_VERSION` in `pedigrees.py` when an input changes.
-
-## What is frozen, per fixture, and how 0.8 reproduces it
-
-- `extract_pairs(max_degree=5)` in 0.7.1 orientation, sorted by `(first, second)`.
-  0.7.1 reported a pair under every category it satisfied; the 0.8
-  `relationship_pairs` keeps one category per pair (ADR 0006), so the capture
-  reads the matrix oracle's blocks before that precedence fold through
-  `tests/oracle/relationship_pairs.MatrixPairExtractor` and folds the ten collateral asymmetric codes
-  back to `(min, max)`.
-- `compute_pair_kinship` (float64) aligned to those pairs: `pair_kinship`
-  widened from float32.
-- `count_pairs_streaming(max_degree=5)`: not reproduced. The 0.8
-  `estimate_relationship_counts` subtracts the half-sib pairs a
-  parent-offspring category claims, so the unfolded raw values have no 0.8
-  equivalent and the test skips this section.
-- `compute_inbreeding`, `compute_n_ancestors`, `compute_n_descendants`,
-  `per_gen_mean_kinship`, and the derived `generation` (structural depth):
-  `inbreeding`, `distinct_ancestor_counts` (int32), `descendant_path_counts`
-  (int64, cast to int32 after a bounds check), `mean_kinship_by_generation`
-  scattered onto the dense `max(depth) + 1` layout with NaN in the gaps, and
-  `depth`.
-- Upper triangle of `kinship_matrix(min_kinship=0.001)`: the propagated
-  support slice 5b must reproduce, now
-  `approximate_kinship_matrix(min_propagated_kinship=0.001)`. Small fixtures
-  also freeze `kinship_matrix(0.0)`, now `kinship_matrix()`.
-- `from_subsample` pairs over a seeded half-size shuffled selection, in
-  caller coordinates: the same pre-precedence blocks projected through
-  `view(ids=...)` into view rows and folded to `(min, max)`.
-
-## Baseline facts worth knowing
-
-- `deep_inbred_60g` overflows int32 in `compute_n_descendants` under 0.7.1;
-  the manifest records `n_descendants_overflow: true` and no array.
-- The `inbreeding` hash does not reproduce on fixtures with MZ twins: ADR 0008
-  made `compute_inbreeding` MZ-aware after the baseline was frozen. That is the
-  one accepted divergence, and `tests/test_parity_v071.py` still requires every
-  row that is neither an MZ twin nor a descendant of one to match 0.7.1.
-- `count_pairs_streaming` clamps negative residuals on inbred fixtures and
-  prints a warning; the clamped values are what is frozen.
-- `random_30k` takes about four minutes to freeze, nearly all of it in the
-  propagated `0.001` matrix (26.9M upper-triangle entries).
+Regeneration is a deliberate contract change, reviewed as such; never run it
+to make a failing test pass.  The first capture ran with
+`--verify-against tests/data/parity_v0.7.1/manifest.json`, which refuses to
+write unless every carried digest, count and input hash equals the 0.7.1 one;
+that manifest is gone, so a later regeneration can only be checked against
+this one.  Bump `GENERATOR_VERSION` in `pedigrees.py` when an input changes.
 
 # 0.8 relationship-pairs golden lock
 
@@ -81,11 +51,10 @@ Regeneration must reproduce every hash in `manifest.json`. Bump
 `PedigreeGraph.relationship_pairs(max_degree=5)` in its 0.8 contract (ADR 0006):
 role-oriented asymmetric pairs, canonical `first < second` symmetric pairs,
 one category per unordered pair, blocks sorted by canonical row key, int32.
-Unlike the 0.7.1 baseline it is generated by the current package, so it is a
-regression lock rather than a differential oracle.
+It is generated by the current package, so it is a regression lock rather than
+a differential oracle.
 
-- `generate_relationship_pairs.py` builds the same fixtures as
-  `generate_baseline.py` (motifs, `small_pedigree`, `random_1k`,
+- `generate_relationship_pairs.py` builds the parity fixtures (motifs, `small_pedigree`, `random_1k`,
   `deep_inbred_60g` with full arrays; `random_30k` with counts and hashes) and
   runs `check_exclusive` on every result before writing it.
 - `manifest.json` records the generator version, package commit, fixture

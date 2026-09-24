@@ -121,7 +121,6 @@ REPO_DIR = PKG_DIR.parent
 SWEPT_DIRS = ("pedigree_graph", "tests", "benchmarks")
 FROZEN_GENERATORS = frozenset(
     {
-        "tests/parity/generate_baseline.py",
         "tests/parity/dump_relationship_inputs.py",
     }
 )

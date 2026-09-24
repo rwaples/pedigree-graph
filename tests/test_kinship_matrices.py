@@ -109,11 +109,12 @@ class TestRelationshipMatrix:
 
 
 class TestApproximateSupportMatrix:
-    def test_support_matches_the_frozen_071_propagated_candidate_set(self):
+    def test_support_matches_the_frozen_propagated_candidate_set(self):
+        # structure_v0.10 carries the 0.7.1 support digest for digest.
         graph = parity_graph("random_1k")
         matrix = graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
         row, col, _ = _upper(matrix)
-        with np.load(Path(__file__).parent / "data" / "parity_v0.7.1" / "random_1k.npz") as frozen:
+        with np.load(Path(__file__).parent / "data" / "structure_v0.10" / "random_1k.npz") as frozen:
             np.testing.assert_array_equal(row, frozen["approx/row"])
             np.testing.assert_array_equal(col, frozen["approx/col"])
         _assert_csc_contract(matrix)

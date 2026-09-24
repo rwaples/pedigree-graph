@@ -467,16 +467,6 @@ def _reference_relationship_pairs(df) -> dict[str, tuple[np.ndarray, np.ndarray]
     return pairs
 
 
-def _pairs_to_set(idx1, idx2):
-    """Convert pair arrays to a set of sorted tuples for comparison."""
-    return {(min(a, b), max(a, b)) for a, b in zip(idx1.tolist(), idx2.tolist(), strict=True)}
-
-
-def _pairs_to_set(idx1, idx2):
-    """Convert pair arrays to a set of sorted tuples for comparison."""
-    return {(min(a, b), max(a, b)) for a, b in zip(idx1.tolist(), idx2.tolist(), strict=True)}
-
-
 class TestPandasReference:
     """The engine produces the pandas reference's pair sets for the original seven categories."""
 
@@ -495,8 +485,8 @@ class TestPandasReference:
             "FO",
         ]
         for key in exact_keys:
-            reference_set = _pairs_to_set(*reference[key])
-            new_set = _pairs_to_set(*new[key])
+            reference_set = _unordered(*reference[key])
+            new_set = _unordered(*new[key])
             assert reference_set == new_set, (
                 f"{key}: reference has {len(reference_set)} pairs, engine has {len(new_set)} pairs, "
                 f"diff: {reference_set.symmetric_difference(new_set)}"
@@ -506,9 +496,9 @@ class TestPandasReference:
         # The engine splits them: pairs["1C"] = full only (>= 2 shared GPs),
         # pairs["H1C"] = half only (1 shared GP). The union should match the reference
         # (after removing self-pairs and sibling-pairs from the reference).
-        reference_cousins = _pairs_to_set(*reference["1C"])
-        new_1c = _pairs_to_set(*new["1C"])
-        new_h1c = _pairs_to_set(*new["H1C"])
+        reference_cousins = _unordered(*reference["1C"])
+        new_1c = _unordered(*new["1C"])
+        new_h1c = _unordered(*new["H1C"])
         new_all_cousins = new_1c | new_h1c
         mother = df["mother"].to_numpy()
         father = df["father"].to_numpy()
@@ -556,23 +546,23 @@ class TestKnownTinyPedigree:
 
     def test_full_sib_count(self, tiny_pedigree):
         pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
-        sib_set = _pairs_to_set(*pairs["FS"])
+        sib_set = _unordered(*pairs["FS"])
         expected = {(4, 5), (6, 7), (8, 10)}
         assert sib_set == expected, f"Got {sib_set}"
 
     def test_mother_offspring_count(self, tiny_pedigree):
         pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
-        mo_set = _pairs_to_set(*pairs["MO"])
+        mo_set = _unordered(*pairs["MO"])
         assert len(mo_set) == 7
 
     def test_father_offspring_count(self, tiny_pedigree):
         pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
-        fo_set = _pairs_to_set(*pairs["FO"])
+        fo_set = _unordered(*pairs["FO"])
         assert len(fo_set) == 7
 
     def test_cousin_count(self, tiny_pedigree):
         pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
-        cousin_set = _pairs_to_set(*pairs["1C"])
+        cousin_set = _unordered(*pairs["1C"])
         # 8's parents: (4, 6). 9's parents: (5, 7).
         # 4 & 5 share grandparents 0,1. 6 & 7 share grandparents 2,3.
         # So 8 and 9 are double 1st cousins (share all 4 grandparents).
@@ -583,7 +573,7 @@ class TestKnownTinyPedigree:
 
     def test_grandparent_grandchild_count(self, tiny_pedigree):
         pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
-        gp_set = _pairs_to_set(*pairs["GP"])
+        gp_set = _unordered(*pairs["GP"])
         # 8 → grandparents 0,1,2,3
         # 9 → grandparents 0,1,2,3
         # 10 → grandparents 0,1,2,3
@@ -605,7 +595,7 @@ class TestKnownTinyPedigree:
 
     def test_avuncular_count(self, tiny_pedigree):
         pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
-        avunc_set = _pairs_to_set(*pairs["Av"])
+        avunc_set = _unordered(*pairs["Av"])
         # 5 is full sib of 4 (mother of 8, 10) → 5 is aunt of 8, 10
         # 4 is full sib of 5 (mother of 9) → 4 is aunt of 9
         # 7 is full sib of 6 (father of 8, 10) → 7 is uncle of 8, 10
