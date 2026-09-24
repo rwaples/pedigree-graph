@@ -346,7 +346,7 @@ class BuildFailed(SystemExit):
     """A build-stage check failed; the consumer units do not run."""
 
 
-def _sh(argv: list[str], **kwargs) -> subprocess.CompletedProcess:
+def _sh(argv: list[str | Path], **kwargs) -> subprocess.CompletedProcess:
     print("+", shlex.join(str(a) for a in argv), flush=True)
     return subprocess.run([str(a) for a in argv], check=True, **kwargs)
 

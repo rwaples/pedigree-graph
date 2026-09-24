@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import json
 import os
 import subprocess
 import sys
@@ -16,15 +17,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pedigrees
 import pytest
 from _support import (
     ASYMMETRIC,
-    BASELINE,
-    BASELINE_DIR,
     CODES,
     FIXTURE_NAMES,
     FIXTURES,
-    PARITY_DIR,
     SYMMETRIC,
     _columns,
     _graph,
@@ -35,9 +34,9 @@ from relationship_predicates import AncestorWalk
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelationshipPairs
 from pedigree_graph._view import CoordinateToken
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
-
-import pedigrees
+PARITY_DIR = Path(__file__).resolve().parent / "parity"
+BASELINE_DIR = Path(__file__).resolve().parent / "data" / "parity_v0.7.1"
+BASELINE = json.loads((BASELINE_DIR / "manifest.json").read_text())["fixtures"]
 
 if TYPE_CHECKING:
     import polars as pl

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import os
 import subprocess
@@ -150,15 +149,6 @@ _PAIRWISE_FIXTURES = [
 
 
 # Parity fixtures and the frozen 0.7.1 baseline.
-
-
-PARITY_DIR = Path(__file__).resolve().parent / "parity"
-
-
-BASELINE_DIR = Path(__file__).resolve().parent / "data" / "parity_v0.7.1"
-
-
-BASELINE = json.loads((BASELINE_DIR / "manifest.json").read_text())["fixtures"]
 
 
 CODES = tuple(RELATIONSHIPS)
