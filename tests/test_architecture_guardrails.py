@@ -220,7 +220,10 @@ def test_the_package_does_not_import_numba():
 # its output is bit-identical at thread budgets 1 and 4 (ADR 0007, "Threads and
 # determinism").  A new parallel module fails the first test until it is mapped
 # here, and a mapped test that is renamed or deleted fails the second.
-CORE_SRC = REPO_DIR / "crates" / "core" / "src"
+# Anchored on this file, not the package: an installed-wheel run imports the
+# package from site-packages but still has the checkout's crates and tests.
+CHECKOUT = Path(__file__).resolve().parents[1]
+CORE_SRC = CHECKOUT / "crates" / "core" / "src"
 PARALLEL_MODULES = {
     "relationships/pairs.rs": "tests/test_native_relationship_pairs.py::TestProcessWidePool::"
     "test_blocks_are_identical_under_every_thread_budget",
@@ -247,7 +250,7 @@ def test_every_parallel_core_module_is_mapped():
 @pytest.mark.parametrize("test_id", sorted(PARALLEL_MODULES.values()))
 def test_every_mapped_cross_budget_test_exists(test_id):
     file, *scope = test_id.split("::")
-    nodes = ast.parse((REPO_DIR / file).read_text()).body
+    nodes = ast.parse((CHECKOUT / file).read_text()).body
     for name in scope:
         match = [n for n in nodes if isinstance(n, (ast.ClassDef, ast.FunctionDef)) and n.name == name]
         assert match, f"{test_id}: {name} not found"
