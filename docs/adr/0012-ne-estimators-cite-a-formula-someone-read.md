@@ -6,9 +6,11 @@
 refines the effective-size surface of ADR 0006 and the genome-node pedigree of
 ADR 0008. Plan: simACE `plans/pedigree-graph-issue-15-estimator-fidelity.md`.
 
+Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+
 ## Context
 
-The 0.8 effective-size API names eight estimators after published methods.
+The 0.8 effective-size API named eight estimators after published methods.
 Primary-source verification found that three of them did not match the papers
 they were attributed to, and the slice-6c plan had explicitly deferred that
 check ("Reverify this baseline against the primary Caballero–Toro source before
@@ -81,19 +83,19 @@ Applied:
   assumption its reduction cannot verify. See the consequence below.
 * **`ne_long_term_contributions`** reports `n_effective_founders = 1/Σc²` as
   the assumption-free quantity and `ne = 2·n_effective_founders` as the derived
-  one, at the last observed cohort, with the achieved `max_delta` reported as
-  evidence. Reading the last cohort unconditionally retires the convergence
+  one, at the last observed cohort, with the achieved `max_delta_final`
+  reported as evidence. Reading the last cohort unconditionally retires the convergence
   loop, and with it two pieces of API named for that loop. The `tol` keyword is
   gone: it would no longer change any reported number, only the descriptive
   `asymptote_reached` boolean, so a caller passing `tol=1e-3` would reasonably
   believe they had tuned the estimate and would not have. `n_iterations`
-  becomes `n_cohorts` — the same integer, under a name that describes what the
+  became `n_cohorts` — the same integer, under a name that describes what the
   record counts rather than iterations it no longer performs.
 
 ## Consequences
 
-* Three of eight estimators change numerically. Persisted 0.8.x results are not
-  comparable.
+* Three of eight estimators changed numerically in 0.9. Persisted 0.8.x
+  results are not comparable.
 * **The 6b golden is retired rather than regenerated.** `tests/data/ne_baseline_6b`
   was gated by a generator frozen at a pre-0.8 API: `compute_all_ne` no longer
   exists and the positional `PedigreeGraph(df)` raises `TypeError`, and the
@@ -104,27 +106,26 @@ Applied:
   record shapes goes with it: the dense-label projection, the MZ founder-column
   migration allowance, the noise-slope exception, and the two outright
   exclusions the old test promised would "go away when the baseline is
-  regenerated". The parity module falls from 152 lines to 63, and the generator
+  regenerated". The parity module fell from 152 lines to 63, and the generator
   it reads is the generator that wrote it.
-* One canonical key is renamed, so pedsum and simACE both need edits. The three
-  repos move as a coordinated set, but **not in the same change**. Both
-  consumers pin `pedigree-graph>=0.8,<0.9` and resolve 0.8.3 from PyPI, so
-  nothing that calls the library sees the rename until 0.9 ships. Pure
-  expectation constants moved early; every site that reads a key out of a live
-  result dict moves at the relock, with no both-keys compatibility shim in
-  between. The relock must also amend simACE's `CONTEXT.md`, which currently
-  records these estimator names as not to be renamed and protects
-  `mean_self_coancestry` and `Ne_caballero_toro` as fixed caption identifiers.
-* **The Caballero-Toro numba ancestor-set arena is deleted, not relocated.**
+* One canonical key was renamed, so pedsum and simACE both needed edits. The
+  three repos moved as a coordinated set, but **not in the same change**. Both
+  consumers then pinned `pedigree-graph>=0.8,<0.9`, so nothing that called the
+  library saw the rename until 0.9 shipped. Pure expectation constants moved
+  early; every site that reads a key out of a live result dict moved at the
+  relock, with no both-keys compatibility shim in between. simACE's
+  `CONTEXT.md`, which records the estimator names as fixed identifiers, was
+  brought into line on 2026-09-24.
+* **The Caballero-Toro numba ancestor-set arena was deleted, not relocated.**
   Issue #1 names `_caballero_toro_accumulators` as "the exact retirement-style
   ancestor-set DP pattern" it wants for `_compute_n_ancestors`, but it asks for
   that pattern adapted inline and excludes a shared kernel outright, so keeping
   the three kernels alive would ship an importer-free module the issue declined.
   Git history is the durable record, and the issue carries a pointer to the path
   and commit that hold it.
-* `ne_group_coancestry` streams from the existing DP (the genome-node collapse
-  is a row mask, the diagonal needs only `F`), so unlike `ne_coancestry` it
-  carries no OOM exposure and needs no `skip_` flag downstream.
+* `ne_group_coancestry` reads per-cohort sums from the generation kinship DP,
+  which runs in the Rust core (the genome-node collapse is a row mask, the
+  diagonal needs only `F`), so it never builds a kinship matrix.
 * **`ne_group_coancestry`'s scalar is not a new independent number, and this
   ADR does not claim it is.** Against `ne_coancestry` over 10 random-mating
   seeds per cell it runs `−0.16%` at `N=6`, `−0.64%` at `N=10`, `+0.05%` at
@@ -261,15 +262,13 @@ Applied:
   0.8 standard errors of the harmonic mean under both mating models; the
   committed method is simACE
   `tests/analysis/test_effective_size.py::test_ne_ltc_expectation_matches_simulator_mc`,
-  which reads `sum_c_squared` so that it gates the relation under the pinned
-  0.8 as well as 0.9.
-* ~~`ne_group_coancestry` and `ne_coancestry` use different MZ conventions until
-  the `mean_kinship_by_generation` inconsistency is fixed separately (issue
-  #25): that function drops the MZ pair but keeps both co-twins' pairs with
-  everyone else, so it is neither row-based nor genome-node.~~ **Resolved by
-  issue #25.** `mean_kinship_by_generation` is now genome-node, so both
-  estimators share one convention and one memoised summary. Measured before
-  choosing: the old convention's error on `ne_coancestry` has no consistent
+  which reads `sum_c_squared` so that it gated the relation under 0.8 as well
+  as 0.9.
+* `ne_group_coancestry` and `ne_coancestry` share one MZ convention and one
+  memoised summary: `mean_kinship_by_generation` is genome-node. Before issue
+  #25 it dropped the MZ pair but kept both co-twins' pairs with everyone
+  else, so it was neither row-based nor genome-node, and the two estimators
+  disagreed on twins. Measured before choosing: the old convention's error on `ne_coancestry` has no consistent
   sign — over 30 seeds per twin fraction it runs a median of −0.37% to −1.17%
   with individual replicates from −6.0% to +6.7%, positive in 8/30, 8/30 and
   14/30 of replicates at 10%, 20% and 40% twinning. It was a correctness

@@ -4,89 +4,67 @@
 **Date:** 2026-05-29
 **Context:** PGQ-003 (decompose `PedigreeGraph`; move relationship engines out of `_core.py`)
 
+Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+
 ## Context
 
 `_core.py` had grown past 2,000 lines because `PedigreeGraph` owned both the
 graph data (parent matrices, adjacency powers, sibling matrices, caches) and
-the two relationship engines: the exact matrix pair extractor (~350-line
-`extract_pairs` plus a dozen `_*_pairs` helpers) and the scalar streaming pair
-counter (~260 lines). Small changes kept accreting ad-hoc branches onto the
-central class.
+the two relationship engines of the time: an exact sparse-matrix pair
+extractor and a scalar streaming pair counter. Small changes kept accreting
+ad-hoc branches onto the central class.
 
 ## Decision
 
-Split the engines into separate collaborators — `MatrixPairExtractor`
-(`_pair_extractor.py`) and `StreamingPairCounter` (`_streaming_counter.py`) —
-with stateless shared helpers in `_pair_utils.py` and the relationship-code
-registry in `_registry.py`. `PedigreeGraph` keeps the graph data, the matrix
-`cached_property`s, the shared graph-data accessors (`_get_Ak`,
-`sibling_pairs`, `_mz_twin_pairs`, `_parent_offspring_pairs`), and thin public
-wrappers (`extract_pairs`, `count_pairs_streaming`).
+Relationship engines live outside `PedigreeGraph` and follow one contract:
+**an engine reads graph data and returns its result; the public wrapper owns
+whatever is cached.** An engine never writes the graph's result state.
 
-Two boundary rules make the split work:
+The engines today:
 
-1. **Engines hold a `pg` reference and read its private matrices directly**
-   (`pg._A`, `pg._A2`, `pg._full_sib_matrix`, …) rather than receiving them as
-   constructor arguments. The matrices are genuinely graph data; lazy
-   `cached_property` triggering and the degree-gated cache-population ordering
-   (a half-1C set found at degree 3 and consumed at degree 4) are subtle enough
-   that reproducing them outside the graph would be more fragile than the
-   coupling it removes. The `~8` underscore attributes the engines read are the
-   documented engine-facing surface.
+* The Rust row-streaming engine (`crates/core/src/relationships/`, ADR 0010)
+  serves `relationship_pairs` and `relationship_counts`. The wrappers in
+  `_relationship_pairs.py` and `_relationship_counts.py` hand it the graph's
+  built columns (`graph._built`) and wrap what it returns. Nothing is stored
+  on the graph.
+* `_count_close_relatives` (`_streaming_counter.py`) counts the six close
+  categories from the public row and id columns (`twin_rows`, `mother_rows`,
+  `father_rows`, `mother_ids`, `father_ids`) and returns a dict. Only the
+  public wrapper, `close_relative_counts`, writes
+  `pg._close_relative_counts_cache`.
+* The relationship codes come from one registry, `_registry.py`.
 
-2. **Engines are read-only with respect to the graph's *result* state.**
-   `extract()` / `count()` return their results; the thin wrappers persist them
-   to `pg._pair_count_cache` and call `pg._release_pair_matrices()`. Engines may
-   still trigger and free the *lazy matrix caches* they themselves drive (e.g.
-   the mid-extraction `del pg._Am, pg._Af` memory optimisation), but never the
-   result cache. Degree-gated run-state (the half-1C pairs) became
-   `MatrixPairExtractor` instance state — fresh per `extract()` call — which
-   also eliminated a latent staleness risk that existed when it was stashed on
-   the long-lived graph.
+When this ADR was written the engines were Python classes that held a `pg`
+reference and read its private matrices (`pg._A`, `pg._A2`,
+`pg._full_sib_matrix`, …) directly. That read-coupling was accepted because
+the lazy `cached_property` triggers and the degree-gated cache ordering (a
+half-1C set found at degree 3 and consumed at degree 4) were too fragile to
+reproduce outside the graph. Slice 12 moved `relationship_pairs` to the Rust
+engine and deleted the matrix extractor, its helpers, and the graph's matrix
+properties, so there are no private matrices left to read. The matrix engine
+survives only as the differential oracle `tests/oracle/relationship_pairs.py`,
+where `_Matrices(graph)` builds the matrices from the graph's public columns.
 
 ## Considered options
 
-- **Pass matrices as explicit constructor args (full decoupling).** Rejected:
-  the wrapper would have to reproduce the lazy-trigger and degree-gated
-  cache-population ordering, trading a clean read-coupling for fragile
-  duplication.
+- **Pass matrices as explicit constructor args (full decoupling).** Rejected
+  at the time: the wrapper would have had to reproduce the lazy-trigger and
+  degree-gated cache-population ordering. The Rust engine made the question
+  moot; it takes the built columns and holds no graph matrices.
 - **Engines write back to `pg` directly.** Rejected: it splits cache-mutation
-  logic across files and makes the engines impossible to test without asserting
-  on graph side effects. The read-only contract is what makes the
-  side-effect-freeness test in `tests/test_pair_engines.py` meaningful.
+  logic across files and makes the engines impossible to test without
+  asserting on graph side effects. The read-only contract is what makes
+  `tests/test_pair_engines.py::TestEngineReadOnlyContract` meaningful.
 
 ## Consequences
 
-- `_core.py` shrank from ~2,071 to ~1,159 lines.
-- Public API is unchanged: `PedigreeGraph.extract_pairs` / `.count_pairs` /
-  `.count_pairs_streaming` and the `pedigree_graph` package exports are
-  identical. The engine classes are intentionally *not* exported.
-- New engines (e.g. the experimental BFS counter reassessed in PGQ-009) should
-  follow the same contract: read graph data, return results, let a wrapper
-  persist them.
-
-## Amended 2026-09-19 (slice 12, the matrix collaborator is gone)
-
-Slice 12 moved `relationship_pairs` onto the Rust row-streaming engine and
-deleted `MatrixPairExtractor` (`_pair_extractor.py`), `_pair_utils.py`, and
-the graph's matrix `cached_property`s (`_A`, `_A2`, `_full_sib_matrix`, …)
-from the package. Boundary rule 1 above therefore describes a coupling that
-no longer exists: there are no private matrices on `PedigreeGraph` to read.
-The matrix engine survives only as the differential oracle in
-`tests/oracle/relationship_pairs.py`, where `_Matrices(graph)` builds the
-matrices it needs from the graph's public columns rather than off the graph.
-
-What still holds, and is the live rule for any new engine:
-
-* **Boundary rule 2 is unchanged.** An engine returns its result; the public
-  wrapper owns whatever is cached. `_count_close_relatives` and
-  `relationship_pairs` both work this way, and
-  `tests/test_pair_engines.py::TestEngineReadOnlyContract` still checks it.
-* **The registry stays the one source of relationship codes** (`_registry.py`),
-  and the engine reads the graph's public columns, not its internals.
-
-`_release_pair_matrices` is gone with the matrices; nothing needs to be freed
-because nothing is held. ADR 0003's remark that orientation rules "stay
-hand-written in `_pair_extractor.py`" now points at ADR 0010's amendment,
-which records them as the engine's first-arm provenance.
-
+- `_core.py` shrank from about 2,071 to about 1,159 lines at the split; it is
+  615 lines today.
+- The engine classes and functions are not exported. The public surface is
+  the `PedigreeGraph` and `PedigreeView` methods and the names in
+  `pedigree_graph.__all__`.
+- `TestEngineReadOnlyContract` checks that `_count_close_relatives` leaves
+  `_close_relative_counts_cache` unset and that the matrix oracle returns
+  every registry code with only the requested ones populated.
+- A new engine follows the same contract: read graph data, return results,
+  let the public wrapper persist them.

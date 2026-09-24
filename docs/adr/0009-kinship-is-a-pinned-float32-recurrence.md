@@ -4,6 +4,8 @@
 **Date:** 2026-09-04
 **Context:** resolves issue #6 and the `pair_kinship` dtype question deferred by ADR 0006; supersedes ADR 0005's float64 and cached-matrix clauses
 
+Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+
 ## Context
 
 ADR 0005 made `compute_pair_kinship` return float64 from a float64 Karigl
@@ -54,18 +56,19 @@ Consequences of that definition:
 
 * `pair_kinship(first_rows, second_rows)`, `pair_kinship(block)`, and
   `pair_kinship(pairs)` return read-only **float32**. The memo stores float32.
-  The pairwise kernel takes structural depth as an input, and since slice 13
-  it builds one memo per call and frees it before returning (ADR 0007); no
-  value depends on call history.
+  The pairwise kernel takes structural depth as an input and builds one memo
+  per call, freed before returning (ADR 0007); no value depends on call
+  history.
 * `kinship_matrix()` and `relationship_kinship_matrix(...)` entries are
   **bit-identical** to `pair_kinship` for the same pair. That parity is a
   property test on every fixture, including deep inbred and row-permuted ones,
   and in view coordinates. ADR 0006's "only this final float32 rounding" is
   replaced by this per-step, pinned rounding.
 * `pair_kinship` is **recurrence-only**. It never reads a cached matrix, so its
-  result does not depend on call history. Issue #6 closes on this; the
-  second-graph workaround in fitACE (`fitace/kinship/kinship.py`) can be
-  deleted once 0.8.0 ships.
+  result does not depend on call history. Issue #6 closed on this, and
+  fitACE's second-graph workaround in `fitace/kinship/kinship.py` has since
+  been removed: that module builds one graph and reads
+  `relationship_kinship_matrix`.
 * Zero is exact: a returned 0 means the exact kinship is 0, and reversed
   endpoint order gives identical bits.
 * Bit parity is a **within-graph** property. For one constructed graph, pair
@@ -87,8 +90,8 @@ Consequences of that definition:
 * Callers that threshold `pair_kinship` values against a non-dyadic cutoff
   must widen to float64 first; under NumPy's NEP 50 a float32 array compared
   with a Python float compares in float32, which can admit a pair one float32
-  ulp below the cutoff. fitACE's pair export widens at its comparison when it
-  migrates; today its degree gate makes the comparison inert.
+  ulp below the cutoff. fitACE's pair export widens to float64 before its
+  `min_kinship` comparison.
 
 ## Considered options
 
@@ -116,13 +119,15 @@ Consequences of that definition:
   50-generation closed herd and 0 on every simACE pedigree.
 * The peel rule is part of the value's definition. The Rust core (ADR 0007)
   implements the same rule, and cross-implementation parity tests compare
-  bits, not tolerances. Since slice 14 (2026-09-23) the matrix DP runs in
-  the core too, in stable depth-major order where the rule is "greater
-  row": `kinship_matrix`, `approximate_kinship_matrix` and the generation
-  kinship summary are one kernel there, and its 0.9.1 numba form is the
-  differential oracle under `tests/oracle/kinship_dp/`.
-* The rehash copy in the pairwise memo (old and new tables coexist) costs
-  about 30 percent of peak RSS at 536k rows independent of dtype. That is a
-  memo-layout requirement for the Rust core, not a 0.8.0 Python change.
+  bits, not tolerances. Both kernels run in the core: the pairwise walk in
+  `crates/core/src/kinship/pairwise.rs`, and the matrix DP in
+  `crates/core/src/kinship/matrix.rs`, in stable depth-major order where the
+  rule is "greater row". `kinship_matrix`, `approximate_kinship_matrix` and
+  the generation kinship summary are one DP kernel there, and its 0.9.1
+  Numba form is the differential oracle under `tests/oracle/kinship_dp/`.
+* In the 0.8 Python memo, the rehash copy (old and new tables coexist) cost
+  about 30 percent of peak RSS at 536k rows independent of dtype. The Rust
+  memo keeps one table per lower row, so a rehash copies one row's table
+  (`crates/core/src/kinship/memo.rs`).
 * ADR 0005's "output dtype is float64" and "samples the exact
   `kinship_matrix(0.0)` if already cached" clauses are superseded by this ADR.

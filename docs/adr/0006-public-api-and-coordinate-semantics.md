@@ -5,6 +5,8 @@
 **Context:** the pedigree-graph Rust core redesign
 (simACE `docs/plans/pedigree-graph-rust-core.md`); precedes any native code
 
+Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+
 ## Context
 
 The 0.7.x public surface grew by accretion around the internal matrix engine,
@@ -19,10 +21,8 @@ and several of its contracts are implicit or misleading:
   (`_kinship_dp.py:104-123`), so cohort metadata can change a structural
   computation. Structural depth is derived separately elsewhere.
 * Pair orientation for lineal categories is canonicalised during
-  view/subsample remap (`project_pairs` in `_pair_utils.py:124-153` when this was
-  written; since slice 12 the relabel and re-sort in
-  `crates/core/src/relationships/pairs.rs`), so which endpoint is the
-  ancestor depends on the construction path.
+  view/subsample remap (`project_pairs` in `_pair_utils.py:124-153`), so
+  which endpoint is the ancestor depends on the construction path.
 * `min_kinship` on the DP is propagation pruning, not a final-value filter
   (ADR 0005 records the inbred counterexample).
 * `count_pairs_streaming` mixes exact and approximate categories under an
@@ -74,7 +74,7 @@ is reserved for reference oracles and analysis.
   `full.view(rows=...)` (exactly one keyword; order preserved; duplicates,
   missing IDs, and out-of-range rows are structured errors) returns a
   `PedigreeView` whose operations are view-space.
-* `PedigreeView` initially exposes only `relationship_pairs`,
+* `PedigreeView` exposes only `relationship_pairs`,
   `relationship_counts`, `pair_kinship`, read-only `ids` and `graph_rows`,
   and `len`. Matrix, inbreeding, lineage, connectivity, and effective-size
   operations stay on the full graph until a view contract for them is
@@ -98,8 +98,17 @@ One immutable `RELATIONSHIPS` mapping replaces `REL_REGISTRY` and
 `PAIR_KINSHIP`. Each `RelationshipCategory` carries `code`, `label`,
 `degree`, `nominal_kinship`, `up`, `down`, `ancestor_count`, `first_role`,
 `second_role`. Registry order is the documented same-degree precedence for
-closest-category classification. The ordered 23-variant Rust enum becomes the
-eventual source.
+closest-category classification.
+
+The registry exists twice and neither copy is generated from the other.
+`pedigree_graph/_registry.py` holds the full records for Python. The Rust
+core's ordered 23-variant `Category` enum
+(`crates/core/src/relationships/category.rs`) carries code, degree, and
+roles; the relationship engine and the R package read it. Tests hold the two
+together: the native counts come back keyed by code in `RELATIONSHIPS` order,
+the native degree ceiling equals `MAX_DEGREE`, and the R registry, built
+from the enum, must equal a golden written from the Python registry
+(`tools/r_golden.py`).
 
 ### Relationship pairs and counts
 
@@ -127,12 +136,30 @@ eventual source.
      affect output order;
   7. rows are int32 in Python and 1-based integers in R;
   8. results own their arrays and never retain the graph or view.
+* `relationship_pairs` on a graph and on a view, and
+  `relationship_kinship_matrix`, take one more keyword, `execution`, with
+  exactly two values. `"speed"`, the default, uses the fastest benchmarked
+  exact assembly; `"memory"` uses the lowest-peak one. The keyword changes
+  resource use only: both modes return equal results, blocks equal in every
+  field, so the pair contracts hold under either. Any other value is an argument error.
+  There is no public memory budget, auto-selection, or third mode. The names
+  are semantic so the implementation behind each can change after a later
+  benchmark without a public change.
 * `sibling_pairs()` is removed; callers request the sibling categories.
   Per-category exclusion lists stay beside each category implementation.
-* `relationship_counts` is exact. `estimate_relationship_counts` replaces
-  `count_pairs_streaming` with a typed result (values, requested, exact,
-  approximate, clamped categories) and one `RuntimeWarning` per clamped call.
-  It is full-graph-only initially.
+* `relationship_counts` is exact and returns a `RelationshipCountResult`
+  over all 23 codes, with `requested` and `exact` code sets and `None` for
+  unselected categories.
+* `close_relative_counts()` replaces `count_pairs_streaming`. It takes no
+  selector and counts only MZ, MO, FO, FS, MHS, and PHS, from parent edges
+  and sibling groups, exactly under closest-category precedence. The result
+  keeps all 23 keys, with `None` for the other 17 (ADR 0011).
+* `relationship_burden()` returns a `RelationshipBurden` without
+  materialising pair lists: `category_counts` for all 23 categories,
+  `per_person`, a read-only per-row array of distinct relatives at degrees
+  1 to 5, and `same_depth_pairs`, the related-pair count per structural
+  depth.
+* `close_relative_counts` and `relationship_burden` are full-graph-only.
 
 ### Kinship and inbreeding
 
@@ -184,15 +211,16 @@ eventual source.
 
 Root exports: `PedigreeGraph`, `PedigreeView`, `RelationshipCategory`,
 `RelationshipPairs`, `RelationshipPairBlock`, `RelationshipCountResult`,
-`RELATIONSHIPS`, `PedigreeValidationError`, `MissingMetadataError`,
-`ResourceError`, `configure_threads`, `MAX_DEGREE`. (`RelationshipCountResult`
-was added to this list when slice 7 froze the namespace: it is the return type
-of a root class's method, like `RelationshipPairs`. `MAX_DEGREE`, the
-registry-derived degree ceiling, was added by issue #23.) `FrameLike` moves to
+`RelationshipBurden`, `RELATIONSHIPS`, `PedigreeValidationError`,
+`MissingMetadataError`, `ResourceError`, `configure_threads`, `MAX_DEGREE`.
+`RelationshipCountResult` and `RelationshipBurden` are root exports because
+root-class methods return them, as with `RelationshipPairs`. `MAX_DEGREE` is
+the registry-derived degree ceiling (issue #23).
+`tests/test_architecture_guardrails.py` pins this list. `FrameLike` lives in
 `pedigree_graph.typing`.
-Effective-size functions, cohort utilities, and result classes move to public
-`pedigree_graph.effective_size`; `compute_all_ne` becomes
-`estimate_effective_sizes`. Estimator formulas do not change.
+Effective-size functions, cohort utilities, and result classes live in public
+`pedigree_graph.effective_size`; `compute_all_ne` became
+`estimate_effective_sizes`. Estimator formulas did not change.
 
 ### Errors
 
@@ -219,10 +247,11 @@ requirements.
   support change. The relationship-limited matrix is compared, in the
   performance gate, against fitACE's current exact construction rather than
   against pruned output.
-* The experimental BFS engine is kept only as far as the pure-Python break
-  requires and is deleted before the Rust relationship migration (issue #7).
-* 0.8.0 may be the last setuptools-scm release; it is the frozen baseline the
-  native slices are differentially tested against.
+* The experimental BFS engine was deleted in 0.8.4, before the Rust
+  relationship migration (issue #7).
+* 0.8.0 is the frozen baseline the native releases were differentially
+  tested against. The package now builds with maturin and takes its version
+  from `[workspace.package].version` in `Cargo.toml` (ADR 0007).
 
 ## Alternatives considered
 
@@ -230,7 +259,7 @@ requirements.
   in the semantics (coordinate spaces, orientation, generation-as-depth), not
   the names, and shims would carry them into the Rust boundary.
 * **Redesign during the Rust port** — rejected. Two moving targets at once
-  removes the pure-Python baseline that makes native slices differentially
+  removes the pure-Python baseline that makes native releases differentially
   testable.
 * **Expose the full graph API on views** — deferred. Matrix, inbreeding, and
   lineage semantics over a reordered subset are not yet scientifically pinned;
@@ -239,21 +268,3 @@ requirements.
   rejected in favour of explicit per-category lists plus a global
   uniqueness/precedence check, so a missing exclusion is caught rather than
   hidden in table lookup.
-
-## Amended 2026-09-17 (slice 12, `execution` keyword on relationship pairs)
-
-`relationship_pairs` on a graph and on a view gains one keyword,
-`execution`, with exactly two accepted values:
-
-* `"speed"`, the default, uses the fastest benchmarked exact emitter;
-* `"memory"` uses the lowest-peak exact emitter.
-
-The keyword changes resource use only. Both modes return blocks that are
-equal element for element, in every field of every `RelationshipPairBlock`,
-so the eight pair contracts above hold identically under either. The
-selector rule is unchanged (exactly one of `max_degree` and `categories`),
-an unrecognised value raises the ordinary argument error, and there is no
-public memory-budget, auto-selection, or third mode. The names are
-semantic on purpose so the implementation behind each can change after a
-later benchmark without a public change. `execution` is a public API
-addition and ships in 0.9.0 (ADR 0007, as amended the same day).

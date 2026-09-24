@@ -4,6 +4,8 @@
 **Date:** 2026-09-04
 **Context:** resolves issue #8, a blocker named by ADR 0006 for the 0.8.0 kinship slice
 
+Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+
 ## Context
 
 ADR 0006 fixes the contract `F_i = 2·phi(i, i) − 1` for canonical `inbreeding()`
@@ -18,7 +20,7 @@ The obvious reading of the contract, derive F from the pairwise recurrence's
 self pairs, was benchmarked and fails at production scale. Its memo holds the
 ancestor-pair closure of every mating, and on a 1M-row, nine-generation
 simACE pedigree it passed 26 GB of RSS after 48 minutes without finishing.
-The current kernel does the same pedigree in 18 s and 78 MB.
+The walk kernel of the time did the same pedigree in 18 s and 78 MB.
 
 ## Decision
 
@@ -30,9 +32,9 @@ sampling variance. Because ADR 0006 requires represented MZ references to be
 reciprocal, two-member, and parent-identical, this one-line canonicalisation
 is exact on any graph that passed construction.
 
-The MZ-naive kernel is deleted in the same slice. `compute_inbreeding()`
-becomes an adapter over `inbreeding()` until slice 7 removes it, so it returns
-MZ-aware values from slice 5 onward rather than preserving 0.7.1 output.
+The MZ-naive kernel was deleted when this landed. `compute_inbreeding()`
+was an adapter over `inbreeding()` returning MZ-aware values until it was
+removed with the rest of the 0.7.1 surface, before 0.8.0 shipped.
 
 `F_i = 2·phi(i, i) − 1` is a tested invariant, not the implementation:
 parity tests hold `inbreeding()` equal to `pair_kinship` self pairs and to
@@ -51,11 +53,14 @@ without loops, founder twins, and inbred twins.
   moves from 2.276e-5 to 2.285e-5. Effective-size estimators, pedsum, and
   fitACE's inbreeding export see shifts under 1%, so 0.7.1 golden values on
   pedigrees with MZ twins need a tolerance, not bit-exact parity.
-* The Rust port (ADR 0007) ports this walk, not a diagonal extraction.
-  *Discharged in 0.9.4 (slice 15):* `crates/core/src/kinship/inbreeding.rs`
-  is this walk, genome nodes, `D` cases, per-depth frontier and touch-order
-  sum included, and returns the 0.9.3 Numba kernel's bits on every parity
-  fixture in three row orders (`tests/test_native_inbreeding.py`).
+* The walk runs in the Rust core (ADR 0007) since 0.9.4:
+  `crates/core/src/kinship/inbreeding.rs` is this walk, genome nodes, `D`
+  cases, per-depth frontier and touch-order sum included. It is a port of
+  the walk, not a diagonal extraction. The 0.9.3 Numba kernel is kept as the
+  test oracle in `tests/oracle/inbreeding.py`;
+  `tests/test_native_inbreeding.py` holds the core to it within
+  `rtol 1e-9` on the parity fixtures in three row orders and records, without
+  asserting, whether the bits match.
 
 ## Alternatives considered
 

@@ -1,49 +1,55 @@
-# ADR 0004: Align `max_degree` cutoffs with `REL_REGISTRY.degree`
+# ADR 0004: Align `max_degree` cutoffs with the registry degree
 
 **Status:** accepted
 **Date:** 2026-06-09
 **Context:** relationship extraction API semantics
 
+Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+
 ## Context
 
-`REL_REGISTRY` defines a kinship-distance degree for every relationship code:
-`0` for MZ twins, `1` for parent-offspring/full-sib, `2` for half-sibs,
-grandparent, and avuncular, `3` for 1st cousins and same-kinship categories,
-and so on.
+The relationship registry defines a kinship-distance degree for every
+relationship code (`RELATIONSHIPS[code].degree`): `0` for MZ twins, `1` for
+parent-offspring and full sibs, `2` for half-sibs, grandparent, and
+avuncular, `3` for 1st cousins and the other kinship-1/16 categories, and so
+on up to `5`.
 
-The matrix extractor did not consistently use that meaning. In particular,
-`PedigreeGraph.extract_pairs(max_degree=2)` computed `1C` even though `1C` is
-registry degree 3. The streaming counter used a different gate for `1C`, and
-`max_degree=0` still counted some degree-1 cheap codes. Documentation therefore
-had to explain legacy behavior instead of the registry vocabulary.
-
-Downstream simACE stats and plotting defaults had also grown around the legacy
-matrix behavior: a default of `2` effectively meant "include 1st cousins" for
-matrix extraction even though registry degree semantics say that should be `3`.
+When this ADR was written the matrix extractor did not use that meaning
+consistently. `extract_pairs(max_degree=2)` computed `1C` even though `1C` is
+registry degree 3, the streaming counter used a different gate for `1C`, and
+`max_degree=0` still counted some degree-1 codes. Documentation had to
+explain legacy behaviour instead of the registry vocabulary, and downstream
+simACE defaults of `2` effectively meant "include 1st cousins".
 
 ## Decision
 
-Make `max_degree` mean exactly:
+`max_degree` means exactly:
 
-> include relationship category `code` iff `REL_REGISTRY[code].degree <= max_degree`
+> include relationship category `code` iff `RELATIONSHIPS[code].degree <= max_degree`
 
-for all public pair-count/extraction APIs:
+for every public API that takes it: `relationship_pairs` and
+`relationship_counts` on `PedigreeGraph` and `PedigreeView`, and
+`PedigreeGraph.relationship_kinship_matrix`. `categories_up_to_degree` in
+`_registry.py` applies the rule, and `RelationshipSelection.parse` in
+`_selection.py` calls it for every endpoint.
 
-- `PedigreeGraph.extract_pairs`
-- `PedigreeGraph.count_pairs`
-- `PedigreeGraph.count_pairs_streaming`
-
-Consequences of the cutoff are now:
+The cutoffs are:
 
 - `0`: MZ only
 - `1`: add mother-offspring, father-offspring, full-sib
 - `2`: add maternal/paternal half-sib, grandparent, avuncular
-- `3`: add 1st cousins and other degree-3 categories
-- `5`: full registry through 2nd cousins
+- `3`: add 1st cousins and the other degree-3 categories
+- `5`: the full registry through 2nd cousins
 
-Change the public defaults from `2` to `3` so callers that relied on the old
-default still get 1st cousins (and the other degree-3 categories). Explicit
-`max_degree=2` now truly excludes 1st cousins.
+Values outside `[0, MAX_DEGREE]` (`MAX_DEGREE` is 5) raise
+`PedigreeValidationError` with code `max_degree_out_of_range`; booleans raise
+`TypeError`.
+
+There is no default cutoff. Under ADR 0006 each of these APIs takes exactly
+one selector, `max_degree=` or `categories=`, and raises `TypeError` for both
+or neither. This ADR first moved the default from `2` to `3` so that default
+callers kept 1st cousins; ADR 0006 then removed the default, so every caller
+names its cutoff.
 
 ## Considered options
 
@@ -53,15 +59,16 @@ default still get 1st cousins (and the other degree-3 categories). Explicit
 - **Compatibility flag / legacy mode.** Rejected: it would make every consumer
   choose between two definitions of the same parameter and keep the glossary
   ambiguous.
-- **Strict registry alignment with default bump.** Chosen: one definition of
-  degree, with defaults adjusted to preserve the old default output shape.
+- **Strict registry alignment.** Chosen: one definition of degree.
 
 ## Consequences
 
-- Explicit `max_degree=2` callers may see fewer relationship categories than
-  before: `1C` is no longer included.
-- Default callers still include `1C` because the default is now `3`.
-- Downstream code that intended "include 1st cousins" should use `max_degree=3`.
-  Code that intended a kinship cutoff of 1/8 should keep `max_degree=2`.
-- Tests assert that matrix and streaming engines zero every code above the
-  registry cutoff.
+- `max_degree=2` excludes `1C`. Code that intends "include 1st cousins" uses
+  `max_degree=3`; code that intends a kinship cutoff of 1/8 uses
+  `max_degree=2`.
+- Selection is an output filter (ADR 0006): a selected category's closer
+  dependencies are still resolved, and unselected categories come back empty
+  with `requested=False` (pairs) or `None` (counts).
+- `tests/test_relationship_pairs.py` asserts, for every cutoff 0 to 5, that
+  a block is requested exactly when its registry degree is at or below the
+  cutoff.
