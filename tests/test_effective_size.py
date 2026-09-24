@@ -8,6 +8,7 @@ expectations.  Per the master plan, finite-sample tolerances are loose
 import numpy as np
 import polars as pl
 import pytest
+from _support import _build_closed_line, _df, _random_mating
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
@@ -35,22 +36,6 @@ from pedigree_graph.effective_size import (
     ne_variance_family_size,
 )
 from pedigree_graph.summaries import GenerationKinshipSummary
-
-
-def _df(records: list[dict]) -> pl.DataFrame:
-    """Build a pedigree DataFrame from per-row dicts (defaults filled)."""
-    rows = [
-        {
-            "id": r["id"],
-            "mother": r.get("mother", -1),
-            "father": r.get("father", -1),
-            "twin": r.get("twin", -1),
-            "sex": r["sex"],
-            "generation": r["generation"],
-        }
-        for r in records
-    ]
-    return pl.DataFrame(rows)
 
 
 def _df_by(records: list[dict]) -> pl.DataFrame:
@@ -273,24 +258,6 @@ def test_toy3_skewed_male_NeV_below_sex_ratio():
 # ---------------------------------------------------------------------------
 
 
-def _build_closed_line(n_gens: int = 5) -> pl.DataFrame:
-    """Closed-line full-sib mating: 2 founders, 1 male + 1 female per gen for ``n_gens``."""
-    records = [
-        {"id": 0, "sex": 1, "generation": 0},
-        {"id": 1, "sex": 0, "generation": 0},
-    ]
-    next_id = 2
-    prev_m, prev_f = 0, 1
-    for g in range(1, n_gens + 1):
-        m = next_id
-        records.append({"id": m, "sex": 1, "generation": g, "mother": prev_f, "father": prev_m})
-        f = next_id + 1
-        records.append({"id": f, "sex": 0, "generation": g, "mother": prev_f, "father": prev_m})
-        prev_m, prev_f = m, f
-        next_id += 2
-    return _df(records)
-
-
 def test_toy4_closed_line_F_recursion():
     """Full-sib mating chain: F follows F_{t+1} = (1+2F_t+F_{t-1})/4.
 
@@ -443,30 +410,6 @@ def test_ne_individual_delta_f_averages_delta_f_over_the_reference_subpopulation
     assert res.ne == pytest.approx(6.895979754377508, abs=1e-9)
     assert res.standard_error == pytest.approx(3.981395767516064, abs=1e-9)
     assert _harmonic_mean(res.ne_per_gen) == pytest.approx(4.843069778788811, abs=1e-9)
-
-
-def _random_mating(n_per_gen: int, n_gens: int, seed: int) -> pl.DataFrame:
-    """Closed random-mating pedigree, balanced sex, discrete non-overlapping generations."""
-    rng = np.random.default_rng(seed)
-    half = n_per_gen // 2
-    records: list[dict] = []
-    next_id = 0
-    previous_m: list[int] = []
-    previous_f: list[int] = []
-    for g in range(n_gens + 1):
-        current_m: list[int] = []
-        current_f: list[int] = []
-        for j in range(n_per_gen):
-            sex = 1 if j < half else 0
-            record = {"id": next_id, "sex": sex, "generation": g}
-            if g > 0:
-                record["mother"] = int(rng.choice(previous_f))
-                record["father"] = int(rng.choice(previous_m))
-            records.append(record)
-            (current_m if sex == 1 else current_f).append(next_id)
-            next_id += 1
-        previous_m, previous_f = current_m, current_f
-    return _df(records)
 
 
 @pytest.mark.parametrize(("n_per_gen", "n_gens", "seed"), [(60, 12, 7), (200, 16, 3)])

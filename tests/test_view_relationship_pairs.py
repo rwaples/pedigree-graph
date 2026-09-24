@@ -1,4 +1,4 @@
-"""``PedigreeView.relationship_pairs`` / ``relationship_counts`` (slice 4b, ADR 0006).
+"""``PedigreeView.relationship_pairs`` / ``relationship_counts`` (ADR 0006).
 
 The done-criterion is stated independently of the implementation: a view
 result equals the graph result filtered to pairs with both endpoints selected,
@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from _support import ASYMMETRIC, CODES, FIXTURE_NAMES, FIXTURES, SYMMETRIC, _graph
 from oracle.relationship_pairs import canonical_keys, check_exclusive
 from relationship_predicates import AncestorWalk
-from test_relationship_pairs import ASYMMETRIC, CODES, FIXTURE_NAMES, FIXTURES, SYMMETRIC, _graph
 
 import pedigree_graph
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelationshipCountResult

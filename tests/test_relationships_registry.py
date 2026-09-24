@@ -1,4 +1,4 @@
-"""Pins the canonical relationship registry (ADR 0006, slice 2).
+"""Pins the canonical relationship registry (ADR 0006).
 
 ``RELATIONSHIPS`` is the source of truth for the code set, its order, the
 per-category path shape, and the positional roles.  The table itself carries

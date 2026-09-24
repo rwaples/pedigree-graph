@@ -16,13 +16,9 @@ from types import MappingProxyType
 import numpy as np
 import pytest
 import scipy.sparse as sp
+from _support import _ped_double_first_cousins, _ped_mz_twins_with_descendants, _ped_sib_mating
 from conftest import parity_columns, parity_fixtures
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
-from test_pedigree_graph import (
-    _ped_double_first_cousins,
-    _ped_mz_twins_with_descendants,
-    _ped_sib_mating,
-)
 
 from pedigree_graph import (
     RELATIONSHIPS,
@@ -476,7 +472,7 @@ def test_random_30k_integration():
     assert values["1C"].tobytes() == graph.pair_kinship(block).tobytes()
     assert values["1C"].tobytes() == graph.pair_kinship(block.first_rows, block.second_rows).tobytes()
 
-    # Slice 5b gate: the public relationship-limited matrix uses these same
+    # The public relationship-limited matrix uses these same
     # closest-category blocks plus the diagonal and preserves pair bits.
     gate = {code: pairs[code] for code in MATRIX_GATE_CATEGORIES}
     assert all(len(block) for block in gate.values())

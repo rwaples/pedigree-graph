@@ -1,4 +1,4 @@
-"""Golden lock for ``relationship_pairs(max_degree=5)`` (slice 4a).
+"""Golden lock for ``relationship_pairs(max_degree=5)``.
 
 Replays ``tests/parity/generate_relationship_pairs.py::_capture`` and compares
 every count, hash, and stored array in ``tests/data/relationship_pairs_v0.8``.

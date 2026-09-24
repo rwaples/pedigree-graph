@@ -3,7 +3,7 @@
 The semantic half of ``pedigree_graph._input.parse_pedigree_input`` (range,
 sex encoding, duplicate and shared-parent ids, id resolution, topology, the
 MZ contract, optional-column collapse) plus ``PedigreeGraph._validate_birth_year_topology``,
-moved here verbatim when construction went native (slice 10b).  It takes the
+moved here verbatim when construction went native.  It takes the
 same int64 columns the native builder takes and raises the same structured
 errors, so the differential test compares codes, fields, and messages.
 """

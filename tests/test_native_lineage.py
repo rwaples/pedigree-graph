@@ -1,7 +1,7 @@
 """The native lineage counts against the 0.9.3 Numba kernels kept under ``tests/oracle``.
 
-Slice 15 moves ``distinct_ancestor_counts`` and ``descendant_path_counts`` to
-the Rust core.  Counts do not depend on row labels, so both are held byte
+``distinct_ancestor_counts`` and ``descendant_path_counts`` run in the Rust
+core.  Counts do not depend on row labels, so both are held byte
 for byte to the oracle, run as 0.9.3's facade ran it, on every parity
 fixture in permuted row orders.  The descendant sweep's checked adds are
 pinned by a sib-mating ladder whose path counts double each generation.
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import CHILD_PRELUDE, _run_child
 from conftest import parity_columns, parity_fixtures
 from oracle.lineage import _compute_n_ancestors, _compute_n_descendants
 from oracle.remap import build_topology
-from test_native_relationship_pairs import CHILD_PRELUDE, _run_child
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, ResourceError, _native
 

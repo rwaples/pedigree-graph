@@ -15,11 +15,11 @@ Documented 0.8 divergences:
   fixtures with MZ twins the ``inbreeding`` hash is therefore expected to
   differ.  The exemption is held tight: every row that is not an MZ twin or a
   descendant of one must still match 0.7.1 exactly.
-* ADR 0009 made pair kinship a pinned float32 recurrence (slice 5a).  Every
+* ADR 0009 made pair kinship a pinned float32 recurrence.  Every
   0.7.1 value that float32 can hold is unchanged, which is every fixture but
   ``deep_inbred_60g``; there the values must lie within the ADR 0009
   cross-order envelope of the frozen float64 ones.
-* Slice 5b preserves the 0.7.1 propagation-pruned matrix support but replaces
+* ``approximate_kinship_matrix`` preserves the 0.7.1 propagation-pruned matrix support but replaces
   its approximate propagated values with the pinned recurrence values.  The
   frozen ``approx_values`` hash is therefore exempt; ``approx_support`` stays
   exact, and ``test_kinship_matrices`` checks every retained new value against
@@ -313,7 +313,3 @@ def test_random_30k_matches_the_frozen_baseline():
     assert {k: v for k, v in summary["hashes"].items() if k not in exempt} == {
         k: v for k, v in entry["hashes"].items() if k not in exempt
     }
-
-
-def test_random_300k_is_release_only():
-    pytest.skip("random_300k is a release/performance gate (plan slice 9), not part of the suite")

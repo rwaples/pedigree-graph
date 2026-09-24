@@ -2,7 +2,7 @@
 
 Test code only (ADR 0007): ``pedigree_graph`` never imports this, and it is
 not a fallback.  It is ``_pairwise_kinship_py`` moved here verbatim when
-slice 13 put ``pair_kinship`` on the Rust core, and it states the ADR 0009
+``pair_kinship`` went to the Rust core, and it states the ADR 0009
 value definition in graph space with an explicit depth array, which is the
 contract the native kernel is held to bit for bit.
 """

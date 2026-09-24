@@ -1,6 +1,6 @@
 """``mean_kinship_by_generation`` groups by observed labels and pins the MZ rule.
 
-Slice 6a of the 0.8 plan.  Every expected value here is computed by hand on
+Every expected value here is computed by hand on
 a small pedigree; the two large fixtures only check that the streamed DP and
 the cached-matrix walk agree and that row order does not matter.
 """
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import _build_closed_line
 from conftest import parity_columns, parity_fixtures
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
@@ -207,3 +208,12 @@ def test_summary_is_invariant_to_input_row_order(name):
     # Row order may move floating bits inside the ADR 0009 envelope.
     np.testing.assert_allclose(permuted.mean_kinship, reference.mean_kinship, rtol=0, atol=1e-6, equal_nan=True)
     assert permuted.unlabelled_individual_count == reference.unlabelled_individual_count
+
+
+def test_generation_kinship_summaries_compare_and_do_not_hash():
+    a = PedigreeGraph.from_frame(_build_closed_line(3)).mean_kinship_by_generation()
+    b = PedigreeGraph.from_frame(_build_closed_line(3)).mean_kinship_by_generation()
+    assert a == b
+    assert a != PedigreeGraph.from_frame(_build_closed_line(2)).mean_kinship_by_generation()
+    with pytest.raises(TypeError):
+        hash(a)

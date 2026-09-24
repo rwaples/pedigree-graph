@@ -1,4 +1,4 @@
-"""The R package's committed goldens match what the current package writes (slice 16b)."""
+"""The R package's committed goldens match what the current package writes."""
 
 from __future__ import annotations
 

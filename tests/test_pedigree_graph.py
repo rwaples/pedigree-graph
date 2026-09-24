@@ -6,6 +6,14 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
+from _support import (
+    _PAIRWISE_FIXTURES,
+    _ped_double_first_cousins,
+    _ped_half_first_cousin_parents,
+    _ped_inbred_mz,
+    _ped_mz_twins_with_descendants,
+    _ped_sib_mating,
+)
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph, PedigreeValidationError, PedigreeView, _native
@@ -1362,95 +1370,6 @@ def _oracle_all_pairs(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.nda
     got = oracle_pair_kinship(pg.mother_rows, pg.father_rows, pg.twin_rows, pg.depth, ii, jj)
     exp = K[ii, jj]
     return got, exp, ii, jj
-
-
-def _ped_inbred_mz() -> pl.DataFrame:
-    # G0: 0,1 founders; G1: 2,3 full-sibs of (0,1); G2: 4,5 MZ twins of (2,3).
-    return pl.DataFrame(
-        {
-            "id": np.arange(6),
-            "mother": np.array([-1, -1, 0, 0, 2, 2]),
-            "father": np.array([-1, -1, 1, 1, 3, 3]),
-            "twin": np.array([-1, -1, -1, -1, 5, 4]),
-            "sex": np.array([0, 1, 0, 1, 0, 0]),
-            "generation": np.array([0, 0, 1, 1, 2, 2]),
-        }
-    )
-
-
-def _ped_double_first_cousins() -> pl.DataFrame:
-    # 4,5 full sibs of (0,1); 6,7 full sibs of (2,3); 8=child(4,6),
-    # 9=child(5,7), 10=child(4,6).  (8,9) and (9,10) are DOUBLE first cousins
-    # (both parent-couples are full-sib pairs) -> phi = 0.125, twice the nominal
-    # 1C lookup of 0.0625.
-    return pl.DataFrame(
-        {
-            "id": np.arange(11),
-            "mother": np.array([-1, -1, -1, -1, 0, 0, 2, 2, 4, 5, 4]),
-            "father": np.array([-1, -1, -1, -1, 1, 1, 3, 3, 6, 7, 6]),
-            "twin": np.full(11, -1),
-            "sex": np.array([0, 1, 0, 1, 0, 0, 1, 1, 0, 0, 0]),
-            "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2]),
-        }
-    )
-
-
-def _ped_half_first_cousin_parents() -> pl.DataFrame:
-    # 0..4 founders; 5=child(0,1), 6=child(0,2) share founder 0 -> half sibs;
-    # 7=child(5,3), 8=child(6,4) -> half-first-cousins (phi=1/32);
-    # 9=child(7,8) -> phi(9,7) = 0.5*((1+F_7)/2 + phi(8,7)) = 0.265625.
-    # The disproof of threshold-pruning: a sub-threshold (1/32) parental kinship
-    # feeds an above-threshold parent-offspring kinship.
-    return pl.DataFrame(
-        {
-            "id": np.arange(10),
-            "mother": np.array([-1, -1, -1, -1, -1, 0, 0, 5, 6, 7]),
-            "father": np.array([-1, -1, -1, -1, -1, 1, 2, 3, 4, 8]),
-            "twin": np.full(10, -1),
-            "sex": np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1]),
-            "generation": np.array([0, 0, 0, 0, 0, 1, 1, 2, 2, 3]),
-        }
-    )
-
-
-def _ped_mz_twins_with_descendants() -> pl.DataFrame:
-    # 0,1 founders; 2,3 full sibs of (0,1); 4,5 MZ twins of (2,3);
-    # 6,7 unrelated founders (mates); 8=child(4,6), 9=child(5,7).
-    # 4 and 5 are genome-identical, so 8 and 9 are half-sib-equivalent with phi
-    # elevated above the non-inbred maternal-half-sib value by co-coalescence.
-    return pl.DataFrame(
-        {
-            "id": np.arange(10),
-            "mother": np.array([-1, -1, 0, 0, 2, 2, -1, -1, 4, 5]),
-            "father": np.array([-1, -1, 1, 1, 3, 3, -1, -1, 6, 7]),
-            "twin": np.array([-1, -1, -1, -1, 5, 4, -1, -1, -1, -1]),
-            "sex": np.array([0, 1, 0, 1, 0, 0, 1, 1, 0, 0]),
-            "generation": np.array([0, 0, 1, 1, 2, 2, 0, 0, 3, 3]),
-        }
-    )
-
-
-def _ped_sib_mating() -> pl.DataFrame:
-    # 0,1 founders; 2,3 full sibs; 4=child(2,3) (sib-mating, F_4=0.25).
-    return pl.DataFrame(
-        {
-            "id": np.arange(5),
-            "mother": np.array([-1, -1, 0, 0, 2]),
-            "father": np.array([-1, -1, 1, 1, 3]),
-            "twin": np.full(5, -1),
-            "sex": np.array([0, 1, 0, 1, 0]),
-            "generation": np.array([0, 0, 1, 1, 2]),
-        }
-    )
-
-
-_PAIRWISE_FIXTURES = [
-    _ped_inbred_mz,
-    _ped_double_first_cousins,
-    _ped_half_first_cousin_parents,
-    _ped_mz_twins_with_descendants,
-    _ped_sib_mating,
-]
 
 
 def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pl.DataFrame:

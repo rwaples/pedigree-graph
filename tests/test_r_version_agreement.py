@@ -1,4 +1,4 @@
-"""The R package carries the workspace version (ADR 0007; slice 16c).
+"""The R package carries the workspace version (ADR 0007).
 
 ``[workspace.package].version`` is the one version anyone edits.  The R
 binding crate sits outside that workspace so the R source tarball builds on

@@ -1,4 +1,4 @@
-"""``inbreeding`` on graphs: the memoised MZ-aware Meuwissen-Luo F (ADR 0008, slice 5c).
+"""``inbreeding`` on graphs: the memoised MZ-aware Meuwissen-Luo F (ADR 0008).
 
 On the ADR 0008 fixtures F is exactly ``2 * phi(i, i) - 1`` against both the
 ``pair_kinship`` self pair and the ``kinship_matrix`` diagonal, and matches the
@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import ADR_0008_FIXTURES, _mz_frame
 from conftest import parity_columns, parity_fixtures
-from test_oracle_inbreeding import ADR_0008_FIXTURES, _mz_frame
 
 import pedigree_graph._core
 from pedigree_graph import PedigreeGraph

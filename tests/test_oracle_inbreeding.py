@@ -18,6 +18,7 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
+from _support import ADR_0008_FIXTURES, _mz_frame
 from oracle.inbreeding import _compute_F_meuwissen_luo
 
 from pedigree_graph import PedigreeGraph
@@ -144,75 +145,6 @@ def test_parity_with_matrix_path_no_mz(small_pedigree):
     K = pg.kinship_matrix()
     F_mat = 2.0 * K.diagonal() - 1.0
     assert np.allclose(F_ml, F_mat, atol=1e-10)
-
-
-def _mz_frame(ids, mother, father, twin):
-    m = np.asarray(mother, dtype=np.int32)
-    f = np.asarray(father, dtype=np.int32)
-    return pl.DataFrame(
-        {
-            "id": ids,
-            "mother": mother,
-            "father": father,
-            "twin": twin,
-            "sex": [0] * len(ids),
-            "generation": structural_depth(np.asarray(m, dtype=np.int32), np.asarray(f, dtype=np.int32)).tolist(),
-        }
-    )
-
-
-# (name, mother, father, twin, {row: expected F}); ids are 0..n-1, parents precede children.
-ADR_0008_FIXTURES = [
-    (
-        "mz_ancestry_no_loop",
-        [-1, -1, -1, -1, 0, 0, -1, 4],
-        [-1, -1, -1, -1, 1, 1, -1, 2],
-        [-1, -1, -1, -1, 5, 4, -1, -1],
-        {7: 0.0},
-    ),
-    (
-        "mz_only_link",
-        [-1, -1, -1, -1, 0, 0, 4, 5, 6],
-        [-1, -1, -1, -1, 1, 1, 2, 3, 7],
-        [-1, -1, -1, -1, 5, 4, -1, -1, -1],
-        {8: 1 / 8},
-    ),
-    (
-        "mz_plus_full_sib_loop",
-        [-1, -1, -1, -1, 2, 2, 0, 0, 6, 7, 8],
-        [-1, -1, -1, -1, 3, 3, 1, 1, 4, 5, 9],
-        [-1, -1, -1, -1, -1, -1, 7, 6, -1, -1, -1],
-        {10: 3 / 16},
-    ),
-    (
-        "double_mz_grandparents",
-        [-1, -1, -1, -1, 0, 0, 2, 2, 4, 5, 8],
-        [-1, -1, -1, -1, 1, 1, 3, 3, 6, 7, 9],
-        [-1, -1, -1, -1, 5, 4, 7, 6, -1, -1, -1],
-        {10: 1 / 4},
-    ),
-    (
-        "founder_mz_twins_only_link",
-        [-1, -1, -1, -1, 0, 1, 4],
-        [-1, -1, -1, -1, 2, 3, 5],
-        [1, 0, -1, -1, -1, -1, -1],
-        {6: 1 / 8},
-    ),
-    (
-        "inbred_twins",
-        [-1, -1, 0, 0, -1, 2, 2, 5, 6, 7],
-        [-1, -1, 1, 1, -1, 3, 3, 4, 4, 8],
-        [-1, -1, -1, -1, -1, 6, 5, -1, -1, -1],
-        {5: 1 / 4, 6: 1 / 4, 9: 0.25 * (0.625 + 0.5)},
-    ),
-    (
-        "twins_mate_each_other",
-        [-1, -1, 0, 0, 2],
-        [-1, -1, 1, 1, 3],
-        [-1, -1, 3, 2, -1],
-        {4: 0.5},
-    ),
-]
 
 
 @pytest.mark.parametrize(("name", "m", "f", "tw", "expected"), ADR_0008_FIXTURES, ids=[c[0] for c in ADR_0008_FIXTURES])

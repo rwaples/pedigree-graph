@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from test_relationship_pairs import FIXTURE_NAMES, _columns, _graph
+from _support import FIXTURE_NAMES, _columns, _graph
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, RelationshipCountResult, _streaming_counter
 from pedigree_graph._registry import estimate_exact_codes

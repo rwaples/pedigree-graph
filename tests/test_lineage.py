@@ -1,4 +1,4 @@
-"""Lineage counts and component IDs on the public 0.8 surface (slice 6b).
+"""Lineage counts and component IDs on the public 0.8 surface.
 
 Each hand-computed case says in its name which semantic it pins: distinct
 ancestors, descendant *paths*, and parent-edge components labelled by the

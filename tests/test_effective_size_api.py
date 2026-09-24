@@ -7,13 +7,13 @@ rules, and the structured allocation guards.
 
 from __future__ import annotations
 
-import math
 import warnings
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, replace
 
 import numpy as np
 import polars as pl
 import pytest
+from _support import _array_fields, _assert_owned_read_only, _assert_plain_python, _build_closed_line, _df
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, ResourceError, effective_size
 from pedigree_graph import _ne_common as ne_common
@@ -24,38 +24,6 @@ from pedigree_graph._ne_common import (
 )
 from pedigree_graph._ne_founders import _founder_columns, _founder_idx, _per_gen_founder_means
 from pedigree_graph.effective_size import NeInbreedingResult, estimate_effective_sizes
-
-
-def _df(records: list[dict]) -> pl.DataFrame:
-    rows = [
-        {
-            "id": r["id"],
-            "mother": r.get("mother", -1),
-            "father": r.get("father", -1),
-            "twin": r.get("twin", -1),
-            "sex": r["sex"],
-            "generation": r["generation"],
-        }
-        for r in records
-    ]
-    return pl.DataFrame(rows)
-
-
-def _closed_line(n_gens: int) -> pl.DataFrame:
-    records = [
-        {"id": 0, "sex": 1, "generation": 0},
-        {"id": 1, "sex": 0, "generation": 0},
-    ]
-    next_id = 2
-    prev_m, prev_f = 0, 1
-    for g in range(1, n_gens + 1):
-        m = next_id
-        records.append({"id": m, "sex": 1, "generation": g, "mother": prev_f, "father": prev_m})
-        f = next_id + 1
-        records.append({"id": f, "sex": 0, "generation": g, "mother": prev_f, "father": prev_m})
-        prev_m, prev_f = m, f
-        next_id += 2
-    return _df(records)
 
 
 def _relabelled(df: pl.DataFrame, mapping: dict[int, int]) -> pl.DataFrame:
@@ -202,42 +170,6 @@ def _over(estimators: tuple[_Estimator, ...]):
     return pytest.mark.parametrize("est", estimators, ids=[e.name for e in estimators])
 
 
-def _array_fields(result: object) -> dict[str, np.ndarray]:
-    found = {}
-    for f in fields(result):
-        value = getattr(result, f.name)
-        if isinstance(value, np.ndarray):
-            found[f.name] = value
-    return found
-
-
-def _assert_owned_read_only(result: object) -> None:
-    for name, value in _array_fields(result).items():
-        assert not value.flags.writeable, name
-        assert value.flags.c_contiguous, name
-        assert value.flags.owndata, name
-        with pytest.raises(ValueError, match="read-only"):
-            value[...] = 0
-
-
-def _assert_plain_python(value: object, where: str) -> None:
-    if value is None or type(value) in (bool, int, str):
-        return
-    if type(value) is float:
-        assert not math.isnan(value), f"{where} is NaN"
-        return
-    if type(value) is list:
-        for i, item in enumerate(value):
-            _assert_plain_python(item, f"{where}[{i}]")
-        return
-    if type(value) is dict:
-        for key, item in value.items():
-            assert type(key) is str, f"{where} key {key!r}"
-            _assert_plain_python(item, f"{where}.{key}")
-        return
-    raise AssertionError(f"{where} is {type(value).__name__}, not plain Python")
-
-
 @pytest.fixture(scope="module")
 def empty_graph() -> PedigreeGraph:
     return PedigreeGraph.from_arrays(ids=[], mother_ids=[], father_ids=[], sex=[])
@@ -245,12 +177,12 @@ def empty_graph() -> PedigreeGraph:
 
 @pytest.fixture(scope="module")
 def line_graph() -> PedigreeGraph:
-    return PedigreeGraph.from_frame(_closed_line(4))
+    return PedigreeGraph.from_frame(_build_closed_line(4))
 
 
 @pytest.fixture(scope="module")
 def sparse_line_graph() -> PedigreeGraph:
-    return PedigreeGraph.from_frame(_relabelled(_closed_line(3), {0: 0, 1: 0, 2: 2, 3: 5}))
+    return PedigreeGraph.from_frame(_relabelled(_build_closed_line(3), {0: 0, 1: 0, 2: 2, 3: 5}))
 
 
 def test_empty_graph_constructs(empty_graph):
@@ -603,9 +535,9 @@ def test_scalar_ne_from_log_regression_is_label_shift_invariant():
 
 @_over(LABELLED)
 def test_rebasing_the_labels_leaves_the_estimate_unchanged(est):
-    base = est.call(PedigreeGraph.from_frame(_closed_line(4)))
+    base = est.call(PedigreeGraph.from_frame(_build_closed_line(4)))
     shifted = est.call(
-        PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
+        PedigreeGraph.from_frame(_build_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
     )
     assert base.ne == shifted.ne
     for name, value in _array_fields(base).items():
@@ -615,9 +547,9 @@ def test_rebasing_the_labels_leaves_the_estimate_unchanged(est):
 
 
 def test_rebasing_the_labels_shifts_only_the_ltc_final_generation():
-    base = effective_size.ne_long_term_contributions(PedigreeGraph.from_frame(_closed_line(4)))
+    base = effective_size.ne_long_term_contributions(PedigreeGraph.from_frame(_build_closed_line(4)))
     shifted = effective_size.ne_long_term_contributions(
-        PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
+        PedigreeGraph.from_frame(_build_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
     )
     assert base.final_generation == 4
     assert shifted.final_generation == 14
@@ -625,9 +557,9 @@ def test_rebasing_the_labels_shifts_only_the_ltc_final_generation():
 
 
 def test_rebasing_the_labels_shifts_only_the_delta_f_reference_generation():
-    base = effective_size.ne_individual_delta_f(PedigreeGraph.from_frame(_closed_line(4)))
+    base = effective_size.ne_individual_delta_f(PedigreeGraph.from_frame(_build_closed_line(4)))
     shifted = effective_size.ne_individual_delta_f(
-        PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
+        PedigreeGraph.from_frame(_build_closed_line(4).with_columns((pl.col("generation") + 10).alias("generation")))
     )
     assert base.reference_generation == 4
     assert shifted.reference_generation == 14
@@ -635,15 +567,19 @@ def test_rebasing_the_labels_shifts_only_the_delta_f_reference_generation():
 
 
 def test_sparse_labels_are_reported_as_observed():
-    result = effective_size.ne_inbreeding(PedigreeGraph.from_frame(_relabelled(_closed_line(2), {0: 0, 1: 2, 2: 5})))
+    result = effective_size.ne_inbreeding(
+        PedigreeGraph.from_frame(_relabelled(_build_closed_line(2), {0: 0, 1: 2, 2: 5}))
+    )
     assert np.array_equal(result.generations, [0, 2, 5])
     assert np.array_equal(result.transition_from, [0, 2])
     assert np.array_equal(result.transition_to, [2, 5])
 
 
 def test_sparse_labels_spread_one_delta_f_over_the_label_gap():
-    sparse = effective_size.ne_inbreeding(PedigreeGraph.from_frame(_relabelled(_closed_line(2), {0: 0, 1: 2, 2: 5})))
-    dense = effective_size.ne_inbreeding(PedigreeGraph.from_frame(_closed_line(2)))
+    sparse = effective_size.ne_inbreeding(
+        PedigreeGraph.from_frame(_relabelled(_build_closed_line(2), {0: 0, 1: 2, 2: 5}))
+    )
+    dense = effective_size.ne_inbreeding(PedigreeGraph.from_frame(_build_closed_line(2)))
     assert np.isnan(sparse.ne_per_gen[0])
     assert np.isnan(dense.ne_per_gen[0])
     assert dense.ne_per_gen[1] == pytest.approx(2.0)
@@ -721,7 +657,7 @@ def test_group_coancestry_computes_its_baseline_around_a_late_founder():
 
 def test_labels_that_merge_structural_depths_propagate_by_structure():
     """Two structural depths share each label, so grouping changes but ancestry does not."""
-    pg = PedigreeGraph.from_frame(_closed_line(4).with_columns((pl.col("generation") // 2).alias("generation")))
+    pg = PedigreeGraph.from_frame(_build_closed_line(4).with_columns((pl.col("generation") // 2).alias("generation")))
     assert np.array_equal(pg.generation_labels, [0, 0, 0, 0, 1, 1, 1, 1, 2, 2])
     assert np.array_equal(pg.depth, [0, 0, 1, 1, 2, 2, 3, 3, 4, 4])
     m_g = _per_gen_founder_means(pg).m_g
@@ -732,7 +668,7 @@ def test_labels_that_merge_structural_depths_propagate_by_structure():
 
 
 def test_a_parent_and_its_child_in_one_label_group_still_run():
-    pg = PedigreeGraph.from_frame(_relabelled(_closed_line(2), {0: 0, 1: 1, 2: 1}))
+    pg = PedigreeGraph.from_frame(_relabelled(_build_closed_line(2), {0: 0, 1: 1, 2: 1}))
     assert effective_size.ne_long_term_contributions(pg).final_generation == 1
     assert np.array_equal(effective_size.ne_group_coancestry(pg).generations, [0, 1])
 
@@ -792,3 +728,59 @@ def test_mean_kinship_by_generation_reports_unlabelled_rows():
     assert summary.mean_kinship == pytest.approx([0.0, 0.25, 0.375])
     assert np.array_equal(summary.pair_counts, [1, 1, 1])
     assert summary.unlabelled_individual_count == 2
+
+
+# Estimator edge cases: flat or non-inbred series, empty graphs, unselected keys.
+
+
+def _non_inbred() -> PedigreeGraph:
+    return PedigreeGraph.from_frame(
+        {
+            "id": list(range(8)),
+            "mother": [-1, -1, -1, -1, 0, 0, 2, 2],
+            "father": [-1, -1, -1, -1, 1, 1, 3, 3],
+            "sex": [0, 1, 0, 1, 0, 1, 0, 1],
+            "generation": [0, 0, 0, 0, 1, 1, 1, 1],
+        }
+    )
+
+
+def _empty() -> PedigreeGraph:
+    return PedigreeGraph.from_frame({"id": [], "mother": [], "father": []})
+
+
+@pytest.mark.parametrize("labels", [None, [10, 12, 15]])
+def test_non_inbred_pedigree_has_no_rate_estimate(labels):
+    pg = (
+        PedigreeGraph.from_frame(_relabelled(_build_closed_line(2), dict(enumerate(labels))))
+        if labels
+        else _non_inbred()
+    )
+    for estimator in (effective_size.ne_coancestry, effective_size.ne_group_coancestry):
+        res = estimator(pg)
+        assert res.ne is None or res.ne < 1e9, (estimator.__name__, res.ne)
+
+
+@pytest.mark.parametrize("build", [_non_inbred, _empty])
+def test_vk_scaled_records_the_request_on_every_branch(build):
+    pg = build()
+    assert effective_size.ne_hill_overlapping(pg, vk_scale=True).vk_scaled is True
+    assert effective_size.estimate_effective_sizes(pg, ["ne_hill_overlapping"], hill_vk_scale=True)[
+        "ne_hill_overlapping"
+    ].vk_scaled
+
+
+def test_coancestry_on_an_empty_graph_reports_zero_length_arrays():
+    empty = _empty()
+    for result in (
+        effective_size.ne_coancestry(empty),
+        effective_size.estimate_effective_sizes(empty)["ne_coancestry"],
+    ):
+        assert result.ne is None
+        assert result.ne_per_gen.shape == (0,)
+        assert result.mean_theta_per_gen.shape == (0,)
+
+
+def test_an_unselected_coancestry_key_carries_no_record():
+    unavailable = effective_size.estimate_effective_sizes(_empty(), ["ne_inbreeding"])["ne_coancestry"]
+    assert unavailable == effective_size.UnavailableEffectiveSize.not_requested()

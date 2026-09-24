@@ -1,7 +1,7 @@
 """``_native.relationship_pairs`` equals the matrix engine's ``relationship_pairs`` block for block.
 
-The binding is the seam slice 12 moves pair extraction across (ADR 0006 and
-0007 as amended): the Rust row-streaming engine classifies, orients, and
+The binding is the seam pair extraction crosses (ADR 0006 and 0007): the
+Rust row-streaming engine classifies, orients, and
 assembles; Python keeps the selector and the result type.  These tests hold
 the raw binding against the in-tree matrix oracle on every parity fixture,
 selector, receiver, and execution, and pin the boundary contract: owned
@@ -20,6 +20,7 @@ import textwrap
 
 import numpy as np
 import pytest
+from _support import CHILD_PRELUDE, _run_child
 from conftest import parity_columns, parity_fixtures
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, _native
@@ -201,38 +202,6 @@ def test_the_allocation_seam_is_off_unless_the_environment_unlocks_it():
     )
     assert locked.returncode != 0
     assert "test seam is off" in locked.stderr
-
-
-def _run_child(*parts: str, **env: str) -> str:
-    """Run the dedented *parts* as one script in a fresh interpreter, returning its stdout."""
-    code = "\n".join(textwrap.dedent(part) for part in parts)
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        env={**os.environ, "PEDIGREE_GRAPH_ALLOW_TEST_SEAM": "1", **env},
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    return result.stdout
-
-
-CHILD_PRELUDE = """
-    import hashlib, sys
-    import numpy as np
-    from pedigree_graph import PedigreeGraph, _native
-    from pedigree_graph._threads import thread_budget
-    n = 400
-    rng = np.random.default_rng(7)
-    mother = np.full(n, -1); father = np.full(n, -1)
-    for i in range(20, n):
-        lo = max(0, i - 60)
-        mother[i], father[i] = rng.integers(lo, i), rng.integers(lo, i)
-        if father[i] == mother[i]:
-            father[i] = -1
-    graph = PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
-    view = np.where(np.arange(n) % 3 == 0, -1, np.arange(n) // 3 * 2 + np.arange(n) % 3 - 1).astype(np.int32)
-"""
 
 
 class TestProcessWidePool:

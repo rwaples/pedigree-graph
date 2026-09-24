@@ -1,7 +1,7 @@
 """``_native.pair_kinship`` and ``_native.kinship_support_values`` against the pure-Python oracle.
 
-The binding is the seam slice 13 moves the pairwise recurrence across (ADR
-0007, 0009): the Rust walk evaluates in graph space with structural depth as
+The binding is the seam the pairwise recurrence crosses (ADR 0007, 0009):
+the Rust walk evaluates in graph space with structural depth as
 the peel input, and Python keeps the query resolution.  These tests hold the
 raw binding against ``tests/oracle/pair_kinship.py`` on every parity fixture
 in both endpoint orders, and pin the boundary
@@ -13,10 +13,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
 from conftest import parity_columns, parity_fixtures
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
-from test_native_relationship_pairs import CHILD_PRELUDE, _run_child
-from test_pedigree_graph import _PAIRWISE_FIXTURES
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 

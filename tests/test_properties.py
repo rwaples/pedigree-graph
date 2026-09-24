@@ -1,6 +1,6 @@
 """The ADR 0006 read-only property surface.
 
-Pins slice 1c: every array property hands back the graph's own storage with a fixed dtype,
+Every array property hands back the graph's own storage with a fixed dtype,
 read-only and identical on each access; ``depth`` is derived from the parent edges alone and
 only when first asked for; the optional columns read as ``None`` when absent.
 """

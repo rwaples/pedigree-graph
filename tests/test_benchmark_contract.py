@@ -146,7 +146,22 @@ def test_gate_is_defined_once():
     assert not offenders, f"{offenders} redefine the gate; import GATE from _harness instead"
 
 
-@pytest.mark.parametrize("path", sorted((REPO / "benchmarks" / "reports").glob("*.json")))
+def _contract_reports() -> list[Path]:
+    """Local reports written by the contract harness.
+
+    Reports from before the contract (no ``schema`` key, e.g. the
+    ``exactification_*`` and ``pair_*`` runs) are historical records the
+    harness cannot regenerate, so they are left out rather than skipped.
+    """
+    reports = []
+    for path in sorted((REPO / "benchmarks" / "reports").glob("*.json")):
+        payload = json.loads(path.read_text())
+        if isinstance(payload, dict) and "schema" in payload:
+            reports.append(path)
+    return reports
+
+
+@pytest.mark.parametrize("path", _contract_reports())
 def test_local_result_files_satisfy_the_contract(path):
     """Any result file present on this machine must parse and carry its environment.
 
@@ -154,9 +169,6 @@ def test_local_result_files_satisfy_the_contract(path):
     finds nothing in a fresh checkout.  The real guarantee is that the harness
     cannot serialise a report without an environment.
     """
-    payload = json.loads(path.read_text())
-    if not isinstance(payload, dict) or "schema" not in payload:
-        pytest.skip(f"{path.name} predates the contract; regenerate it with the current harness")
     verify_report(path)
 
 

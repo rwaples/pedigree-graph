@@ -1,4 +1,4 @@
-"""Differential and boundary tests for native construction (slice 10b).
+"""Differential and boundary tests for native construction.
 
 ``_native.build_pedigree`` must agree with the 0.8.1 Python rules kept in
 ``tests.oracle.construction`` on every input: the same columns out, or the same

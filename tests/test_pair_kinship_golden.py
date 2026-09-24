@@ -1,4 +1,4 @@
-"""Golden lock for ``pair_kinship`` float32 bits frozen at ``v0.9.0`` (slice 13).
+"""Golden lock for ``pair_kinship`` float32 bits frozen at ``v0.9.0``.
 
 Replays ``tests/parity/generate_pair_kinship.py::_capture`` and compares every
 pair hash, value hash, and stored ``uint32`` bit view in

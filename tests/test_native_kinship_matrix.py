@@ -1,8 +1,7 @@
 """The three kinship-matrix bindings against the 0.9.1 numba DP kept under ``tests/oracle``.
 
-Slice 14 moves the depth-major DP behind ``kinship_matrix``,
-``approximate_kinship_matrix`` and ``mean_kinship_by_generation`` to the Rust
-core (ADR 0007, 0009).  These tests hold the raw bindings to the bytes the
+The depth-major DP behind ``kinship_matrix``, ``approximate_kinship_matrix``
+and ``mean_kinship_by_generation`` runs in the Rust core (ADR 0007, 0009).  These tests hold the raw bindings to the bytes the
 Python DP produced on every parity fixture, in permuted row orders too, and
 pin the boundary contract: owned arrays, structured errors, and every matrix
 allocation family surfacing as ``allocation_failed``.
@@ -14,10 +13,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
 from conftest import parity_columns, parity_fixtures
 from oracle.kinship_dp.dp import KinshipDPConfig, _build_kinship_csc, _run_dp_core, _stream_sum_theta_per_gen
-from test_native_relationship_pairs import CHILD_PRELUDE, _run_child
-from test_pedigree_graph import _PAIRWISE_FIXTURES
 
 import pedigree_graph
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
@@ -43,7 +41,7 @@ def _oracle_csc(graph: PedigreeGraph, threshold: float) -> tuple[bytes, bytes, b
     The Python DP's thresholded pass leaves propagated values on the support;
     the 0.9.1 facade then replaced them by a second complete pass.  Here the
     exact values come from ``kinship_support_values`` instead, the pairwise
-    walk slice 13 holds to its own oracle, so the structure is the oracle's
+    walk ``test_native_pair_kinship`` holds to its own oracle, so the structure is the oracle's
     and the values are the pinned recurrence.  At threshold 0 the DP's own
     values are already exact and are compared as they are.
     """

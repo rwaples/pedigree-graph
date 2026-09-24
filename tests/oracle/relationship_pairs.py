@@ -2,7 +2,7 @@
 
 Test code only (ADR 0007): ``pedigree_graph`` never imports this, and it is
 not a fallback.  It is the 0.8 production engine moved here verbatim when
-slice 12 put ``relationship_pairs`` on the row-streaming Rust engine, so it
+``relationship_pairs`` went to the row-streaming Rust engine, so it
 reaches the frozen ADR 0006 pair contract through a different algorithm:
 global sparse products, path-multiplicity thresholds, per-category
 subtraction lists, then a whole-block precedence fold.  :class:`_Matrices`

@@ -1,4 +1,4 @@
-"""Every public operation is invariant under acyclic input row order (slice 1b).
+"""Every public operation is invariant under acyclic input row order.
 
 The reference graph is built from a fixture in its given (topological) order.
 Each permutation reorders every column of the same table; ``perm[k]`` is the
@@ -303,7 +303,13 @@ def _value_or_refusal(compute):
 
 def _effective_sizes(graph: PedigreeGraph) -> dict:
     """Every estimator's serialized result, refusals stripped of their order-dependent fields."""
-    results = estimate_effective_sizes(graph).to_dict()
+    if np.unique(np.asarray(graph.sex)).size == 1:
+        # ne_sex_ratio is degenerate on a one-sex pedigree (single_individual)
+        # and says so; the warning is part of the contract, so assert it.
+        with pytest.warns(RuntimeWarning, match="sex is uniform"):
+            results = estimate_effective_sizes(graph).to_dict()
+    else:
+        results = estimate_effective_sizes(graph).to_dict()
     for record in results.values():
         if "fields" in record:
             record["fields"] = {k: v for k, v in record["fields"].items() if k not in _ORDER_DEPENDENT_FIELDS}
@@ -322,7 +328,7 @@ def _assert_all_ne_matches(expected: dict, actual: dict, label: str) -> None:
 
 
 class _Snapshot:
-    """Every operation reachable at slice 1b, keyed so row order cannot show."""
+    """Every operation's result, keyed so row order cannot show."""
 
     def __init__(self, columns: dict[str, np.ndarray], constructor: str, subsample_ids: np.ndarray):
         ids = np.asarray(columns["id"])

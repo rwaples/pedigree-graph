@@ -1,4 +1,4 @@
-"""The ``execution`` keyword of ``relationship_pairs`` and the native hand-over behind it (slice 12).
+"""The ``execution`` keyword of ``relationship_pairs`` and the native hand-over behind it.
 
 ADR 0006 as amended: ``"speed"`` and ``"memory"`` change resource use only,
 so both must return element-for-element identical blocks, on graphs and on

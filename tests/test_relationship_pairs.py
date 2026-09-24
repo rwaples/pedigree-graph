@@ -1,4 +1,4 @@
-"""``PedigreeGraph.relationship_pairs`` and its result types (slice 4a, ADR 0006).
+"""``PedigreeGraph.relationship_pairs`` and its result types (ADR 0006).
 
 Fixtures come from ``tests/parity/pedigrees.py``; the frozen 0.7.1 pair arrays
 in ``tests/data/parity_v0.7.1`` are the parity-locked membership oracle, and
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
-import json
 import os
 import subprocess
 import sys
@@ -18,6 +17,18 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+from _support import (
+    ASYMMETRIC,
+    BASELINE,
+    BASELINE_DIR,
+    CODES,
+    FIXTURE_NAMES,
+    FIXTURES,
+    PARITY_DIR,
+    SYMMETRIC,
+    _columns,
+    _graph,
+)
 from oracle.relationship_pairs import check_exclusive, dependency_closure
 from relationship_predicates import AncestorWalk
 
@@ -32,42 +43,6 @@ if TYPE_CHECKING:
     import polars as pl
 
     from pedigree_graph import RelationshipPairBlock
-
-PARITY_DIR = Path(__file__).resolve().parent / "parity"
-BASELINE_DIR = Path(__file__).resolve().parent / "data" / "parity_v0.7.1"
-BASELINE = json.loads((BASELINE_DIR / "manifest.json").read_text())["fixtures"]
-CODES = tuple(RELATIONSHIPS)
-ASYMMETRIC = tuple(code for code, category in RELATIONSHIPS.items() if not category.symmetric)
-SYMMETRIC = tuple(code for code, category in RELATIONSHIPS.items() if category.symmetric)
-
-
-def _fixtures() -> dict[str, dict[str, np.ndarray]]:
-    fixtures = dict(pedigrees.motif_fixtures())
-    # deep_inbred_60g is here for orientation, not for membership: sixty
-    # generations off eight founders is where a pair most easily reaches both
-    # arms of an asymmetric product, which is what decides whether the emitted
-    # role is discovered or arbitrary (issue #21).
-    for name in ("random_1k", "deep_inbred_60g"):
-        fixtures[name] = pedigrees.build_random(name, pedigrees.RANDOM_FIXTURES[name])
-    return fixtures
-
-
-FIXTURES = _fixtures()
-FIXTURE_NAMES = sorted(FIXTURES)
-
-
-def _columns(fixture: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-    return {
-        "id": fixture["ids"],
-        "mother": fixture["mother"],
-        "father": fixture["father"],
-        "twin": fixture["twin"],
-        "sex": fixture["sex"],
-    }
-
-
-def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph.from_frame(_columns(FIXTURES[name]))
 
 
 def _unordered(first: np.ndarray, second: np.ndarray) -> set[tuple[int, int]]:

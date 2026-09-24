@@ -1,6 +1,6 @@
 """The native Meuwissen-Luo walk against the 0.9.3 Numba kernel kept under ``tests/oracle``.
 
-Slice 15 moves ``PedigreeGraph.inbreeding`` to the Rust core, which walks
+``PedigreeGraph.inbreeding`` runs in the Rust core, which walks
 graph rows in its own depth-major order.  The oracle runs as 0.9.3's facade
 ran it: parents remapped into the depth-major order, the kernel, the result
 scattered back.  F is held to ``rtol 1e-9, atol 1e-12`` on every parity
@@ -12,11 +12,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
 from conftest import parity_columns, parity_fixtures
 from oracle.inbreeding import _compute_F_meuwissen_luo
 from oracle.remap import build_topology
-from test_native_relationship_pairs import CHILD_PRELUDE, _run_child
-from test_pedigree_graph import _PAIRWISE_FIXTURES
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 

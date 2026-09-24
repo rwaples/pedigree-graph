@@ -1,8 +1,8 @@
 """The native Ne prerequisites against their 0.9.3 forms kept under ``tests/oracle``.
 
-Slice 15 moves Maignel's equivalent complete generations (the Numba
-``_compute_eqg``) and the per-cohort founder-contribution means (the NumPy
-adjoint sweep of ``_per_gen_founder_means``) to the Rust core.  Both are
+Maignel's equivalent complete generations (the Numba ``_compute_eqg``) and
+the per-cohort founder-contribution means (the NumPy adjoint sweep of
+``_per_gen_founder_means``) run in the Rust core.  Both are
 held to ``rtol 1e-9, atol 1e-12`` on every parity fixture in permuted row
 orders, with bit identity recorded rather than asserted.
 """
@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import CHILD_PRELUDE, _run_child
 from conftest import parity_columns, parity_fixtures
 from oracle.eqg import _compute_eqg
 from oracle.founder_means import _per_gen_founder_means as _oracle_founder_means
-from test_native_relationship_pairs import CHILD_PRELUDE, _run_child
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 from pedigree_graph._cohorts import ObservedCohorts

@@ -109,3 +109,8 @@ def test_regress_log_one_minus_nan_when_underdetermined():
     s, b = _regress_log_one_minus(np.array([1.0, 2.0]), np.array([1.0, 2.0]))
     assert np.isnan(s)
     assert np.isnan(b)
+
+
+def test_flat_series_regresses_to_no_estimate():
+    assert _scalar_ne_from_log_regression(np.array([np.nan, 0.5, 0.5, 0.5]), np.arange(4))[0] is None
+    assert _scalar_ne_from_log_regression(np.array([0.0, 0.1, 0.19, 0.271]), np.arange(4))[0] is not None

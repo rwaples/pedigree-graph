@@ -1,6 +1,6 @@
-"""Tests for pedigree views and coordinate tokens (ADR 0006, slice 3).
+"""Tests for pedigree views and coordinate tokens (ADR 0006).
 
-Pins slice 3: ``graph.view(ids=...)`` xor ``graph.view(rows=...)`` builds an
+``graph.view(ids=...)`` xor ``graph.view(rows=...)`` builds an
 ordered, owned, read-only selection; every malformed selection is one of the
 four structured view errors; each graph and each separately built view owns a
 distinct opaque token; and constructing views changes no existing pair output.

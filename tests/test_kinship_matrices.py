@@ -1,4 +1,4 @@
-"""The three explicit kinship-matrix support contracts (ADR 0006, slice 5b)."""
+"""The three explicit kinship-matrix support contracts (ADR 0006)."""
 
 from __future__ import annotations
 

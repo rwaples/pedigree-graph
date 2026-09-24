@@ -1,4 +1,4 @@
-"""Differential and boundary tests for the Rust topology kernels (slice 10a)."""
+"""Differential and boundary tests for the Rust topology kernels."""
 
 from __future__ import annotations
 

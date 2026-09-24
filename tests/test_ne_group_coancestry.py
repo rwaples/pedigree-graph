@@ -13,8 +13,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 import pytest
-from test_effective_size import _build_closed_line, _df, _random_mating
-from test_effective_size_api import _assert_owned_read_only, _assert_plain_python
+from _support import _assert_owned_read_only, _assert_plain_python, _build_closed_line, _df, _random_mating
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts

@@ -1,6 +1,6 @@
 """``relationship_counts`` through the Rust engine equals the block lengths of ``relationship_pairs``.
 
-Since slice 12 ``relationship_pairs`` runs on the same Rust engine, so this
+``relationship_pairs`` runs on the same Rust engine, so this
 is a self-consistency check between its two consumers: the counts must equal
 the block lengths on every fixture, every selector, every row order, and
 every view, without building a pair list.  The independent oracle for both
