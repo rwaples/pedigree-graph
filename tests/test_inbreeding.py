@@ -17,7 +17,7 @@ from conftest import parity_columns, parity_fixtures
 
 import pedigree_graph._core
 from pedigree_graph import PedigreeGraph
-from pedigree_graph._threads import _reset_thread_state, configure_threads
+from pedigree_graph._threads import configure_threads
 
 DEEP_FIXTURE = parity_fixtures("deep_inbred_60g")["deep_inbred_60g"]
 DEEP_ENVELOPE = 2.0**-22
@@ -86,14 +86,8 @@ def test_result_is_float64():
     assert _graph(MZ_ONLY_LINK).inbreeding().dtype == np.float64
 
 
+@pytest.mark.usefixtures("fresh_thread_state")
 class TestThreads:
-    @pytest.fixture(autouse=True)
-    def reset_thread_state(self, monkeypatch):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
-        _reset_thread_state()
-        yield
-        _reset_thread_state()
-
     def test_computing_call_commits_the_budget(self):
         _graph(MZ_ONLY_LINK).inbreeding()
         with pytest.raises(RuntimeError):

@@ -8,12 +8,17 @@ collapse against the same pedigree with the co-twin row deleted outright.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import polars as pl
 import pytest
-from _support import _assert_owned_read_only, _assert_plain_python, _build_closed_line, _df, _random_mating
+from _support import (
+    _assert_owned_read_only,
+    _assert_plain_python,
+    _build_closed_line,
+    _df,
+    _random_mating,
+    _varying_census,
+)
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
@@ -24,9 +29,6 @@ from pedigree_graph._ne_group_coancestry import (
     ne_group_coancestry,
 )
 from pedigree_graph.effective_size import ne_coancestry, ne_long_term_contributions
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 
 def _with_mz_pair(frame: pl.DataFrame, generation: int) -> pl.DataFrame:
@@ -351,35 +353,6 @@ def test_the_record_does_not_alias_its_prerequisite():
 def test_to_dict_returns_plain_python():
     result = ne_group_coancestry(PedigreeGraph.from_frame(_build_closed_line(4)))
     _assert_plain_python(result.to_dict(), "ne_group_coancestry")
-
-
-def _varying_census(sizes: Sequence[int], seed: int) -> pl.DataFrame:
-    """Closed random-mating pedigree whose cohort ``g`` holds ``sizes[g]`` rows.
-
-    :func:`~test_effective_size._random_mating` fixes one census for every
-    cohort, which is exactly the case ``census_ratio`` cannot distinguish.
-    Mating is otherwise identical: each cohort after the first draws both
-    parents uniformly from the previous one.
-    """
-    rng = np.random.default_rng(seed)
-    records: list[dict] = []
-    next_id = 0
-    previous_m: list[int] = []
-    previous_f: list[int] = []
-    for generation, n in enumerate(sizes):
-        current_m: list[int] = []
-        current_f: list[int] = []
-        for j in range(n):
-            sex = 1 if j < n // 2 else 0
-            record = {"id": next_id, "sex": sex, "generation": generation}
-            if generation > 0:
-                record["mother"] = int(rng.choice(previous_f))
-                record["father"] = int(rng.choice(previous_m))
-            records.append(record)
-            (current_m if sex == 1 else current_f).append(next_id)
-            next_id += 1
-        previous_m, previous_f = current_m, current_f
-    return _df(records)
 
 
 def _truncated_last_cohort(frame: pl.DataFrame, keep: int) -> pl.DataFrame:

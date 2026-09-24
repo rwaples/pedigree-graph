@@ -20,16 +20,8 @@ import numpy as np
 import pandas as pd
 import pedigrees
 import pytest
-from _support import (
-    ASYMMETRIC,
-    CODES,
-    FIXTURE_NAMES,
-    FIXTURES,
-    SYMMETRIC,
-    _columns,
-    _graph,
-    _ped_double_first_cousins,
-)
+from _support import ASYMMETRIC, CODES, SYMMETRIC, _ped_double_first_cousins
+from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, parity_graph
 from oracle.relationship_pairs import check_exclusive, dependency_closure
 from relationship_predicates import AncestorWalk
 
@@ -78,7 +70,7 @@ def _folded_oracle(name: str) -> tuple[dict[str, set[tuple[int, int]]], dict[str
 
 @pytest.fixture(scope="module")
 def full_results() -> dict[str, RelationshipPairs]:
-    return {name: _graph(name).relationship_pairs(max_degree=5) for name in FIXTURE_NAMES}
+    return {name: parity_graph(name).relationship_pairs(max_degree=5) for name in FIXTURE_NAMES}
 
 
 class TestResultShape:
@@ -129,7 +121,7 @@ class TestResultShape:
 
     def test_mutating_the_input_afterwards_changes_nothing(self):
         columns = {
-            key: np.array(value, copy=True) for key, value in _columns(FIXTURES["avuncular_and_cousins"]).items()
+            key: np.array(value, copy=True) for key, value in parity_columns(FIXTURES["avuncular_and_cousins"]).items()
         }
         result = PedigreeGraph.from_frame(columns).relationship_pairs(max_degree=5)
         before = {code: _oriented(block) for code, block in result.items()}
@@ -158,8 +150,8 @@ class TestResultShape:
             assert not any(isinstance(getattr(owner, name), CoordinateToken) for name in public)
 
     def test_blocks_carry_the_exact_receiver_token(self):
-        graph = _graph("avuncular_and_cousins")
-        other = _graph("avuncular_and_cousins")
+        graph = parity_graph("avuncular_and_cousins")
+        other = parity_graph("avuncular_and_cousins")
         result = graph.relationship_pairs(max_degree=5)
         assert all(block._coordinate_token is graph._coordinate_token for block in result.values())
         assert graph._coordinate_token is not other._coordinate_token
@@ -181,59 +173,59 @@ class TestResultShape:
 class TestSelectors:
     def test_both_selectors_is_a_type_error(self):
         with pytest.raises(TypeError):
-            _graph("nuclear_full_sibs").relationship_pairs(max_degree=1, categories=["FS"])
+            parity_graph("nuclear_full_sibs").relationship_pairs(max_degree=1, categories=["FS"])
 
     def test_neither_selector_is_a_type_error(self):
         with pytest.raises(TypeError):
-            _graph("nuclear_full_sibs").relationship_pairs()
+            parity_graph("nuclear_full_sibs").relationship_pairs()
 
     def test_bare_string_is_a_type_error(self):
         with pytest.raises(TypeError):
-            _graph("nuclear_full_sibs").relationship_pairs(categories="FS")
+            parity_graph("nuclear_full_sibs").relationship_pairs(categories="FS")
 
     def test_non_string_code_is_a_type_error(self):
         with pytest.raises(TypeError):
-            _graph("nuclear_full_sibs").relationship_pairs(categories=["FS", 3])  # ty: ignore[invalid-argument-type]
+            parity_graph("nuclear_full_sibs").relationship_pairs(categories=["FS", 3])  # ty: ignore[invalid-argument-type]
 
     def test_unknown_code(self):
         with pytest.raises(PedigreeValidationError) as info:
-            _graph("nuclear_full_sibs").relationship_pairs(categories=["FS", "zz", "aa"])
+            parity_graph("nuclear_full_sibs").relationship_pairs(categories=["FS", "zz", "aa"])
         assert info.value.code == "unknown_relationship_category"
         assert info.value.fields["codes"] == ("aa", "zz")
 
     @pytest.mark.parametrize("max_degree", [-1, 6])
     def test_max_degree_out_of_range(self, max_degree):
         with pytest.raises(PedigreeValidationError) as info:
-            _graph("nuclear_full_sibs").relationship_pairs(max_degree=max_degree)
+            parity_graph("nuclear_full_sibs").relationship_pairs(max_degree=max_degree)
         assert info.value.code == "max_degree_out_of_range"
         assert info.value.fields["value"] == max_degree
         assert (info.value.fields["minimum"], info.value.fields["maximum"]) == (0, 5)
 
     def test_empty_categories_computes_nothing(self):
-        result = _graph("avuncular_and_cousins").relationship_pairs(categories=())
+        result = parity_graph("avuncular_and_cousins").relationship_pairs(categories=())
         assert all(len(block) == 0 and not block.requested for block in result.values())
 
     def test_max_degree_zero_requests_only_mz(self):
-        result = _graph("mz_twins_with_children").relationship_pairs(max_degree=0)
+        result = parity_graph("mz_twins_with_children").relationship_pairs(max_degree=0)
         assert [code for code, block in result.items() if block.requested] == ["MZ"]
         assert len(result["MZ"]) == 1
         assert all(len(block) == 0 for code, block in result.items() if code != "MZ")
 
     @pytest.mark.parametrize("max_degree", range(6))
     def test_requested_flags_match_max_degree(self, max_degree):
-        result = _graph("avuncular_and_cousins").relationship_pairs(max_degree=max_degree)
+        result = parity_graph("avuncular_and_cousins").relationship_pairs(max_degree=max_degree)
         for code, block in result.items():
             assert block.requested == (RELATIONSHIPS[code].degree <= max_degree)
 
     def test_requested_flags_match_categories(self):
-        result = _graph("avuncular_and_cousins").relationship_pairs(categories=["2C", "MO", "MO"])
+        result = parity_graph("avuncular_and_cousins").relationship_pairs(categories=["2C", "MO", "MO"])
         assert {code for code, block in result.items() if block.requested} == {"2C", "MO"}
 
     def test_unrequested_block_is_empty_even_when_computed(self):
-        result = _graph("lineal_five_generations").relationship_pairs(categories=["1C1R"])
+        result = parity_graph("lineal_five_generations").relationship_pairs(categories=["1C1R"])
         assert not result["GGP"].requested
         assert len(result["GGP"]) == 0
-        assert len(_graph("lineal_five_generations").relationship_pairs(max_degree=3)["GGP"]) > 0
+        assert len(parity_graph("lineal_five_generations").relationship_pairs(max_degree=3)["GGP"]) > 0
 
 
 class TestDependencyClosure:
@@ -258,7 +250,7 @@ class TestDependencyClosure:
     @pytest.mark.parametrize("code", ["1C1R", "H1C", "2C", "HAv"])
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_single_category_equals_the_full_run(self, full_results, name, code):
-        alone = _graph(name).relationship_pairs(categories=[code])[code]
+        alone = parity_graph(name).relationship_pairs(categories=[code])[code]
         full = full_results[name][code]
         np.testing.assert_array_equal(alone.first_rows, full.first_rows)
         np.testing.assert_array_equal(alone.second_rows, full.second_rows)
@@ -280,7 +272,7 @@ class TestMembershipAndPrecedence:
 class TestOrientation:
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_asymmetric_blocks_satisfy_their_roles(self, full_results, name):
-        walk = AncestorWalk(_graph(name))
+        walk = AncestorWalk(parity_graph(name))
         for code in ASYMMETRIC:
             for first, second in _oriented(full_results[name][code]):
                 assert walk.oriented_pair_is_valid(code, first, second), (code, first, second)
@@ -293,7 +285,7 @@ class TestOrientation:
 
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_blocks_are_sorted_by_canonical_key(self, full_results, name):
-        n = _graph(name).n_individuals
+        n = parity_graph(name).n_individuals
         for code, block in full_results[name].items():
             keys = np.minimum(block.first_rows, block.second_rows).astype(np.int64) * n + np.maximum(
                 block.first_rows, block.second_rows
@@ -310,7 +302,7 @@ class TestOrientation:
                 assert walk.oriented_pair_is_valid(code, first, second), (code, first, second)
 
     def test_mo_and_fo_name_the_actual_parent(self, full_results):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         result = full_results["random_1k"]
         np.testing.assert_array_equal(graph.mother_rows[result["MO"].first_rows], result["MO"].second_rows)
         np.testing.assert_array_equal(graph.father_rows[result["FO"].first_rows], result["FO"].second_rows)
@@ -320,7 +312,7 @@ class TestDualValid:
     """random_1k holds H1C1R pairs valid in both orientations through different paths."""
 
     def test_random_1k_has_dual_valid_pairs_reported_once_lower_row_first(self, full_results):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         walk = AncestorWalk(graph)
         block = full_results["random_1k"]["H1C1R"]
         duals = [(a, b) for a, b in _oriented(block) if walk.dual_valid("H1C1R", a, b)]
@@ -757,6 +749,6 @@ def _digest(result: RelationshipPairs) -> str:
 
 
 def test_repeated_calls_are_bit_identical(full_results):
-    graph = _graph("random_1k")
+    graph = parity_graph("random_1k")
     assert _digest(graph.relationship_pairs(max_degree=5)) == _digest(full_results["random_1k"])
     assert _digest(graph.relationship_pairs(max_degree=5)) == _digest(full_results["random_1k"])

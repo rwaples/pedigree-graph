@@ -14,25 +14,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
-from conftest import parity_columns, parity_fixtures
+from conftest import FIXTURE_NAMES, parity_graph
 from oracle.kinship_dp.dp import KinshipDPConfig, _build_kinship_csc, _run_dp_core, _stream_sum_theta_per_gen
 
 import pedigree_graph
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 from pedigree_graph._cohorts import _densify_labels
 
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
 THRESHOLD = 0.001
 PERMUTATION_SEEDS = (None, 5, 11)
-
-
-def _graph(name: str, seed: int | None = None) -> PedigreeGraph:
-    columns = parity_columns(FIXTURES[name])
-    if seed is not None:
-        perm = np.random.default_rng(seed).permutation(len(columns["id"]))
-        columns = {key: value[perm] for key, value in columns.items()}
-    return PedigreeGraph.from_frame(columns)
 
 
 def _oracle_csc(graph: PedigreeGraph, threshold: float) -> tuple[bytes, bytes, bytes]:
@@ -81,7 +71,7 @@ def _bytes(arrays) -> tuple[bytes, ...]:
 @pytest.mark.parametrize("seed", PERMUTATION_SEEDS)
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
 def test_complete_and_approximate_match_the_oracle_bytes(name, seed):
-    graph = _graph(name, seed)
+    graph = parity_graph(name, seed)
     assert _bytes(_native.kinship_csc(graph._built, graph.depth)) == _oracle_csc(graph, 0.0)
     assert _bytes(_native.approximate_kinship_csc(graph._built, graph.depth, THRESHOLD)) == _oracle_csc(
         graph, THRESHOLD
@@ -91,7 +81,7 @@ def test_complete_and_approximate_match_the_oracle_bytes(name, seed):
 @pytest.mark.parametrize("seed", PERMUTATION_SEEDS)
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
 def test_generation_sums_match_the_oracle_bits(name, seed):
-    graph = _graph(name, seed)
+    graph = parity_graph(name, seed)
     n = graph.n_individuals
     shuffled = np.random.default_rng(3).integers(-1, 4, n).astype(np.int32)
     for labels in (np.asarray(graph.depth, dtype=np.int32), shuffled):
@@ -116,7 +106,7 @@ def test_a_parentless_row_above_depth_zero_keeps_its_diagonal():
     bindings can reach this; 0.9.2 dropped such a row's diagonal and its
     edges to descendants.
     """
-    graph = _graph("random_1k")
+    graph = parity_graph("random_1k")
     # Doubling keeps every child strictly below its parents; the extra one
     # then puts every founder at an odd depth of at least 1.
     depth = np.asarray(graph.depth, dtype=np.int32) * 2
@@ -222,7 +212,7 @@ def test_native_sums_are_free_of_the_0_9_1_slot_reuse_hazard():
 
 class TestBoundary:
     def test_the_arrays_are_owned_and_contiguous(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         indptr, indices, data = _native.kinship_csc(graph._built, graph.depth)
         for array, dtype in ((indptr, np.int32), (indices, np.int32), (data, np.float32)):
             assert array.dtype == dtype
@@ -242,7 +232,7 @@ class TestBoundary:
         assert sums.tolist() == [0.0]
 
     def test_a_non_structural_depth_is_rejected(self):
-        graph = _graph("nuclear_full_sibs")
+        graph = parity_graph("nuclear_full_sibs")
         flat = np.zeros(graph.n_individuals, dtype=np.int32)
         with pytest.raises(PedigreeValidationError) as info:
             _native.kinship_csc(graph._built, flat)
@@ -255,12 +245,12 @@ class TestBoundary:
 
     @pytest.mark.parametrize("threshold", [-0.1, 1.5, float("nan"), float("inf")])
     def test_a_bad_threshold_is_a_value_error(self, threshold):
-        graph = _graph("nuclear_full_sibs")
+        graph = parity_graph("nuclear_full_sibs")
         with pytest.raises(ValueError, match="min_propagated_kinship"):
             _native.approximate_kinship_csc(graph._built, graph.depth, threshold)
 
     def test_bad_labels_are_rejected(self):
-        graph = _graph("nuclear_full_sibs")
+        graph = parity_graph("nuclear_full_sibs")
         n = graph.n_individuals
         with pytest.raises(PedigreeValidationError) as info:
             _native.generation_kinship_sums(graph._built, graph.depth, np.full(n, 2, np.int32), 2)
@@ -280,7 +270,7 @@ class TestBoundary:
             assert f"def {name}(" in stub
 
     def test_the_public_matrices_are_the_bindings_without_a_copy(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         matrix = graph.approximate_kinship_matrix(min_propagated_kinship=THRESHOLD)
         assert not isinstance(matrix.data.base, np.ndarray)
         assert not matrix.data.flags.writeable

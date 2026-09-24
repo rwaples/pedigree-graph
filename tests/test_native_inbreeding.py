@@ -13,24 +13,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
-from conftest import parity_columns, parity_fixtures
+from conftest import FIXTURE_NAMES, parity_graph
 from oracle.inbreeding import _compute_F_meuwissen_luo
 from oracle.remap import build_topology
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
 PERMUTATION_SEEDS = (None, 5, 11)
 RTOL, ATOL = 1e-9, 1e-12
-
-
-def _graph(name: str, seed: int | None = None) -> PedigreeGraph:
-    columns = parity_columns(FIXTURES[name])
-    if seed is not None:
-        perm = np.random.default_rng(seed).permutation(len(columns["id"]))
-        columns = {key: value[perm] for key, value in columns.items()}
-    return PedigreeGraph.from_frame(columns)
 
 
 def _oracle_F(graph: PedigreeGraph) -> np.ndarray:
@@ -48,7 +38,7 @@ def _oracle_F(graph: PedigreeGraph) -> np.ndarray:
 @pytest.mark.parametrize("seed", PERMUTATION_SEEDS)
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
 def test_f_matches_the_oracle(name, seed, record_property):
-    graph = _graph(name, seed)
+    graph = parity_graph(name, seed)
     native = _native.inbreeding(graph._built, graph.depth)
     oracle = _oracle_F(graph)
     np.testing.assert_allclose(native, oracle, rtol=RTOL, atol=ATOL)
@@ -63,7 +53,7 @@ def test_mz_and_inbred_constructions_match_the_oracle(build):
 
 class TestBoundary:
     def test_the_array_is_owned_and_contiguous(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         F = _native.inbreeding(graph._built, graph.depth)
         assert F.dtype == np.float64
         assert F.shape == (graph.n_individuals,)
@@ -71,7 +61,7 @@ class TestBoundary:
         assert not isinstance(F.base, np.ndarray)
 
     def test_the_public_array_is_the_binding_without_a_copy(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         F = graph.inbreeding()
         assert not isinstance(F.base, np.ndarray)
         assert not F.flags.writeable
@@ -83,7 +73,7 @@ class TestBoundary:
         assert _native.inbreeding(graph._built, graph.depth).shape == (0,)
 
     def test_a_non_structural_depth_is_rejected(self):
-        graph = _graph("nuclear_full_sibs")
+        graph = parity_graph("nuclear_full_sibs")
         with pytest.raises(PedigreeValidationError) as info:
             _native.inbreeding(graph._built, np.zeros(graph.n_individuals, dtype=np.int32))
         assert info.value.code == "value_out_of_range"

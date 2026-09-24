@@ -12,17 +12,11 @@ import warnings
 
 import numpy as np
 import pytest
+from _support import CHAIN_BIRTH, _chain_graph
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
 from pedigree_graph import effective_size as es
 from pedigree_graph.effective_size import UnavailableEffectiveSize, estimate_effective_sizes
-
-_IDS = np.arange(8)
-_MOTHER = np.array([-1, -1, 0, 0, 2, 2, 4, 4])
-_FATHER = np.array([-1, -1, 1, 1, 3, 3, 5, 5])
-_SEX = np.array([0, 1, 0, 1, 0, 1, 0, 1])
-_GEN = np.array([0, 0, 1, 1, 2, 2, 3, 3])
-_BIRTH = np.array([1900, 1900, 1920, 1920, 1940, 1940, 1960, 1960])
 
 ALL = [
     es.ne_inbreeding,
@@ -39,19 +33,13 @@ NEEDS_PARENTAGE = [es.ne_long_term_contributions]
 NEEDS_GENERATION = [f for f in ALL if f is not es.ne_hill_overlapping]
 
 
-def _graph(**overrides):
-    columns = {"id": _IDS, "mother": _MOTHER, "father": _FATHER, "sex": _SEX, "generation": _GEN}
-    columns.update(overrides)
-    return PedigreeGraph.from_frame({k: v for k, v in columns.items() if v is not None})
-
-
 def _name(f):
     return f.__name__
 
 
 @pytest.mark.parametrize("estimator", NEEDS_GENERATION, ids=_name)
 def test_partial_generation_labels_disable_every_label_grouped_estimator(estimator):
-    pg = _graph(generation=np.array([0, 0, 1, 1, 2, 2, -1, -1]))
+    pg = _chain_graph(generation=np.array([0, 0, 1, 1, 2, 2, -1, -1]))
     with pytest.raises(MissingMetadataError) as info:
         estimator(pg)
     assert info.value.code == "missing_generation_labels"
@@ -60,8 +48,8 @@ def test_partial_generation_labels_disable_every_label_grouped_estimator(estimat
 
 @pytest.mark.parametrize("estimator", ALL, ids=_name)
 def test_absent_generation_labels_fall_back_to_depth(estimator):
-    labelled = _graph()
-    unlabelled = _graph(generation=None)
+    labelled = _chain_graph()
+    unlabelled = _chain_graph(generation=None)
     assert unlabelled.generation_labels is None
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -75,7 +63,7 @@ def test_absent_generation_labels_fall_back_to_depth(estimator):
     ids=["absent", "partial"],
 )
 def test_sex_dependent_estimators_require_complete_sex(estimator, sex, status, count):
-    pg = _graph(sex=sex)
+    pg = _chain_graph(sex=sex)
     with pytest.raises(MissingMetadataError) as info:
         estimator(pg)
     assert info.value.code == "missing_sex"
@@ -84,12 +72,12 @@ def test_sex_dependent_estimators_require_complete_sex(estimator, sex, status, c
 
 @pytest.mark.parametrize("estimator", [f for f in ALL if f not in NEEDS_SEX], ids=_name)
 def test_other_estimators_ignore_absent_sex(estimator):
-    estimator(_graph(sex=None))
+    estimator(_chain_graph(sex=None))
 
 
 @pytest.mark.parametrize("estimator", NEEDS_SEX, ids=_name)
 def test_generation_is_validated_before_sex(estimator):
-    pg = _graph(sex=None, generation=np.array([0, 0, 1, 1, 2, 2, -1, -1]))
+    pg = _chain_graph(sex=None, generation=np.array([0, 0, 1, 1, 2, 2, -1, -1]))
     with pytest.raises(MissingMetadataError) as info:
         estimator(pg)
     assert info.value.code == "missing_generation_labels"
@@ -97,7 +85,7 @@ def test_generation_is_validated_before_sex(estimator):
 
 @pytest.mark.parametrize("estimator", NEEDS_SEX, ids=_name)
 def test_uniform_fully_known_sex_is_valid_and_warns(estimator):
-    pg = _graph(sex=np.zeros(8, dtype=np.int64))
+    pg = _chain_graph(sex=np.zeros(8, dtype=np.int64))
     with pytest.warns(RuntimeWarning, match="pg.sex is uniform"):
         assert estimator(pg).ne is None
 
@@ -109,7 +97,7 @@ def test_uniform_fully_known_sex_is_valid_and_warns(estimator):
     ids=["missing", "external"],
 )
 def test_one_represented_parent_disables_only_ltc(estimator, father, status):
-    pg = _graph(father=father)
+    pg = _chain_graph(father=father)
     with pytest.raises(MissingMetadataError) as info:
         estimator(pg)
     assert info.value.code == "incomplete_parentage"
@@ -126,50 +114,50 @@ def test_one_represented_parent_disables_only_ltc(estimator, father, status):
 
 @pytest.mark.parametrize("estimator", [f for f in ALL if f not in NEEDS_PARENTAGE], ids=_name)
 def test_other_estimators_run_with_one_represented_parent(estimator):
-    estimator(_graph(father=np.array([-1, -1, 1, 1, 3, -1, 5, 5])))
+    estimator(_chain_graph(father=np.array([-1, -1, 1, 1, 3, -1, 5, 5])))
 
 
 @pytest.mark.parametrize("estimator", NEEDS_PARENTAGE, ids=_name)
 def test_generation_is_validated_before_parentage(estimator):
-    pg = _graph(father=np.array([-1, -1, 1, 1, 3, -1, 5, 5]), generation=np.array([0, 0, 1, 1, 2, 2, -1, -1]))
+    pg = _chain_graph(father=np.array([-1, -1, 1, 1, 3, -1, 5, 5]), generation=np.array([0, 0, 1, 1, 2, 2, -1, -1]))
     with pytest.raises(MissingMetadataError) as info:
         estimator(pg)
     assert info.value.code == "missing_generation_labels"
 
 
 def test_represented_founders_with_external_parents_are_closed_parentage():
-    pg = _graph(mother=np.array([90, 91, 0, 0, 2, 2, 4, 4]), father=np.array([92, 93, 1, 1, 3, 3, 5, 5]))
+    pg = _chain_graph(mother=np.array([90, 91, 0, 0, 2, 2, 4, 4]), father=np.array([92, 93, 1, 1, 3, 3, 5, 5]))
     assert es.ne_long_term_contributions(pg).final_generation is not None
 
 
 class TestHill:
     def test_absent_birth_years_collapse_after_generation_and_sex(self):
-        res = es.ne_hill_overlapping(_graph())
+        res = es.ne_hill_overlapping(_chain_graph())
         assert res.collapses_to_ne_v
         assert res.generation_interval == 1.0
-        assert res.ne == es.ne_variance_family_size(_graph()).ne
+        assert res.ne == es.ne_variance_family_size(_chain_graph()).ne
 
     def test_birth_year_branch_ignores_generation_labels(self):
-        pg = _graph(birth_year=_BIRTH, generation=np.array([0, 0, 1, 1, 2, 2, -1, -1]))
+        pg = _chain_graph(birth_year=CHAIN_BIRTH, generation=np.array([0, 0, 1, 1, 2, 2, -1, -1]))
         res = es.ne_hill_overlapping(pg)
         assert not res.collapses_to_ne_v
 
     def test_birth_year_branch_validates_sex_before_parent_ages(self):
-        pg = _graph(birth_year=np.array([-1, -1, 1920, 1920, 1940, 1940, 1960, 1960]), sex=None)
+        pg = _chain_graph(birth_year=np.array([-1, -1, 1920, 1920, 1940, 1940, 1960, 1960]), sex=None)
         with pytest.raises(MissingMetadataError) as info:
             es.ne_hill_overlapping(pg)
         assert info.value.code == "missing_sex"
 
     def test_birth_year_branch_rejects_a_role_without_known_ages(self):
         birth_year = np.array([1900, -1, 1920, 1920, 1940, -1, 1960, 1960])
-        pg = _graph(birth_year=birth_year, father=np.array([-1, -1, 1, 1, 1, 1, 5, 5]))
+        pg = _chain_graph(birth_year=birth_year, father=np.array([-1, -1, 1, 1, 1, 1, 5, 5]))
         with pytest.raises(MissingMetadataError) as info:
             es.ne_hill_overlapping(pg)
         assert info.value.code == "insufficient_parent_age_data"
         assert info.value.fields["missing_parent_roles"] == ("father",)
 
     def test_partial_birth_years_run_and_report_the_unknown_rows(self):
-        pg = _graph(birth_year=np.array([1900, 1900, 1920, 1920, 1940, 1940, -1, 1960]))
+        pg = _chain_graph(birth_year=np.array([1900, 1900, 1920, 1920, 1940, 1940, -1, 1960]))
         res = es.ne_hill_overlapping(pg)
         assert not res.collapses_to_ne_v
         assert res.n_unknown_birth_year == 1
@@ -192,7 +180,7 @@ def test_empty_graph_bypasses_every_guard(estimator):
     ids=["incomplete_parentage", "partial_generation_labels"],
 )
 def test_a_batch_reports_the_guard_that_disabled_each_estimator(overrides, code, disabled):
-    results = estimate_effective_sizes(_graph(**overrides))
+    results = estimate_effective_sizes(_chain_graph(**overrides))
     assert len(results) == 8
     expected = tuple(map(_name, ALL)) if disabled is None else disabled
     for name, result in results.items():
@@ -208,7 +196,7 @@ def test_a_batch_reports_the_guard_that_disabled_each_estimator(overrides, code,
 
 def test_a_batch_refuses_hill_when_a_parent_role_has_no_known_ages():
     birth_year = np.array([1900, -1, 1920, 1920, 1940, -1, 1960, 1960])
-    pg = _graph(birth_year=birth_year, father=np.array([-1, -1, 1, 1, 1, 1, 5, 5]))
+    pg = _chain_graph(birth_year=birth_year, father=np.array([-1, -1, 1, 1, 1, 1, 5, 5]))
     hill = estimate_effective_sizes(pg, ["ne_hill_overlapping"])["ne_hill_overlapping"]
     assert hill.reason == "missing_metadata"
     assert hill.code == "insufficient_parent_age_data"

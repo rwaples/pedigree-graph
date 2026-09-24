@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 import tracemalloc
 import warnings
 from pathlib import Path
 
 import numpy as np
+import pedigrees
 import pytest
-from _support import FIXTURE_NAMES, _columns, _graph
+from _support import _run_child
+from conftest import FIXTURE_NAMES, parity_columns, parity_graph
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, RelationshipCountResult, _streaming_counter
 from pedigree_graph._registry import estimate_exact_codes
 from pedigree_graph._threads import _reset_thread_state, configure_threads, thread_budget
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
-
-import pedigrees
 
 CODES = tuple(RELATIONSHIPS)
 
@@ -31,8 +26,8 @@ def small_graph(small_pedigree) -> PedigreeGraph:
 
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
 def test_exact_values_and_metadata(name):
-    result = _graph(name).close_relative_counts()
-    exact = _graph(name).relationship_counts(max_degree=5)
+    result = parity_graph(name).close_relative_counts()
+    exact = parity_graph(name).relationship_counts(max_degree=5)
     assert isinstance(result, RelationshipCountResult)
     assert tuple(result) == CODES
     assert result.requested == result.exact == estimate_exact_codes()
@@ -135,6 +130,7 @@ def test_takes_no_selector_and_has_no_view_form(small_graph):
         small_graph.close_relative_counts(categories=["FS"])  # type: ignore[call-arg]
 
 
+@pytest.mark.usefixtures("fresh_thread_state")
 class TestThreads:
     """The Python budget commits on the first public call and the native pool follows it.
 
@@ -143,41 +139,23 @@ class TestThreads:
     reconfigures only to the value this process already runs.
     """
 
-    @pytest.fixture(autouse=True)
-    def reset_thread_state(self):
-        _reset_thread_state()
-        yield
-        _reset_thread_state()
-
     def test_budget_of_four_matches_one_thread(self):
-        script = (
-            "import sys\n"
-            "sys.path.insert(0, sys.argv[1])\n"
-            "from conftest import parity_columns, parity_fixtures\n"
-            "from pedigree_graph import PedigreeGraph\n"
-            "fx = parity_fixtures('random_1k')['random_1k']\n"
-            "print(dict(PedigreeGraph.from_frame(parity_columns(fx)).close_relative_counts()))\n"
-        )
-        outputs = []
-        for threads in ("1", "4"):
-            env = {**os.environ, "PEDIGREE_GRAPH_THREADS": threads}
-            result = subprocess.run(
-                [sys.executable, "-c", script, str(Path(__file__).parent)],
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            assert result.returncode == 0, result.stderr
-            outputs.append(result.stdout)
-        assert outputs[0] == outputs[1]
-        assert "'FS'" in outputs[0]
+        body = f"""
+            import sys
+            sys.path.insert(0, {str(Path(__file__).parent)!r})
+            from conftest import parity_graph
+            print(dict(parity_graph("random_1k").close_relative_counts()))
+        """
+        one = _run_child(body, PEDIGREE_GRAPH_THREADS="1")
+        four = _run_child(body, PEDIGREE_GRAPH_THREADS="4")
+        assert one == four
+        assert "'FS'" in one
 
     @pytest.mark.parametrize("cached", [False, True])
     def test_public_call_commits_budget(self, cached):
         budget = thread_budget()
         _reset_thread_state()
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         if cached:
             graph.close_relative_counts()
             _reset_thread_state()
@@ -191,7 +169,7 @@ class TestThreads:
 @pytest.mark.slow
 def test_random_30k_matches_exact_counts():
     fx = pedigrees.build_random("random_30k", pedigrees.LARGE_FIXTURES["random_30k"])
-    graph = PedigreeGraph.from_frame(_columns(fx))
+    graph = PedigreeGraph.from_frame(parity_columns(fx))
     result = graph.close_relative_counts()
     exact = graph.relationship_counts(max_degree=5)
     assert result.exact == estimate_exact_codes()

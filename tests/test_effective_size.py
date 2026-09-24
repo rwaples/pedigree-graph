@@ -8,7 +8,7 @@ cases use 1e-9.
 import numpy as np
 import polars as pl
 import pytest
-from _support import _build_closed_line, _df, _random_mating
+from _support import _assert_summaries_agree, _build_closed_line, _df, _random_mating
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
@@ -31,23 +31,6 @@ from pedigree_graph.effective_size import (
     ne_variance_family_size,
 )
 from pedigree_graph.summaries import GenerationKinshipSummary
-
-
-def _df_by(records: list[dict]) -> pl.DataFrame:
-    """Build a pedigree DataFrame including a ``birth_year`` column."""
-    rows = [
-        {
-            "id": r["id"],
-            "mother": r.get("mother", -1),
-            "father": r.get("father", -1),
-            "twin": r.get("twin", -1),
-            "sex": r["sex"],
-            "generation": r["generation"],
-            "birth_year": r["birth_year"],
-        }
-        for r in records
-    ]
-    return pl.DataFrame(rows)
 
 
 def _toy_birth_year_pedigree(
@@ -97,7 +80,7 @@ def _toy_birth_year_pedigree(
                 "mother": m,
             }
         )
-    return _df_by(records)
+    return _df(records)
 
 
 # ---------------------------------------------------------------------------
@@ -692,7 +675,7 @@ def test_ne_hill_eligible_cohort_filtering():
         {"id": 8 + i, "sex": 1 if i < 2 else 0, "generation": 2, "birth_year": 1920, "father": f, "mother": m}
         for i, (f, m) in enumerate(pairs_1920)
     )
-    df = _df_by(records)
+    df = _df(records)
     pg = PedigreeGraph.from_frame(df)
     res = ne_hill_overlapping(pg)
     assert res.cohort_window is not None
@@ -847,13 +830,6 @@ def _matrix_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
         np.asarray(pg.generation_labels),
         np.asarray(pg.twin_rows),
     )
-
-
-def _assert_summaries_agree(a: GenerationKinshipSummary, b: GenerationKinshipSummary) -> None:
-    np.testing.assert_array_equal(a.generations, b.generations)
-    np.testing.assert_array_equal(a.pair_counts, b.pair_counts)
-    np.testing.assert_allclose(a.mean_kinship, b.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
-    assert a.unlabelled_individual_count == b.unlabelled_individual_count
 
 
 def test_streamed_summary_matches_matrix_path_toy1():

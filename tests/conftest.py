@@ -14,6 +14,7 @@ import pytest
 from hypothesis import strategies as st
 
 from pedigree_graph import PedigreeGraph
+from pedigree_graph._threads import _reset_thread_state
 
 _DATA_DIR = Path(__file__).parent / "data"
 
@@ -29,6 +30,15 @@ import pedigrees  # noqa: E402
 # and the property tests check it against pure-Python oracles, so large random
 # pedigrees make the property suite slow.
 PEDIGREE_MAX_N = 25
+
+
+@pytest.fixture
+def fresh_thread_state(monkeypatch):
+    """Run the test under an uncommitted thread budget and no ``PEDIGREE_GRAPH_THREADS``, and reset after."""
+    monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
+    _reset_thread_state()
+    yield
+    _reset_thread_state()
 
 
 @pytest.fixture
@@ -176,3 +186,21 @@ def parity_columns(fixture: dict[str, np.ndarray], birth_year: np.ndarray | None
     if birth_year is not None:
         columns["birth_year"] = birth_year
     return columns
+
+
+#: Every motif fixture plus the two random ones most modules run on.
+#: deep_inbred_60g matters for orientation as well as membership: sixty
+#: generations off eight founders is where a pair most easily reaches both arms
+#: of an asymmetric product, which decides whether the emitted role is
+#: discovered or arbitrary (issue #21).
+FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
+FIXTURE_NAMES = sorted(FIXTURES)
+
+
+def parity_graph(name: str, seed: int | None = None) -> PedigreeGraph:
+    """Return the graph of ``FIXTURES[name]``, its rows shuffled by *seed* when one is given."""
+    columns = parity_columns(FIXTURES[name])
+    if seed is not None:
+        perm = np.random.default_rng(seed).permutation(len(columns["id"]))
+        columns = {key: value[perm] for key, value in columns.items()}
+    return PedigreeGraph.from_frame(columns)

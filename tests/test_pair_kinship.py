@@ -9,21 +9,22 @@ the ULP distance is reported.  Errors carry structured codes.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from types import MappingProxyType
 
 import numpy as np
+import pedigrees
 import pytest
 import scipy.sparse as sp
 from _support import (
     _PAIRWISE_FIXTURES,
+    ENVELOPE_UNIT,
     _ped_double_first_cousins,
     _ped_inbred_mz,
     _ped_mz_twins_with_descendants,
     _ped_sib_mating,
+    float32_ulp_distance,
 )
-from conftest import parity_columns, parity_fixtures
+from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, parity_graph
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
 from pedigree_graph import (
@@ -31,37 +32,16 @@ from pedigree_graph import (
     PedigreeGraph,
     PedigreeValidationError,
 )
-from pedigree_graph._threads import _reset_thread_state, configure_threads
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
-
-import pedigrees
+from pedigree_graph._threads import configure_threads
 
 MAX_DEGREE = 5
-ENVELOPE_UNIT = 2.0**-25
 
 
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
 MOTIF_NAMES = sorted(pedigrees.motif_fixtures())
-
-
-def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph.from_frame(parity_columns(FIXTURES[name]))
-
-
-def _all_pairs(n: int) -> tuple[np.ndarray, np.ndarray]:
-    return np.triu_indices(n)
 
 
 def _matrix_values(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> np.ndarray:
     return np.asarray(graph.kinship_matrix()[first, second], dtype=np.float32).ravel()
-
-
-def _ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    ia = a.astype(np.float32).view(np.int32).astype(np.int64)
-    ib = b.astype(np.float32).view(np.int32).astype(np.int64)
-    return np.abs(ia - ib)
 
 
 def _sib_mating() -> PedigreeGraph:
@@ -134,8 +114,8 @@ class TestCallForms:
             values["FS"] = np.zeros(1, dtype=np.float32)  # type: ignore[index]
 
     def test_endpoint_reversal_is_bit_identical(self):
-        graph = _graph("deep_inbred_60g")
-        first, second = _all_pairs(graph.n_individuals)
+        graph = parity_graph("deep_inbred_60g")
+        first, second = np.triu_indices(graph.n_individuals)
         assert graph.pair_kinship(first, second).tobytes() == graph.pair_kinship(second, first).tobytes()
 
     def test_self_pairs_encode_inbreeding(self):
@@ -167,13 +147,13 @@ class TestValues:
 
     @pytest.mark.parametrize("name", ["one_parent_known", "external_parents", "founder_mz_twins"])
     def test_partial_parentage_matches_the_matrix(self, name):
-        graph = _graph(name)
-        first, second = _all_pairs(graph.n_individuals)
+        graph = parity_graph(name)
+        first, second = np.triu_indices(graph.n_individuals)
         assert graph.pair_kinship(first, second).tobytes() == _matrix_values(graph, first, second).tobytes()
 
     def test_zero_is_exact(self):
-        graph = _graph("random_1k")
-        first, second = _all_pairs(graph.n_individuals)
+        graph = parity_graph("random_1k")
+        first, second = np.triu_indices(graph.n_individuals)
         values = graph.pair_kinship(first, second)
         matrix = graph.kinship_matrix()
         support = np.asarray(matrix[first, second] != 0).ravel()
@@ -183,27 +163,25 @@ class TestValues:
 class TestWithinGraphParity:
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_every_pair_matches_the_matrix_bit_for_bit(self, name):
-        graph = _graph(name)
-        first, second = _all_pairs(graph.n_individuals)
+        graph = parity_graph(name)
+        first, second = np.triu_indices(graph.n_individuals)
         assert graph.pair_kinship(first, second).tobytes() == _matrix_values(graph, first, second).tobytes()
 
     @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
     def test_mz_and_inbred_constructions_match_the_matrix_bit_for_bit(self, build):
         graph = PedigreeGraph.from_frame(build())
-        first, second = _all_pairs(graph.n_individuals)
+        first, second = np.triu_indices(graph.n_individuals)
         assert graph.pair_kinship(first, second).tobytes() == _matrix_values(graph, first, second).tobytes()
 
     @pytest.mark.parametrize("name", [*MOTIF_NAMES, "deep_inbred_60g"])
     def test_kernel_matches_the_python_oracle(self, name):
-        graph = _graph(name)
-        first, second = _all_pairs(graph.n_individuals)
+        graph = parity_graph(name)
+        first, second = np.triu_indices(graph.n_individuals)
         oracle = oracle_pair_kinship(graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, first, second)
         assert graph.pair_kinship(first, second).tobytes() == oracle.tobytes()
 
     def test_relationship_pairs_of_a_reordered_graph_match_its_own_matrix(self):
-        fixture = FIXTURES["deep_inbred_60g"]
-        perm = np.random.default_rng(5).permutation(len(fixture["ids"]))
-        graph = PedigreeGraph.from_frame({key: value[perm] for key, value in parity_columns(fixture).items()})
+        graph = parity_graph("deep_inbred_60g", seed=5)
         pairs = graph.relationship_pairs(max_degree=MAX_DEGREE)
         values = graph.pair_kinship(pairs)
         for code, block in pairs.items():
@@ -214,9 +192,9 @@ class TestWithinGraphParity:
 class TestCrossOrderEnvelope:
     def test_permuted_deep_inbred_graphs_agree_within_the_envelope(self, capsys):
         fixture = FIXTURES["deep_inbred_60g"]
-        reference = _graph("deep_inbred_60g")
+        reference = parity_graph("deep_inbred_60g")
         n = reference.n_individuals
-        first, second = _all_pairs(n)
+        first, second = np.triu_indices(n)
         want = reference.pair_kinship(first, second)
         depth = reference.depth
         tolerance = 2.0 * (depth[first] + depth[second] + 1) * ENVELOPE_UNIT
@@ -231,7 +209,7 @@ class TestCrossOrderEnvelope:
             deviation = np.abs(want.astype(np.float64) - got.astype(np.float64))
             assert np.all(deviation <= tolerance), f"seed {seed}: beyond the ADR 0009 envelope"
             np.testing.assert_array_equal(got == 0, want == 0)
-            ulp = _ulp_distance(want, got)
+            ulp = float32_ulp_distance(want, got)
             worst_ulp = max(worst_ulp, int(ulp.max()))
             differing += int((ulp > 0).sum())
         with capsys.disabled():
@@ -242,10 +220,10 @@ class TestCrossOrderEnvelope:
 
 class TestViews:
     def test_view_rows_are_converted_to_graph_rows(self):
-        graph = _graph("double_first_cousins")
+        graph = parity_graph("double_first_cousins")
         rows = np.arange(graph.n_individuals)[::-1]
         view = graph.view(rows=rows)
-        first, second = _all_pairs(view.n_individuals)
+        first, second = np.triu_indices(view.n_individuals)
         assert view.pair_kinship(first, second).tobytes() == graph.pair_kinship(rows[first], rows[second]).tobytes()
 
     def test_reversed_view_resolves_inbred_mz_kinship_through_the_graph(self):
@@ -254,7 +232,7 @@ class TestViews:
         assert view.pair_kinship(view.relationship_pairs(max_degree=1))["MZ"].tolist() == [0.625]
 
     def test_view_blocks_and_collections_match_the_graph(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         view = graph.view(ids=FIXTURES["random_1k"]["ids"][::3])
         pairs = view.relationship_pairs(max_degree=3)
         values = view.pair_kinship(pairs)
@@ -373,14 +351,8 @@ class TestErrors:
         assert info.value.fields["value"] == "null"
 
 
+@pytest.mark.usefixtures("fresh_thread_state")
 class TestThreads:
-    @pytest.fixture(autouse=True)
-    def reset_thread_state(self, monkeypatch):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
-        _reset_thread_state()
-        yield
-        _reset_thread_state()
-
     def test_public_call_commits_the_budget(self):
         _sib_mating().pair_kinship([0], [1])
         with pytest.raises(RuntimeError):

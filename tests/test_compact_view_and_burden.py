@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
+import pedigrees
 import pytest
 from _support import CHILD_PRELUDE, _run_child
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, _native
-
-sys.path.insert(0, str(Path(__file__).parent / "parity"))
-import pedigrees
 
 
 @pytest.mark.parametrize(

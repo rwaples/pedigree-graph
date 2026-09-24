@@ -12,23 +12,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from _support import CHILD_PRELUDE, _run_child
-from conftest import parity_columns, parity_fixtures
+from conftest import FIXTURE_NAMES, parity_graph
 from oracle.lineage import _compute_n_ancestors, _compute_n_descendants
 from oracle.remap import build_topology
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, ResourceError, _native
 
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
 PERMUTATION_SEEDS = (None, 5, 11)
-
-
-def _graph(name: str, seed: int | None = None) -> PedigreeGraph:
-    columns = parity_columns(FIXTURES[name])
-    if seed is not None:
-        perm = np.random.default_rng(seed).permutation(len(columns["id"]))
-        columns = {key: value[perm] for key, value in columns.items()}
-    return PedigreeGraph.from_frame(columns)
 
 
 def _oracle(kernel, graph: PedigreeGraph) -> np.ndarray:
@@ -54,7 +44,7 @@ def _sib_mating_ladder(generations: int) -> PedigreeGraph:
 @pytest.mark.parametrize("seed", PERMUTATION_SEEDS)
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
 def test_counts_match_the_oracle_bytes(name, seed):
-    graph = _graph(name, seed)
+    graph = parity_graph(name, seed)
     ancestors = _native.distinct_ancestor_counts(graph._built, graph.depth)
     descendants = _native.descendant_path_counts(graph._built, graph.depth)
     assert ancestors.tobytes() == _oracle(_compute_n_ancestors, graph).astype(np.int32).tobytes()
@@ -81,7 +71,7 @@ class TestBoundary:
         [(_native.distinct_ancestor_counts, np.int32), (_native.descendant_path_counts, np.int64)],
     )
     def test_the_arrays_are_owned_and_contiguous(self, binding, dtype):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         counts = binding(graph._built, graph.depth)
         assert counts.dtype == dtype
         assert counts.shape == (graph.n_individuals,)
@@ -89,13 +79,13 @@ class TestBoundary:
         assert not isinstance(counts.base, np.ndarray)
 
     def test_the_public_arrays_are_the_bindings_without_a_copy(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         for public in (graph.distinct_ancestor_counts(), graph.descendant_path_counts()):
             assert not isinstance(public.base, np.ndarray)
             assert not public.flags.writeable
 
     def test_a_non_structural_depth_is_rejected_when_the_rows_need_sorting(self):
-        graph = _graph("random_1k", seed=5)
+        graph = parity_graph("random_1k", seed=5)
         assert not graph._built.rows_topological
         flat = np.zeros(graph.n_individuals, dtype=np.int32)
         for binding in (_native.distinct_ancestor_counts, _native.descendant_path_counts):
@@ -105,7 +95,7 @@ class TestBoundary:
             assert info.value.fields["field"] == "depth"
 
     def test_depth_is_optional_only_for_parents_first_rows(self):
-        topological, permuted = _graph("random_1k"), _graph("random_1k", seed=5)
+        topological, permuted = parity_graph("random_1k"), parity_graph("random_1k", seed=5)
         for binding in (_native.distinct_ancestor_counts, _native.descendant_path_counts):
             assert (
                 binding(topological._built, None).tobytes() == binding(topological._built, topological.depth).tobytes()
@@ -116,7 +106,7 @@ class TestBoundary:
             assert info.value.fields["field"] == "depth"
 
     def test_parents_first_rows_never_read_depth(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         assert graph._built.rows_topological
         flat = np.zeros(graph.n_individuals, dtype=np.int32)
         for binding in (_native.distinct_ancestor_counts, _native.descendant_path_counts):

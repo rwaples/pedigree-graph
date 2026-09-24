@@ -19,11 +19,7 @@ CONFIGURE_THEN_PRINT = (
 )
 
 
-@pytest.fixture(autouse=True)
-def reset_thread_state():
-    _reset_thread_state()
-    yield
-    _reset_thread_state()
+pytestmark = pytest.mark.usefixtures("fresh_thread_state")
 
 
 def run_child(script, env_threads=None):

@@ -8,7 +8,7 @@ import subprocess
 import sys
 import textwrap
 from dataclasses import fields
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
@@ -17,9 +17,10 @@ import pytest
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 from pedigree_graph._topology import structural_depth
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
-import pedigrees
+    from pedigree_graph.summaries import GenerationKinshipSummary
 
 # Fresh-interpreter runs: the native pool is built once per process.
 
@@ -148,7 +149,21 @@ _PAIRWISE_FIXTURES = [
 ]
 
 
-# Parity fixtures and the frozen 0.7.1 baseline.
+# ADR 0009 cross-order envelope.
+
+
+#: One float32 rounding unit at kinship scale; the envelope is 2 * (depth_i + depth_j + 1) of these.
+ENVELOPE_UNIT = 2.0**-25
+
+
+def float32_ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Integer-view ULP distance between two nonnegative float32 arrays."""
+    ia = np.asarray(a, dtype=np.float32).view(np.int32).astype(np.int64)
+    ib = np.asarray(b, dtype=np.float32).view(np.int32).astype(np.int64)
+    return np.abs(ia - ib)
+
+
+# Registry code groups.
 
 
 CODES = tuple(RELATIONSHIPS)
@@ -160,42 +175,11 @@ ASYMMETRIC = tuple(code for code, category in RELATIONSHIPS.items() if not categ
 SYMMETRIC = tuple(code for code, category in RELATIONSHIPS.items() if category.symmetric)
 
 
-def _fixtures() -> dict[str, dict[str, np.ndarray]]:
-    fixtures = dict(pedigrees.motif_fixtures())
-    # deep_inbred_60g is here for orientation, not for membership: sixty
-    # generations off eight founders is where a pair most easily reaches both
-    # arms of an asymmetric product, which is what decides whether the emitted
-    # role is discovered or arbitrary (issue #21).
-    for name in ("random_1k", "deep_inbred_60g"):
-        fixtures[name] = pedigrees.build_random(name, pedigrees.RANDOM_FIXTURES[name])
-    return fixtures
-
-
-FIXTURES = _fixtures()
-
-
-FIXTURE_NAMES = sorted(FIXTURES)
-
-
-def _columns(fixture: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-    return {
-        "id": fixture["ids"],
-        "mother": fixture["mother"],
-        "father": fixture["father"],
-        "twin": fixture["twin"],
-        "sex": fixture["sex"],
-    }
-
-
-def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph.from_frame(_columns(FIXTURES[name]))
-
-
 # Effective-size pedigree builders.
 
 
 def _df(records: list[dict]) -> pl.DataFrame:
-    """Build a pedigree DataFrame from per-row dicts (defaults filled)."""
+    """Build a pedigree DataFrame from per-row dicts (defaults filled; ``birth_year`` kept when given)."""
     rows = [
         {
             "id": r["id"],
@@ -204,6 +188,7 @@ def _df(records: list[dict]) -> pl.DataFrame:
             "twin": r.get("twin", -1),
             "sex": r["sex"],
             "generation": r["generation"],
+            **({"birth_year": r["birth_year"]} if "birth_year" in r else {}),
         }
         for r in records
     ]
@@ -228,19 +213,23 @@ def _build_closed_line(n_gens: int = 5) -> pl.DataFrame:
     return _df(records)
 
 
-def _random_mating(n_per_gen: int, n_gens: int, seed: int) -> pl.DataFrame:
-    """Closed random-mating pedigree, balanced sex, discrete non-overlapping generations."""
+def _varying_census(sizes: Sequence[int], seed: int) -> pl.DataFrame:
+    """Closed random-mating pedigree whose cohort ``g`` holds ``sizes[g]`` rows.
+
+    Sex is balanced within each cohort, generations are discrete and do not
+    overlap, and each cohort after the first draws both parents uniformly from
+    the previous one.
+    """
     rng = np.random.default_rng(seed)
-    half = n_per_gen // 2
     records: list[dict] = []
     next_id = 0
     previous_m: list[int] = []
     previous_f: list[int] = []
-    for g in range(n_gens + 1):
+    for g, n in enumerate(sizes):
         current_m: list[int] = []
         current_f: list[int] = []
-        for j in range(n_per_gen):
-            sex = 1 if j < half else 0
+        for j in range(n):
+            sex = 1 if j < n // 2 else 0
             record = {"id": next_id, "sex": sex, "generation": g}
             if g > 0:
                 record["mother"] = int(rng.choice(previous_f))
@@ -250,6 +239,41 @@ def _random_mating(n_per_gen: int, n_gens: int, seed: int) -> pl.DataFrame:
             next_id += 1
         previous_m, previous_f = current_m, current_f
     return _df(records)
+
+
+def _random_mating(n_per_gen: int, n_gens: int, seed: int) -> pl.DataFrame:
+    """:func:`_varying_census` with ``n_per_gen`` rows in each of ``n_gens + 1`` cohorts."""
+    return _varying_census([n_per_gen] * (n_gens + 1), seed)
+
+
+# A four-cohort chain of full-sib pairs, dated every twenty years.
+CHAIN_IDS = np.arange(8)
+CHAIN_MOTHER = np.array([-1, -1, 0, 0, 2, 2, 4, 4])
+CHAIN_FATHER = np.array([-1, -1, 1, 1, 3, 3, 5, 5])
+CHAIN_SEX = np.array([0, 1, 0, 1, 0, 1, 0, 1])
+CHAIN_GEN = np.array([0, 0, 1, 1, 2, 2, 3, 3])
+CHAIN_BIRTH = np.array([1900, 1900, 1920, 1920, 1940, 1940, 1960, 1960])
+
+
+def _chain_graph(**overrides) -> PedigreeGraph:
+    """The chain pedigree with *overrides* replacing columns; a ``None`` override drops the column."""
+    columns = {
+        "id": CHAIN_IDS,
+        "mother": CHAIN_MOTHER,
+        "father": CHAIN_FATHER,
+        "sex": CHAIN_SEX,
+        "generation": CHAIN_GEN,
+    }
+    columns.update(overrides)
+    return PedigreeGraph.from_frame({k: v for k, v in columns.items() if v is not None})
+
+
+def _assert_summaries_agree(a: GenerationKinshipSummary, b: GenerationKinshipSummary) -> None:
+    """Two generation kinship summaries agree to float64 accumulation order (``atol=1e-12``)."""
+    np.testing.assert_array_equal(a.generations, b.generations)
+    np.testing.assert_array_equal(a.pair_counts, b.pair_counts)
+    np.testing.assert_allclose(a.mean_kinship, b.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
+    assert a.unlabelled_individual_count == b.unlabelled_individual_count
 
 
 # Result-shape assertions for the effective-size API.

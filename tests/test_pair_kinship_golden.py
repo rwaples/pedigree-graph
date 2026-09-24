@@ -11,18 +11,14 @@ test pass; see ``tests/parity/README.md``.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
+import pedigrees
 import pytest
+from generate_pair_kinship import _bits, _capture, _columns
 
 import pedigree_graph
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
-
-import pedigrees
-from generate_pair_kinship import _bits, _capture, _columns
 
 DATA = Path(__file__).resolve().parent / "data" / "pair_kinship_v0.9"
 MANIFEST = json.loads((DATA / "manifest.json").read_text())

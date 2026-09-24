@@ -1,4 +1,4 @@
-"""Tests for pedigree_graph._cohort_utils."""
+"""``eligible_cohort_range``, ``CohortWindow`` and ``generation_interval`` (``pedigree_graph._cohort_utils``)."""
 
 import numpy as np
 import pytest
@@ -73,23 +73,18 @@ class TestEligibleCohortRange:
         assert w.reproductive_age_p95 == pytest.approx(19.9)
         assert w.c_max == 1990  # floor(2010 - 19.9)
 
-    def test_user_override_c_min(self):
-        pg = _three_gen_pedigree(np.array([1990, 1992, 2010]))
-        w = eligible_cohort_range(pg, c_min=1995)
-        assert w.c_min == 1995  # overridden
-        assert w.c_max == 1990  # heuristic kept
-
-    def test_user_override_c_max(self):
-        pg = _three_gen_pedigree(np.array([1990, 1992, 2010]))
-        w = eligible_cohort_range(pg, c_max=2000)
-        assert w.c_min == 1990  # heuristic kept
-        assert w.c_max == 2000  # overridden
-
-    def test_user_override_both(self):
-        pg = _three_gen_pedigree(np.array([1990, 1992, 2010]))
-        w = eligible_cohort_range(pg, c_min=1995, c_max=2005)
-        assert w.c_min == 1995
-        assert w.c_max == 2005
+    @pytest.mark.parametrize(
+        ("overrides", "expected"),
+        [
+            ({"c_min": 1995}, (1995, 1990)),
+            ({"c_max": 2000}, (1990, 2000)),
+            ({"c_min": 1995, "c_max": 2005}, (1995, 2005)),
+        ],
+    )
+    def test_user_overrides_replace_only_their_bound(self, overrides, expected):
+        # Without an override the heuristic window is (1990, 1990).
+        w = eligible_cohort_range(_three_gen_pedigree(np.array([1990, 1992, 2010])), **overrides)
+        assert (w.c_min, w.c_max) == expected
 
     def test_percentile_parameter_changes_cutoff(self):
         # Build a longer pedigree where the percentile actually matters.

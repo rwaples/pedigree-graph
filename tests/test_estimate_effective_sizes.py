@@ -16,6 +16,7 @@ from types import MappingProxyType
 
 import numpy as np
 import pytest
+from _support import CHAIN_BIRTH, _chain_graph
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph, _threads, configure_threads
 from pedigree_graph import _ne_estimate as ne_estimate
@@ -28,16 +29,10 @@ from pedigree_graph.effective_size import (
     estimate_effective_sizes,
 )
 
-_IDS = np.arange(8)
-_MOTHER = np.array([-1, -1, 0, 0, 2, 2, 4, 4])
-_FATHER = np.array([-1, -1, 1, 1, 3, 3, 5, 5])
-_SEX = np.array([0, 1, 0, 1, 0, 1, 0, 1])
-_GEN = np.array([0, 0, 1, 1, 2, 2, 3, 3])
-_BIRTH = np.array([1900, 1900, 1920, 1920, 1940, 1940, 1960, 1960])
 _ONE_PARENT_FATHER = np.array([-1, -1, 1, 1, 3, -1, 5, 5])
 _PARTIAL_GEN = np.array([0, 0, 1, 1, -1, 2, 3, 3])
 _PARTIAL_SEX = np.array([0, 1, 0, 1, -1, 1, 0, 1])
-_UNIFORM_SEX = np.zeros(len(_IDS), dtype=np.int64)
+_UNIFORM_SEX = np.zeros(8, dtype=np.int64)
 
 _DEGENERATE = {
     "clean": {},
@@ -50,21 +45,15 @@ _DEGENERATE = {
     "labels+parentage": {"generation": _PARTIAL_GEN, "father": _ONE_PARENT_FATHER},
     "sex+parentage": {"sex": None, "father": _ONE_PARENT_FATHER},
     "labels+sex+parentage": {"generation": _PARTIAL_GEN, "sex": None, "father": _ONE_PARENT_FATHER},
-    "clean+birth": {"birth_year": _BIRTH},
-    "labels+birth": {"generation": _PARTIAL_GEN, "birth_year": _BIRTH},
-    "labels+sex+birth": {"generation": _PARTIAL_GEN, "sex": None, "birth_year": _BIRTH},
-    "uniform_sex+birth": {"sex": _UNIFORM_SEX, "birth_year": _BIRTH},
+    "clean+birth": {"birth_year": CHAIN_BIRTH},
+    "labels+birth": {"generation": _PARTIAL_GEN, "birth_year": CHAIN_BIRTH},
+    "labels+sex+birth": {"generation": _PARTIAL_GEN, "sex": None, "birth_year": CHAIN_BIRTH},
+    "uniform_sex+birth": {"sex": _UNIFORM_SEX, "birth_year": CHAIN_BIRTH},
 }
 
 _DIRECT = {name: getattr(es, name) for name in ALL_EFFECTIVE_SIZE_ESTIMATORS}
 _NEEDS_PARENTAGE = ("ne_long_term_contributions",)
 _NEEDS_SEX = ("ne_variance_family_size", "ne_sex_ratio", "ne_hill_overlapping")
-
-
-def _graph(**overrides):
-    columns = {"id": _IDS, "mother": _MOTHER, "father": _FATHER, "sex": _SEX, "generation": _GEN}
-    columns.update(overrides)
-    return PedigreeGraph.from_frame({k: v for k, v in columns.items() if v is not None})
 
 
 def _empty_graph():
@@ -148,12 +137,12 @@ class TestSelectorValidation:
     )
     def test_a_bad_selector_raises_type_error_before_any_work(self, estimators):
         with pytest.raises(TypeError):
-            estimate_effective_sizes(_graph(), estimators)
+            estimate_effective_sizes(_chain_graph(), estimators)
 
     @pytest.mark.parametrize("estimators", [["nope"], ["ne_inbreeding", "nope"]], ids=["only", "trailing"])
     def test_an_unknown_name_raises_value_error_before_any_work(self, estimators):
         with pytest.raises(ValueError, match="unknown estimator"):
-            estimate_effective_sizes(_graph(), estimators)
+            estimate_effective_sizes(_chain_graph(), estimators)
 
     @pytest.mark.parametrize(
         "hill_vk_scale",
@@ -162,90 +151,92 @@ class TestSelectorValidation:
     )
     def test_hill_vk_scale_must_be_an_actual_bool(self, hill_vk_scale):
         with pytest.raises(TypeError):
-            estimate_effective_sizes(_graph(), ["ne_hill_overlapping"], hill_vk_scale=hill_vk_scale)
+            estimate_effective_sizes(_chain_graph(), ["ne_hill_overlapping"], hill_vk_scale=hill_vk_scale)
 
 
 class TestSelectorAcceptance:
     def test_a_one_shot_generator_is_materialized(self):
         names = (name for name in ("ne_sex_ratio", "ne_inbreeding"))
-        result = estimate_effective_sizes(_graph(), names)
+        result = estimate_effective_sizes(_chain_graph(), names)
         assert result["ne_sex_ratio"].ne == 2.0
         assert result["ne_inbreeding"].ne is not None
 
     def test_an_empty_selection_is_valid_and_builds_nothing(self, prerequisites):
-        result = estimate_effective_sizes(_graph(), [])
+        result = estimate_effective_sizes(_chain_graph(), [])
         assert list(result) == list(ALL_EFFECTIVE_SIZE_ESTIMATORS)
         assert all(value == UnavailableEffectiveSize.not_requested() for value in result.values())
         assert prerequisites[0].computed() == frozenset()
 
     def test_duplicates_behave_like_one_name(self):
-        pg = _graph()
+        pg = _chain_graph()
         assert estimate_effective_sizes(pg, ["ne_inbreeding", "ne_inbreeding"]) == estimate_effective_sizes(
             pg, ["ne_inbreeding"]
         )
 
     def test_input_order_does_not_change_output_order(self):
-        result = estimate_effective_sizes(_graph(), ["ne_group_coancestry", "ne_inbreeding"])
+        result = estimate_effective_sizes(_chain_graph(), ["ne_group_coancestry", "ne_inbreeding"])
         assert list(result) == list(ALL_EFFECTIVE_SIZE_ESTIMATORS)
 
     def test_hill_vk_scale_true_reaches_the_hill_record(self):
-        result = estimate_effective_sizes(_graph(birth_year=_BIRTH), ["ne_hill_overlapping"], hill_vk_scale=True)
+        result = estimate_effective_sizes(
+            _chain_graph(birth_year=CHAIN_BIRTH), ["ne_hill_overlapping"], hill_vk_scale=True
+        )
         assert result["ne_hill_overlapping"].vk_scaled is True
 
 
 class TestResultMapping:
     def test_it_is_a_mapping_over_the_eight_keys(self):
-        result = estimate_effective_sizes(_graph(), ["ne_inbreeding"])
+        result = estimate_effective_sizes(_chain_graph(), ["ne_inbreeding"])
         assert isinstance(result, EffectiveSizeResults)
         assert isinstance(result, Mapping)
         assert list(result) == list(ALL_EFFECTIVE_SIZE_ESTIMATORS)
         assert len(result) == 8
 
     def test_an_unknown_key_raises_key_error(self):
-        result = estimate_effective_sizes(_graph(), [])
+        result = estimate_effective_sizes(_chain_graph(), [])
         with pytest.raises(KeyError):
             result["nope"]
 
     def test_item_assignment_is_rejected(self):
-        result = estimate_effective_sizes(_graph(), [])
+        result = estimate_effective_sizes(_chain_graph(), [])
         with pytest.raises(TypeError):
             result["x"] = 1
 
     def test_attribute_mutation_is_rejected(self):
-        result = estimate_effective_sizes(_graph(), [])
+        result = estimate_effective_sizes(_chain_graph(), [])
         with pytest.raises(AttributeError):
             result._items = ()
 
     def test_attribute_deletion_is_rejected(self):
-        result = estimate_effective_sizes(_graph(), [])
+        result = estimate_effective_sizes(_chain_graph(), [])
         with pytest.raises(AttributeError):
             del result._items
 
     def test_two_calls_on_one_graph_are_equal(self):
-        pg = _graph()
+        pg = _chain_graph()
         assert estimate_effective_sizes(pg) == estimate_effective_sizes(pg)
 
     def test_it_equals_a_plain_dict_of_its_items(self):
-        result = estimate_effective_sizes(_graph())
+        result = estimate_effective_sizes(_chain_graph())
         assert result == dict(result.items())
 
     def test_different_selections_differ(self):
-        pg = _graph()
+        pg = _chain_graph()
         assert estimate_effective_sizes(pg, ["ne_inbreeding"]) != estimate_effective_sizes(pg, ["ne_sex_ratio"])
 
     def test_repr_names_the_class(self):
-        assert "EffectiveSizeResults" in repr(estimate_effective_sizes(_graph(), []))
+        assert "EffectiveSizeResults" in repr(estimate_effective_sizes(_chain_graph(), []))
 
 
 class TestUnavailable:
     @pytest.mark.parametrize("name", _without("ne_inbreeding"))
     def test_unselected_keys_are_not_requested(self, name):
-        result = estimate_effective_sizes(_graph(), ["ne_inbreeding"])
+        result = estimate_effective_sizes(_chain_graph(), ["ne_inbreeding"])
         assert result[name] == UnavailableEffectiveSize(reason="not_requested", code=None, fields={})
         assert result[name].to_dict() == {"reason": "not_requested", "code": None, "fields": {}}
 
     def test_fields_are_an_immutable_proxy(self):
-        value = estimate_effective_sizes(_graph(), [])["ne_inbreeding"]
+        value = estimate_effective_sizes(_chain_graph(), [])["ne_inbreeding"]
         assert isinstance(value.fields, MappingProxyType)
         with pytest.raises(TypeError):
             value.fields["x"] = 1
@@ -267,26 +258,26 @@ class TestUnavailable:
 class TestMissingMetadata:
     @pytest.mark.parametrize("name", _NEEDS_PARENTAGE)
     def test_incomplete_parentage_names_the_estimator_it_disables(self, name):
-        value = estimate_effective_sizes(_graph(father=_ONE_PARENT_FATHER))[name]
+        value = estimate_effective_sizes(_chain_graph(father=_ONE_PARENT_FATHER))[name]
         assert value.reason == "missing_metadata"
         assert value.code == "incomplete_parentage"
         assert value.fields["operation"] == name
 
     @pytest.mark.parametrize("name", _without(*_NEEDS_PARENTAGE))
     def test_incomplete_parentage_leaves_the_other_seven_intact(self, name):
-        value = estimate_effective_sizes(_graph(father=_ONE_PARENT_FATHER))[name]
+        value = estimate_effective_sizes(_chain_graph(father=_ONE_PARENT_FATHER))[name]
         assert not isinstance(value, UnavailableEffectiveSize)
 
     @pytest.mark.parametrize("name", _NEEDS_SEX)
     def test_absent_sex_names_the_estimator_it_disables(self, name):
-        value = estimate_effective_sizes(_graph(sex=None))[name]
+        value = estimate_effective_sizes(_chain_graph(sex=None))[name]
         assert value.reason == "missing_metadata"
         assert value.code == "missing_sex"
         assert value.fields["operation"] == name
 
     @pytest.mark.parametrize("name", _without(*_NEEDS_SEX))
     def test_absent_sex_leaves_the_other_five_intact(self, name):
-        value = estimate_effective_sizes(_graph(sex=None))[name]
+        value = estimate_effective_sizes(_chain_graph(sex=None))[name]
         assert not isinstance(value, UnavailableEffectiveSize)
 
     def test_a_non_metadata_error_propagates(self, monkeypatch):
@@ -295,7 +286,7 @@ class TestMissingMetadata:
 
         monkeypatch.setattr(ne_estimate, "_inbreeding_from", boom)
         with pytest.raises(RuntimeError):
-            estimate_effective_sizes(_graph(), ["ne_inbreeding"])
+            estimate_effective_sizes(_chain_graph(), ["ne_inbreeding"])
 
 
 class TestPrerequisiteClosure:
@@ -324,15 +315,15 @@ class TestPrerequisiteClosure:
         ],
     )
     def test_a_single_selection_builds_exactly_its_closure(self, prerequisites, name, expected):
-        estimate_effective_sizes(_graph(), [name])
+        estimate_effective_sizes(_chain_graph(), [name])
         assert prerequisites[0].computed() == expected
 
     def test_long_term_contributions_does_not_build_the_group_coancestry(self, prerequisites):
-        estimate_effective_sizes(_graph(), ["ne_long_term_contributions"])
+        estimate_effective_sizes(_chain_graph(), ["ne_long_term_contributions"])
         assert "group_coancestry" not in prerequisites[0].computed()
 
     def test_hill_without_birth_years_collapses_through_a_private_variance(self, prerequisites):
-        result = estimate_effective_sizes(_graph(), ["ne_hill_overlapping"])
+        result = estimate_effective_sizes(_chain_graph(), ["ne_hill_overlapping"])
         assert prerequisites[0].computed() == {
             "observed_cohorts",
             "generation_family_table",
@@ -342,7 +333,7 @@ class TestPrerequisiteClosure:
         assert result["ne_variance_family_size"] == UnavailableEffectiveSize.not_requested()
 
     def test_hill_with_birth_years_skips_the_generation_cohorts(self, prerequisites):
-        estimate_effective_sizes(_graph(birth_year=_BIRTH), ["ne_hill_overlapping"])
+        estimate_effective_sizes(_chain_graph(birth_year=CHAIN_BIRTH), ["ne_hill_overlapping"])
         assert prerequisites[0].computed() == {
             "generation_interval",
             "cohort_window",
@@ -352,7 +343,7 @@ class TestPrerequisiteClosure:
 
     def test_hill_and_variance_share_one_variance_computation(self, monkeypatch):
         calls = _count_calls(monkeypatch, "_variance_from")
-        estimate_effective_sizes(_graph(), ["ne_hill_overlapping", "ne_variance_family_size"])
+        estimate_effective_sizes(_chain_graph(), ["ne_hill_overlapping", "ne_variance_family_size"])
         assert len(calls) == 1
 
     def test_group_coancestry_and_coancestry_share_one_kinship_summary(self, monkeypatch):
@@ -369,20 +360,20 @@ class TestPrerequisiteClosure:
         the pedigree that used to pay for two.
         """
         calls = _count_calls(monkeypatch, "_kinship_summary_for_labels", module=ne_rates)
-        estimate_effective_sizes(_graph(), ["ne_coancestry", "ne_group_coancestry"])
+        estimate_effective_sizes(_chain_graph(), ["ne_coancestry", "ne_group_coancestry"])
         assert len(calls) == 1
 
     def test_a_failed_guard_memoizes_nothing_for_that_estimator(self, prerequisites):
-        estimate_effective_sizes(_graph(father=_ONE_PARENT_FATHER))
+        estimate_effective_sizes(_chain_graph(father=_ONE_PARENT_FATHER))
         computed = prerequisites[0].computed()
         assert computed.isdisjoint(_NEEDS_PARENTAGE)
 
 
 class TestDirectParity:
     @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
-    @pytest.mark.parametrize("birth_year", [None, _BIRTH], ids=["no_birth_years", "birth_years"])
+    @pytest.mark.parametrize("birth_year", [None, CHAIN_BIRTH], ids=["no_birth_years", "birth_years"])
     def test_the_orchestrated_record_equals_the_direct_one(self, name, birth_year):
-        pg = _graph(birth_year=birth_year)
+        pg = _chain_graph(birth_year=birth_year)
         assert estimate_effective_sizes(pg)[name] == _DIRECT[name](pg)
 
     @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
@@ -424,12 +415,12 @@ class TestRegistryCoverage:
         side by side.  Hill appears here under its collapse branch, which
         inherits Ne_V's requirements; its birth-year branch is below.
         """
-        guards = ne_estimate._REGISTRY[name].guards(_graph())
+        guards = ne_estimate._REGISTRY[name].guards(_chain_graph())
         assert tuple(guard.__name__ for guard in guards) == _DOCUMENTED_GUARDS[name]
 
     def test_hills_birth_year_branch_drops_the_generation_labels(self):
         """It groups by birth year and never reads a label, so it must not refuse one."""
-        guards = ne_estimate._REGISTRY["ne_hill_overlapping"].guards(_graph(birth_year=_BIRTH))
+        guards = ne_estimate._REGISTRY["ne_hill_overlapping"].guards(_chain_graph(birth_year=CHAIN_BIRTH))
         assert tuple(guard.__name__ for guard in guards) == ("_require_complete_sex",)
 
 
@@ -460,22 +451,22 @@ class TestPathEquivalence:
     @pytest.mark.parametrize("case", list(_DEGENERATE), ids=list(_DEGENERATE))
     def test_both_paths_refuse_alike_and_warn_alike(self, name, case):
         overrides = _DEGENERATE[case]
-        direct = _outcome(lambda: _DIRECT[name](_graph(**overrides)))
-        orchestrated = _outcome(lambda: estimate_effective_sizes(_graph(**overrides), [name])[name])
+        direct = _outcome(lambda: _DIRECT[name](_chain_graph(**overrides)))
+        orchestrated = _outcome(lambda: estimate_effective_sizes(_chain_graph(**overrides), [name])[name])
         assert orchestrated == direct
 
 
 class TestSerialization:
     def test_to_dict_is_a_plain_ordered_dict_of_plain_dicts(self):
-        payload = estimate_effective_sizes(_graph(birth_year=_BIRTH)).to_dict()
+        payload = estimate_effective_sizes(_chain_graph(birth_year=CHAIN_BIRTH)).to_dict()
         assert type(payload) is dict
         assert list(payload) == list(ALL_EFFECTIVE_SIZE_ESTIMATORS)
         assert all(type(value) is dict for value in payload.values())
         json.dumps(payload)
 
     def test_unavailable_entries_serialize_to_plain_field_dicts(self):
-        payload = estimate_effective_sizes(_graph(father=_ONE_PARENT_FATHER)).to_dict()
-        not_requested = estimate_effective_sizes(_graph(), []).to_dict()["ne_inbreeding"]
+        payload = estimate_effective_sizes(_chain_graph(father=_ONE_PARENT_FATHER)).to_dict()
+        not_requested = estimate_effective_sizes(_chain_graph(), []).to_dict()["ne_inbreeding"]
         assert set(not_requested) == {"reason", "code", "fields"}
         entry = payload["ne_long_term_contributions"]
         assert set(entry) == {"reason", "code", "fields"}
@@ -485,34 +476,28 @@ class TestSerialization:
         json.dumps(payload)
 
 
+@pytest.mark.usefixtures("fresh_thread_state")
 class TestThreadBudget:
-    @pytest.fixture(autouse=True)
-    def _thread_state(self, monkeypatch):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
-        _threads._reset_thread_state()
-        yield
-        _threads._reset_thread_state()
-
     def test_a_call_commits_the_default_budget(self):
-        estimate_effective_sizes(_graph(), ["ne_sex_ratio"])
+        estimate_effective_sizes(_chain_graph(), ["ne_sex_ratio"])
         assert _threads._STATE.committed == 1
 
     def test_a_call_commits_a_configured_budget(self):
         configure_threads(3)
-        estimate_effective_sizes(_graph(), ["ne_sex_ratio"])
+        estimate_effective_sizes(_chain_graph(), ["ne_sex_ratio"])
         assert _threads._STATE.committed == 3
 
     def test_results_do_not_depend_on_the_budget(self):
-        under_one = estimate_effective_sizes(_graph(birth_year=_BIRTH))
+        under_one = estimate_effective_sizes(_chain_graph(birth_year=CHAIN_BIRTH))
         _threads._reset_thread_state()
         configure_threads(3)
-        under_three = estimate_effective_sizes(_graph(birth_year=_BIRTH))
+        under_three = estimate_effective_sizes(_chain_graph(birth_year=CHAIN_BIRTH))
         assert _threads._STATE.committed == 3
         assert under_one == under_three
 
     def test_selector_validation_precedes_the_commit(self):
         with pytest.raises(TypeError):
-            estimate_effective_sizes(_graph(), None)
+            estimate_effective_sizes(_chain_graph(), None)
         assert _threads._STATE.committed is None
 
 
@@ -523,7 +508,7 @@ class TestThreadBudget:
 )
 def test_injected_keywords_are_rejected(kwargs):
     with pytest.raises(TypeError):
-        estimate_effective_sizes(_graph(), **kwargs)
+        estimate_effective_sizes(_chain_graph(), **kwargs)
 
 
 class TestWarningAttribution:
@@ -547,7 +532,7 @@ class TestWarningAttribution:
     def test_the_uniform_sex_notice_points_outside_the_package(self, call):
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            call(_graph(sex=_UNIFORM_SEX))
+            call(_chain_graph(sex=_UNIFORM_SEX))
         [record] = [r for r in caught if "pg.sex is uniform" in str(r.message)]
         assert Path(record.filename) == Path(__file__)
 
@@ -555,16 +540,8 @@ class TestWarningAttribution:
 class TestHillFallbackWarningScope:
     """The Hill fallback hides only the duplicate uniform-sex notice."""
 
-    _UNIFORM = {
-        "id": _IDS,
-        "mother": _MOTHER,
-        "father": _FATHER,
-        "sex": np.zeros(len(_IDS), dtype=np.int64),
-        "generation": _GEN,
-    }
-
     def _run(self, monkeypatch, *, noisy):
-        pg = PedigreeGraph.from_frame(self._UNIFORM)
+        pg = _chain_graph(sex=_UNIFORM_SEX)
         if noisy:
             real = ne_estimate._variance_from
 

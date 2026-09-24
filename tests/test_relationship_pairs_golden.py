@@ -9,19 +9,15 @@ test pass; see ``tests/parity/README.md``.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
+import pedigrees
 import pytest
+from generate_relationship_pairs import MAX_DEGREE, _capture, _columns
 from oracle.relationship_pairs import check_exclusive
 
 import pedigree_graph
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
-
-import pedigrees
-from generate_relationship_pairs import MAX_DEGREE, _capture, _columns
 
 DATA = Path(__file__).resolve().parent / "data" / "relationship_pairs_v0.8"
 MANIFEST = json.loads((DATA / "manifest.json").read_text())

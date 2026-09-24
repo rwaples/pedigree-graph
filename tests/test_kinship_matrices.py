@@ -2,27 +2,17 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import numpy as np
+import pedigrees
 import pytest
 import scipy.sparse as sp
-from conftest import parity_columns, parity_fixtures
+from conftest import parity_columns, parity_graph
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 from pedigree_graph._kinship_matrix import _exactify_support
-from pedigree_graph._threads import _reset_thread_state, configure_threads
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
-
-import pedigrees
-
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-
-
-def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph.from_frame(parity_columns(FIXTURES[name]))
+from pedigree_graph._threads import configure_threads
 
 
 def _upper(matrix: sp.csc_matrix) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -48,7 +38,7 @@ def _assert_csc_contract(matrix: sp.csc_matrix) -> None:
 
 class TestCompleteMatrix:
     def test_complete_support_is_every_nonzero_pair_plus_diagonal(self):
-        graph = _graph("deep_inbred_60g")
+        graph = parity_graph("deep_inbred_60g")
         matrix = graph.kinship_matrix()
         first, second = np.triu_indices(graph.n_individuals)
         values = graph.pair_kinship(first, second)
@@ -58,13 +48,13 @@ class TestCompleteMatrix:
         _assert_csc_contract(matrix)
 
     def test_complete_matrix_is_cached(self):
-        graph = _graph("double_first_cousins")
+        graph = parity_graph("double_first_cousins")
         assert graph.kinship_matrix() is graph.kinship_matrix()
 
 
 class TestRelationshipMatrix:
     def test_support_is_exactly_selected_closest_categories_plus_diagonal(self):
-        graph = _graph("double_first_cousins")
+        graph = parity_graph("double_first_cousins")
         pairs = graph.relationship_pairs(categories=["1C", "GP"])
         matrix = graph.relationship_kinship_matrix(categories=["1C", "GP"])
         row, col, _ = _upper(matrix)
@@ -84,13 +74,13 @@ class TestRelationshipMatrix:
         ["founder_mz_twins", "backcross_and_selfing_like", "double_first_cousins", "deep_inbred_60g"],
     )
     def test_retained_values_are_pair_kinship_identical(self, name):
-        graph = _graph(name)
+        graph = parity_graph(name)
         matrix = graph.relationship_kinship_matrix(max_degree=5)
         row, col, values = _upper(matrix)
         assert values.tobytes() == graph.pair_kinship(row, col).tobytes()
 
     def test_empty_category_selection_is_diagonal_only(self):
-        graph = _graph("double_first_cousins")
+        graph = parity_graph("double_first_cousins")
         matrix = graph.relationship_kinship_matrix(categories=[])
         np.testing.assert_array_equal(matrix.indices, np.arange(graph.n_individuals, dtype=np.int32))
         assert matrix.nnz == graph.n_individuals
@@ -105,7 +95,7 @@ class TestRelationshipMatrix:
         and propagation-pruned support are distinct contracts even when a
         pedigree makes them structurally identical.
         """
-        graph = _graph("single_individual")
+        graph = parity_graph("single_individual")
         by_degree = graph.relationship_kinship_matrix(max_degree=0)
         assert by_degree is graph.relationship_kinship_matrix(max_degree=0)
         assert graph.relationship_kinship_matrix(categories=["FS"]) is not by_degree
@@ -113,14 +103,14 @@ class TestRelationshipMatrix:
         assert by_degree is not graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
 
     def test_one_shot_category_iterable_is_consumed_once(self):
-        graph = _graph("double_first_cousins")
+        graph = parity_graph("double_first_cousins")
         matrix = graph.relationship_kinship_matrix(categories=(code for code in ["1C"]))
         assert matrix.nnz == graph.n_individuals + 2 * len(graph.relationship_pairs(categories=["1C"])["1C"])
 
 
 class TestApproximateSupportMatrix:
     def test_support_matches_the_frozen_071_propagated_candidate_set(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         matrix = graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
         row, col, _ = _upper(matrix)
         with np.load(Path(__file__).parent / "data" / "parity_v0.7.1" / "random_1k.npz") as frozen:
@@ -141,7 +131,7 @@ class TestApproximateSupportMatrix:
         ],
     )
     def test_retained_values_are_recomputed_pair_kinship_bits(self, name):
-        graph = _graph(name)
+        graph = parity_graph(name)
         matrix = graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
         row, col, values = _upper(matrix)
         assert values.tobytes() == graph.pair_kinship(row, col).tobytes()
@@ -162,11 +152,11 @@ class TestApproximateSupportMatrix:
         assert graph.approximate_kinship_matrix(min_propagated_kinship=above)[0, 2] == 0.0
 
     def test_zero_delegates_to_complete(self):
-        graph = _graph("double_first_cousins")
+        graph = parity_graph("double_first_cousins")
         assert graph.approximate_kinship_matrix(min_propagated_kinship=0) is graph.kinship_matrix()
 
     def test_positive_threshold_cache_is_isolated_from_other_matrix_families(self):
-        graph = _graph("single_individual")
+        graph = parity_graph("single_individual")
         approximate = graph.approximate_kinship_matrix()
         assert approximate is graph.approximate_kinship_matrix()
         assert approximate is not graph.kinship_matrix()
@@ -175,14 +165,14 @@ class TestApproximateSupportMatrix:
     @pytest.mark.parametrize("threshold", [-1, np.inf, -np.inf, np.nan, 1.000001, "not-a-number"])
     def test_invalid_threshold_is_an_ordinary_value_error(self, threshold):
         with pytest.raises(ValueError, match="min_propagated_kinship"):
-            _graph("single_individual").approximate_kinship_matrix(
+            parity_graph("single_individual").approximate_kinship_matrix(
                 min_propagated_kinship=threshold  # type: ignore[arg-type]
             )
 
 
 class TestSupportWalk:
     def test_exactifying_the_complete_support_reproduces_the_matrix(self):
-        graph = _graph("double_first_cousins")
+        graph = parity_graph("double_first_cousins")
         template = graph.kinship_matrix()
         candidate = template.copy()
         candidate.data.setflags(write=True)
@@ -197,9 +187,7 @@ class TestSupportWalk:
 
 class TestRowOrder:
     def test_all_matrix_families_match_pair_values_after_reordering(self):
-        fixture = FIXTURES["deep_inbred_60g"]
-        permutation = np.random.default_rng(22).permutation(len(fixture["ids"]))
-        graph = PedigreeGraph.from_frame({key: value[permutation] for key, value in parity_columns(fixture).items()})
+        graph = parity_graph("deep_inbred_60g", seed=22)
         matrices = (
             graph.kinship_matrix(),
             graph.relationship_kinship_matrix(max_degree=5),
@@ -210,17 +198,11 @@ class TestRowOrder:
             assert values.tobytes() == graph.pair_kinship(row, col).tobytes()
 
 
+@pytest.mark.usefixtures("fresh_thread_state")
 class TestThreads:
-    @pytest.fixture(autouse=True)
-    def reset_thread_state(self, monkeypatch):
-        monkeypatch.delenv("PEDIGREE_GRAPH_THREADS", raising=False)
-        _reset_thread_state()
-        yield
-        _reset_thread_state()
-
     @pytest.mark.parametrize("method", ["complete", "relationship", "approximate"])
     def test_new_matrix_call_commits_the_budget(self, method):
-        graph = _graph("single_individual")
+        graph = parity_graph("single_individual")
         if method == "complete":
             graph.kinship_matrix()
         elif method == "relationship":
@@ -252,7 +234,7 @@ def test_equivalent_selectors_share_one_relationship_cache_entry():
     selector the caller happened to write collapses them; keying by selector
     shape recomputes a matrix the graph already holds.
     """
-    graph = _graph("random_1k")
+    graph = parity_graph("random_1k")
     codes = tuple(code for code, category in RELATIONSHIPS.items() if category.degree <= 2)
 
     by_degree = graph.relationship_kinship_matrix(max_degree=2)
@@ -265,7 +247,7 @@ def test_equivalent_selectors_share_one_relationship_cache_entry():
 
 
 def test_release_kinship_matrices_drops_every_family_and_is_idempotent():
-    graph = _graph("random_1k")
+    graph = parity_graph("random_1k")
     complete = graph.kinship_matrix()
     graph.approximate_kinship_matrix(min_propagated_kinship=0.001)
     graph.relationship_kinship_matrix(max_degree=2)

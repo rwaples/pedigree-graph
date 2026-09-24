@@ -9,29 +9,24 @@ orders, with bit identity recorded rather than asserted.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 from _support import CHILD_PRELUDE, _run_child
-from conftest import parity_columns, parity_fixtures
+from conftest import FIXTURE_NAMES, parity_graph
 from oracle.eqg import _compute_eqg
 from oracle.founder_means import _per_gen_founder_means as _oracle_founder_means
 
-from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
+from pedigree_graph import PedigreeValidationError, _native
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_founders import _founder_columns, _founder_idx, _per_gen_founder_means
 
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
+if TYPE_CHECKING:
+    from pedigree_graph import PedigreeGraph
+
 PERMUTATION_SEEDS = (None, 5, 11)
 RTOL, ATOL = 1e-9, 1e-12
-
-
-def _graph(name: str, seed: int | None = None) -> PedigreeGraph:
-    columns = parity_columns(FIXTURES[name])
-    if seed is not None:
-        perm = np.random.default_rng(seed).permutation(len(columns["id"]))
-        columns = {key: value[perm] for key, value in columns.items()}
-    return PedigreeGraph.from_frame(columns)
 
 
 def _cohort_sets(graph: PedigreeGraph) -> dict[str, ObservedCohorts]:
@@ -44,7 +39,7 @@ def _cohort_sets(graph: PedigreeGraph) -> dict[str, ObservedCohorts]:
 @pytest.mark.parametrize("seed", PERMUTATION_SEEDS)
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
 def test_equivalent_generations_match_the_oracle(name, seed, record_property):
-    graph = _graph(name, seed)
+    graph = parity_graph(name, seed)
     native = _native.equivalent_generations(graph._built, graph.depth)
     oracle = _compute_eqg(
         np.asarray(graph.mother_rows), np.asarray(graph.father_rows), np.asarray(graph.depth), graph.n_individuals
@@ -57,7 +52,7 @@ def test_equivalent_generations_match_the_oracle(name, seed, record_property):
 @pytest.mark.parametrize("seed", PERMUTATION_SEEDS)
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
 def test_founder_means_match_the_oracle(name, seed, cohorts, record_property):
-    graph = _graph(name, seed)
+    graph = parity_graph(name, seed)
     grouping = _cohort_sets(graph)[cohorts]
     founder_idx = _founder_idx(graph)
     native = _per_gen_founder_means(graph, founder_idx=founder_idx, cohorts=grouping)
@@ -70,7 +65,7 @@ def test_founder_means_match_the_oracle(name, seed, cohorts, record_property):
 
 class TestBoundary:
     def test_the_arrays_are_owned_and_contiguous(self):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         grouping = _cohort_sets(graph)["depth"]
         founder_idx = _founder_idx(graph)
         eqg = _native.equivalent_generations(graph._built, graph.depth)
@@ -90,11 +85,11 @@ class TestBoundary:
             assert not isinstance(array.base, np.ndarray)
 
     def test_the_facade_means_are_read_only(self):
-        m_g = _per_gen_founder_means(_graph("random_1k")).m_g
+        m_g = _per_gen_founder_means(parity_graph("random_1k")).m_g
         assert not m_g.flags.writeable
 
     def test_bad_cohorts_and_founder_columns_are_rejected(self):
-        graph = _graph("nuclear_full_sibs")
+        graph = parity_graph("nuclear_full_sibs")
         n = graph.n_individuals
         cohort = np.zeros(n, np.int32)
         column = np.full(n, -1, np.int64)
@@ -118,7 +113,7 @@ class TestBoundary:
         assert info.value.code == "length_mismatch"
 
     def test_a_non_structural_depth_is_rejected_when_the_rows_need_sorting(self):
-        graph = _graph("random_1k", seed=5)
+        graph = parity_graph("random_1k", seed=5)
         assert not graph._built.rows_topological
         with pytest.raises(PedigreeValidationError) as info:
             _native.equivalent_generations(graph._built, np.zeros(graph.n_individuals, dtype=np.int32))

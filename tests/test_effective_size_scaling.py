@@ -16,11 +16,12 @@ from __future__ import annotations
 import subprocess
 import sys
 import textwrap
+from typing import TYPE_CHECKING
 
 import numpy as np
-import polars as pl
 import pytest
 import scipy.sparse as sp
+from _support import _assert_summaries_agree, _build_closed_line, _df
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
@@ -44,6 +45,9 @@ from pedigree_graph.effective_size import (
     ne_variance_family_size,
 )
 from pedigree_graph.summaries import GenerationKinshipSummary
+
+if TYPE_CHECKING:
+    import polars as pl
 
 # ---------------------------------------------------------------------------
 # Reference dense implementation (pre-refactor `_founder_contribution_matrix`).
@@ -98,37 +102,6 @@ def _ref_per_gen_means(pg: PedigreeGraph) -> tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------------------
 # Pedigree builders
 # ---------------------------------------------------------------------------
-
-
-def _df(records: list[dict]) -> pl.DataFrame:
-    rows = [
-        {
-            "id": r["id"],
-            "mother": r.get("mother", -1),
-            "father": r.get("father", -1),
-            "twin": r.get("twin", -1),
-            "sex": r["sex"],
-            "generation": r["generation"],
-        }
-        for r in records
-    ]
-    return pl.DataFrame(rows)
-
-
-def _build_closed_line(n_gens: int = 5) -> pl.DataFrame:
-    records = [
-        {"id": 0, "sex": 1, "generation": 0},
-        {"id": 1, "sex": 0, "generation": 0},
-    ]
-    next_id = 2
-    prev_m, prev_f = 0, 1
-    for g in range(1, n_gens + 1):
-        m, f = next_id, next_id + 1
-        records.append({"id": m, "sex": 1, "generation": g, "mother": prev_f, "father": prev_m})
-        records.append({"id": f, "sex": 0, "generation": g, "mother": prev_f, "father": prev_m})
-        prev_m, prev_f = m, f
-        next_id += 2
-    return _df(records)
 
 
 def _build_random_mating_pedigree(
@@ -230,13 +203,6 @@ def test_per_gen_founder_means_matches_reference(parity_pedigree: PedigreeGraph)
 def _kernel_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
     """The generation kinship summary straight from the core's streaming DP, no graph caches."""
     return _summary_from_native(pg, np.asarray(pg.generation_labels))
-
-
-def _assert_summaries_agree(a: GenerationKinshipSummary, b: GenerationKinshipSummary) -> None:
-    np.testing.assert_array_equal(a.generations, b.generations)
-    np.testing.assert_array_equal(a.pair_counts, b.pair_counts)
-    np.testing.assert_allclose(a.mean_kinship, b.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
-    assert a.unlabelled_individual_count == b.unlabelled_individual_count
 
 
 def test_the_public_summary_is_the_streamed_one(parity_pedigree: PedigreeGraph) -> None:

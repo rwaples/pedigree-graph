@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-from conftest import parity_columns, parity_fixtures
+from _support import ENVELOPE_UNIT, float32_ulp_distance
+from conftest import FIXTURE_NAMES, FIXTURES, parity_columns
 from oracle.relationship_pairs import sibling_pairs
 from relationship_predicates import AncestorWalk
 
@@ -35,8 +36,6 @@ MAX_DEGREE = 5
 # lineal_five_generations, random_1k and every motif with a skip-generation
 # edge are already topological-but-not-depth-major, so the permuted routing
 # runs even for the reference graph.
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
 
 
 def _reference_depth(fixture: dict[str, np.ndarray]) -> np.ndarray:
@@ -150,13 +149,6 @@ def _matrix_by_id(matrix, ids: np.ndarray) -> dict[tuple[int, int], float]:
     return {_id_key(a, b): value for a, b, value in zip(rows, cols, values, strict=True)}
 
 
-def _float32_ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Integer-view ULP distance between two nonnegative float32 arrays."""
-    ia = np.asarray(a, dtype=np.float32).view(np.int32).astype(np.int64)
-    ib = np.asarray(b, dtype=np.float32).view(np.int32).astype(np.int64)
-    return np.abs(ia - ib)
-
-
 def _assert_within_envelope(expected: dict, actual: dict, depth_by_id: dict, label: str) -> int:
     """Check the ADR 0009 cross-order envelope; return the worst ULP distance."""
     assert set(actual) == set(expected), f"{label}: kinship support changed"
@@ -166,7 +158,7 @@ def _assert_within_envelope(expected: dict, actual: dict, depth_by_id: dict, lab
     want = np.array([expected[key] for key in keys], dtype=np.float32)
     got = np.array([actual[key] for key in keys], dtype=np.float32)
     tolerance = np.array(
-        [2.0 * (depth_by_id[a] + depth_by_id[b] + 1) * 2.0**-25 for a, b in keys],
+        [2.0 * (depth_by_id[a] + depth_by_id[b] + 1) * ENVELOPE_UNIT for a, b in keys],
         dtype=np.float64,
     )
     deviation = np.abs(want.astype(np.float64) - got.astype(np.float64))
@@ -175,7 +167,7 @@ def _assert_within_envelope(expected: dict, actual: dict, depth_by_id: dict, lab
         f"{label}: outside the ADR 0009 envelope at {keys[worst]}: "
         f"{want[worst]!r} vs {got[worst]!r}, tolerance {tolerance[worst]:.3e}"
     )
-    return int(_float32_ulp_distance(want, got).max())
+    return int(float32_ulp_distance(want, got).max())
 
 
 def _assert_theta_matches(expected: GenerationKinshipSummary, actual: GenerationKinshipSummary, label: str) -> None:
@@ -191,7 +183,7 @@ def _assert_theta_matches(expected: GenerationKinshipSummary, actual: Generation
         np.isnan(actual.mean_kinship), np.isnan(expected.mean_kinship), err_msg=f"{label}: NaN cohorts moved"
     )
     cohorts = expected.generations.astype(np.float64)
-    tolerance = np.maximum(1e-9, 2.0 * (2.0 * cohorts + 1.0) * 2.0**-25)
+    tolerance = np.maximum(1e-9, 2.0 * (2.0 * cohorts + 1.0) * ENVELOPE_UNIT)
     known = ~np.isnan(expected.mean_kinship)
     deviation = np.abs(actual.mean_kinship[known] - expected.mean_kinship[known])
     assert np.all(deviation <= tolerance[known]), f"{label}: max deviation {deviation.max():.3e}"
@@ -259,7 +251,7 @@ def _assert_approximate_matrix(reference: _Snapshot, actual: _Snapshot, label: s
     got = np.array([actual.approx_kinship[key] for key in keys], dtype=np.float32)
     depth = reference.depth_by_id
     tolerance = np.array(
-        [2.0 * (depth[first] + depth[second] + 1) * 2.0**-25 for first, second in keys],
+        [2.0 * (depth[first] + depth[second] + 1) * ENVELOPE_UNIT for first, second in keys],
         dtype=np.float64,
     )
     deviation = np.abs(want.astype(np.float64) - got.astype(np.float64))

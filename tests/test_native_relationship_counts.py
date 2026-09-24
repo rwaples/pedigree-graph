@@ -9,14 +9,12 @@ is the matrix engine in ``tests/oracle/relationship_pairs.py``.
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
 import pytest
-from conftest import parity_columns, parity_fixtures
+from _support import _run_child
+from conftest import FIXTURE_NAMES, FIXTURES, parity_columns
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -25,8 +23,6 @@ from pedigree_graph._threads import thread_budget
 from pedigree_graph.relationships import RelationshipCountResult
 
 SMALL_PEDIGREE = Path(__file__).parent / "data" / "small_pedigree.parquet"
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
 SELECTORS = (
     {"max_degree": 0},
     {"max_degree": 1},
@@ -200,24 +196,16 @@ class TestSelectorsAndErrors:
 
     def test_counts_are_the_same_under_every_thread_budget(self):
         """The package pool is built once per process, so each budget runs in its own interpreter."""
-        script = (
-            "import polars as pl\n"
-            "from pedigree_graph import PedigreeGraph, _native\n"
-            "from pedigree_graph._threads import thread_budget\n"
-            f"graph = PedigreeGraph.from_frame(pl.read_parquet({str(SMALL_PEDIGREE)!r}))\n"
-            "print(thread_budget(), _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget()))\n"
-        )
+        body = f"""
+            import polars as pl
+            from pedigree_graph import PedigreeGraph, _native
+            from pedigree_graph._threads import thread_budget
+            graph = PedigreeGraph.from_frame(pl.read_parquet({str(SMALL_PEDIGREE)!r}))
+            print(thread_budget(), _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget()))
+        """
         outputs = {}
         for threads in ("1", "4"):
-            result = subprocess.run(
-                [sys.executable, "-c", script],
-                env={**os.environ, "PEDIGREE_GRAPH_THREADS": threads},
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            assert result.returncode == 0, result.stderr
-            budget, counts = result.stdout.split(" ", 1)
+            budget, counts = _run_child(body, PEDIGREE_GRAPH_THREADS=threads).split(" ", 1)
             assert budget == threads
             outputs[threads] = counts
         assert outputs["1"] == outputs["4"]

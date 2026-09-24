@@ -17,7 +17,6 @@ regresses to a slope of order 1e-16 whose digits are entirely noise.
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -26,7 +25,6 @@ import pytest
 from pedigree_graph import PedigreeGraph
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE / "parity"))
 
 import generate_ne_baseline_0_9 as golden  # noqa: E402
 

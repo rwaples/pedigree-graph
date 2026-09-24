@@ -11,15 +11,12 @@ rather than an abort.
 from __future__ import annotations
 
 import dataclasses
-import os
-import subprocess
-import sys
-import textwrap
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-from conftest import parity_columns, parity_fixtures
+from _support import _run_child
+from conftest import FIXTURE_NAMES, parity_graph
 from oracle.relationship_pairs import check_exclusive, oracle_pairs, oracle_view_pairs
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
@@ -27,8 +24,6 @@ from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 if TYPE_CHECKING:
     from pedigree_graph import RelationshipPairs
 
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
-FIXTURE_NAMES = sorted(FIXTURES)
 EXECUTIONS = ("speed", "memory")
 SELECTORS = (
     {"max_degree": 0},
@@ -41,10 +36,6 @@ SELECTORS = (
     {"categories": ["2C", "MO", "H1C1R"]},
     {"categories": []},
 )
-
-
-def _graph(name: str) -> PedigreeGraph:
-    return PedigreeGraph.from_frame(parity_columns(FIXTURES[name]))
 
 
 def _assert_equal_blocks(got: RelationshipPairs, want: dict, requested: frozenset[str]) -> None:
@@ -60,7 +51,7 @@ def _assert_equal_blocks(got: RelationshipPairs, want: dict, requested: frozense
 @pytest.mark.parametrize("selector", SELECTORS, ids=str)
 @pytest.mark.parametrize("execution", EXECUTIONS)
 def test_graph_blocks_equal_the_oracle(name, selector, execution):
-    graph = _graph(name)
+    graph = parity_graph(name)
     got = graph.relationship_pairs(**selector, execution=execution)
     requested = frozenset(code for code, block in got.items() if block.requested)
     _assert_equal_blocks(got, oracle_pairs(graph, **selector), requested)
@@ -70,7 +61,7 @@ def test_graph_blocks_equal_the_oracle(name, selector, execution):
 @pytest.mark.parametrize("shape", ["reversed", "half", "singleton", "empty"])
 @pytest.mark.parametrize("execution", EXECUTIONS)
 def test_view_blocks_equal_the_oracle(name, shape, execution):
-    graph = _graph(name)
+    graph = parity_graph(name)
     n = graph.n_individuals
     rows = {
         "reversed": np.arange(n)[::-1],
@@ -142,8 +133,7 @@ class TestHandOver:
                 assert np.all(kinship[code] > 0)
 
     def test_a_refused_allocation_is_a_resource_error_through_the_public_call(self):
-        script = textwrap.dedent(
-            """
+        body = """
             import numpy as np
             from pedigree_graph import PedigreeGraph, ResourceError, _native
             graph = PedigreeGraph.from_frame({"id": np.arange(4), "mother": [-1, -1, 0, 0], "father": [-1, -1, 1, 1]})
@@ -160,18 +150,10 @@ class TestHandOver:
                     print(execution, e.code, e.fields["operation"], e.fields["dtype"])
             print(len(graph.relationship_pairs(max_degree=1)["FS"]))
             """
-        )
-        result = subprocess.run(
-            [sys.executable, "-c", script],
-            capture_output=True,
-            text=True,
-            env={**os.environ, "PEDIGREE_GRAPH_ALLOW_TEST_SEAM": "1"},
-            check=False,
-        )
-        assert result.returncode == 0, result.stderr
+        stdout = _run_child(body)
         # The view family's first reservation is the map's permutation check,
         # which precedes the packed sort keys.
-        assert result.stdout.splitlines() == [
+        assert stdout.splitlines() == [
             "speed allocation_failed pair_block int32",
             "speed allocation_failed view_sort_scratch bool",
             "memory allocation_failed pair_block int32",

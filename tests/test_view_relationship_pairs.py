@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-from _support import ASYMMETRIC, CODES, FIXTURE_NAMES, FIXTURES, SYMMETRIC, _graph
+from _support import ASYMMETRIC, CODES, SYMMETRIC
+from conftest import FIXTURE_NAMES, FIXTURES, parity_graph
 from oracle.relationship_pairs import canonical_keys, check_exclusive
 from relationship_predicates import AncestorWalk
 
@@ -72,7 +73,7 @@ def _expected(graph_result: RelationshipPairs, view: PedigreeView) -> dict[str, 
 
 @pytest.fixture(scope="module")
 def full_results() -> dict[str, RelationshipPairs]:
-    return {name: _graph(name).relationship_pairs(max_degree=5) for name in FIXTURE_NAMES}
+    return {name: parity_graph(name).relationship_pairs(max_degree=5) for name in FIXTURE_NAMES}
 
 
 def _assert_equal(result: RelationshipPairs, expected: dict[str, tuple[np.ndarray, np.ndarray]]) -> None:
@@ -85,7 +86,7 @@ class TestOracleEquality:
     @pytest.mark.parametrize("selection", SELECTIONS)
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_view_equals_the_filtered_graph_result(self, full_results, name, selection):
-        graph = _graph(name)
+        graph = parity_graph(name)
         view = _select(graph, name, selection)
         result = view.relationship_pairs(max_degree=5)
         _assert_equal(result, _expected(full_results[name], view))
@@ -93,7 +94,7 @@ class TestOracleEquality:
 
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_categories_selector_filters_the_same_way(self, full_results, name):
-        graph = _graph(name)
+        graph = parity_graph(name)
         view = _select(graph, name, "shuffled_half")
         result = view.relationship_pairs(categories=["1C", "Av", "MO"])
         expected = _expected(graph.relationship_pairs(categories=["1C", "Av", "MO"]), view)
@@ -132,7 +133,7 @@ class TestPathsThroughUnselectedRows:
 class TestOrientationAndOrdering:
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_asymmetric_blocks_satisfy_their_roles_in_graph_terms(self, name):
-        graph = _graph(name)
+        graph = parity_graph(name)
         view = _select(graph, name, "shuffled_half")
         walk = AncestorWalk(graph)
         rows = view.graph_rows
@@ -148,14 +149,14 @@ class TestOrientationAndOrdering:
 
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_symmetric_blocks_are_canonical_in_view_rows(self, name):
-        view = _select(_graph(name), name, "reversed")
+        view = _select(parity_graph(name), name, "reversed")
         result = view.relationship_pairs(max_degree=5)
         for code in SYMMETRIC:
             assert np.all(result[code].first_rows < result[code].second_rows), code
 
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_blocks_are_sorted_in_range_owned_and_exclusive(self, name):
-        view = _select(_graph(name), name, "shuffled_half")
+        view = _select(parity_graph(name), name, "shuffled_half")
         result = view.relationship_pairs(max_degree=5)
         n = len(view)
         for code, block in result.items():
@@ -169,7 +170,7 @@ class TestOrientationAndOrdering:
         check_exclusive(result)
 
     def test_reversed_view_flips_symmetric_but_not_asymmetric_orientation(self):
-        graph = _graph("avuncular_and_cousins")
+        graph = parity_graph("avuncular_and_cousins")
         n = graph.n_individuals
         forward = graph.view(rows=np.arange(n)).relationship_pairs(max_degree=5)
         backward = graph.view(rows=np.arange(n)[::-1]).relationship_pairs(max_degree=5)
@@ -185,20 +186,20 @@ class TestOrientationAndOrdering:
 
 class TestTokens:
     def test_blocks_carry_the_view_token_not_the_graph_token(self):
-        graph = _graph("avuncular_and_cousins")
+        graph = parity_graph("avuncular_and_cousins")
         view = graph.view(rows=[0, 1, 2, 3])
         for block in view.relationship_pairs(max_degree=5).values():
             assert block._coordinate_token is view._coordinate_token
             assert block._coordinate_token is not graph._coordinate_token
 
     def test_two_equivalent_views_yield_distinct_tokens(self):
-        graph = _graph("avuncular_and_cousins")
+        graph = parity_graph("avuncular_and_cousins")
         one = graph.view(rows=[0, 1, 2, 3]).relationship_pairs(max_degree=5)
         two = graph.view(rows=[0, 1, 2, 3]).relationship_pairs(max_degree=5)
         assert one["FS"]._coordinate_token is not two["FS"]._coordinate_token
 
     def test_no_public_attribute_is_a_token(self):
-        result = _graph("avuncular_and_cousins").view(rows=[0, 1]).relationship_pairs(max_degree=1)
+        result = parity_graph("avuncular_and_cousins").view(rows=[0, 1]).relationship_pairs(max_degree=1)
         for owner in (result, result["FS"]):
             public = [name for name in dir(owner) if not name.startswith("_")]
             assert not any(isinstance(getattr(owner, name), CoordinateToken) for name in public)
@@ -206,7 +207,7 @@ class TestTokens:
 
 @pytest.fixture(params=["populated", "empty"])
 def any_view(request) -> PedigreeView:
-    graph = _graph("avuncular_and_cousins")
+    graph = parity_graph("avuncular_and_cousins")
     return graph.view(rows=[0, 1, 2]) if request.param == "populated" else graph.view(rows=[])
 
 
@@ -283,7 +284,7 @@ class TestThreads:
 class TestCounts:
     @pytest.fixture(params=["graph", "view"])
     def receiver(self, request):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         return graph if request.param == "graph" else graph.view(rows=np.arange(graph.n_individuals)[::3])
 
     def test_counts_are_block_lengths_and_none_when_unrequested(self, receiver):
@@ -322,7 +323,7 @@ class TestCounts:
         assert "GP=" not in text
 
     def test_view_counts_equal_the_filtered_graph_counts(self, full_results):
-        graph = _graph("random_1k")
+        graph = parity_graph("random_1k")
         view = graph.view(rows=np.arange(graph.n_individuals)[::3])
         expected = _expected(full_results["random_1k"], view)
         counts = view.relationship_counts(max_degree=5)

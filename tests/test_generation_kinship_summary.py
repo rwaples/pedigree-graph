@@ -10,7 +10,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from _support import _build_closed_line
-from conftest import parity_columns, parity_fixtures
+from conftest import FIXTURES, parity_columns
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
 from pedigree_graph.effective_size import ne_coancestry
@@ -157,9 +157,6 @@ def test_cached_matrix_path_and_streamed_path_agree_on_partial_labels():
     with_matrix.kinship_matrix()
     walked = with_matrix.mean_kinship_by_generation()
     _assert_summary(walked, streamed.generations, streamed.mean_kinship, streamed.pair_counts, 1)
-
-
-FIXTURES = parity_fixtures("random_1k", "deep_inbred_60g")
 
 
 @pytest.mark.parametrize("name", sorted(FIXTURES))
