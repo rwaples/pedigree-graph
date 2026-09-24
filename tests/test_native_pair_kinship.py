@@ -12,6 +12,7 @@ allocation family surfacing as ``allocation_failed``.
 from __future__ import annotations
 
 import numpy as np
+import polars as pl
 import pytest
 from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
 from conftest import parity_columns, parity_fixtures
@@ -57,6 +58,71 @@ def test_mz_and_inbred_constructions_match_the_oracle(build):
     graph = PedigreeGraph.from_frame(build())
     first, second = _all_pairs(graph.n_individuals)
     assert _native_kinship(graph, first, second).tobytes() == _oracle(graph, first, second).tobytes()
+
+
+def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pl.DataFrame:
+    """Generate a small valid (topologically ordered) random pedigree.
+
+    Parent-index-only; no simace dependency.  Mixes inbreeding (mates drawn
+    from the same cohort) and occasional MZ twins so the fuzz exercises both
+    correction paths.  Children always get a higher id than their parents, so
+    the topological invariant holds.
+    """
+    n_founders = int(rng.integers(2, 5))
+    n_gen = int(rng.integers(1, 5))
+    per_gen = int(rng.integers(1, 4))
+    ids = list(range(n_founders))
+    mother = [-1] * n_founders
+    father = [-1] * n_founders
+    twin = [-1] * n_founders
+    gen = [0] * n_founders
+    sex = [int(rng.integers(0, 2)) for _ in range(n_founders)]
+    cur = list(range(n_founders))
+    next_id = n_founders
+    for g in range(1, n_gen + 1):
+        new_gen: list[int] = []
+        females = [i for i in cur if sex[i] == 0] or cur
+        males = [i for i in cur if sex[i] == 1] or cur
+        for _ in range(per_gen):
+            m = int(rng.choice(females))
+            # A child cannot name one individual in both parent roles.
+            mates = [i for i in males if i != m] or [i for i in cur if i != m]
+            f = int(rng.choice(mates)) if mates else -1
+            ids.append(next_id)
+            mother.append(m)
+            father.append(f)
+            twin.append(-1)
+            gen.append(g)
+            sex.append(int(rng.integers(0, 2)))
+            new_gen.append(next_id)
+            next_id += 1
+        # Occasionally turn the last two new individuals into MZ twins.
+        if len(new_gen) >= 2 and rng.random() < p_twin:
+            a, b = new_gen[-1], new_gen[-2]
+            mother[b] = mother[a]
+            father[b] = father[a]
+            twin[a] = b
+            twin[b] = a
+            sex[b] = sex[a]
+        cur = new_gen
+    return pl.DataFrame({"id": ids, "mother": mother, "father": father, "twin": twin, "sex": sex, "generation": gen})
+
+
+def test_fuzz_native_equals_the_oracle_and_the_matrix():
+    rng = np.random.default_rng(20240609)
+    checked = 0
+    for _ in range(200):
+        pg = PedigreeGraph.from_frame(_random_pedigree(rng))
+        if pg.n_individuals < 2:
+            continue
+        K = pg.kinship_matrix().toarray()
+        ii, jj = np.triu_indices(pg.n_individuals)
+        py = _oracle(pg, ii, jj)
+        nb = _native_kinship(pg, ii, jj)
+        np.testing.assert_array_equal(nb, py)
+        np.testing.assert_array_equal(nb, K[ii, jj])
+        checked += 1
+    assert checked > 100  # the generator should mostly yield n >= 2
 
 
 def test_self_pairs_encode_inbreeding():

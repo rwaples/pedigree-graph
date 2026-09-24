@@ -323,3 +323,46 @@ class TestMzValidation:
     def test_sex_mismatch_skipped_when_sex_is_absent(self):
         pg = PedigreeGraph.from_frame(_twins())
         assert pg.sex is None
+
+
+def _trio_born(birth_year, father_ids=FATHERS):
+    return PedigreeGraph.from_arrays(
+        ids=IDS, mother_ids=MOTHERS, father_ids=father_ids, birth_year=np.array(birth_year)
+    )
+
+
+class TestBirthYear:
+    def test_nan_is_coerced_to_the_sentinel(self):
+        assert _trio_born([1990.0, np.nan, 2010.0]).birth_year.tolist() == [1990, -1, 2010]
+
+    def test_child_born_before_its_mother_raises(self):
+        with pytest.raises(PedigreeValidationError) as info:
+            _trio_born([2010, 1990, 1990])
+        assert info.value.code == "birth_year_topology"
+        assert dict(info.value.fields) == {
+            "parent_role": "mother",
+            "child_row": 2,
+            "parent_row": 0,
+            "child_id": 2,
+            "parent_id": 0,
+            "child_birth_year": 1990,
+            "parent_birth_year": 2010,
+            "violation_count": 1,
+        }
+
+    def test_child_born_before_its_father_reports_the_father_role(self):
+        with pytest.raises(PedigreeValidationError) as info:
+            _trio_born([1990, 2010, 1995])
+        assert info.value.code == "birth_year_topology"
+        assert info.value.fields["parent_role"] == "father"
+
+    @pytest.mark.parametrize(
+        ("birth_year", "father_ids"),
+        [
+            ([1990, 1990, 2010], np.array([-1, -1, -1])),  # only the mother is known
+            ([-1, 1990, 2010], FATHERS),  # an unknown endpoint is unconstrained
+            ([2010, 2010, 2010], FATHERS),  # equal years are not a topological error
+        ],
+    )
+    def test_accepted_birth_years_are_stored_unchanged(self, birth_year, father_ids):
+        assert _trio_born(birth_year, father_ids).birth_year.tolist() == birth_year

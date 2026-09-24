@@ -1,8 +1,8 @@
 """``pair_kinship`` on graphs and views: the pinned float32 recurrence (ADR 0009).
 
 Within one receiver every value is bit-identical to the ``kinship_matrix``
-entry for the same pair, to the pure-Python oracle, to the reversed endpoint
-order, and to itself across repeated calls and cached matrices.  Across two
+entry for the same pair, to the pure-Python oracle, and to the reversed
+endpoint order; the call keeps no state between calls.  Across two
 row orders of one pedigree the values stay inside the ADR 0009 envelope, and
 the ULP distance is reported.  Errors carry structured codes.
 """
@@ -16,7 +16,13 @@ from types import MappingProxyType
 import numpy as np
 import pytest
 import scipy.sparse as sp
-from _support import _ped_double_first_cousins, _ped_mz_twins_with_descendants, _ped_sib_mating
+from _support import (
+    _PAIRWISE_FIXTURES,
+    _ped_double_first_cousins,
+    _ped_inbred_mz,
+    _ped_mz_twins_with_descendants,
+    _ped_sib_mating,
+)
 from conftest import parity_columns, parity_fixtures
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
@@ -181,6 +187,12 @@ class TestWithinGraphParity:
         first, second = _all_pairs(graph.n_individuals)
         assert graph.pair_kinship(first, second).tobytes() == _matrix_values(graph, first, second).tobytes()
 
+    @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
+    def test_mz_and_inbred_constructions_match_the_matrix_bit_for_bit(self, build):
+        graph = PedigreeGraph.from_frame(build())
+        first, second = _all_pairs(graph.n_individuals)
+        assert graph.pair_kinship(first, second).tobytes() == _matrix_values(graph, first, second).tobytes()
+
     @pytest.mark.parametrize("name", [*MOTIF_NAMES, "deep_inbred_60g"])
     def test_kernel_matches_the_python_oracle(self, name):
         graph = _graph(name)
@@ -235,6 +247,11 @@ class TestViews:
         view = graph.view(rows=rows)
         first, second = _all_pairs(view.n_individuals)
         assert view.pair_kinship(first, second).tobytes() == graph.pair_kinship(rows[first], rows[second]).tobytes()
+
+    def test_reversed_view_resolves_inbred_mz_kinship_through_the_graph(self):
+        # PGQ-001: view pairs are in view rows but kinship runs in graph rows.
+        view = PedigreeGraph.from_frame(_ped_inbred_mz()).view(ids=[5, 4])
+        assert view.pair_kinship(view.relationship_pairs(max_degree=1))["MZ"].tolist() == [0.625]
 
     def test_view_blocks_and_collections_match_the_graph(self):
         graph = _graph("random_1k")

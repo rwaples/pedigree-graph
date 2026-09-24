@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 import pedigrees
 import pytest
 from _support import (
@@ -27,6 +28,7 @@ from _support import (
     SYMMETRIC,
     _columns,
     _graph,
+    _ped_double_first_cousins,
 )
 from oracle.relationship_pairs import check_exclusive, dependency_closure
 from relationship_predicates import AncestorWalk
@@ -298,6 +300,15 @@ class TestOrientation:
             )
             assert np.all(np.diff(keys) > 0), code
 
+    def test_every_pair_on_the_shipped_parquet_satisfies_its_predicate(self, small_pedigree: pl.DataFrame):
+        graph = PedigreeGraph.from_frame(small_pedigree)
+        walk = AncestorWalk(graph)
+        pairs = graph.relationship_pairs(max_degree=5)
+        np.testing.assert_array_equal(graph.twin_rows[pairs["MZ"].first_rows], pairs["MZ"].second_rows)
+        for code in (code for code in CODES if code != "MZ"):
+            for first, second in _oriented(pairs[code]):
+                assert walk.oriented_pair_is_valid(code, first, second), (code, first, second)
+
     def test_mo_and_fo_name_the_actual_parent(self, full_results):
         graph = _graph("random_1k")
         result = full_results["random_1k"]
@@ -387,6 +398,338 @@ for code, block in graph.relationship_pairs(max_degree=5).items():
     digest.update(block.second_rows.tobytes())
 print(digest.hexdigest())
 """
+
+
+# ---------------------------------------------------------------------------
+# Hand-built pedigrees and the independent pandas reference
+# ---------------------------------------------------------------------------
+
+
+def _reference_relationship_pairs(df) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Independent pandas derivation of the seven original categories, the golden for the engine.
+
+    Deliberately pandas: an independent derivation of the same pairs using a
+    different toolchain than the production sparse-matrix path. The polars
+    fixture converts at this boundary only.
+    """
+    if not isinstance(df, pd.DataFrame):
+        df = df.to_pandas()
+    ids_arr = df["id"].to_numpy().astype(np.int64)
+    id_to_row = np.full(ids_arr.max() + 1, -1, dtype=np.int32)
+    id_to_row[ids_arr] = np.arange(len(df), dtype=np.int32)
+
+    def resolve_rows(ids: np.ndarray) -> np.ndarray:
+        ids = np.asarray(ids, dtype=np.int64)
+        mask = (ids >= 0) & (ids < len(id_to_row))
+        result = np.full(len(ids), -1, dtype=np.int32)
+        result[mask] = id_to_row[ids[mask]]
+        return result
+
+    pairs = {}
+
+    twins = df[df["twin"] != -1]
+    ta = twins["id"].to_numpy().astype(int)
+    tb = twins["twin"].to_numpy().astype(int)
+    mask = ta < tb
+    pairs["MZ"] = (resolve_rows(ta[mask]), resolve_rows(tb[mask]))
+
+    non_twin_nf = df[(df["mother"] != -1) & (df["twin"] == -1)].copy()
+    non_twin_nf["_row"] = non_twin_nf.index.to_numpy()
+
+    full_rows_1, full_rows_2 = [], []
+    mat_half_rows_1, mat_half_rows_2 = [], []
+
+    sib_counts = non_twin_nf.groupby("mother").size()
+    multi_mothers = sib_counts[sib_counts >= 2].index
+    mat_sib = non_twin_nf[non_twin_nf["mother"].isin(multi_mothers)]
+
+    if len(mat_sib) > 0:
+        mat_pairs = mat_sib[["mother", "father", "_row"]].merge(
+            mat_sib[["mother", "father", "_row"]],
+            on="mother",
+            suffixes=("_1", "_2"),
+        )
+        mat_pairs = mat_pairs[mat_pairs["_row_1"] < mat_pairs["_row_2"]]
+        same_father = mat_pairs["father_1"] == mat_pairs["father_2"]
+        full_rows_1.append(mat_pairs.loc[same_father, "_row_1"].to_numpy())
+        full_rows_2.append(mat_pairs.loc[same_father, "_row_2"].to_numpy())
+        mat_half_rows_1.append(mat_pairs.loc[~same_father, "_row_1"].to_numpy())
+        mat_half_rows_2.append(mat_pairs.loc[~same_father, "_row_2"].to_numpy())
+
+    pat_half_rows_1, pat_half_rows_2 = [], []
+    pat_counts = non_twin_nf.groupby("father").size()
+    multi_fathers = pat_counts[pat_counts >= 2].index
+    pat_sib = non_twin_nf[non_twin_nf["father"].isin(multi_fathers)]
+
+    if len(pat_sib) > 0:
+        pat_pairs = pat_sib[["mother", "father", "_row"]].merge(
+            pat_sib[["mother", "father", "_row"]],
+            on="father",
+            suffixes=("_1", "_2"),
+        )
+        pat_pairs = pat_pairs[pat_pairs["_row_1"] < pat_pairs["_row_2"]]
+        diff_mother = pat_pairs["mother_1"] != pat_pairs["mother_2"]
+        pat_half_rows_1.append(pat_pairs.loc[diff_mother, "_row_1"].to_numpy())
+        pat_half_rows_2.append(pat_pairs.loc[diff_mother, "_row_2"].to_numpy())
+
+    pairs["FS"] = (
+        np.concatenate(full_rows_1) if full_rows_1 else np.array([], dtype=int),
+        np.concatenate(full_rows_2) if full_rows_1 else np.array([], dtype=int),
+    )
+    pairs["MHS"] = (
+        np.concatenate(mat_half_rows_1) if mat_half_rows_1 else np.array([], dtype=int),
+        np.concatenate(mat_half_rows_2) if mat_half_rows_1 else np.array([], dtype=int),
+    )
+    pairs["PHS"] = (
+        np.concatenate(pat_half_rows_1) if pat_half_rows_1 else np.array([], dtype=int),
+        np.concatenate(pat_half_rows_2) if pat_half_rows_1 else np.array([], dtype=int),
+    )
+
+    all_nf = df[df["mother"] != -1]
+    child_rows = all_nf.index.to_numpy()
+    mother_rows = resolve_rows(all_nf["mother"].to_numpy().astype(int))
+    father_rows = resolve_rows(all_nf["father"].to_numpy().astype(int))
+
+    m_valid = mother_rows >= 0
+    f_valid = father_rows >= 0
+    pairs["MO"] = (child_rows[m_valid], mother_rows[m_valid])
+    pairs["FO"] = (child_rows[f_valid], father_rows[f_valid])
+
+    child_ids = all_nf["id"].to_numpy().astype(np.int64)
+    mother_ids = all_nf["mother"].to_numpy().astype(np.int64)
+    father_ids = all_nf["father"].to_numpy().astype(np.int64)
+    n_children = len(child_ids)
+
+    df_mothers_col = df["mother"].to_numpy().astype(np.int64)
+    df_fathers_col = df["father"].to_numpy().astype(np.int64)
+    mother_row = resolve_rows(mother_ids)
+    father_row = resolve_rows(father_ids)
+
+    gp_ids = np.full((n_children, 4), -1, dtype=np.int64)
+    m_ok = mother_row >= 0
+    gp_ids[m_ok, 0] = df_mothers_col[mother_row[m_ok]]
+    gp_ids[m_ok, 1] = df_fathers_col[mother_row[m_ok]]
+    f_ok = father_row >= 0
+    gp_ids[f_ok, 2] = df_mothers_col[father_row[f_ok]]
+    gp_ids[f_ok, 3] = df_fathers_col[father_row[f_ok]]
+
+    gp_child = np.tile(child_ids, 4)
+    gp_parent = np.concatenate([mother_ids, mother_ids, father_ids, father_ids])
+    gp_gp = np.concatenate([gp_ids[:, 0], gp_ids[:, 1], gp_ids[:, 2], gp_ids[:, 3]])
+
+    valid_gp = gp_gp >= 0
+    gp_child = gp_child[valid_gp]
+    gp_parent = gp_parent[valid_gp]
+    gp_gp = gp_gp[valid_gp]
+
+    sort_idx = np.argsort(gp_gp, kind="mergesort")
+    gp_child = gp_child[sort_idx]
+    gp_parent = gp_parent[sort_idx]
+    gp_gp = gp_gp[sort_idx]
+
+    _, group_starts, group_counts = np.unique(gp_gp, return_index=True, return_counts=True)
+
+    multi = group_counts >= 2
+    group_starts = group_starts[multi]
+    group_counts = group_counts[multi]
+
+    pair_i_parts = []
+    pair_j_parts = []
+    for size in np.unique(group_counts):
+        gs = group_starts[group_counts == size]
+        ii, jj = np.triu_indices(size, k=1)
+        all_i = (gs[:, np.newaxis] + ii[np.newaxis, :]).ravel()
+        all_j = (gs[:, np.newaxis] + jj[np.newaxis, :]).ravel()
+        pair_i_parts.append(all_i)
+        pair_j_parts.append(all_j)
+
+    pair_i = np.concatenate(pair_i_parts)
+    pair_j = np.concatenate(pair_j_parts)
+
+    diff_parent = gp_parent[pair_i] != gp_parent[pair_j]
+    c1_raw = gp_child[pair_i[diff_parent]]
+    c2_raw = gp_child[pair_j[diff_parent]]
+
+    c1 = np.minimum(c1_raw, c2_raw)
+    c2 = np.maximum(c1_raw, c2_raw)
+
+    max_id = int(c2.max()) + 1
+    pair_keys = c1.astype(np.int64) * max_id + c2.astype(np.int64)
+    unique_keys = np.unique(pair_keys)
+    c1_final = unique_keys // max_id
+    c2_final = unique_keys % max_id
+
+    c_idx1 = resolve_rows(c1_final)
+    c_idx2 = resolve_rows(c2_final)
+    c_valid = (c_idx1 >= 0) & (c_idx2 >= 0)
+    pairs["1C"] = (c_idx1[c_valid], c_idx2[c_valid])
+
+    return pairs
+
+
+def _pairs_to_set(idx1, idx2):
+    """Convert pair arrays to a set of sorted tuples for comparison."""
+    return {(min(a, b), max(a, b)) for a, b in zip(idx1.tolist(), idx2.tolist(), strict=True)}
+
+
+def _pairs_to_set(idx1, idx2):
+    """Convert pair arrays to a set of sorted tuples for comparison."""
+    return {(min(a, b), max(a, b)) for a, b in zip(idx1.tolist(), idx2.tolist(), strict=True)}
+
+
+class TestPandasReference:
+    """The engine produces the pandas reference's pair sets for the original seven categories."""
+
+    def test_golden_pairs_match(self, small_pedigree):
+        """Identical sets for the six sibling/parent keys; the reference's cousins are a subset of 1C | H1C."""
+        df = small_pedigree
+        reference = _reference_relationship_pairs(df)
+        new = PedigreeGraph.from_frame(df).relationship_pairs(max_degree=4)
+
+        exact_keys = [
+            "MZ",
+            "FS",
+            "MHS",
+            "PHS",
+            "MO",
+            "FO",
+        ]
+        for key in exact_keys:
+            reference_set = _pairs_to_set(*reference[key])
+            new_set = _pairs_to_set(*new[key])
+            assert reference_set == new_set, (
+                f"{key}: reference has {len(reference_set)} pairs, engine has {len(new_set)} pairs, "
+                f"diff: {reference_set.symmetric_difference(new_set)}"
+            )
+
+        # Cousins: the reference lumps full 1C and half-1C into one category.
+        # The engine splits them: pairs["1C"] = full only (>= 2 shared GPs),
+        # pairs["H1C"] = half only (1 shared GP). The union should match the reference
+        # (after removing self-pairs and sibling-pairs from the reference).
+        reference_cousins = _pairs_to_set(*reference["1C"])
+        new_1c = _pairs_to_set(*new["1C"])
+        new_h1c = _pairs_to_set(*new["H1C"])
+        new_all_cousins = new_1c | new_h1c
+        mother = df["mother"].to_numpy()
+        father = df["father"].to_numpy()
+        # Filter out self-pairs and sibling-pairs from the reference
+        reference_proper = set()
+        for a, b in reference_cousins:
+            if a == b:
+                continue
+            if mother[a] == mother[b] or father[a] == father[b]:
+                continue
+            reference_proper.add((a, b))
+        assert reference_proper <= new_all_cousins, (
+            f"1st cousin: reference has {len(reference_proper - new_all_cousins)} pairs not in the engine"
+        )
+        # 1C and H1C must be disjoint
+        assert not (new_1c & new_h1c), f"1C and H1C overlap: {len(new_1c & new_h1c)} pairs"
+
+
+class TestKnownTinyPedigree:
+    """The double-first-cousin pedigree, with every pair counted by hand."""
+
+    @pytest.fixture
+    def tiny_pedigree(self):
+        """3-generation pedigree:
+        Gen 0: 4 founders (0=F, 1=M, 2=F, 3=M)
+        Gen 1: 4 offspring
+          - 4,5 children of (0,1) — full sibs
+          - 6   child of (2,3)
+          - 7   child of (2,3) — full sib with 6
+        Gen 2: 3 offspring
+          - 8   child of (4=F, 6=M) — 4 is female, 6 is male
+          - 9   child of (5=F, 7=M) — 5 is female, 7 is male
+          - 10  child of (4=F, 6=M) — full sib with 8
+
+        Expected:
+          Full sibs: (4,5), (6,7), (8,10) = 3 pairs
+          1st cousins: (8,9), (9,10) = 2 pairs (parents 4&5 are full sibs, parents 6&7 are full sibs)
+          Mother-offspring: (4,0), (5,0), (6,2), (7,2), (8,4), (9,5), (10,4) = 7
+          Father-offspring: (4,1), (5,1), (6,3), (7,3), (8,6), (9,7), (10,6) = 7
+          Grandparent-grandchild: 8→{0,1,2,3}, 9→{0,1,2,3}, 10→{0,1,2,3} = 12
+          Avuncular: 5 is aunt of 8,10; 4 is aunt of 9; 7 is uncle of 8,10; 6 is uncle of 9
+                     = 6 pairs
+        """
+        return _ped_double_first_cousins()
+
+    def test_full_sib_count(self, tiny_pedigree):
+        pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
+        sib_set = _pairs_to_set(*pairs["FS"])
+        expected = {(4, 5), (6, 7), (8, 10)}
+        assert sib_set == expected, f"Got {sib_set}"
+
+    def test_mother_offspring_count(self, tiny_pedigree):
+        pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
+        mo_set = _pairs_to_set(*pairs["MO"])
+        assert len(mo_set) == 7
+
+    def test_father_offspring_count(self, tiny_pedigree):
+        pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
+        fo_set = _pairs_to_set(*pairs["FO"])
+        assert len(fo_set) == 7
+
+    def test_cousin_count(self, tiny_pedigree):
+        pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
+        cousin_set = _pairs_to_set(*pairs["1C"])
+        # 8's parents: (4, 6). 9's parents: (5, 7).
+        # 4 & 5 share grandparents 0,1. 6 & 7 share grandparents 2,3.
+        # So 8 and 9 are double 1st cousins (share all 4 grandparents).
+        # 10's parents: (4, 6) same as 8, so 10 is full sib of 8.
+        # 10 and 9: parents (4,6) vs (5,7) — same as 8 vs 9
+        expected = {(8, 9), (9, 10)}
+        assert cousin_set == expected, f"Got {cousin_set}"
+
+    def test_grandparent_grandchild_count(self, tiny_pedigree):
+        pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
+        gp_set = _pairs_to_set(*pairs["GP"])
+        # 8 → grandparents 0,1,2,3
+        # 9 → grandparents 0,1,2,3
+        # 10 → grandparents 0,1,2,3
+        expected = {
+            (0, 8),
+            (1, 8),
+            (2, 8),
+            (3, 8),
+            (0, 9),
+            (1, 9),
+            (2, 9),
+            (3, 9),
+            (0, 10),
+            (1, 10),
+            (2, 10),
+            (3, 10),
+        }
+        assert gp_set == expected, f"Got {gp_set}, expected {expected}"
+
+    def test_avuncular_count(self, tiny_pedigree):
+        pairs = PedigreeGraph.from_frame(tiny_pedigree).relationship_pairs(max_degree=3)
+        avunc_set = _pairs_to_set(*pairs["Av"])
+        # 5 is full sib of 4 (mother of 8, 10) → 5 is aunt of 8, 10
+        # 4 is full sib of 5 (mother of 9) → 4 is aunt of 9
+        # 7 is full sib of 6 (father of 8, 10) → 7 is uncle of 8, 10
+        # 6 is full sib of 7 (father of 9) → 6 is uncle of 9
+        expected = {(5, 8), (5, 10), (4, 9), (7, 8), (7, 10), (6, 9)}
+        assert avunc_set == expected, f"Got {avunc_set}"
+
+
+class TestSecondCousinFullVsHalf:
+    def test_only_the_full_second_cousins_are_2c(self):
+        """Full 2C share two great-grandparents through a mated pair; half 2C share one and are excluded.
+
+        Full branch: 2,3 full sibs of (0,1); 6=child(4,2), 7=child(5,3) are
+        full first cousins; 10=child(8,6), 11=child(9,7) share GGPs {0,1}.
+        Half branch: 15=child(12,13), 16=child(12,14) are maternal half sibs;
+        19=child(17,15), 20=child(18,16); 23=child(21,19), 24=child(22,20)
+        share only GGP 12.
+        """
+        # fmt: off
+        mother = [-1, -1, 0, 0, -1, -1, 4, 5, -1, -1, 8, 9, -1, -1, -1, 12, 12, -1, -1, 17, 18, -1, -1, 21, 22]
+        father = [-1, -1, 1, 1, -1, -1, 2, 3, -1, -1, 6, 7, -1, -1, -1, 13, 14, -1, -1, 15, 16, -1, -1, 19, 20]
+        # fmt: on
+        graph = PedigreeGraph.from_frame({"id": np.arange(25), "mother": np.array(mother), "father": np.array(father)})
+        assert _unordered(*graph.relationship_pairs(max_degree=5)["2C"]) == {(10, 11)}
 
 
 class TestThreads:

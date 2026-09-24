@@ -335,6 +335,25 @@ class TestExternalReferences:
         assert parsed.twin_rows.tolist() == [-1, -1]
 
 
+class TestIdRemap:
+    def test_sparse_high_ids_do_not_allocate_dense_table(self):
+        # A max(id)+1 lookup table here would be ~2e9 int32 entries (~8 GB).
+        ids = np.array([0, 1, 2_000_000_000, 2_000_000_001])
+        pg = PedigreeGraph.from_arrays(
+            ids=ids,
+            mother_ids=np.array([-1, -1, 0, 0]),
+            father_ids=np.array([-1, -1, 1, 1]),
+            generation=np.array([0, 0, 1, 1]),
+        )
+        assert pg.mother_rows.tolist() == [-1, -1, 0, 0]
+        assert pg.father_rows.tolist() == [-1, -1, 1, 1]
+
+    def test_unsorted_ids_remap_correctly(self):
+        parsed = _parse({"id": [5, 2, 9, 7], "mother": [-1, -1, 5, 2], "father": [-1, -1, 2, 5]})
+        assert parsed.mother_rows.tolist() == [-1, -1, 0, 1]
+        assert parsed.father_rows.tolist() == [-1, -1, 1, 0]
+
+
 class TestOwnership:
     def test_arrays_are_read_only(self):
         """Every array the native builder hands over is frozen before a caller sees it."""

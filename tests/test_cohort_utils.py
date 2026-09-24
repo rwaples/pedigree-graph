@@ -117,3 +117,65 @@ class TestEligibleCohortRange:
         w = eligible_cohort_range(pg)
         # Only the father edge (Δ=18) contributes → p95 of {18} = 18.
         assert w.reproductive_age_p95 == pytest.approx(18.0)
+
+
+class TestGenerationInterval:
+    def test_returns_none_when_birth_year_missing(self):
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2]), mother_ids=np.array([-1, -1, 0]), father_ids=np.array([-1, -1, 1])
+        )
+        assert pg.generation_interval is None
+
+    def test_basic_two_parent_pedigree(self):
+        # One mother edge (20 y) and one father edge (18 y).
+        gi = _three_gen_pedigree(np.array([1990, 1992, 2010])).generation_interval
+        assert gi is not None
+        assert gi.T_m == pytest.approx(18.0)  # father-side
+        assert gi.T_f == pytest.approx(20.0)  # mother-side
+        assert gi.T == pytest.approx(19.0)  # noqa: SIM300 (gi.T is an attribute, not a constant)
+        assert gi.n_edges == 2
+
+    def test_raises_when_one_sex_has_no_edges(self):
+        # All fathers unknown → T_m undefined → the father role is missing.
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 2]),
+            mother_ids=np.array([-1, 0]),
+            father_ids=np.array([-1, -1]),
+            birth_year=np.array([1990, 2010]),
+        )
+        with pytest.raises(MissingMetadataError) as info:
+            _ = pg.generation_interval
+        assert info.value.code == "insufficient_parent_age_data"
+        assert info.value.fields == {"operation": "generation_interval", "missing_parent_roles": ("father",)}
+
+    def test_raises_when_no_edges_have_known_birth_years(self):
+        with pytest.raises(MissingMetadataError) as info:
+            _ = _three_gen_pedigree(np.array([-1, -1, 2010])).generation_interval
+        assert info.value.code == "insufficient_parent_age_data"
+        assert info.value.fields["missing_parent_roles"] == ("mother", "father")
+
+    def test_unknown_endpoints_skipped_from_mean(self):
+        pg = PedigreeGraph.from_arrays(
+            ids=np.array([0, 1, 2, 3, 4, 5]),
+            mother_ids=np.array([-1, -1, -1, 0, 0, 2]),
+            father_ids=np.array([-1, -1, -1, 1, 1, 1]),
+            # Mother 2's birth_year is unknown, so the 2 → 5 edge is skipped
+            # from T_f; the 0 → 3 and 0 → 4 edges remain.
+            birth_year=np.array([1990, 1990, -1, 2010, 2012, 2014]),
+        )
+        gi = pg.generation_interval
+        assert gi is not None
+        assert gi.T_m == pytest.approx(22.0)  # 1→3 (20), 1→4 (22), 1→5 (24)
+        assert gi.T_f == pytest.approx(21.0)  # 0→3 (20), 0→4 (22)
+        assert gi.T == pytest.approx(21.5)  # noqa: SIM300 (gi.T is an attribute, not a constant)
+
+    def test_includes_skip_generation_edges(self):
+        gi = _three_gen_pedigree(np.array([1900, 1920, 1940])).generation_interval
+        assert gi is not None
+        assert gi.T_m == pytest.approx(20.0)
+        assert gi.T_f == pytest.approx(40.0)  # the mother edge spans 40 years
+        assert gi.n_edges == 2
+
+    def test_cached_on_second_access(self):
+        pg = _three_gen_pedigree(np.array([1990, 1992, 2010]))
+        assert pg.generation_interval is pg.generation_interval
