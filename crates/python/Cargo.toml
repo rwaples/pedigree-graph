@@ -16,3 +16,8 @@ pedigree-graph-core = { path = "../core" }
 pyo3 = { version = "0.29", features = ["abi3-py313"] }
 numpy = "0.29"
 rayon = "1.10"
+
+[features]
+# Test-only entry points (the panic-boundary probe).  The dev and CI test
+# builds enable it through `pixi run build-dev`; published wheels never do.
+test-hooks = []

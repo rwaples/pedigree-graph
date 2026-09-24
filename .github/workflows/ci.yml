@@ -61,10 +61,11 @@ jobs:
         run: pixi run cargo fmt --check
 
       - name: Lint with Clippy
-        run: pixi run cargo clippy --all-targets -- -D warnings
+        # --all-features so the test-hooks code is linted too.
+        run: pixi run cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run the Rust test suite
-        run: pixi run cargo test --release
+        run: pixi run test-rust
 
   r:
     name: R binding lint, offline tarball check
@@ -87,7 +88,20 @@ jobs:
         working-directory: r/src/rust
         run: |
           cargo fmt --check
-          cargo clippy --release --all-targets -- -D warnings
+          cargo clippy --release --all-targets --all-features -- -D warnings
+
+      - name: Run the binding crate's Rust tests
+        run: cargo test --release --manifest-path r/src/rust/Cargo.toml
+
+      - name: Test the checkout build with the test hooks
+        # The panic-boundary probe must run here (REQUIRE makes a missing hook
+        # a failure); the tarball check below builds without it and skips.
+        env:
+          PG_CARGO_FEATURES: test-hooks
+          PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS: "1"
+        run: |
+          R CMD INSTALL --no-multiarch --preclean r
+          Rscript -e 'testthat::test_local("r", stop_on_failure = TRUE)'
 
       - name: Build the source tarball
         run: tools/r_build_tarball.sh dist-r
@@ -133,7 +147,9 @@ jobs:
         run: pixi run ty check
 
       - name: Run the fast test suite
-        run: pixi run pytest -m "not slow"
+        # `test` rebuilds the extension with the test-hooks feature and requires
+        # the panic-boundary probe to run.
+        run: pixi run test
 
   python-slow:
     name: Python slow tests

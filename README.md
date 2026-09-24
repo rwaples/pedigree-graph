@@ -30,17 +30,16 @@ and installs the package editable (the extension module is rebuilt with
 git clone https://github.com/rwaples/pedigree-graph.git
 cd pedigree-graph
 pixi install --locked
-pixi run pytest -m "not slow"   # inner loop, about 2.5 minutes
-pixi run pytest                 # before a commit, about 13 minutes
-pixi run cargo test --release   # the Rust core
+pixi run test       # inner loop: everything but the `slow` tests, about 45 s
+pixi run test-all   # before a commit: the full suite, about 100 s
+pixi run test-rust  # the Rust core
 ```
 
-Five of the nine `slow` tests are the `random_30k` integration gates.  Each runs
-the pair-kinship kernel over the whole 30,300-row pedigree, and a single kernel
-call there costs 30 to 250 seconds regardless of how many pairs it is asked for,
-so the full suite is dominated by a handful of tests.  The other four are the
-N=2000 effective-size scaling tests in `tests/test_effective_size_scaling.py`,
-which touch neither `random_30k` nor the pair-kinship kernel.
+Six of the ten `slow` tests are the `random_30k` integration gates, which run
+the kernels over the whole 30,300-row pedigree.  One of them, the frozen
+v0.7.1 parity gate, takes most of the slow tier's time (about 80 s of 88 s
+measured on 2026-09-24); the rest take 2 to 14 s each.  The other four are the
+N=2000 effective-size scaling tests in `tests/test_effective_size_scaling.py`.
 
 Requires Python ≥ 3.13.  Runtime deps: `numpy` and `scipy`.  Construction,
 relationships, topology, pairwise kinship, the kinship matrices, the

@@ -8,6 +8,7 @@ mod errors;
 mod graph;
 mod input;
 mod kernels;
+mod test_hooks;
 mod threads;
 
 use errors::{finish, HostError};
@@ -143,6 +144,7 @@ fn relationship_categories() -> Robj {
 
 extendr_module! {
     mod pedigreegraph;
+    use test_hooks;
     fn build_pedigree;
     fn relationship_pairs;
     fn pair_kinship;

@@ -18,16 +18,22 @@ maturin = ">=1.15.0,<2"
 pedigree-graph = { path = ".", editable = true, extras = ["test", "typecheck"] }
 
 [tasks]
-# -n 6 --dist worksteal: 703.3 s serial -> 333.7 s, 2.11x, which is 95% of the
-# 2.21x ceiling set by a single 324.5 s test. Fewer workers do *worse* than
-# their packing floor because xdist dispatches in collection order and that
-# test is collected late, so it starts late and everything waits behind it;
-# four workers land at 451.6 s. No thread pins: the package already defaults to
-# a one-thread budget (_threads.py) and no parallel=True kernel survives, so an
-# unpinned arm measured identically. See benchmarks/bench_pytest_workers.md.
-# Bare `pixi run pytest` stays serial and unpinned, which is what -v, -s and
-# --pdb need since xdist captures output and breaks the debugger.
-test = "pytest -n 6 --dist worksteal"
+# Two tiers, measured 2026-09-24 on the 12-core dev box. `test` is the inner
+# loop and matches CI's push job: everything but the 10 `slow` tests, 3422
+# tests in 41.7 s. `test-all` is the full suite, run before a commit and by the
+# consumer gate: 3432 tests in 96.8 s, the difference being the random_30k
+# gates (the v0.7.1 parity one alone is about 80 s). -n 6 --dist worksteal: xdist dispatches in collection
+# order and the long random_30k tests are collected late, so worksteal is what
+# keeps a single one from holding the whole run. No thread pins: the package
+# defaults to a one-thread budget (_threads.py). Bare `pixi run pytest` stays
+# serial, which is what -v, -s and --pdb need since xdist captures output.
+# `build-dev` rebuilds the editable extension with the `test-hooks` feature, and
+# PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS=1 makes the panic-boundary test fail, not
+# skip, when the hook is missing.  Only installed-wheel runs may skip it.
+build-dev = "maturin develop --release --features test-hooks"
+test = { cmd = "pytest -n 6 --dist worksteal -m 'not slow'", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
+test-all = { cmd = "pytest -n 6 --dist worksteal", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
+test-rust = "cargo test --release"
 
 # The R package under r/ (slice 16, plans/pedigree-graph-slice-16-r-package.md
 # in simACE). Its own environment so the default one never pulls in R; it
@@ -42,10 +48,12 @@ c-compiler = "*"
 make = "*"
 
 [feature.r.tasks]
-r-install = "R CMD INSTALL --no-multiarch --preclean r"
+# The dev install carries the `test-hooks` feature (the panic-boundary probe);
+# tools/r_build_tarball.sh builds the published tarball without it.
+r-install = { cmd = "R CMD INSTALL --no-multiarch --preclean r", env = { PG_CARGO_FEATURES = "test-hooks" } }
 # Rd pages only: NAMESPACE stays hand-written.
 r-doc = "Rscript -e 'roxygen2::roxygenise(\"r\", roclets = \"rd\")'"
-r-test = { cmd = "Rscript -e 'testthat::test_local(\"r\", stop_on_failure = TRUE)'", depends-on = ["r-install"] }
+r-test = { cmd = "Rscript -e 'testthat::test_local(\"r\", stop_on_failure = TRUE)'", depends-on = ["r-install"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
 
 [environments]
 r = { features = ["r"], no-default-feature = false }

@@ -5,6 +5,8 @@
 # build runs offline; in the repository checkout it resolves them normally.
 # CARGO_HOME stays inside the build so nothing is written to the user's home,
 # jobs are capped at 2 as CRAN asks, and rustc's version is logged first.
+# PG_CARGO_FEATURES (the dev and CI test installs set `test-hooks`) applies to
+# the checkout build only; the vendored tarball build never takes features.
 TARGET_DIR = ./rust/target
 LIBDIR = $(TARGET_DIR)/release
 STATLIB = $(LIBDIR)/libpedigreegraph.a
@@ -31,7 +33,8 @@ $(STATLIB):
 	    --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR); \
 	else \
 	  export PATH="$(PATH_WITH_CARGO)" && \
-	  cargo build -j 2 --lib --release --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR); \
+	  cargo build -j 2 --lib --release $${PG_CARGO_FEATURES:+--features "$$PG_CARGO_FEATURES"} \
+	    --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR); \
 	fi
 
 # Only a tarball build removes what it unpacked and built; a checkout keeps

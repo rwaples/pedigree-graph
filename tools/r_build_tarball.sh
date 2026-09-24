@@ -13,6 +13,14 @@
 # Needs cargo and R on PATH (pixi run -e r tools/r_build_tarball.sh).
 set -euo pipefail
 
+# The published tarball never carries test-only entry points (ADR 0007).  Its
+# vendored build ignores PG_CARGO_FEATURES anyway; refusing here keeps a dev
+# shell's setting from being mistaken for a supported build.
+if [ -n "${PG_CARGO_FEATURES:-}" ]; then
+  echo "r_build_tarball.sh: unset PG_CARGO_FEATURES (=$PG_CARGO_FEATURES); the tarball builds without features" >&2
+  exit 1
+fi
+
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$(realpath -m "${1:-$REPO/target/r}")"
 STAGE="$(mktemp -d)"

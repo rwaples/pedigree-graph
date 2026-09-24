@@ -21,6 +21,12 @@ extendr-api = "0.9"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 rayon = "1.10"
 
+[features]
+# Test-only entry points (the panic-boundary probe).  `pixi run -e r r-install`
+# enables it through PG_CARGO_FEATURES; tools/r_build_tarball.sh refuses to run
+# with that set, so the source tarball never carries it.
+test-hooks = []
+
 # Its own workspace root, so cargo never adopts it into an enclosing one: the
 # repository's, or any a user unpacks the source tarball under.
 [workspace]

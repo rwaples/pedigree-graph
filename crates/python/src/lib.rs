@@ -834,6 +834,15 @@ fn fail_next_allocation(family: Option<&str>, min_elements: usize) -> PyResult<(
     Ok(())
 }
 
+/// Test hook: panic inside a native call, so the package tests can show a
+/// Rust panic reaches Python as `PanicException` and leaves the process
+/// usable.  Compiled only with the `test-hooks` feature.
+#[cfg(feature = "test-hooks")]
+#[pyfunction]
+fn _panic_for_test() {
+    panic!("pedigree-graph test hook: deliberate panic");
+}
+
 /// Sorted-id lookup over a graph's unique ids, for repeated id selections.
 #[pyclass(frozen, name = "IdIndex", module = "pedigree_graph._native")]
 struct PyIdIndex {
@@ -892,6 +901,8 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(founder_contribution_means, m)?)?;
     m.add_function(wrap_pyfunction!(allocation_families, m)?)?;
     m.add_function(wrap_pyfunction!(fail_next_allocation, m)?)?;
+    #[cfg(feature = "test-hooks")]
+    m.add_function(wrap_pyfunction!(_panic_for_test, m)?)?;
     m.add_class::<BuiltPedigree>()?;
     m.add_class::<PyIdIndex>()?;
     Ok(())
