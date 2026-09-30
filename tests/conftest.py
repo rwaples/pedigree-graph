@@ -119,6 +119,63 @@ def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False, complete=Fa
     return np.arange(n, dtype=np.int64), mother, father, sex
 
 
+#: External parent ids sit above every row id ``pedigree_columns`` makes, mothers and fathers apart.
+_EXTERNAL_MOTHERS = (9_001, 9_002, 9_003)
+_EXTERNAL_FATHERS = (9_101, 9_102, 9_103)
+
+
+@st.composite
+def pedigree_columns(draw, *, max_n=40):
+    """Constructor columns for ``PedigreeGraph.from_frame``: the shared general-topology strategy.
+
+    Each parent is missing, an earlier row, or an external id that is no row,
+    so pedigrees have one-parent rows, externally parented siblings, and
+    inbreeding loops through related mates.  Pairs of rows with the same
+    mother, father and sex may be MZ co-twins, including founder twins.  Rows
+    are shuffled and ids gapped (``row * 5 + 2``), so row order, id order and
+    topological order all differ.  Sex is drawn per row first and parents are
+    drawn from earlier rows of the matching sex, so every id plays one role.
+    """
+    n = draw(st.integers(min_value=0, max_value=max_n))
+    sex = [draw(st.integers(min_value=0, max_value=1)) for _ in range(n)]
+    mother = [-1] * n
+    father = [-1] * n
+    for i in range(1, n):
+        for parents, role, external in ((mother, 0, _EXTERNAL_MOTHERS), (father, 1, _EXTERNAL_FATHERS)):
+            kind = draw(st.sampled_from(["missing", "row", "row", "external"]))
+            candidates = [row for row in range(i) if sex[row] == role]
+            if kind == "row" and candidates:
+                parents[i] = draw(st.sampled_from(candidates))
+            elif kind == "external":
+                parents[i] = -2 - external.index(draw(st.sampled_from(external)))
+    twin = [-1] * n
+    for i in range(n):
+        if twin[i] != -1:
+            continue
+        for j in range(i + 1, n):
+            same = (mother[j], father[j], sex[j]) == (mother[i], father[i], sex[i])
+            if twin[j] == -1 and same and draw(st.booleans()):
+                twin[i], twin[j] = j, i
+                break
+    perm = draw(st.permutations(range(n)))
+    ids = [row * 5 + 2 for row in range(n)]
+
+    def to_id(ref, external=()):
+        if ref == -1:
+            return -1
+        if ref < -1:
+            return external[-2 - ref]
+        return ids[ref]
+
+    return {
+        "id": np.array([ids[perm[k]] for k in range(n)], dtype=np.int64),
+        "mother": np.array([to_id(mother[perm[k]], _EXTERNAL_MOTHERS) for k in range(n)], dtype=np.int64),
+        "father": np.array([to_id(father[perm[k]], _EXTERNAL_FATHERS) for k in range(n)], dtype=np.int64),
+        "twin": np.array([to_id(twin[perm[k]]) for k in range(n)], dtype=np.int64),
+        "sex": np.array([sex[perm[k]] for k in range(n)], dtype=np.int8),
+    }
+
+
 def _arrays_to_graph(arrays):
     """Build a PedigreeGraph from a ``(ids, mother, father, sex)`` tuple."""
     ids, mother, father, sex = arrays

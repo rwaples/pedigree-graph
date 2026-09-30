@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from _support import _run_child
-from conftest import FIXTURE_NAMES, FIXTURES, parity_columns
+from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, pedigree_columns
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -119,53 +119,9 @@ def test_a_view_of_one_row_counts_nothing(small_pedigree):
     assert set(counts.values()) == {0}
 
 
-@st.composite
-def random_pedigree(draw):
-    """A valid pedigree in shuffled row order with external parents, missing parents, twins, and loops."""
-    n = draw(st.integers(min_value=0, max_value=40))
-    mother = [-1] * n
-    father = [-1] * n
-    for i in range(1, n):
-        for parents in (mother, father):
-            kind = draw(st.sampled_from(["missing", "row", "row", "external"]))
-            if kind == "row":
-                parents[i] = draw(st.integers(min_value=0, max_value=i - 1))
-            elif kind == "external":
-                parents[i] = -2 - draw(st.integers(min_value=0, max_value=2))
-        if mother[i] == father[i] and mother[i] != -1:
-            father[i] = -1
-    twin = [-1] * n
-    for i in range(n):
-        if twin[i] != -1:
-            continue
-        for j in range(i + 1, n):
-            if twin[j] == -1 and mother[j] == mother[i] and father[j] == father[i] and draw(st.booleans()):
-                twin[i], twin[j] = j, i
-                break
-    perm = draw(st.permutations(range(n)))
-    inverse = [0] * n
-    for position, row in enumerate(perm):
-        inverse[row] = position
-    ids = [row * 5 + 2 for row in range(n)]
-
-    def to_id(ref):
-        if ref == -1:
-            return -1
-        if ref < -1:
-            return 9_000 + (-ref)
-        return ids[ref]
-
-    return {
-        "id": np.array([ids[perm[k]] for k in range(n)], dtype=np.int64),
-        "mother": np.array([to_id(mother[perm[k]]) for k in range(n)], dtype=np.int64),
-        "father": np.array([to_id(father[perm[k]]) for k in range(n)], dtype=np.int64),
-        "twin": np.array([to_id(twin[perm[k]]) for k in range(n)], dtype=np.int64),
-    }
-
-
 @pytest.mark.slow
 @settings(max_examples=300, deadline=None)
-@given(random_pedigree(), st.integers(min_value=0, max_value=5))
+@given(pedigree_columns(), st.integers(min_value=0, max_value=5))
 def test_random_pedigrees_match_the_matrix_engine(columns, max_degree):
     graph = PedigreeGraph.from_frame(columns)
     _assert_counts_match(graph, max_degree=max_degree)
