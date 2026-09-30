@@ -4,6 +4,26 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.11.1 (unreleased)
+
+- **Added: `PedigreeGraph.relatives_per_person()`,
+  `PedigreeView.relatives_per_person()` and `RelativesPerPerson`** (root
+  export; issue #33; ADR 0014). One engine pass, no pair list: per receiver
+  row and selected category, the row's relatives, and per named threshold
+  column `thresholds={name: (relative, threshold)}` how many of them have
+  `relative[relative's row] <= threshold[row]`, compared as float64 (NaN on
+  either side never counts). A symmetric category credits both members of
+  each pair, a directional one only its junior member, so `MO`/`FO` count a
+  row's parents. `counts` is a read-only uint32 `[rows, categories,
+  1 + K]` array handed over from the core without a copy; `get(code,
+  column)` is one category's view and `sum(codes, column)` folds codes into
+  an int64 array in place. Contiguous float64 inputs are borrowed, a scalar
+  threshold is never broadcast, and integers beyond 2**53 or floats wider
+  than float64 are refused. `"relatives"` names the pair-count column and
+  is reserved. Counts are the same under every thread budget and on the
+  compact and full view paths. New allocation family `relative_counts`; no
+  memory budget. Python only; the R binding is #30.
+
 ## v0.11.0
 
 - **Added: `PedigreeGraph.relationship_moments()`,

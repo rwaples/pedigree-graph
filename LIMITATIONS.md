@@ -12,6 +12,9 @@ its own row and counted, no pair list exists, and peak memory is linear in
 the pedigree size (2.9 GiB for 2.1 billion pairs on a 20M-row pedigree).
 ``PedigreeGraph.relationship_burden`` streams the same engine into
 per-person counts of relatives at degrees 1 to 5, also without a pair list.
+``relatives_per_person`` does the same per category, with optional
+threshold columns (ADR 0014); its result is ``4 · rows · categories ·
+(1 + K)`` bytes.
 
 ``relationship_pairs`` is different: it returns every pair, as two int32
 row arrays per category, so the result alone costs 8 bytes per pair and its
@@ -36,7 +39,8 @@ stallion grandparent.
    without materialising pairs.  Use it when counts, not pair coordinates,
    are the goal.
 2. ``relationship_burden()`` gives each person's count of relatives by
-   degree, again without materialising pairs.
+   degree, and ``relatives_per_person()`` by category, again without
+   materialising pairs.
 3. ``close_relative_counts()`` uses scalar sibling-group arithmetic and
    parent-edge counts for six exact categories only.  See the coverage
    contract below.
@@ -112,6 +116,8 @@ view counts build no pair list.
   ``ne_coancestry`` runs the kinship DP and is the expensive one.
 
 ## Last updated
+
+2026-09-30 — ``relatives_per_person`` (0.11.1) added to the O(N) paths.
 
 2026-09-24 — pair-list section rewritten for the Rust engine (the SciPy
 matrix internals it described are gone), ``relationship_burden`` and the

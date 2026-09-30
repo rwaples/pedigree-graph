@@ -35,11 +35,11 @@ accumulator, `reduce(lane, category, first, second)` on the hot path with no
 `Result`, and `merge`. Pairs reach the reducer in the category's semantic
 orientation and the receiver's rows, exactly as pair blocks do, so a
 reducer sees what a pair-list consumer would have seen. The only 0.11
-implementation is the `CellReducer`. A per-person reducer (counts and sums
-of the other member's values per person, category and cell) is planned for
-0.12 with pedsum#3 and the fitACE_epimight `create_input` migration; it
-plugs into the same pass, with a lane that is a shared array of integer
-atomics and an empty merge.
+implementation is the `CellReducer`. The per-person reducer for pedsum#3
+and the fitACE_epimight `create_input` migration plugs into the same pass,
+with a lane that is a shared array of integer atomics and an empty merge.
+It shipped in 0.11.1 as counts and threshold comparisons rather than the
+sums of the other member's values sketched here; ADR 0014 records why.
 
 ### Named factors, packed by the host into per-role pair labels
 
