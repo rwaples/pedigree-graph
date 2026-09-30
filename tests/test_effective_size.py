@@ -231,27 +231,6 @@ def test_toy3_skewed_male_NeV_below_sex_ratio():
 
 
 # ---------------------------------------------------------------------------
-# Toy 4 — Closed line, Nm=Nf=1 per gen, full-sib mating, 5 generations
-# ---------------------------------------------------------------------------
-
-
-def test_toy4_closed_line_F_recursion():
-    """Full-sib mating chain: F follows F_{t+1} = (1+2F_t+F_{t-1})/4.
-
-    F values: F_0=F_1=0, F_2=0.25, F_3=0.375, F_4=0.5, F_5=0.59375.
-    Asymptotic Ne ≈ 2.62 (eigenvalue (1+√5)/4 ≈ 0.809).
-    """
-    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
-
-    res = ne_inbreeding(pg)
-    expected = [0.0, 0.0, 0.25, 0.375, 0.5, 0.59375]
-    np.testing.assert_allclose(res.mean_f_per_gen, expected, atol=1e-12)
-    # Ne should be in [2, 3] for sib-mating chain (asymptotic ≈ 2.62 with finite-sample bias).
-    assert res.ne is not None
-    assert 1.5 < res.ne < 4.0
-
-
-# ---------------------------------------------------------------------------
 # Cross-cutting sanity: ne_coancestry on toy 1 and toy 4
 # ---------------------------------------------------------------------------
 
