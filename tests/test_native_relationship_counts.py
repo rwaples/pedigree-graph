@@ -3,8 +3,8 @@
 ``relationship_pairs`` runs on the same Rust engine, so this
 is a self-consistency check between its two consumers: the counts must equal
 the block lengths on every fixture, every selector, every row order, and
-every view, without building a pair list.  The independent oracle for both
-is the matrix engine in ``tests/oracle/relationship_pairs.py``.
+every view, without building a pair list.  The independent oracles for the pairs
+are in ``test_relationship_exact.py``.
 """
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ def test_a_view_of_one_row_counts_nothing(small_pedigree):
 @pytest.mark.slow
 @settings(max_examples=300, deadline=None)
 @given(pedigree_columns(), st.integers(min_value=0, max_value=5))
-def test_random_pedigrees_match_the_matrix_engine(columns, max_degree):
+def test_random_pedigrees_count_their_emitted_blocks(columns, max_degree):
     graph = PedigreeGraph.from_frame(columns)
     _assert_counts_match(graph, max_degree=max_degree)
     if graph.n_individuals >= 2:
