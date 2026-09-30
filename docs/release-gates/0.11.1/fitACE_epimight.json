@@ -1,0 +1,38 @@
+{
+  "unit": "fitACE_epimight",
+  "stage": "0.11.1",
+  "routing": "/data/Documents/simACE/.claude/worktrees/pg-0.11.1/external/pedigree-graph/target/consumer-gate/0.11.1/wheel-site",
+  "cwd": "fitACE/fitACE_epimight",
+  "started": "2026-09-30T22:07:39",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/pg-0.11.1/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/.claude/worktrees/pg-0.11.1/external/pedigree-graph/target/consumer-gate/0.11.1/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.8,
+      "max_rss_mib": 97.9,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.1/fitACE_epimight/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/.claude/worktrees/pg-0.11.1/external/pedigree-graph/target/consumer-gate/0.11.1/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/pg-0.11.1/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 103.4,
+      "max_rss_mib": 776.9,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.1/fitACE_epimight/pytest.log",
+      "tail": [
+        "........................................................................ [ 18%]",
+        "........................................................................ [ 37%]",
+        "........................................................................ [ 55%]",
+        "........................................................................ [ 74%]",
+        "........................................................................ [ 92%]",
+        "............................                                             [100%]",
+        "388 passed, 25 deselected in 99.67s (0:01:39)"
+      ]
+    }
+  ],
+  "ok": true
+}

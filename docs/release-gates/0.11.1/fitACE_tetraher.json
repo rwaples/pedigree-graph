@@ -1,0 +1,36 @@
+{
+  "unit": "fitACE_tetraher",
+  "stage": "0.11.1",
+  "routing": "/data/Documents/simACE/.claude/worktrees/pg-0.11.1/external/pedigree-graph/target/consumer-gate/0.11.1/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-09-30T22:07:01",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/pg-0.11.1/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/.claude/worktrees/pg-0.11.1/external/pedigree-graph/target/consumer-gate/0.11.1/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.9,
+      "max_rss_mib": 102.9,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.1/fitACE_tetraher/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/.claude/worktrees/pg-0.11.1/external/pedigree-graph/target/consumer-gate/0.11.1/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/pg-0.11.1/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider fitACE_tetraher/tests",
+      "exit": 0,
+      "wall_s": 6.4,
+      "max_rss_mib": 221.7,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.1/fitACE_tetraher/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "..................................                                       [100%]",
+        "34 passed in 5.60s"
+      ]
+    }
+  ],
+  "ok": true
+}

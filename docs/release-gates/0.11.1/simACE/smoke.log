@@ -1,0 +1,24 @@
+[small_test/rep1] simulate started
+[small_test/rep1] simulate finished in 1.4s, peak 203 MB
+[small_test/rep1] cohort started
+[small_test/rep1] cohort finished in 1.8s, peak 219 MB
+[small_test/rep1] analyze started
+[small_test/rep1] analyze finished in 3.7s, peak 270 MB
+[small_test/rep2] simulate started
+[small_test/rep2] simulate finished in 1.4s, peak 204 MB
+[small_test/rep2] cohort started
+[small_test/rep2] cohort finished in 1.5s, peak 219 MB
+[small_test/rep2] analyze started
+[small_test/rep2] analyze finished in 3.4s, peak 271 MB
+[small_test/rep3] simulate started
+[small_test/rep3] simulate finished in 1.3s, peak 203 MB
+[small_test/rep3] cohort started
+[small_test/rep3] cohort finished in 1.5s, peak 219 MB
+[small_test/rep3] analyze started
+[small_test/rep3] analyze finished in 3.4s, peak 270 MB
+[small_test] summary: 3 computed
+[small_test] plot started
+[small_test] plot finished in 21.1s
+[small_test] atlas started
+[small_test] atlas finished in 2.2s
+[small_test] plots: current
