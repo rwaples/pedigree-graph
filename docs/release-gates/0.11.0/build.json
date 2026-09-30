@@ -1,0 +1,24 @@
+{
+  "ref": "6ace53d",
+  "head": "6ace53d402d5cae6032e6bc5ff3e3c086f6b1e7f",
+  "version": "0.11.0",
+  "wheel": {
+    "file": "pedigree_graph-0.11.0-cp313-abi3-linux_x86_64.whl",
+    "sha256": "a13db5f37eeafed753c54e9d6b19c5fc4d02d3be9a5f280ade3b98ee07de8158"
+  },
+  "sdist": {
+    "file": "pedigree_graph-0.11.0.tar.gz",
+    "sha256": "5dee5c1ad35e73c243c11b3857a344bad21743b0b6bc8bc3edd2b38f3ba628cc"
+  },
+  "installs": {
+    "wheel": "installed 0.11.0 /data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-venv/lib/python3.13/site-packages/pedigree_graph/__init__.py /data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-venv/lib/python3.13/site-packages/pedigree_graph/_native.abi3.so 14 root names",
+    "sdist": "installed 0.11.0 /data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/sdist-venv/lib/python3.13/site-packages/pedigree_graph/__init__.py /data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/sdist-venv/lib/python3.13/site-packages/pedigree_graph/_native.abi3.so 14 root names"
+  },
+  "wheel_pytest_exit": 0,
+  "wheel_pytest_tail": [
+    "........................................................................ [ 98%]",
+    "..................................................                       [100%]",
+    "3217 passed, 2 skipped, 12 deselected in 230.40s (0:03:50)"
+  ],
+  "wheel_site": "/data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site"
+}

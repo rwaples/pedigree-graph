@@ -1,0 +1,43 @@
+{
+  "unit": "fitACE_pcgc",
+  "stage": "0.11.0",
+  "routing": "/data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-09-30T12:42:13",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.7,
+      "max_rss_mib": 99.7,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/fitACE_pcgc/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider fitACE_pcgc/tests",
+      "exit": 0,
+      "wall_s": 8.8,
+      "max_rss_mib": 367.8,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/fitACE_pcgc/pytest.log",
+      "tail": [
+        "    r_hermite = fit_pcgc(**kw, hermite_order=2)",
+        "",
+        "tests/test_rare_k_correction.py::TestMomentResidual::test_residual_near_zero_at_convergence",
+        "  /data/Documents/simACE/.claude/worktrees/relationship-moments/fitACE/fitACE_pcgc/tests/test_rare_k_correction.py:237: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.",
+        "    result = fit_pcgc(",
+        "",
+        "tests/test_rare_k_correction.py::TestOrder1ByteEquality::test_order1_newton_iters_zero_and_steps_field_zero",
+        "  /data/Documents/simACE/.claude/worktrees/relationship-moments/fitACE/fitACE_pcgc/tests/test_rare_k_correction.py:337: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.",
+        "    r = fit_pcgc(",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "198 passed, 17 skipped, 31 warnings in 6.97s"
+      ]
+    }
+  ],
+  "ok": true
+}

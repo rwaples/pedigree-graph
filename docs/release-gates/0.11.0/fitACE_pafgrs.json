@@ -1,0 +1,37 @@
+{
+  "unit": "fitACE_pafgrs",
+  "stage": "0.11.0",
+  "routing": "/data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-09-30T12:42:36",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.7,
+      "max_rss_mib": 103.8,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/fitACE_pafgrs/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider fitACE_pafgrs/tests",
+      "exit": 0,
+      "wall_s": 15.0,
+      "max_rss_mib": 429.4,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/fitACE_pafgrs/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "........................................................................ [ 59%]",
+        ".................................................                        [100%]",
+        "121 passed in 14.19s"
+      ]
+    }
+  ],
+  "ok": true
+}

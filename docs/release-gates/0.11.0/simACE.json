@@ -1,0 +1,109 @@
+{
+  "unit": "simACE",
+  "stage": "0.11.0",
+  "routing": "/data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site",
+  "cwd": ".",
+  "started": "2026-09-30T12:40:26",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.5,
+      "max_rss_mib": 58.8,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/simACE/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/.claude/worktrees/relationship-moments/external/pedigree-graph/target/consumer-gate/0.11.0/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 43.9,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/simACE/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 43.9,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/simACE/format.log",
+      "tail": [
+        "321 files already formatted"
+      ]
+    },
+    {
+      "step": "test",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/pixi.toml --frozen test",
+      "exit": 0,
+      "wall_s": 30.2,
+      "max_rss_mib": 527.1,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/simACE/test.log",
+      "tail": [
+        "    self.cmap.set_bad(bad)",
+        "",
+        "tests/plotting/test_plot_smoke.py::TestPlotCorrelationsExpanded::test_plot_observed_heritability_has_under_construction_watermark",
+        "  /data/Documents/simACE/.claude/worktrees/relationship-moments/simace/plotting/plot_heritability.py:737: UserWarning: Glyph 114 (r) missing from font(s) Nimbus Sans.",
+        "    fig.tight_layout(rect=(0, 0, 1, 0.97))",
+        "",
+        "tests/plotting/test_plot_smoke.py::TestPlotCorrelationsExpanded::test_plot_observed_heritability_has_under_construction_watermark",
+        "  /data/Documents/simACE/.claude/worktrees/relationship-moments/simace/plotting/plot_heritability.py:737: UserWarning: Glyph 75 (K) missing from font(s) Nimbus Sans.",
+        "    fig.tight_layout(rect=(0, 0, 1, 0.97))",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "================= 1385 passed, 2 skipped, 6 warnings in 28.99s ================="
+      ]
+    },
+    {
+      "step": "smoke",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/pixi.toml --frozen snakemake --cores 4 --forceall results/test/small_test/scenario.done results/test/small_test/validate.done results/test/small_test/stats.done results/test/small_test/effective_size.done",
+      "exit": 0,
+      "wall_s": 50.7,
+      "max_rss_mib": 416.4,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/simACE/smoke.log",
+      "tail": [
+        "    reason: Forced execution",
+        "    wildcards: folder=test, scenario=small_test",
+        "    resources: tmpdir=/tmp",
+        "Touching output file results/test/small_test/validate.done.",
+        "[Wed Sep 30 12:41:46 2026]",
+        "Finished jobid: 30 (Rule: validate_scenario)",
+        "34 of 35 steps (97%) done",
+        "Touching output file results/test/small_test/scenario.done.",
+        "[Wed Sep 30 12:41:46 2026]",
+        "Finished jobid: 20 (Rule: scenario)",
+        "35 of 35 steps (100%) done",
+        "Complete log(s): /data/Documents/simACE/.claude/worktrees/relationship-moments/.snakemake/log/2026-09-30T124058.552655.snakemake.log"
+      ]
+    },
+    {
+      "step": "atlas",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/.claude/worktrees/relationship-moments/pixi.toml --frozen snakemake --cores 4 -f results/test/small_test/plots/atlas.html",
+      "exit": 0,
+      "wall_s": 4.3,
+      "max_rss_mib": 250.9,
+      "log": "external/pedigree-graph/docs/release-gates/0.11.0/simACE/atlas.log",
+      "tail": [
+        "    output: results/test/small_test/plots/atlas.html",
+        "    log: logs/test/small_test/assemble_atlas.log",
+        "    jobid: 0",
+        "    benchmark: benchmarks/test/small_test/assemble_atlas.tsv",
+        "    reason: Forced execution",
+        "    wildcards: folder=test, scenario=small_test",
+        "    resources: tmpdir=/tmp, runtime=5, mem_mb=1000, mem=1 GB, mem_mib=954",
+        "[small_test] INFO: HTML atlas saved to results/test/small_test/plots/atlas.html (35 plots)",
+        "[Wed Sep 30 12:41:51 2026]",
+        "Finished jobid: 0 (Rule: assemble_scenario_atlas)",
+        "1 of 1 steps (100%) done",
+        "Complete log(s): /data/Documents/simACE/.claude/worktrees/relationship-moments/.snakemake/log/2026-09-30T124149.264562.snakemake.log"
+      ]
+    }
+  ],
+  "ok": true
+}
