@@ -61,20 +61,53 @@ the clock clamp.
 
 ## pedsum_20M
 
-Declared but not measured here. The command, from this directory:
+Measured 2026-09-30 at twelve threads only, three interleaved repetitions
+per cell in fresh pinned processes, with a third arm: `counts_12t` is
+`relationship_counts` over the same seven categories, the engine pass with
+no sink work, which issue #28 set as the wall target. Same table, 64 cells,
+109,794,669 pairs in every arm (the seven categories are a quarter of the
+439,217,825-pair degree-3 set, `bench_pair_emitters.md`).
+
+- commit `39bd76448b` on `main`, working tree dirty (this note, the
+  `counts_12t` arm, and the harness change that lets `--only` pick cells
+  outside the default sweep); native extension rebuilt at that commit with
+  `pixi run build-dev` (`core_version` 0.11.0; the env's stale
+  `pedigree_graph-0.10.0.dist-info` makes `package_version` read 0.10.0)
+- same machine; `platform_profile` `balanced`, all 12 cores held 2600 MHz
+  under a busy loop checked in `/proc/cpuinfo` before the run, so these
+  walls are not comparable with the clamped 2M walls above
+- peak RSS is kernel VmHWM as above; the process held the graph and the
+  parquet columns at 3,947 to 4,658 MiB before each region
+
+| input | strategy | reps | wall (median) | spread | peak RSS (median) | checksum |
+|---|---|---:|---:|---:|---:|---|
+| `pedsum_20M/rep1` (20,000,000 rows) | `relationship_moments`, 12 threads | 3 | 32.77 s | 10.4% | 7,637 MiB | `5868940489448471493` |
+| `pedsum_20M/rep1` (20,000,000 rows) | `relationship_pairs` + `np.bincount`, 12 threads | 3 | 55.67 s | 9.1% | 9,660 MiB | `5868940489448471493` |
+| `pedsum_20M/rep1` (20,000,000 rows) | `relationship_counts`, 12 threads | 3 | 32.14 s | 8.4% | 6,815 MiB | `3905718629` |
+
+Per repetition (wall s, peak MiB): moments 36.14/6977, 32.77/7637,
+32.74/7683; pairs 55.67/9660, 57.27/9654, 52.19/9692; counts 30.00/6343,
+32.69/6815, 32.14/7051. The counts arm's checksum is over per-category
+totals, so it differs from the other two by construction; its pair total
+matches.
+
+* Wall: moments is within 2% of the count pass (32.77 s against 32.14 s,
+  inside either arm's spread), which meets #28's target, and 0.59x the
+  pair list plus NumPy folds.
+* Memory above each region's baseline (median): 3,027 MiB for moments,
+  2,396 MiB for counts, 5,047 MiB for the pair arm. The accumulators are
+  1.7 MiB across 12 lanes by the call's own estimate; the rest of the
+  630 MiB over counts is the quantized value columns (20,000,000 × 2 ×
+  int64, 305 MiB) and the float64 widening of one column at a time.
+
+The command, from this directory:
 
 ```bash
 SIMACE_RESULTS=/data/Documents/simACE/results \
-  pixi run python benchmarks/bench_relationship_moments.py --repeat 1 \
-  --only pedsum_20M/moments_12t pedsum_20M/pairs_numpy_12t \
+  pixi run python benchmarks/bench_relationship_moments.py --repeat 3 \
+  --only pedsum_20M/moments_12t pedsum_20M/pairs_numpy_12t pedsum_20M/counts_12t \
   --out /tmp/moments_20M.json
 ```
-
-The degree-3 pair list at 20M is 439,217,825 pairs (3.35 GiB of int32
-blocks, `bench_pair_emitters.md`), which the pair arm materialises and the
-moments arm never does; the pair arm's NumPy folds also index 20M-row
-columns per category. Expect the moments arm to stay near the engine's own
-peak (about 3 GiB above the graph at twelve threads on this pedigree).
 
 ## Reproduce
 

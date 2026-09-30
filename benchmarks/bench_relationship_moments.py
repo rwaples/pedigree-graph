@@ -11,6 +11,8 @@ and diagonal cross sums of the two liabilities.  ``moments`` is one engine
 pass with no pair list; ``pairs_numpy`` materialises the pair blocks, then
 folds them with ``np.bincount``.  Both run at one thread and at twelve, the
 counts benchmark's two points (``relationship_counts_rust.md``).
+``counts_12t`` is ``relationship_counts`` over the same categories, the
+engine pass with no sink work, which issue #28 sets as the wall target.
 
 The checksum is over the pair counts per cell, which both arms produce
 exactly; the float sums are compared by the ADR 0013 tests, not here.  The
@@ -31,7 +33,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _harness import UMBRELLA, Arm, Fixture, Measurement, Prepared, RunOrder, Suite, checksum_array, main
+from _harness import UMBRELLA, Arm, Fixture, Measurement, Prepared, RunOrder, Suite, checksum_array, checksum_ints, main
 
 CATEGORIES = ("MZ", "FS", "MO", "FO", "MHS", "PHS", "1C")
 PEDSUM = {
@@ -133,6 +135,13 @@ def _pairs_numpy(graph: Any, columns: dict[str, np.ndarray]) -> Measurement:
     return Measurement(lambda: checksum_array(counts), {"pairs": int(counts.sum()), "cells": cells})
 
 
+def _counts(graph: Any, columns: dict[str, np.ndarray]) -> Measurement:
+    counts = graph.relationship_counts(categories=list(CATEGORIES))
+    return Measurement(
+        lambda: checksum_ints(dict(counts)), lambda: {"pairs": sum(c or 0 for c in dict(counts).values())}
+    )
+
+
 SUITE = Suite(
     name="relationship_moments",
     note=Path(__file__).with_suffix(".md"),
@@ -151,6 +160,13 @@ SUITE = Suite(
             "pairs_numpy_12t",
             _pairs_numpy,
             label="`relationship_pairs` + `np.bincount`, 12 threads",
+            setup=_columns,
+            env={"PEDIGREE_GRAPH_THREADS": "12"},
+        ),
+        Arm(
+            "counts_12t",
+            _counts,
+            label="`relationship_counts`, 12 threads",
             setup=_columns,
             env={"PEDIGREE_GRAPH_THREADS": "12"},
         ),
