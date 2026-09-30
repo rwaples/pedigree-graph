@@ -136,8 +136,9 @@ def to_float(
         else np.broadcast_to(np.asarray(divisor)[..., np.newaxis], shape).reshape(-1, width)
     )
     out = np.empty(flat.shape, dtype=np.float64)
+    flat_exponents = np.asarray(exponents).reshape(-1)
     for j in range(width):
-        e = int(np.asarray(exponents).reshape(-1)[j])
+        e = int(flat_exponents[j])
         try:
             out[:, j] = [
                 _divide_exact(int(v), int(n), e) if n > 0 else 0.0
@@ -230,13 +231,13 @@ class RelationshipMoments:
 
     def axis(self, name: str) -> MomentAxis:
         """The axis called *name*."""
-        for axis in self.axes:
-            if axis.name == name:
-                return axis
-        raise ValueError(f"no axis {name!r}; the axes are {tuple(a.name for a in self.axes)}")
+        return self.axes[self._axis_index(name)]
 
     def _axis_index(self, name: str) -> int:
-        return self.axes.index(self.axis(name))
+        for i, axis in enumerate(self.axes):
+            if axis.name == name:
+                return i
+        raise ValueError(f"no axis {name!r}; the axes are {tuple(a.name for a in self.axes)}")
 
     def _arrays(self) -> dict[str, np.ndarray]:
         return {name: getattr(self, name) for name in ("counts", *_EXACT)}
@@ -482,5 +483,5 @@ def _sum_axis(array: np.ndarray, axis: int) -> np.ndarray:
     """Exact sum along *axis*; an empty axis gives zeros of the array's dtype."""
     if array.shape[axis] == 0:
         shape = tuple(size for i, size in enumerate(array.shape) if i != axis)
-        return np.zeros(shape, dtype=np.int64) if array.dtype != object else _ints(np.zeros(shape, dtype=np.int64))
+        return np.zeros(shape, dtype=array.dtype)
     return np.sum(array, axis=axis)

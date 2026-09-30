@@ -274,7 +274,7 @@ def relationship_moments(
 
     threads = thread_budget()
     if selection.top_degree is None or n < 2:
-        lanes, peak = _native.moments_plan(
+        _, peak = _native.moments_plan(
             n_categories=len(codes),
             n_labels_first=n_first,
             n_labels_second=n_second,

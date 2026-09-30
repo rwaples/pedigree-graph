@@ -196,24 +196,17 @@ pub fn reduce_pairs<R: Reducer>(
             result.map(|()| (lane, pairs))
         })
         .collect::<Result<Vec<_>, Error>>()?;
-    let mut lane_pairs = Vec::with_capacity(finished.len());
-    let mut finished = finished.into_iter();
-    let Some((mut total, pairs)) = finished.next() else {
-        // `lanes` is non-zero, so there is always a first lane.
-        return Ok(Reduced {
-            lane: reducer.lane()?,
-            lane_pairs,
-        });
-    };
-    lane_pairs.push(pairs);
-    for (lane, pairs) in finished {
+    let (accumulators, lane_pairs): (Vec<R::Lane>, Vec<u64>) = finished.into_iter().unzip();
+    let merged = accumulators.into_iter().reduce(|mut total, lane| {
         reducer.merge(&mut total, lane);
-        lane_pairs.push(pairs);
-    }
-    Ok(Reduced {
-        lane: total,
-        lane_pairs,
-    })
+        total
+    });
+    // `lanes` is non-zero, so there is always a first lane; the library does not panic.
+    let lane = match merged {
+        Some(total) => total,
+        None => reducer.lane()?,
+    };
+    Ok(Reduced { lane, lane_pairs })
 }
 
 /// Which member of a pair a product operand reads.
@@ -337,8 +330,8 @@ pub struct MomentsShape {
 /// The sizes and lane count of one call, fixed before any accumulator exists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MomentsPlan {
-    /// The requested categories, in registry order.
-    n_categories: usize,
+    /// `i128` accumulators per lane: categories × cells × stride.
+    accumulators: usize,
     /// Cells per category: `n_labels_first × n_labels_second × 2^n_same`.
     cells: usize,
     /// `i128` accumulators per cell: count, four sums per column, one per product.
@@ -364,8 +357,8 @@ impl MomentsPlan {
     ///
     /// `W = min(threads, largest W whose estimated peak fits)`, where the
     /// estimate is `W` lanes of 16 bytes per accumulator plus the host term
-    /// [`host_bytes`] once; the merge is in place.  Per-lane engine workspaces and the input arrays are outside
-    /// the estimate.
+    /// [`host_bytes`] once; the merge is in place.  Per-lane engine
+    /// workspaces and the input arrays are outside the estimate.
     ///
     /// # Errors
     ///
@@ -405,9 +398,9 @@ impl MomentsPlan {
         let lanes =
             NonZeroUsize::new(affordable.min(threads.get() as u64) as usize).unwrap_or(threads);
         let cells = usize::try_from(cells).map_err(|_| unrepresentable())?;
-        usize::try_from(accumulators).map_err(|_| unrepresentable())?;
+        let accumulators = usize::try_from(accumulators).map_err(|_| unrepresentable())?;
         Ok(MomentsPlan {
-            n_categories: shape.n_categories,
+            accumulators,
             cells,
             stride,
             lanes,
@@ -489,12 +482,7 @@ impl Reducer for CellReducer<'_> {
     type Lane = Vec<i128>;
 
     fn lane(&self) -> Result<Vec<i128>, Error> {
-        alloc::filled(
-            0i128,
-            self.plan.n_categories * self.plan.cells * self.plan.stride,
-            Family::MomentLanes,
-            "int128",
-        )
+        alloc::filled(0i128, self.plan.accumulators, Family::MomentLanes, "int128")
     }
 
     #[inline]
