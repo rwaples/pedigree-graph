@@ -13,8 +13,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from conftest import FIXTURES, parity_columns, parity_graph
-from oracle.relationship_pairs import _Matrices
-from scipy.sparse.csgraph import connected_components
+from oracle.closures import component_minimum
 
 from pedigree_graph import PedigreeGraph
 
@@ -121,27 +120,14 @@ def test_results_are_read_only_typed_and_memoised(method, dtype):
     assert getattr(pg, method)() is first
 
 
-def _scipy_founder_family_ids(pg: PedigreeGraph) -> np.ndarray:
-    """A scipy oracle for ``connected_component_ids``: smallest id per component.
-
-    This was fitACE's own construction, reaching into ``_Am`` and ``_Af``, until
-    ``grm_io.founder_family_ids`` became a call to ``connected_component_ids``.
-    It is kept because an independent implementation is what makes the
-    comparison worth running, not because anyone still writes it this way.
-    """
-    _, labels = connected_components(_Matrices(pg)._A, directed=False)
-    comp_min = np.full(int(labels.max()) + 1, np.iinfo(np.int64).max, dtype=np.int64)
-    np.minimum.at(comp_min, labels, pg.ids)
-    return comp_min[labels].astype(np.int64)
-
-
 @pytest.mark.parametrize("name", sorted(FIXTURES))
-def test_component_ids_match_a_scipy_oracle(name):
-    fixture = FIXTURES[name]
-    if len(fixture["ids"]) == 0:
-        pytest.skip("no components in an empty fixture")
-    pg = PedigreeGraph.from_frame(parity_columns(fixture))
-    np.testing.assert_array_equal(pg.connected_component_ids(), _scipy_founder_family_ids(pg))
+def test_component_ids_match_a_union_find_oracle(name):
+    # Union-find over the parent id columns; the earlier oracle called the
+    # same SciPy routine as production.
+    columns = parity_columns(FIXTURES[name])
+    pg = PedigreeGraph.from_frame(columns)
+    want = component_minimum(columns)
+    assert dict(zip(pg.ids.tolist(), pg.connected_component_ids().tolist(), strict=True)) == want
 
 
 def _set_oracle(pg: PedigreeGraph) -> np.ndarray:

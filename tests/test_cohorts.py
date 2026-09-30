@@ -8,6 +8,8 @@ here keeps each estimator's own tests off the grouping contract.
 
 import numpy as np
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
@@ -126,3 +128,20 @@ def test_transitions_pair_adjacent_observed_cohorts(k, expected_from, expected_t
     np.testing.assert_array_equal(oc.transition_from(), oc.generations[:-1])
     np.testing.assert_array_equal(oc.transition_to(), oc.generations[1:])
     assert oc.transition_from().size == oc.transition_to().size == max(k - 1, 0)
+
+
+@settings(deadline=None, max_examples=200)
+@given(st.lists(st.integers(min_value=-1, max_value=2**20), max_size=40))
+def test_densified_labels_round_trip_on_any_labels(raw):
+    # Every labelled row's bucket maps back to its label, buckets follow label
+    # order, counts are the bucket sizes, and -1 rows take the sentinel k.
+    # Rejects an off-by-one bucket, a first-seen (not ascending) order, and a
+    # sentinel row counted in a cohort.
+    labels = np.array(raw, dtype=np.int64)
+    cohorts = ObservedCohorts.from_labels(labels)
+    labelled = labels != -1
+    np.testing.assert_array_equal(cohorts.generations, np.unique(labels[labelled]))
+    np.testing.assert_array_equal(cohorts.generations[cohorts.dense[labelled]], labels[labelled])
+    assert np.all(cohorts.dense[~labelled] == cohorts.k)
+    np.testing.assert_array_equal(cohorts.counts, np.bincount(cohorts.dense[labelled], minlength=cohorts.k))
+    assert cohorts.unlabelled_individual_count == int((~labelled).sum())

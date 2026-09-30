@@ -485,6 +485,8 @@ def test_generation_labels_do_not_drive_structure(name, labelling):
     np.testing.assert_array_equal(labelled.depth, unlabelled.depth)
     np.testing.assert_array_equal(labelled.inbreeding(), unlabelled.inbreeding())
     np.testing.assert_array_equal(labelled.descendant_path_counts(), unlabelled.descendant_path_counts())
+    np.testing.assert_array_equal(labelled.distinct_ancestor_counts(), unlabelled.distinct_ancestor_counts())
+    np.testing.assert_array_equal(labelled.connected_component_ids(), unlabelled.connected_component_ids())
 
     expected_pairs = unlabelled.relationship_pairs(max_degree=MAX_DEGREE)
     actual_pairs = labelled.relationship_pairs(max_degree=MAX_DEGREE)

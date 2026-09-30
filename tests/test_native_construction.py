@@ -42,10 +42,21 @@ def _column(values):
     return np.ascontiguousarray(np.asarray(values, dtype=np.int64))
 
 
+#: Defects that need a real co-twin: planted on a twinless row they leave a valid graph.
+_TWIN_DEFECTS = ("mz_parent_mismatch", "mz_sex_mismatch")
+
+
 @st.composite
-def structured_input(draw):
-    """A valid pedigree in a random row order, then at most one planted defect."""
-    n = draw(st.integers(min_value=0, max_value=24))
+def structured_input(draw, defects=_DEFECTS):
+    """A valid pedigree in a random row order, then at most one planted defect.
+
+    Returns ``(columns, encoding, defect)``.  A twin defect is planted on a row
+    with a co-twin, a pair made first when the draw formed none, so it always
+    takes effect.
+    """
+    defect = draw(st.sampled_from(defects))
+    twin_defect = defect in _TWIN_DEFECTS
+    n = draw(st.integers(min_value=2 if twin_defect else 0, max_value=24))
     encoding = draw(st.sampled_from(["simace", "plink"]))
     # Rows 0..n-1 in a topological order first; parents come from earlier rows
     # or are external (an id no row carries) or missing.
@@ -58,9 +69,11 @@ def structured_input(draw):
                 parents[i] = draw(st.integers(min_value=0, max_value=i - 1))
             elif kind == "external":
                 parents[i] = -2 - draw(st.integers(min_value=0, max_value=3))
+        if mother[i] == father[i] != -1:
+            father[i] = -1  # one id in both roles is the planted same_parent defect, not the base
     # Reciprocal MZ pairs among rows sharing both parents, formed greedily.
     twin = [-1] * n
-    if draw(st.booleans()):
+    if twin_defect or draw(st.booleans()):
         for i in range(n):
             if twin[i] != -1:
                 continue
@@ -68,6 +81,11 @@ def structured_input(draw):
                 if twin[j] == -1 and mother[j] == mother[i] and father[j] == father[i] and draw(st.booleans()):
                     twin[i], twin[j] = j, i
                     break
+    if twin_defect and all(t == -1 for t in twin):
+        j = draw(st.integers(min_value=1, max_value=n - 1))
+        i = draw(st.integers(min_value=0, max_value=j - 1))
+        mother[j], father[j] = mother[i], father[i]
+        twin[i], twin[j] = j, i
     perm = draw(st.permutations(range(n)))
     inverse = [0] * n
     for position, row in enumerate(perm):
@@ -87,7 +105,7 @@ def structured_input(draw):
     twin_ids = [to_id(twin[perm[k]]) for k in range(n)]
 
     columns = {"ids": ids, "mother": mother_ids, "father": father_ids}
-    if draw(st.booleans()):
+    if twin_defect or draw(st.booleans()):
         columns["twin"] = twin_ids
     if draw(st.booleans()):
         raw = draw(
@@ -108,10 +126,11 @@ def structured_input(draw):
         years = [-1 if draw(st.booleans()) else 1900 + 25 * depth[perm[k]] + draw(st.integers(0, 20)) for k in range(n)]
         columns["birth_year"] = years
 
-    defect = draw(st.sampled_from(_DEFECTS))
     if n == 0:
         defect = None
-    if defect is not None:
+    if twin_defect:
+        k = draw(st.sampled_from([r for r in range(n) if twin[perm[r]] != -1]))
+    elif defect is not None:
         k = draw(st.integers(min_value=0, max_value=n - 1))
     if defect == "id_out_of_range":
         columns["ids"][k] = -1
@@ -154,7 +173,7 @@ def structured_input(draw):
         parent = mother[perm[k]] if mother[perm[k]] >= 0 else father[perm[k]]
         if parent >= 0:
             columns["birth_year"][inverse[parent]] = 1900
-    return columns, encoding
+    return columns, encoding, defect
 
 
 @st.composite
@@ -198,8 +217,18 @@ def _outcome(build, columns, encoding):
 @settings(max_examples=400, deadline=None)
 @given(structured_input())
 def test_structured_inputs_match_the_oracle(case):
-    columns, encoding = case
+    columns, encoding, _defect = case
     assert _outcome(_native.build_pedigree, columns, encoding) == _outcome(oracle.build, columns, encoding)
+
+
+@settings(max_examples=100, deadline=None)
+@given(structured_input(defects=_TWIN_DEFECTS))
+def test_a_planted_twin_defect_is_refused_with_its_code(case):
+    # The plant targets a real co-twin, so the frame always differs from the
+    # valid one it was drawn as and construction must refuse it for that reason.
+    columns, encoding, defect = case
+    outcome = _outcome(_native.build_pedigree, columns, encoding)
+    assert outcome[:2] == ("PedigreeValidationError", defect)
 
 
 @settings(max_examples=400, deadline=None)
