@@ -333,15 +333,17 @@ def _reference_relationship_pairs(df) -> dict[str, tuple[np.ndarray, np.ndarray]
     mask = ta < tb
     pairs["MZ"] = (resolve_rows(ta[mask]), resolve_rows(tb[mask]))
 
-    non_twin_nf = df[(df["mother"] != -1) & (df["twin"] == -1)].copy()
-    non_twin_nf["_row"] = non_twin_nf.index.to_numpy()
+    # Co-twins are sibs of everyone in their sibship but MZ with each other.
+    twin_row = resolve_rows(df["twin"].to_numpy().astype(int))
+    sib_nf = df[df["mother"] != -1].copy()
+    sib_nf["_row"] = sib_nf.index.to_numpy()
 
     full_rows_1, full_rows_2 = [], []
     mat_half_rows_1, mat_half_rows_2 = [], []
 
-    sib_counts = non_twin_nf.groupby("mother").size()
+    sib_counts = sib_nf.groupby("mother").size()
     multi_mothers = sib_counts[sib_counts >= 2].index
-    mat_sib = non_twin_nf[non_twin_nf["mother"].isin(multi_mothers)]
+    mat_sib = sib_nf[sib_nf["mother"].isin(multi_mothers)]
 
     if len(mat_sib) > 0:
         mat_pairs = mat_sib[["mother", "father", "_row"]].merge(
@@ -350,6 +352,7 @@ def _reference_relationship_pairs(df) -> dict[str, tuple[np.ndarray, np.ndarray]
             suffixes=("_1", "_2"),
         )
         mat_pairs = mat_pairs[mat_pairs["_row_1"] < mat_pairs["_row_2"]]
+        mat_pairs = mat_pairs[twin_row[mat_pairs["_row_1"].to_numpy()] != mat_pairs["_row_2"].to_numpy()]
         same_father = mat_pairs["father_1"] == mat_pairs["father_2"]
         full_rows_1.append(mat_pairs.loc[same_father, "_row_1"].to_numpy())
         full_rows_2.append(mat_pairs.loc[same_father, "_row_2"].to_numpy())
@@ -357,9 +360,9 @@ def _reference_relationship_pairs(df) -> dict[str, tuple[np.ndarray, np.ndarray]
         mat_half_rows_2.append(mat_pairs.loc[~same_father, "_row_2"].to_numpy())
 
     pat_half_rows_1, pat_half_rows_2 = [], []
-    pat_counts = non_twin_nf.groupby("father").size()
+    pat_counts = sib_nf.groupby("father").size()
     multi_fathers = pat_counts[pat_counts >= 2].index
-    pat_sib = non_twin_nf[non_twin_nf["father"].isin(multi_fathers)]
+    pat_sib = sib_nf[sib_nf["father"].isin(multi_fathers)]
 
     if len(pat_sib) > 0:
         pat_pairs = pat_sib[["mother", "father", "_row"]].merge(
@@ -368,6 +371,7 @@ def _reference_relationship_pairs(df) -> dict[str, tuple[np.ndarray, np.ndarray]
             suffixes=("_1", "_2"),
         )
         pat_pairs = pat_pairs[pat_pairs["_row_1"] < pat_pairs["_row_2"]]
+        pat_pairs = pat_pairs[twin_row[pat_pairs["_row_1"].to_numpy()] != pat_pairs["_row_2"].to_numpy()]
         diff_mother = pat_pairs["mother_1"] != pat_pairs["mother_2"]
         pat_half_rows_1.append(pat_pairs.loc[diff_mother, "_row_1"].to_numpy())
         pat_half_rows_2.append(pat_pairs.loc[diff_mother, "_row_2"].to_numpy())

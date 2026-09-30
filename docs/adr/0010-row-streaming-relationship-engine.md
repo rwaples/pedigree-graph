@@ -5,6 +5,8 @@
 **Context:** resolves issues #11 (memory-bounded exact counts) and #9 (multiplicity overflow); refines the relationship-engine invariants of ADR 0007
 
 Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+Amended 2026-09-30 for issue #29: MZ co-twins take part in sibling groups
+(0.11.0).
 
 ## Context
 
@@ -51,12 +53,27 @@ integers summed in any order and are bit-identical across thread counts.
 ### Categories are the 0.7.1 definitions, with exclusions as a table
 
 The engine's category definitions reproduce `count_pairs(max_degree=5)` of
-pedigree-graph 0.7.1 bit for bit, including two idiosyncrasies that must
-not be "fixed" silently: first cousins count *distinct* shared grandparents
-while the removed cousins and second cousins count *paths*, and the first
-cousin sibling exclusion is "shares a known parent id", which is wider than
-the twin-filtered sibling lists the collateral categories subtract. The
-per-category subtraction lists are one constant table (`EXCLUSIONS`).
+pedigree-graph 0.7.1, including two idiosyncrasies that must not be "fixed"
+silently: first cousins count *distinct* shared grandparents while the
+removed cousins and second cousins count *paths*, and the first cousin
+sibling exclusion is "shares a known parent id", which is wider than the
+sibling lists the collateral categories subtract. The per-category
+subtraction lists are one constant table (`EXCLUSIONS`).
+
+One 0.7.1 idiosyncrasy was fixed deliberately, in 0.11.0 (issue #29). 0.7.1
+built sibling groups from non-twin rows only, so an MZ co-twin had no FS,
+MHS or PHS pair with its other siblings and lost every collateral pair built
+from sibling lists (Av, HAv, GAv and deeper): the niece of a twin was not
+the niece of her parent's co-twin. The intent was "co-twins are MZ, not FS,
+with each other", and the fold already gives that. Co-twins now join sibling
+groups like any other row with a known parent id; the fold reports each
+co-twin pair as MZ (degree 0), and every other pair through a twin takes the
+category its definition gives, with the usual exclusions. A pair through a
+co-twin is classified by pedigree structure, so the niece of a twin's
+co-twin is Av, with Av's nominal kinship, not the parent-offspring kinship
+an MZ genome would give; `pair_kinship` reports the exact value. Counts
+change only on pedigrees with twins; the SciPy oracle, the pandas
+reference, the close-relative counter and every golden changed together.
 
 ### Closest-category reporting is a separate fold
 

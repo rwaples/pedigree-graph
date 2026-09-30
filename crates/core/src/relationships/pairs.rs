@@ -554,7 +554,7 @@ mod tests {
     #[test]
     fn symmetric_blocks_store_the_lower_row_first_in_graph_and_view_rows() {
         // Sibs 2 and 3 of 0 x 1, their maternal half sib 4, and MZ twins 6
-        // and 7 of 0 x 1, which take no part in sibling categories.
+        // and 7 of 0 x 1, full sibs of 2 and 3 and MZ with each other.
         let cols = pedigree(
             &[
                 (-1, -1),
@@ -570,8 +570,14 @@ mod tests {
         );
         let got = all(&cols, None);
         assert_eq!(pairs(&got, Category::MZ), vec![(6, 7)]);
-        assert_eq!(pairs(&got, Category::FS), vec![(2, 3)]);
-        assert_eq!(pairs(&got, Category::MHS), vec![(2, 4), (3, 4)]);
+        assert_eq!(
+            pairs(&got, Category::FS),
+            vec![(2, 3), (2, 6), (2, 7), (3, 6), (3, 7)]
+        );
+        assert_eq!(
+            pairs(&got, Category::MHS),
+            vec![(2, 4), (3, 4), (4, 6), (4, 7)]
+        );
         // A view listing 4 before 2 reverses the graph order.
         let view = [-1, -1, 1, -1, 0, -1, -1, -1];
         let got = all(&cols, Some(&view));

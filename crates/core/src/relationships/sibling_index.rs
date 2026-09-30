@@ -2,8 +2,10 @@
 //!
 //! Siblings are defined on the *original* parent ids, not parent rows, so two
 //! rows naming the same unresolved external parent are still siblings
-//! (`_core.py::sibling_pairs`).  Only non-twin rows with at least one known
-//! parent id take part.  Ids are grouped lexicographically as structured
+//! (`_core.py::sibling_pairs`).  Every row with at least one known parent id
+//! takes part, MZ co-twins included: co-twins are full sibs of each other
+//! here, and the closest-category fold reports them as MZ (ADR 0010, as
+//! amended for issue #29).  Ids are grouped lexicographically as structured
 //! keys, never arithmetic-packed.
 
 use crate::alloc::{self, Family};
@@ -64,14 +66,9 @@ pub struct SiblingIndex {
 }
 
 impl SiblingIndex {
-    pub fn build(
-        twin: &[i32],
-        orig_mother: &[i64],
-        orig_father: &[i64],
-    ) -> Result<SiblingIndex, Error> {
-        let n = twin.len();
-        let takes_part = |i: usize| twin[i] < 0 && (orig_mother[i] >= 0 || orig_father[i] >= 0);
-        let rows = || (0..n).filter(|&i| takes_part(i));
+    pub fn build(orig_mother: &[i64], orig_father: &[i64]) -> Result<SiblingIndex, Error> {
+        let n = orig_mother.len();
+        let rows = || (0..n).filter(|&i| orig_mother[i] >= 0 || orig_father[i] >= 0);
         Ok(SiblingIndex {
             family: Groups::build(
                 n,

@@ -45,17 +45,13 @@ def _count_close_relatives(pg: PedigreeGraph) -> dict[str, int]:
     counts["FO"] = int(np.count_nonzero(pg.father_rows >= 0))
 
     # Group siblings by original parent IDs, including unrepresented parents.
-    # As in the pair engine, MZ individuals are excluded from sibling groups.
+    # As in the pair engine, MZ co-twins take part in sibling groups.
     sm = pg.mother_ids
     sf = pg.father_ids
-    nontwin = pg.twin_rows < 0
-    nt = ((sm >= 0) | (sf >= 0)) & nontwin
-    nt_m = sm[nt]
-    nt_f = sf[nt]
-    both = (nt_m >= 0) & (nt_f >= 0)
+    both = (sm >= 0) & (sf >= 0)
     if both.any():
-        bk_m = nt_m[both]
-        bk_f = nt_f[both]
+        bk_m = sm[both]
+        bk_f = sf[both]
         max_p = int(max(bk_m.max(), bk_f.max())) + 1
         family_key = bk_m.astype(np.int64) * max_p + bk_f.astype(np.int64)
         _, sizes = np.unique(family_key, return_counts=True)
@@ -63,21 +59,37 @@ def _count_close_relatives(pg: PedigreeGraph) -> dict[str, int]:
         counts["FS"] = int(((sizes * (sizes - 1)) // 2).sum())
 
     # Group counts, never a bincount indexed by a potentially sparse parent ID.
-    for code, parents in (("MHS", nt_m), ("PHS", nt_f)):
+    for code, parents in (("MHS", sm), ("PHS", sf)):
         _, sizes = np.unique(parents[parents >= 0], return_counts=True)
         sizes = sizes.astype(np.int64)
         counts[code] = int(((sizes * (sizes - 1)) // 2).sum()) - counts["FS"]
 
-    counts["MHS"] -= _half_sibs_that_are_parent_offspring(pg.father_rows, sm, nontwin)
-    counts["PHS"] -= _half_sibs_that_are_parent_offspring(pg.mother_rows, sf, nontwin)
+    counts["MHS"] -= _half_sibs_that_are_parent_offspring(pg.father_rows, sm)
+    counts["PHS"] -= _half_sibs_that_are_parent_offspring(pg.mother_rows, sf)
+    for code, n in _co_twins_in_sibling_categories(pg.twin_rows, sm, sf).items():
+        counts[code] -= n
     return counts
 
 
-def _half_sibs_that_are_parent_offspring(
-    other_parent: np.ndarray,
-    shared_parent_id: np.ndarray,
-    nontwin: np.ndarray,
-) -> int:
+def _co_twins_in_sibling_categories(twin: np.ndarray, sm: np.ndarray, sf: np.ndarray) -> dict[str, int]:
+    """Count MZ pairs per sibling category their parent IDs would place them in.
+
+    The precedence fold files co-twins as MZ, so each pair leaves the one
+    sibling category it falls in: FS when both parent IDs are known and equal,
+    otherwise MHS or PHS through the one equal known parent ID.
+    """
+    a = np.flatnonzero(twin > np.arange(len(twin)))
+    b = twin[a]
+    same_m = (sm[a] >= 0) & (sm[a] == sm[b])
+    same_f = (sf[a] >= 0) & (sf[a] == sf[b])
+    return {
+        "FS": int(np.count_nonzero(same_m & same_f)),
+        "MHS": int(np.count_nonzero(same_m & ~same_f)),
+        "PHS": int(np.count_nonzero(same_f & ~same_m)),
+    }
+
+
+def _half_sibs_that_are_parent_offspring(other_parent: np.ndarray, shared_parent_id: np.ndarray) -> int:
     """Count half-sib pairs the precedence fold files as parent-offspring.
 
     A child and its father who have the same mother are MHS by the sibling
@@ -87,7 +99,7 @@ def _half_sibs_that_are_parent_offspring(
     sibling formula's own grouping.  Such a pair can never be a full sib (the
     child's other parent would have to be the parent itself, a cycle).
     """
-    child = np.flatnonzero((other_parent >= 0) & nontwin)
+    child = np.flatnonzero(other_parent >= 0)
     parent = other_parent[child]
     shared = shared_parent_id[child]
-    return int(np.count_nonzero(nontwin[parent] & (shared >= 0) & (shared_parent_id[parent] == shared)))
+    return int(np.count_nonzero((shared >= 0) & (shared_parent_id[parent] == shared)))

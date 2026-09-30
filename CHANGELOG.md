@@ -4,6 +4,23 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## v0.11.0 (unreleased)
+
+- **Changed: MZ co-twins take part in sibling groups** (issue #29; ADR 0010
+  as amended). Up to 0.10.0 a co-twin had no FS, MHS or PHS pair with its
+  non-twin siblings and no collateral pair built from sibling lists (Av,
+  HAv, GAv, HGAv, GGAv, HGGAv, G3Av), an idiosyncrasy inherited from 0.7.1.
+  Co-twins are still MZ with each other. `relationship_pairs`,
+  `relationship_counts`, views, `relationship_burden` and the close-relative
+  counts change on pedigrees with twins only: pairs gained in closer
+  categories leave farther ones through the closest-category fold, so 1C,
+  H1C, 1C1R, H1C1R, 1C2R and GGP can fall. Parity-fixture changes include
+  `small_pedigree` FS 1607 -> 1617, MHS 672 -> 680, PHS 778 -> 794, Av
+  3286 -> 3313, HAv 3017 -> 3062; `random_1k` FS 16 -> 18, MHS 1040 -> 1096,
+  PHS 1217 -> 1309, Av 58 -> 131, 1C1R 3222 -> 2873; `random_30k` MHS
+  29721 -> 32309, PHS 30091 -> 32785, Av 67 -> 1953, 1C1R 21618 -> 8994.
+  Fixtures without twins are unchanged.
+
 ## v0.10.0
 
 - **Added: the R package `pedigreegraph`** (slice 16; ADR 0007 as amended),

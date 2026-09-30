@@ -1599,7 +1599,7 @@
         "view_pairs/1C1R": 0,
         "view_pairs/1C2R": 0,
         "view_pairs/2C": 0,
-        "view_pairs/Av": 0,
+        "view_pairs/Av": 1,
         "view_pairs/FO": 1,
         "view_pairs/FS": 0,
         "view_pairs/G3Av": 0,
@@ -1667,7 +1667,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
-          "sha256": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
+          "sha256": "1fda5279d1c4ae2ef41c0dd496264e800d0e70904021838803d3a3e93fc218c3",
           "v0_7_1_sha256": null
         },
         "view_pairs/FO": {
@@ -2070,28 +2070,28 @@
         "approx_support_upper_nnz": 298217,
         "complete_upper_nnz": 300738,
         "view_pairs/1C": 98,
-        "view_pairs/1C1R": 789,
-        "view_pairs/1C2R": 1848,
+        "view_pairs/1C1R": 682,
+        "view_pairs/1C2R": 1697,
         "view_pairs/2C": 805,
-        "view_pairs/Av": 12,
+        "view_pairs/Av": 38,
         "view_pairs/FO": 234,
-        "view_pairs/FS": 2,
-        "view_pairs/G3Av": 48,
+        "view_pairs/FS": 4,
+        "view_pairs/G3Av": 116,
         "view_pairs/G3GP": 1363,
-        "view_pairs/GAv": 19,
-        "view_pairs/GGAv": 41,
+        "view_pairs/GAv": 69,
+        "view_pairs/GGAv": 104,
         "view_pairs/GGGP": 1386,
         "view_pairs/GGP": 1067,
         "view_pairs/GP": 759,
-        "view_pairs/H1C": 1733,
-        "view_pairs/H1C1R": 4634,
-        "view_pairs/HAv": 1823,
-        "view_pairs/HGAv": 2608,
-        "view_pairs/HGGAv": 4099,
-        "view_pairs/MHS": 242,
+        "view_pairs/H1C": 1732,
+        "view_pairs/H1C1R": 4622,
+        "view_pairs/HAv": 1967,
+        "view_pairs/HGAv": 2833,
+        "view_pairs/HGGAv": 4282,
+        "view_pairs/MHS": 254,
         "view_pairs/MO": 252,
         "view_pairs/MZ": 6,
-        "view_pairs/PHS": 313
+        "view_pairs/PHS": 338
       },
       "file": "random_1k.npz",
       "input_hash": "4641b2af52f9d91e32c267c22d81eb9633062cd0a70b5bd83a30f8830cf09932",
@@ -2129,11 +2129,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/1C1R": {
-          "sha256": "1d021af65ec846b81801646baee7c64141f90d49cf792dc57ecefdcc313db3a1",
+          "sha256": "1cfb555083c8ce14c1445fb97466c1515a2c92375021d61a6e65823a05606fda",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C2R": {
-          "sha256": "ccb22bcdfca4a8bf809f919348ea326bb7df39996bf7f27c85ecff62a0d7ae04",
+          "sha256": "af838781d774f4c80fc59272d871cc6be2a648da9e18fdc547447e54f5879fd7",
           "v0_7_1_sha256": null
         },
         "view_pairs/2C": {
@@ -2141,7 +2141,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
-          "sha256": "082b8ba7f60d28c2ee01596f3d1ab86d8f82737d59b8e49661618ff29cd6e0df",
+          "sha256": "fabdd948c9675276ea7f8e22e556aa1cbb1b2f00e3a5f5a0e7524598abdcbf70",
           "v0_7_1_sha256": null
         },
         "view_pairs/FO": {
@@ -2149,11 +2149,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/FS": {
-          "sha256": "6e7cff24a1f0657d54a1f5437dbd81d0eec170c4aa8197f6f7a3d024dbecdb05",
+          "sha256": "eff38517df601be71f8716f9a6c9b27adf53551db6c0a49d6b992274dca91193",
           "v0_7_1_sha256": null
         },
         "view_pairs/G3Av": {
-          "sha256": "290572ecaadac1edcfedac6d760e7ec471ae9d46dfa1c825ebe618ddf4d3113e",
+          "sha256": "8f534718f9c6d467b4d101c018efabb96767e1c9790b113bebc3bcc1c39f0699",
           "v0_7_1_sha256": null
         },
         "view_pairs/G3GP": {
@@ -2161,11 +2161,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/GAv": {
-          "sha256": "761f45d01fce573554cd0798958191722abd78d6f6142b8292943cc00186dc8a",
+          "sha256": "b359d9d1f03ee16a1a013ce63b550f30d5fe6a3b42eabe3c52d81ae864850a0a",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGAv": {
-          "sha256": "9d0d4e697beffda92865997bb9bec5bda962ea54a73f5414e9d9b4e5b8d36065",
+          "sha256": "9b9acda15fb6ccb40c807a8007a0deee4e0482c7cb055967f131d11855223b5f",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGGP": {
@@ -2181,27 +2181,27 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C": {
-          "sha256": "a2e636871227ea7bad1a46e576ae56cd890b6b79502f4e657f1e6a6c38f79ab0",
+          "sha256": "291494401d7012bd89a97c98562596c38e8b43f1ca2e74c1436aeaf35ec6df26",
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C1R": {
-          "sha256": "835f8966d3271627ca5976805178ec7a71d7d6d6648d3a8dc6bada4cada6caa8",
+          "sha256": "537160db4d1c0b24919355f1601671d1dcf9afb140487f8fefec2926bb6d6493",
           "v0_7_1_sha256": null
         },
         "view_pairs/HAv": {
-          "sha256": "dbb12b49cf6fb8ac276955bed1dbeadb8452c0db90e86b65766fc2cc9cc015bf",
+          "sha256": "7945fd6bcbc80769e5eb2d36ba1c1a9af76c75aa0fbd8c14fcfbff7f0c49d165",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGAv": {
-          "sha256": "142c4bb114cdda2f3763e0da79add1f0a75789ae0818a204500aeb156f96daeb",
+          "sha256": "04adce74e79308179bd6d16199a070e0b6e191225307bf222bb27b444f8dc87c",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGGAv": {
-          "sha256": "701d502f58f21b5a35766fe1b4e2c44ac823caf89d5eba3a2ca40ebe5548eb8d",
+          "sha256": "8b26a0583adcf9a9dc174aa877fec4b3e4543ee56a5306d0e3398b644f8675aa",
           "v0_7_1_sha256": null
         },
         "view_pairs/MHS": {
-          "sha256": "5282edef7aaf4f74af429af39e4ed3ead3ea65c501d37632c8bc0d09e9ec493c",
+          "sha256": "83b6ce7bb02abc7aff94cc4569bd3fb0c950fcd0a5e49bc13735bd6190df1808",
           "v0_7_1_sha256": null
         },
         "view_pairs/MO": {
@@ -2213,7 +2213,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/PHS": {
-          "sha256": "3a74150aed50706d49eec4302d7a2c39bf00521f1b6d38c2fc7b05da78d3ddd9",
+          "sha256": "0232c2715a9ba0e5cb77bd985841500facc05681be550d86a59be04331e01b18",
           "v0_7_1_sha256": null
         }
       },
@@ -2230,28 +2230,28 @@
       "counts": {
         "approx_support_upper_nnz": 26924109,
         "view_pairs/1C": 492,
-        "view_pairs/1C1R": 5352,
-        "view_pairs/1C2R": 9705,
+        "view_pairs/1C1R": 2221,
+        "view_pairs/1C2R": 4706,
         "view_pairs/2C": 2685,
-        "view_pairs/Av": 18,
+        "view_pairs/Av": 506,
         "view_pairs/FO": 6740,
         "view_pairs/FS": 4,
-        "view_pairs/G3Av": 108,
+        "view_pairs/G3Av": 1815,
         "view_pairs/G3GP": 86810,
-        "view_pairs/GAv": 35,
-        "view_pairs/GGAv": 52,
+        "view_pairs/GAv": 802,
+        "view_pairs/GGAv": 1233,
         "view_pairs/GGGP": 58214,
         "view_pairs/GGP": 37370,
         "view_pairs/GP": 22691,
-        "view_pairs/H1C": 50995,
-        "view_pairs/H1C1R": 174830,
-        "view_pairs/HAv": 50301,
-        "view_pairs/HGAv": 85773,
-        "view_pairs/HGGAv": 140462,
-        "view_pairs/MHS": 7267,
+        "view_pairs/H1C": 50993,
+        "view_pairs/H1C1R": 174648,
+        "view_pairs/HAv": 54712,
+        "view_pairs/HGAv": 93590,
+        "view_pairs/HGGAv": 153348,
+        "view_pairs/MHS": 7899,
         "view_pairs/MO": 6928,
         "view_pairs/MZ": 155,
-        "view_pairs/PHS": 7447
+        "view_pairs/PHS": 8192
       },
       "input_hash": "f4d558a6957b9c12efe4a28778448a9b981769a5998c039849bbcec316d0b80d",
       "keys": {
@@ -2280,11 +2280,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/1C1R": {
-          "sha256": "bdc7efde2e132fbb4a7fe1bced50a93301e2b3c4a27cd3dac47146ea5c37913d",
+          "sha256": "4d7069ebfe51249819c452dc66ae0d622f4119ac7da279877493b6b5f482e7f5",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C2R": {
-          "sha256": "9bf079a9206a108673b7f4a6b69401e2a09cb2a85bfbc19035af9c4f37c0d09b",
+          "sha256": "4420dd2f4fdd993eaa31b01d20adf5df4945ecb398e643f013b1349db65e9d45",
           "v0_7_1_sha256": null
         },
         "view_pairs/2C": {
@@ -2292,7 +2292,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
-          "sha256": "003d74a11cf7c73f731c61b3780a01c5c5bfb9a11c37129e9db4143c2bc348fd",
+          "sha256": "252eb7d834d55b56d5c3c79c84e9b712f2c50a2bec45a1f72ffcd482040f1877",
           "v0_7_1_sha256": null
         },
         "view_pairs/FO": {
@@ -2304,7 +2304,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/G3Av": {
-          "sha256": "2fbe7b646ba8f6cb8d359e86515569180e9dbcb254d522b00990a9df1edde7e9",
+          "sha256": "1e364486e09fbcdb25c0c94cc181d8acad8f0181b27898ec573e728d89c1b18a",
           "v0_7_1_sha256": null
         },
         "view_pairs/G3GP": {
@@ -2312,11 +2312,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/GAv": {
-          "sha256": "e720a008d00586a84448fd098828c74cd6795583d71d1aa16feb5368357bf169",
+          "sha256": "b26fd164b3cd7a5ae34a6fb84c9f9466f5b42111d3e6168b1642588bf86c1192",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGAv": {
-          "sha256": "e4297925d4172d660d0080ab4c7b4cf2c1d1d81189b91e3880a736aa2904e4fa",
+          "sha256": "762d3a791abd0c3853648d773b877dae769dd357c24f548e6124bd008fb8af3a",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGGP": {
@@ -2332,27 +2332,27 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C": {
-          "sha256": "242a3ecd5d9475a7a542651862b578baf7cc9450f80cb86661a5776753f7965d",
+          "sha256": "5be9428ad7f8de2822760ae3a1890dd077394b735b85cd0a227f54ebf927d571",
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C1R": {
-          "sha256": "58715d60d43e989e740db476904e74282fca4c5982c835ddb69d9db855b6b96e",
+          "sha256": "e7eea0c719b77e699c676f8e604e9fa8c7c0dec18e523777d288280e84ff90a8",
           "v0_7_1_sha256": null
         },
         "view_pairs/HAv": {
-          "sha256": "8eef5cc7553065efc5c83c60ae920316080cf19faff926bfb4623ce16c34be7f",
+          "sha256": "7dd7e158f796aefd69d158342d0908c62db1ea92622c11bf08772a5e190e51f2",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGAv": {
-          "sha256": "36113199a21ab0fd7bdf1550cf55f2a06d26b9653e052745135f5af548be0774",
+          "sha256": "b5b79614e0bc0a54e1153f243c7d6fc7f4595f3308049450ddcbb72bf189fdde",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGGAv": {
-          "sha256": "ca6554da232afa3d006d7c141fd902b2eb5ab2fd93f6e8f282bfe32b1c06b984",
+          "sha256": "d17312cab3014ab719da4c59e171249951341b31a3dbb0ca8f72ab1a622760d0",
           "v0_7_1_sha256": null
         },
         "view_pairs/MHS": {
-          "sha256": "64e8fffe969f24c7729757187c909b1997236eec1461b452afe7943005e76348",
+          "sha256": "8b0de36fdf5c1378e7390d977cc906d4ce6254100587c38da61526162e62a2c0",
           "v0_7_1_sha256": null
         },
         "view_pairs/MO": {
@@ -2364,7 +2364,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/PHS": {
-          "sha256": "2a2c83501f71277012a54d9f4a11abc977420b8cfbe4070477bc09f968de960e",
+          "sha256": "88a2b71d2563a9d122935219039b4a569cc55673130951655ef089167a6b3f8f",
           "v0_7_1_sha256": null
         }
       },
@@ -2543,9 +2543,9 @@
         "view_pairs/1C1R": 0,
         "view_pairs/1C2R": 0,
         "view_pairs/2C": 0,
-        "view_pairs/Av": 833,
+        "view_pairs/Av": 836,
         "view_pairs/FO": 482,
-        "view_pairs/FS": 400,
+        "view_pairs/FS": 402,
         "view_pairs/G3Av": 0,
         "view_pairs/G3GP": 0,
         "view_pairs/GAv": 0,
@@ -2555,13 +2555,13 @@
         "view_pairs/GP": 953,
         "view_pairs/H1C": 744,
         "view_pairs/H1C1R": 0,
-        "view_pairs/HAv": 723,
+        "view_pairs/HAv": 730,
         "view_pairs/HGAv": 0,
         "view_pairs/HGGAv": 0,
-        "view_pairs/MHS": 172,
+        "view_pairs/MHS": 175,
         "view_pairs/MO": 508,
         "view_pairs/MZ": 1,
-        "view_pairs/PHS": 174
+        "view_pairs/PHS": 177
       },
       "file": "small_pedigree.npz",
       "input_hash": "bb30c9061c1e96be9de2ee0df5290a51ebf7f44aa8d9197f0b0da03942902132",
@@ -2611,7 +2611,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
-          "sha256": "43e207d83bb50b07fccaa576ca9a86b5d10b3706a1f8998fdb67f20a1f76f683",
+          "sha256": "777c947132758f2cfe30e2395b6fea901df5986e35ffa025f6d6adcff37b3ff5",
           "v0_7_1_sha256": null
         },
         "view_pairs/FO": {
@@ -2619,7 +2619,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/FS": {
-          "sha256": "2f2071e2fe3ebcadf8d9f6c8cced93f70410744aa1954399e1b4636830c99b24",
+          "sha256": "9b15a50b808ed3e67cf68e65f4cd32fb775c166e893ac397dc3733b104d3ee17",
           "v0_7_1_sha256": null
         },
         "view_pairs/G3Av": {
@@ -2659,7 +2659,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/HAv": {
-          "sha256": "fab223e05af8fad98b6eec9b93c7c94d0368258233dfb38f6d6d2611ddee0e03",
+          "sha256": "8a0d1f463cf3ad10fe6ab0fcd6a125391d5d63d057fd3f0c6f667fbb57d1335e",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGAv": {
@@ -2671,7 +2671,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/MHS": {
-          "sha256": "0055b427e8bb35cc39f5201e80f1f0549a4984070f906be2c19c6045c2d5fadd",
+          "sha256": "69734526308daed8393932c575e9801de5fa1d7beb371ac1a3fc428474fdd9af",
           "v0_7_1_sha256": null
         },
         "view_pairs/MO": {
@@ -2683,7 +2683,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/PHS": {
-          "sha256": "872423b81745d3b0b55fd475fd208aaa3331cc795855c3c7d2cd9e5fcf056075",
+          "sha256": "bf5a57dafab311e6c13ca1dff406a333fee541595b86644652aadb625e5cb43d",
           "v0_7_1_sha256": null
         }
       },
@@ -2704,7 +2704,7 @@
         "view_pairs/2C": 0,
         "view_pairs/Av": 0,
         "view_pairs/FO": 1,
-        "view_pairs/FS": 0,
+        "view_pairs/FS": 1,
         "view_pairs/G3Av": 0,
         "view_pairs/G3GP": 0,
         "view_pairs/GAv": 0,
@@ -2778,7 +2778,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/FS": {
-          "sha256": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
+          "sha256": "e4dbbde16fc2814e3e343de1af518d88d205d91870276f08a47afb45739c40a6",
           "v0_7_1_sha256": null
         },
         "view_pairs/G3Av": {
@@ -2855,7 +2855,7 @@
   },
   "generator_version": 1,
   "max_degree": 5,
-  "package_commit": "4453f837159fc94bbe606eec3aa415479c190e42-dirty",
+  "package_commit": "9c99f285f79e74c1f59bfda6c89d5b350d5deaeb-dirty",
   "package_version": null,
   "subsample_seed": 7
 }

@@ -381,24 +381,24 @@ class _Matrices:
         """
         empty = np.array([], dtype=np.intp), np.array([], dtype=np.intp)
 
-        # Non-twin individuals with at least one known parent
+        # Every individual with at least one known parent, MZ co-twins
+        # included (issue #29); the precedence fold reports co-twins as MZ.
         has_parent = (self.mother_ids >= 0) | (self.father_ids >= 0)
-        nt_mask = has_parent & (self.twin_rows < 0)
-        nt_idx = np.where(nt_mask)[0]
+        sib_idx = np.where(has_parent)[0]
 
-        if len(nt_idx) < 2:
+        if len(sib_idx) < 2:
             self._full_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
             self._half_sib_matrix = sp.csr_matrix((self.n_individuals, self.n_individuals))
             return empty, empty, empty
 
-        nt_mother = self.mother_ids[nt_idx]
-        nt_father = self.father_ids[nt_idx]
+        sib_mother = self.mother_ids[sib_idx]
+        sib_father = self.father_ids[sib_idx]
 
         # --- Full sibs: same KNOWN mother AND same KNOWN father ---
-        both_known = (nt_mother >= 0) & (nt_father >= 0)
-        bk_idx = nt_idx[both_known]
-        bk_mother = nt_mother[both_known]
-        bk_father = nt_father[both_known]
+        both_known = (sib_mother >= 0) & (sib_father >= 0)
+        bk_idx = sib_idx[both_known]
+        bk_mother = sib_mother[both_known]
+        bk_father = sib_father[both_known]
 
         if len(bk_idx) >= 2:
             max_parent = max(int(bk_mother.max()), int(bk_father.max())) + 1
@@ -409,9 +409,9 @@ class _Matrices:
             full_sib = empty
 
         # --- Maternal half sibs: all pairs sharing known mother, minus full-sib pairs ---
-        has_mother = nt_mother >= 0
-        m_idx = nt_idx[has_mother]
-        m_mother = nt_mother[has_mother]
+        has_mother = sib_mother >= 0
+        m_idx = sib_idx[has_mother]
+        m_mother = sib_mother[has_mother]
         if len(m_idx) >= 2:
             mat_all = pairs_from_groups(m_idx, m_mother)
             mat_hs = subtract_pairs(mat_all, [full_sib])
@@ -419,9 +419,9 @@ class _Matrices:
             mat_hs = empty
 
         # --- Paternal half sibs: all pairs sharing known father, minus full-sib pairs ---
-        has_father = nt_father >= 0
-        f_idx = nt_idx[has_father]
-        f_father = nt_father[has_father]
+        has_father = sib_father >= 0
+        f_idx = sib_idx[has_father]
+        f_father = sib_father[has_father]
         if len(f_idx) >= 2:
             pat_all = pairs_from_groups(f_idx, f_father)
             pat_hs = subtract_pairs(pat_all, [full_sib])

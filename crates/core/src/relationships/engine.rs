@@ -20,7 +20,9 @@
 //! idiosyncrasies: first cousins count *distinct* shared grandparents while
 //! the once/twice-removed cousins and second cousins count *paths*, and the
 //! cousin sibling exclusion is "shares a known parent id", which is wider than
-//! the twin-filtered sibling lists the collateral categories subtract.
+//! the sibling lists the collateral categories subtract.  Siblings include MZ
+//! co-twins, a deliberate departure from 0.7.1 (issue #29, ADR 0010 as
+//! amended).
 //! [`EXCLUSIONS`] is the reference engine's per-category subtraction table;
 //! it is part of each category's definition.
 //!
@@ -194,7 +196,7 @@ impl<'p> Engine<'p> {
         )?;
         let up = Csr::from_edges(n, edges)?;
         let down = up.transpose()?;
-        let sibs = SiblingIndex::build(ped.twin, ped.orig_mother, ped.orig_father)?;
+        let sibs = SiblingIndex::build(ped.orig_mother, ped.orig_father)?;
         Ok(Engine {
             ped: *ped,
             up,
@@ -660,6 +662,71 @@ mod tests {
             got,
             expect(&[(Category::MZ, 1), (Category::MO, 2), (Category::FO, 2)])
         );
+    }
+
+    /// Mother 0; fathers 1 and 2; co-twins 3, 4 and full sib 6 (0×1); half
+    /// sib 5 (0×2); spouses 7, 8; child 9 of twin 3 (×7); child 10 of sib 6 (×8).
+    const TWINS_WITH_SIBS: [(i32, i32); 11] = [
+        (-1, -1),
+        (-1, -1),
+        (-1, -1),
+        (0, 1),
+        (0, 1),
+        (0, 2),
+        (0, 1),
+        (-1, -1),
+        (-1, -1),
+        (3, 7),
+        (8, 6),
+    ];
+
+    #[test]
+    fn mz_co_twins_keep_their_sibs_and_collaterals() {
+        use Category::*;
+        let ped = pedigree(&TWINS_WITH_SIBS, &[(3, 4)]);
+        let got = count_pairs(
+            &ped.try_borrow().unwrap(),
+            MaxDegree::try_new(3).unwrap(),
+            None,
+        )
+        .unwrap();
+        // FS (3,6), (4,6); MHS (3,5), (4,5), (5,6); Av (10,3), (9,4), (10,4),
+        // (9,6); HAv (9,5), (10,5): issue #29.
+        assert_eq!(
+            got,
+            expect(&[
+                (MZ, 1),
+                (MO, 6),
+                (FO, 6),
+                (FS, 2),
+                (MHS, 3),
+                (GP, 4),
+                (Av, 4),
+                (HAv, 2),
+                (C1, 1),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_twin_link_moves_only_the_co_twin_pair_from_fs_to_mz() {
+        let untwinned = pedigree(&TWINS_WITH_SIBS, &[]);
+        let twinned = pedigree(&TWINS_WITH_SIBS, &[(3, 4)]);
+        let base = count_pairs(&untwinned.try_borrow().unwrap(), MaxDegree::MAX, None).unwrap();
+        let got = count_pairs(&twinned.try_borrow().unwrap(), MaxDegree::MAX, None).unwrap();
+        for cat in Category::ALL {
+            let delta = match cat {
+                Category::MZ => 1,
+                Category::FS => -1,
+                _ => 0,
+            };
+            assert_eq!(
+                got.get(cat) as i64,
+                base.get(cat) as i64 + delta,
+                "{}",
+                cat.code()
+            );
+        }
     }
 
     #[test]

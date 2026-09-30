@@ -24,7 +24,8 @@ gets counts and hashes only.  Every key in ``manifest.json`` stores its
 or ``null`` for a key 0.7.1 did not have.  With ``--verify-against`` the
 generator refuses to write unless every carried digest, count and input hash
 equals the 0.7.1 one, so the switch away from that baseline is proven at
-capture time.  Regeneration is a deliberate act: a changed hash is a changed
+capture time.  Without it, each key keeps the ``v0_7_1_sha256`` the replaced
+manifest recorded.  Regeneration is a deliberate act: a changed hash is a changed
 contract, never a test fix.
 """
 
@@ -172,6 +173,16 @@ def main() -> None:
     import pedigree_graph as pg_mod
 
     old_fixtures = json.loads(args.verify_against.read_text())["fixtures"] if args.verify_against else None
+    # A later regeneration keeps the 0.7.1 digests the lock it replaces carried.
+    previous = args.out / "manifest.json"
+    carried_v071 = (
+        {
+            name: {key: record["v0_7_1_sha256"] for key, record in entry["keys"].items()}
+            for name, entry in json.loads(previous.read_text())["fixtures"].items()
+        }
+        if old_fixtures is None and previous.exists()
+        else {}
+    )
     manifest = {
         "generator_version": pedigrees.GENERATOR_VERSION,
         "package_commit": _git_commit(Path(pg_mod.__file__).resolve().parent.parent),
@@ -197,7 +208,13 @@ def main() -> None:
             "keys": {
                 key: {
                     "sha256": digest,
-                    "v0_7_1_sha256": None if old is None or key not in CARRIED_KEYS else old["hashes"].get(key),
+                    "v0_7_1_sha256": (
+                        carried_v071.get(name, {}).get(key)
+                        if old is None
+                        else old["hashes"].get(key)
+                        if key in CARRIED_KEYS
+                        else None
+                    ),
                 }
                 for key, digest in summary["hashes"].items()
             },
