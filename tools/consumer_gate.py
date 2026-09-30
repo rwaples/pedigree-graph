@@ -126,17 +126,8 @@ def units() -> tuple[Unit, ...]:
                 Step("ruff", ("ruff", "check")),
                 Step("format", ("ruff", "format", "--check")),
                 Step("test", ("test",)),
-                Step(
-                    "smoke",
-                    (
-                        "snakemake",
-                        "--cores",
-                        "4",
-                        "--forceall",
-                        *(f"{SMOKE}/{t}.done" for t in ("scenario", "validate", "stats", "effective_size")),
-                    ),
-                ),
-                Step("atlas", ("snakemake", "--cores", "4", "-f", f"{SMOKE}/plots/atlas.html")),
+                Step("smoke", ("simace", "run", "--force", "small_test")),
+                Step("gather", ("simace", "gather", "test")),
             ),
         ),
         Unit(
