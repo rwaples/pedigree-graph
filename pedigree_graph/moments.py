@@ -70,7 +70,8 @@ def host_bytes(accumulators: int) -> int:
 
 
 def _frozen(values: np.ndarray) -> np.ndarray:
-    out = np.ascontiguousarray(values)
+    # np.ascontiguousarray would promote a 0-d array (a fully folded cell) to shape (1,).
+    out = np.asarray(values, order="C")
     out.setflags(write=False)
     return out
 

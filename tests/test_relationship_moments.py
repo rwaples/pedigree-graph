@@ -690,6 +690,18 @@ class TestSurface:
         r = merged.pearson("first.x", "second.x")
         assert np.all(np.abs(r) <= 1.0)
 
+    def test_folding_every_axis_leaves_a_zero_dimensional_cell(self):
+        graph = _graph("random_1k")
+        n = graph.n_individuals
+        x = np.random.default_rng(24).normal(size=n)
+        per_category = graph.relationship_moments(categories=["MHS", "PHS"], values={"x": x})
+        pooled = per_category.sum("category")
+        assert pooled.shape == () == pooled.counts.shape
+        assert int(pooled.counts) == int(per_category.counts.sum())
+        assert pooled.q_sum_first.shape == pooled.m2_first.shape == (1,)
+        assert pooled.pearson("first.x", "second.x").shape == ()
+        assert pooled.mean("first.x").shape == ()
+
     def test_count_only_and_product_free_results_have_empty_float_views(self):
         graph = _graph("random_1k")
         n = graph.n_individuals

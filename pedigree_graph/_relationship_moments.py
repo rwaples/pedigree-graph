@@ -57,7 +57,12 @@ QUANTIZED_BITS = 43
 
 
 def _coerce_column(kind: str, name: str, values: object, n: int, integer: bool) -> np.ndarray:
-    """One per-individual array as int64 (factors, keys) or float64 (values), checked for shape, length and range."""
+    """One per-individual array, checked for shape, length and range.
+
+    Factors and keys come back as int64.  Value columns keep their numeric
+    dtype; :func:`_quantize` converts them to float64 one column at a time,
+    so a float32 table is never held twice.
+    """
     field = f"{kind}[{name!r}]"
     array = np.asarray(values)
     if array.ndim != 1:
@@ -89,11 +94,10 @@ def _coerce_column(kind: str, name: str, values: object, n: int, integer: bool) 
         return array.astype(np.int64, copy=False)
     if array.dtype.kind not in "iufb":
         raise TypeError(f"{field} must be a numeric array, got dtype {array.dtype}")
-    out = array.astype(np.float64, copy=False)
-    if not np.all(np.isfinite(out)):
-        position = int(np.flatnonzero(~np.isfinite(out))[0])
+    if array.dtype.kind == "f" and not np.all(np.isfinite(array)):
+        position = int(np.flatnonzero(~np.isfinite(array))[0])
         raise ValueError(f"{field} is not finite at position {position}; mask with a factor level instead")
-    return out
+    return array
 
 
 def _check_names(kind: str, names: Iterable[str]) -> None:
@@ -131,7 +135,7 @@ def _pack(kind: str, factors: Mapping[str, object] | None, n: int) -> tuple[np.n
 
 def _exponent(column: np.ndarray) -> int:
     """The largest integer ``e`` with ``max|x| · 2^e <= 2^43``, from the binary exponent; 0 for all zeros."""
-    magnitude = float(np.max(np.abs(column))) if len(column) else 0.0
+    magnitude = max(float(column.max()), -float(column.min())) if len(column) else 0.0
     if magnitude == 0.0:
         return 0
     mantissa, exponent = np.frexp(magnitude)
@@ -141,11 +145,20 @@ def _exponent(column: np.ndarray) -> int:
 
 
 def _quantize(columns: dict[str, np.ndarray], n: int) -> tuple[np.ndarray, np.ndarray]:
-    """Row-major int64 ``[n, k]`` of quantized values and the int64 exponent per column."""
-    exponents = np.array([_exponent(column) for column in columns.values()], dtype=np.int64)
+    """Row-major int64 ``[n, k]`` of quantized values and the int64 exponent per column.
+
+    Each column is widened to float64 in turn into one reused buffer, so the
+    peak beyond the inputs and the result is a single float64 column.
+    """
+    exponents = np.empty(len(columns), dtype=np.int64)
     quantized = np.empty((n, len(columns)), dtype=np.int64)
+    buffer = np.empty(n, dtype=np.float64)
     for j, column in enumerate(columns.values()):
-        quantized[:, j] = np.rint(np.ldexp(column, int(exponents[j])))
+        np.copyto(buffer, column, casting="unsafe")
+        exponents[j] = _exponent(buffer)
+        np.ldexp(buffer, int(exponents[j]), out=buffer)
+        np.rint(buffer, out=buffer)
+        quantized[:, j] = buffer
     return quantized, exponents
 
 
