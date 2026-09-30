@@ -155,6 +155,11 @@ _PAIRWISE_FIXTURES = [
 #: One float32 rounding unit at kinship scale; the envelope is 2 * (depth_i + depth_j + 1) of these.
 ENVELOPE_UNIT = 2.0**-25
 
+#: Largest ``d_a + d_b`` at which float32 kinship equals the rational, and the
+#: largest ``d_i`` at which float64 F does; test_kinship_exact.py derives both.
+EXACT_DEPTH_SUM = 22
+EXACT_F_DEPTH = 25
+
 
 def float32_ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Integer-view ULP distance between two nonnegative float32 arrays."""

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import ENVELOPE_UNIT, EXACT_DEPTH_SUM
 from conftest import non_inbred_pedigree, pedigree_arrays, random_pedigree, relabel_pedigree
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -23,11 +24,13 @@ _HEAVY = settings(deadline=None, max_examples=30)
 @_SETTINGS
 @given(pg=random_pedigree())
 def test_kinship_matrix_symmetric_and_bounded(pg):
+    # The CSC is mirrored from one stored value per pair, so symmetry is
+    # exact; a float32 half-sum of values in [0, 1] stays in [0, 1].
     K = pg.kinship_matrix()
     dense = K.toarray()
-    assert np.allclose(dense, dense.T, atol=1e-9)
-    assert np.all(K.data >= -1e-12)
-    assert np.all(K.data <= 1.0 + 1e-12)
+    assert np.array_equal(dense, dense.T)
+    assert np.all(K.data >= 0)
+    assert np.all(K.data <= 1)
 
 
 @_SETTINGS
@@ -65,9 +68,15 @@ def test_parent_offspring_quarter_when_non_inbred(pg):
 @given(pg=random_pedigree())
 def test_kinship_recursion(pg):
     # phi(i,j) = 1/2 (phi(mother_i,j) + phi(father_i,j)) for i not an ancestor
-    # of j (gen[i] >= gen[j], i != j); a missing parent contributes 0.
+    # of j (gen[i] >= gen[j], i != j); a missing parent contributes 0.  The
+    # matrix stores the correctly rounded float32 half-sum when it peels i
+    # (i deeper, or a depth tie with i the greater row, ADR 0009); the float64
+    # sum of two float32 values is exact, so the cast is that one rounding.
+    # A tie it peels from j reaches the same rational by the other parent
+    # pair: equal while every value is exact (test_kinship_exact.py), inside
+    # the two-path envelope beyond.
     K = pg.kinship_matrix().toarray()
-    gen = pg.depth
+    gen = np.asarray(pg.depth, dtype=np.int64)
     n = pg.n_individuals
     for i in range(n):
         m, f = int(pg.mother_rows[i]), int(pg.father_rows[i])
@@ -76,9 +85,14 @@ def test_kinship_recursion(pg):
         for j in range(n):
             if j == i or gen[j] > gen[i]:
                 continue
-            km = K[m, j] if m != -1 else 0.0
-            kf = K[f, j] if f != -1 else 0.0
-            assert K[i, j] == pytest.approx(0.5 * (km + kf), abs=1e-9)
+            km = np.float64(K[m, j]) if m != -1 else 0.0
+            kf = np.float64(K[f, j]) if f != -1 else 0.0
+            step = np.float32(0.5 * (km + kf))
+            depth_sum = gen[i] + gen[j]
+            if gen[i] > gen[j] or i > j or depth_sum <= EXACT_DEPTH_SUM:
+                assert K[i, j] == step
+            else:
+                assert abs(np.float64(K[i, j]) - np.float64(step)) <= 2 * (depth_sum + 1) * ENVELOPE_UNIT
 
 
 @_HEAVY

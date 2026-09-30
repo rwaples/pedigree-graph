@@ -7,6 +7,7 @@ phi(mother, father) for individuals with both parents known (0 otherwise).
 from __future__ import annotations
 
 import numpy as np
+from _support import ENVELOPE_UNIT, EXACT_DEPTH_SUM
 from conftest import pedigree_arrays, random_pedigree
 from hypothesis import example, given, settings
 
@@ -26,10 +27,15 @@ _FULL_SIB_MATING = (
 @_SETTINGS
 @given(pg=random_pedigree())
 def test_inbreeding_nonneg_and_matches_matrix_diagonal(pg):
+    # F is exact to depth 25 and phi(i, i) to depth 11 (test_kinship_exact.py);
+    # past that the diagonal carries at most (2 d + 1) * 2**-25 of rounding.
     F = pg.inbreeding()
-    assert np.all(F >= -1e-12)
-    K = pg.kinship_matrix()
-    assert np.allclose(F, 2.0 * np.asarray(K.diagonal()) - 1.0, atol=1e-9)
+    assert np.all(F >= 0)
+    diagonal = np.asarray(pg.kinship_matrix().diagonal(), dtype=np.float64)
+    depth = np.asarray(pg.depth, dtype=np.int64)
+    exact = 2 * depth <= EXACT_DEPTH_SUM
+    np.testing.assert_array_equal(F[exact], 2.0 * diagonal[exact] - 1.0)
+    assert np.all(np.abs(F - (2.0 * diagonal - 1.0))[~exact] <= 2 * (2 * depth[~exact] + 1) * ENVELOPE_UNIT)
 
 
 @_SETTINGS
