@@ -36,6 +36,7 @@ from pedigree_graph._relationship_moments import DEFAULT_MEMORY_BUDGET_BYTES
 from pedigree_graph._relationship_moments import relationship_moments as _relationship_moments
 from pedigree_graph._relationship_pairs import check_execution
 from pedigree_graph._relationship_pairs import relationship_pairs as _relationship_pairs
+from pedigree_graph._relatives_per_person import relatives_per_person as _relatives_per_person
 from pedigree_graph._selection import RelationshipSelection
 from pedigree_graph._streaming_counter import close_relative_counts as _close_relative_counts
 from pedigree_graph._threads import thread_budget
@@ -45,9 +46,11 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     import scipy.sparse as sp
+    from numpy.typing import ArrayLike
 
     from pedigree_graph._burden import RelationshipBurden
     from pedigree_graph._frames import FrameLike
+    from pedigree_graph._relatives_per_person import RelativesPerPerson
     from pedigree_graph._view import PedigreeView
     from pedigree_graph.moments import RelationshipMoments
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
@@ -462,6 +465,60 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             symmetric=symmetric,
             memory_budget_bytes=memory_budget_bytes,
         )
+
+    def relatives_per_person(
+        self,
+        *,
+        max_degree: int | None = None,
+        categories: Iterable[str] | None = None,
+        thresholds: Mapping[str, tuple[ArrayLike, ArrayLike | float]] | None = None,
+    ) -> RelativesPerPerson:
+        """Return, per individual and selected category, the number of relatives and how many pass each threshold.
+
+        Pairs are classified as by :meth:`relationship_pairs` and credited in
+        the engine without a pair list, so peak memory is the O(N) result
+        plus engine state.  A symmetric category credits both members of
+        each pair; a directional one credits only its first (junior) member,
+        so ``MO``/``FO`` count a row's parents, ``Av`` its aunts and uncles
+        and ``GP`` its grandparents.  Threshold column ``name: (relative,
+        threshold)`` counts a relative when ``relative[relative's row] <=
+        threshold[row]``, compared as float64, so NaN on either side never
+        counts.  The counts are the same under every thread budget.
+
+        Args:
+            max_degree: Select every category at or below this degree (0-5).
+                Exclusive with *categories*.
+            categories: Registry codes to select, any order.  Exclusive with
+                *max_degree*.
+            thresholds: Named threshold columns, at most 32, each a
+                ``(relative, threshold)`` tuple.  ``relative`` is one real
+                value per row; ``threshold`` is one per row or a real scalar
+                that applies to every row.  NaN and ±inf are allowed.
+                Contiguous float64 arrays are used without a copy; other
+                real dtypes are converted once, and a float wider than
+                float64 is refused because it would round.  ``"relatives"`` names the
+                pair-count column and is reserved.
+
+        Returns:
+            A :class:`~pedigree_graph.RelativesPerPerson` whose read-only
+            uint32 ``counts`` is ``[rows, categories, 1 + len(thresholds)]``
+            in graph rows, with ``get`` and ``sum``.
+
+        Raises:
+            TypeError: Both selectors, neither, a bare ``str`` for
+                *categories*, a column name that is not a non-empty ``str``,
+                an entry that is not a 2-tuple, or a bool, non-numeric or
+                wider-than-float64 value.
+            ValueError: The reserved name ``"relatives"``, or more than 32
+                columns.
+            PedigreeValidationError: ``max_degree_out_of_range``,
+                ``unknown_relationship_category``, ``invalid_shape`` or
+                ``length_mismatch`` for an input array, or
+                ``value_out_of_range`` for an integer beyond ±2**53.
+            ResourceError: ``allocation_failed`` when the counts or the
+                engine cannot be allocated.
+        """
+        return _relatives_per_person(self, None, RelationshipSelection.parse(max_degree, categories), thresholds)
 
     def relationship_counts(
         self,

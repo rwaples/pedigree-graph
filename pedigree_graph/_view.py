@@ -35,12 +35,16 @@ from pedigree_graph._relationship_counts import view_relationship_counts
 from pedigree_graph._relationship_moments import DEFAULT_MEMORY_BUDGET_BYTES
 from pedigree_graph._relationship_moments import relationship_moments as _relationship_moments
 from pedigree_graph._relationship_pairs import check_execution, view_relationship_pairs
+from pedigree_graph._relatives_per_person import relatives_per_person as _relatives_per_person
 from pedigree_graph._selection import RelationshipSelection
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+    from numpy.typing import ArrayLike
+
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._relatives_per_person import RelativesPerPerson
     from pedigree_graph.moments import RelationshipMoments
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
 
@@ -298,6 +302,24 @@ class PedigreeView:
             symmetric=symmetric,
             memory_budget_bytes=memory_budget_bytes,
         )
+
+    def relatives_per_person(
+        self,
+        *,
+        max_degree: int | None = None,
+        categories: Iterable[str] | None = None,
+        thresholds: Mapping[str, tuple[ArrayLike, ArrayLike | float]] | None = None,
+    ) -> RelativesPerPerson:
+        """Return, per view row and selected category, the relatives inside this view and how many pass each threshold.
+
+        The same arguments, result and guarantees as
+        :meth:`pedigree_graph.PedigreeGraph.relatives_per_person`; every
+        per-row input has one entry per view row, in view order, and the
+        counts are in view rows.  Pairs are classified through the full
+        graph and credited when both members are selected.  A view of fewer
+        than two rows has no pairs and skips the engine.
+        """
+        return _relatives_per_person(self._graph, self, RelationshipSelection.parse(max_degree, categories), thresholds)
 
     @overload
     def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...

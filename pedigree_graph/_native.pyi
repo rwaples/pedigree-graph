@@ -85,6 +85,17 @@ def relationship_moments(
     view_rows: NDArray[np.int32] | None = None,
     compact: bool = False,
 ) -> tuple[NDArray[np.int64], NDArray[np.int64], int, int, int, list[int], int]: ...
+def relatives_per_person(
+    pedigree: BuiltPedigree,
+    /,
+    *,
+    max_degree: int,
+    requested: list[str],
+    threads: int,
+    columns: list[tuple[NDArray[np.float64], NDArray[np.float64] | float]],
+    view_rows: NDArray[np.int32] | None = None,
+    compact: bool = False,
+) -> tuple[NDArray[np.uint32], int, int, int, int, list[int]]: ...
 def moments_plan(
     *,
     n_categories: int,

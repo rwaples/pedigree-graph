@@ -18,7 +18,7 @@ use pedigree_graph_core::lineage::{self, ParentColumns};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
     self, Category, CategorySet, Execution, MomentsInput, MomentsPlan, MomentsShape, Pedigree,
-    Product, Side, Symmetric,
+    Product, Side, Symmetric, Threshold, ThresholdColumn,
 };
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -663,6 +663,91 @@ fn relationship_burden<'py>(
     ))
 }
 
+/// The credited member's side of one [`relatives_per_person`] column: one
+/// float64 per receiver row, or a float that is never broadcast.
+#[derive(FromPyObject)]
+enum ThresholdArg<'py> {
+    Rows(PyReadonlyArray1<'py, f64>),
+    Scalar(f64),
+}
+
+/// Per receiver row and requested category, the relative count and the
+/// count passing each threshold column, as a `(counts, rows, n_categories,
+/// stride, lanes, lane_pairs)` tuple: `counts` is the flat row-major uint32
+/// `[rows, n_categories, stride]` array, moved out of the core without a
+/// copy, `stride` is one plus the column count, and the pass ran on `lanes`
+/// lanes that credited `lane_pairs` pairs each.
+///
+/// `columns` is a list of `(relative, threshold)` pairs in receiver rows:
+/// `relative` a contiguous float64 array, `threshold` one or a float.  A
+/// relative counts for the credited row when `relative[relative row] <=
+/// threshold[credited row]`; NaN never counts.  Symmetric categories credit
+/// both members and directional ones the junior only.  The inputs are
+/// borrowed, and the GIL is released for the pass.
+#[pyfunction]
+#[pyo3(signature = (pedigree, *, max_degree, requested, threads, columns, view_rows=None, compact=false))]
+#[allow(clippy::too_many_arguments)]
+fn relatives_per_person<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    max_degree: u8,
+    requested: Vec<String>,
+    threads: usize,
+    columns: Vec<(PyReadonlyArray1<'py, f64>, ThresholdArg<'py>)>,
+    view_rows: Option<PyReadonlyArray1<'py, i32>>,
+    compact: bool,
+) -> PyResult<RelativesArrays<'py>> {
+    let engine = EngineColumns::borrow(py, pedigree);
+    let ped = engine.pedigree(py)?;
+    let max_degree = checked_max_degree(py, max_degree)?;
+    let categories = requested_categories(&requested)?;
+    let view = view_map(&view_rows, ped.len())?;
+    if compact && view.is_none() {
+        return Err(PyValueError::new_err("compact requires view_rows"));
+    }
+    let mut borrowed = Vec::with_capacity(columns.len());
+    for (relative, threshold) in &columns {
+        borrowed.push(ThresholdColumn {
+            relative: relative.as_slice()?,
+            threshold: match threshold {
+                ThresholdArg::Rows(rows) => Threshold::Rows(rows.as_slice()?),
+                ThresholdArg::Scalar(value) => Threshold::Scalar(*value),
+            },
+        });
+    }
+    let threads = NonZeroUsize::new(threads)
+        .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
+    let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
+    let relatives = py
+        .detach(|| {
+            pool.install(|| {
+                relationships::relatives_per_person(
+                    &ped, max_degree, categories, view, compact, &borrowed, threads,
+                )
+            })
+        })
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok((
+        relatives.counts.into_pyarray(py),
+        relatives.rows,
+        relatives.n_categories,
+        relatives.stride,
+        relatives.lanes,
+        relatives.lane_pairs,
+    ))
+}
+
+/// What [`relatives_per_person`] hands back: the flat counts, rows,
+/// categories, stride, lanes and the pairs each lane credited.
+type RelativesArrays<'py> = (
+    Bound<'py, PyArray1<u32>>,
+    usize,
+    usize,
+    usize,
+    usize,
+    Vec<u64>,
+);
+
 /// The recurrence's columns, borrowed from a graph's [`BuiltPedigree`] and
 /// its cached depth for one call.
 struct KinshipColumns<'py> {
@@ -1063,6 +1148,7 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(relationship_burden, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_moments, m)?)?;
     m.add_function(wrap_pyfunction!(moments_plan, m)?)?;
+    m.add_function(wrap_pyfunction!(relatives_per_person, m)?)?;
     m.add_function(wrap_pyfunction!(pair_kinship, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_support_values, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_csc, m)?)?;

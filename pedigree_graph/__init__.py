@@ -25,13 +25,17 @@ Public API:
     PedigreeView         — ordered view of a graph's rows, built with
         graph.view(ids=...) or graph.view(rows=...); exposes read-only ids,
         graph_rows, n_individuals, len, relationship_pairs /
-        relationship_counts / relationship_moments, and pair_kinship in
-        view rows
+        relationship_counts / relationship_moments / relatives_per_person,
+        and pair_kinship in view rows
     RelationshipMoments  — what graph.relationship_moments(...) or
         view.relationship_moments(...) returns: per category and per
         pair-label cell, the pair count, raw sums, cross sums and exact
         centered moments of caller-supplied per-individual values, with
         select / sum / merge and the mean / pearson / table accessors
+    RelativesPerPerson   — what graph.relatives_per_person(...) or
+        view.relatives_per_person(...) returns: per row and category, the
+        relative count and the count passing each threshold column, as a
+        read-only uint32 array, with get / sum
 
 Errors (ADR 0006 — each carries a stable ``.code`` and immutable ``.fields``):
     PedigreeValidationError, MissingMetadataError (both ValueError),
@@ -59,6 +63,7 @@ from pedigree_graph._errors import (
     PedigreeValidationError,
     ResourceError,
 )
+from pedigree_graph._relatives_per_person import RelativesPerPerson
 from pedigree_graph._threads import configure_threads
 from pedigree_graph._view import PedigreeView
 from pedigree_graph.moments import RelationshipMoments
@@ -84,6 +89,7 @@ __all__ = [
     "RelationshipMoments",
     "RelationshipPairBlock",
     "RelationshipPairs",
+    "RelativesPerPerson",
     "ResourceError",
     "configure_threads",
 ]
