@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## v0.11.0 (unreleased)
+## v0.11.0
 
 - **Added: `PedigreeGraph.relationship_moments()`,
   `PedigreeView.relationship_moments()` and `RelationshipMoments`** (root

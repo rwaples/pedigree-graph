@@ -205,4 +205,4 @@ within the shared pool rather than sizing a pool.
 * Two allocation families (`moment_lanes`, `moment_output`) and one error
   code (`memory_budget_exceeded`) join the tables; `relationships/moments.rs`
   joins the parallel-module map with its cross-budget test.
-* The R package does not expose moments in 0.11.0 (issue to open).
+* The R package does not expose moments in 0.11.0 (issue #30).
