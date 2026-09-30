@@ -2,7 +2,7 @@
 name = "pedigree-graph-r"
 # Kept equal to [workspace.package].version in the repository root; this crate
 # is its own workspace (below) so the R source tarball builds without that one.
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/rwaples/pedigree-graph"
