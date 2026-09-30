@@ -23,7 +23,7 @@ live on the corresponding GitHub release pages.
   and `merge` are exact integer folds, a constant column has a centered
   moment of exactly zero before and after any fold, and `pearson` is
   scale-free. `symmetric="both"` counts a symmetric pair in both
-  orientations. Accessors: `count`, `mean`, `pearson`, `table`.
+  orientations. Accessors: `counts`, `mean`, `pearson`, `table`.
   `memory_budget_bytes` (default 1 GiB) caps
   the accumulators; a budget one lane cannot fit raises
   `ResourceError("memory_budget_exceeded")` before anything is allocated

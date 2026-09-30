@@ -401,10 +401,6 @@ class RelationshipMoments:
             self._comoment_numerators(), self._product_exponents(), self.counts, "comoment", self._product_names()
         )
 
-    def count(self) -> np.ndarray:
-        """The int64 pair count per cell, the same array as :attr:`counts`."""
-        return self.counts
-
     def mean(self, name: str) -> np.ndarray:
         """The mean of ``"first.<column>"`` or ``"second.<column>"`` per cell, NaN where empty."""
         side, column = side_column(name, self.columns)

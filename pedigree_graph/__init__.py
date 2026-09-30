@@ -31,7 +31,7 @@ Public API:
         view.relationship_moments(...) returns: per category and per
         pair-label cell, the pair count, raw sums, cross sums and exact
         centered moments of caller-supplied per-individual values, with
-        select / sum / merge and the count / mean / pearson / table accessors
+        select / sum / merge and the mean / pearson / table accessors
 
 Errors (ADR 0006 — each carries a stable ``.code`` and immutable ``.fields``):
     PedigreeValidationError, MissingMetadataError (both ValueError),

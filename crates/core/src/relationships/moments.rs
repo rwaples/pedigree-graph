@@ -513,11 +513,11 @@ impl Reducer for CellReducer<'_> {
             sq_a[c] += x * x;
             sq_b[c] += y * y;
         }
+        let pick = |(side, col): (Side, usize)| match side {
+            Side::First => va[col],
+            Side::Second => vb[col],
+        };
         for (product, out) in input.products.iter().zip(cross) {
-            let pick = |(side, col): (Side, usize)| match side {
-                Side::First => va[col],
-                Side::Second => vb[col],
-            };
             *out += i128::from(pick(product.a)) * i128::from(pick(product.b));
         }
     }

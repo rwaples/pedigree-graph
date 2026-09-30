@@ -867,4 +867,3 @@ class TestSurface:
             with pytest.raises(ValueError, match="read-only"):
                 getattr(got, name)[...] = 0
         assert repr(got).startswith("RelationshipMoments(category=1, first_s=1, second_s=1; pairs=")
-        assert got.count() is got.counts
