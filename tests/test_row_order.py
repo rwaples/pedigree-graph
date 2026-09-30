@@ -31,6 +31,8 @@ if TYPE_CHECKING:
     from pedigree_graph.summaries import GenerationKinshipSummary
 
 MAX_DEGREE = 5
+#: The random fixtures, whose every-operation cases take 24-29 s each; the motifs stay in `test`.
+_LARGE = ("random_1k", "deep_inbred_60g")
 
 
 # lineal_five_generations, random_1k and every motif with a skip-generation
@@ -369,7 +371,9 @@ class _Snapshot:
 
 
 @pytest.mark.parametrize("constructor", ["dict", "from_arrays"])
-@pytest.mark.parametrize("name", FIXTURE_NAMES)
+@pytest.mark.parametrize(
+    "name", [pytest.param(name, marks=pytest.mark.slow) if name in _LARGE else name for name in FIXTURE_NAMES]
+)
 def test_every_operation_is_invariant_under_row_order(name, constructor, capsys):
     fixture = FIXTURES[name]
     columns = _dated_columns(fixture)

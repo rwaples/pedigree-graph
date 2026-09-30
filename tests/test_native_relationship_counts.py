@@ -163,6 +163,7 @@ def random_pedigree(draw):
     }
 
 
+@pytest.mark.slow
 @settings(max_examples=300, deadline=None)
 @given(random_pedigree(), st.integers(min_value=0, max_value=5))
 def test_random_pedigrees_match_the_matrix_engine(columns, max_degree):

@@ -510,7 +510,6 @@ _RSS_SCRIPT = textwrap.dedent(
 ).strip()
 
 
-@pytest.mark.slow
 @pytest.mark.skipif(
     sys.platform != "linux",
     reason="VmHWM is a Linux-specific metric in /proc/self/status",
@@ -563,7 +562,6 @@ def test_helpers_rss_at_n2000_g8_under_threshold() -> None:
     )
 
 
-@pytest.mark.slow
 def test_ltc_tracks_the_census_size_at_n2000_g10() -> None:
     """Ne_LTC at N=2000, G=10.
 

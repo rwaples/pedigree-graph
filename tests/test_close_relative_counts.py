@@ -166,7 +166,6 @@ class TestThreads:
             configure_threads(budget + 1)
 
 
-@pytest.mark.slow
 def test_random_30k_matches_exact_counts():
     fx = pedigrees.build_random("random_30k", pedigrees.LARGE_FIXTURES["random_30k"])
     graph = PedigreeGraph.from_frame(parity_columns(fx))

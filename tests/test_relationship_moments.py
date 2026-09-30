@@ -178,9 +178,20 @@ def _reordered_half(graph: PedigreeGraph, seed: int):
 PARITY_FIXTURES = ("random_1k", "sim_d2_n3000", "sim_d3_n3000", "sim_d6_n3000")
 
 
+def _slow_if(receiver: str, name: str) -> tuple:
+    """The whole-graph sim_d6_n3000 cases take 9-11 s each; the view cases, on half the rows, stay under 5 s."""
+    return (pytest.mark.slow,) if (receiver, name) == ("graph", "sim_d6_n3000") else ()
+
+
 class TestParity:
-    @pytest.mark.parametrize("name", PARITY_FIXTURES)
-    @pytest.mark.parametrize("receiver", ["graph", "view"])
+    @pytest.mark.parametrize(
+        ("name", "receiver"),
+        [
+            pytest.param(name, receiver, id=f"{receiver}-{name}", marks=_slow_if(receiver, name))
+            for name in PARITY_FIXTURES
+            for receiver in ("graph", "view")
+        ],
+    )
     @pytest.mark.parametrize("per_role", [False, True], ids=["shared", "per_role"])
     @pytest.mark.parametrize("symmetric", ["canonical", "both"])
     def test_moments_equal_the_pair_oracle(self, name, receiver, per_role, symmetric):

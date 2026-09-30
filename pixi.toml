@@ -19,10 +19,12 @@ pedigree-graph = { path = ".", editable = true, extras = ["test", "typecheck"] }
 
 [tasks]
 # Two tiers. `test` is the inner loop and matches CI's push job: everything but
-# the 10 `slow` tests (3155 tests after the 2026-09-24 trim). `test-all` is the
-# full suite, run before a commit and by the consumer gate (3165 tests), the
-# difference being the random_30k gates, each 9-18 s since the v0.7.1 parity
-# gate (about 80 s) was retired. -n 6 --dist worksteal: xdist dispatches in collection
+# the 19 `slow` tests (3335 tests). `test-all` is the full suite, run before a
+# commit and by the consumer gate (3354 tests). A test is `slow` when its median
+# call time over three `test-all` runs is 5 s or more, and is unmarked when it
+# falls below (measured 2026-09-30, 12 cores capped at 2600 MHz: the random_30k
+# gates, the random_1k and deep_inbred_60g row-order cases at 24-29 s, and the
+# whole-graph sim_d6_n3000 moment parity at 9-11 s). -n 6 --dist worksteal: xdist dispatches in collection
 # order and the long random_30k tests are collected late, so worksteal is what
 # keeps a single one from holding the whole run. No thread pins: the package
 # defaults to a one-thread budget (_threads.py). Bare `pixi run pytest` stays
