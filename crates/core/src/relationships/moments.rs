@@ -45,6 +45,22 @@ pub const MAX_QUANTIZED: i64 = 1 << 43;
 /// the halves after the copy, so the sum is the host-side peak.
 pub const HOST_BYTES_PER_ACCUMULATOR: u64 = 16 + 8 + 48;
 
+/// Accumulators the host converts to Python ints at a time.
+pub const CONVERSION_CHUNK: u64 = 4096;
+
+/// Scratch bytes each accumulator of the chunk in conversion may hold (two
+/// int lists and the result list; about 100 measured on CPython 3.13).
+pub const CONVERSION_BYTES_PER_ACCUMULATOR: u64 = 128;
+
+/// The host term of the budget estimate: [`HOST_BYTES_PER_ACCUMULATOR`] per
+/// accumulator plus the scratch of one conversion chunk; `None` when it is
+/// not representable.
+pub fn host_bytes(accumulators: u64) -> Option<u64> {
+    accumulators
+        .checked_mul(HOST_BYTES_PER_ACCUMULATOR)?
+        .checked_add(accumulators.min(CONVERSION_CHUNK) * CONVERSION_BYTES_PER_ACCUMULATOR)
+}
+
 /// A sink for the oriented pairs of one engine pass, accumulated per lane.
 ///
 /// `reduce` runs on the hot path with no `Result`: a reducer sizes its lane
@@ -347,9 +363,8 @@ impl MomentsPlan {
     /// Size the accumulators and choose the lane count that fits the budget.
     ///
     /// `W = min(threads, largest W whose estimated peak fits)`, where the
-    /// estimate is `W` lanes of 16 bytes per accumulator plus the host's
-    /// [`HOST_BYTES_PER_ACCUMULATOR`] per accumulator once; the merge is in
-    /// place.  Per-lane engine workspaces and the input arrays are outside
+    /// estimate is `W` lanes of 16 bytes per accumulator plus the host term
+    /// [`host_bytes`] once; the merge is in place.  Per-lane engine workspaces and the input arrays are outside
     /// the estimate.
     ///
     /// # Errors
@@ -377,9 +392,7 @@ impl MomentsPlan {
             .and_then(|c| c.checked_mul(stride as u64))
             .ok_or_else(unrepresentable)?;
         let lane_bytes = accumulators.checked_mul(16).ok_or_else(unrepresentable)?;
-        let host_bytes = accumulators
-            .checked_mul(HOST_BYTES_PER_ACCUMULATOR)
-            .ok_or_else(unrepresentable)?;
+        let host_bytes = host_bytes(accumulators).ok_or_else(unrepresentable)?;
         let one_lane = lane_bytes
             .checked_add(host_bytes)
             .ok_or_else(unrepresentable)?;
@@ -822,7 +835,7 @@ mod tests {
         // 2 categories × 12 cells × (1 + 8 + 1) accumulators.
         let accumulators = 2 * 12 * 10;
         let lane = accumulators * 16;
-        let host = accumulators * HOST_BYTES_PER_ACCUMULATOR;
+        let host = host_bytes(accumulators).unwrap();
         let eight = NonZeroUsize::new(8).unwrap();
         let plan = MomentsPlan::new(shape, eight, u64::MAX).unwrap();
         assert_eq!(plan.lanes.get(), 8);
@@ -878,7 +891,7 @@ mod tests {
             if n_same == 40 {
                 assert_eq!(
                     estimated_bytes,
-                    (1 << 40) * (16 + HOST_BYTES_PER_ACCUMULATOR)
+                    (1 << 40) * 16 + host_bytes(1 << 40).unwrap()
                 );
             } else {
                 assert_eq!(estimated_bytes, u64::MAX, "n_same={n_same}");

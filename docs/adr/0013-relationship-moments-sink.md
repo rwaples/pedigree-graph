@@ -119,13 +119,18 @@ not an engine argument.
 Every float view (`sum_first`, `sumsq_first`, `cross`, `m2_first`,
 `comoment`, `mean`, ...) is derived on access by one path: an exact
 integer numerator (`n·Σq² − (Σq)²` and `n·Σq_a q_b − Σq_a Σq_b` for the
-centered moments), one correctly rounded conversion to `f64`, a division
-by `n` where the moment is centered, then `ldexp` by the column exponents;
-a value that does not fit `f64` raises `ValueError` naming the column
-(finite in, finite out; underflow follows `f64`). `pearson` is
-`N_ab / (sqrt(N_aa) · sqrt(N_bb))` from the exact numerators, each
-converted once, so column scales cancel and neither overflow nor
-underflow enters; a constant operand gives NaN. Consequences: a constant
+centered moments), and the exact rational `numerator / (n · 2^e)` (with
+`n = 1` for raw sums) rounded once to the nearest `f64`, ties to even, by
+Python's integer true division. The integers can far exceed `f64` after a
+merge aligns very different exponents; only the scaled value has to fit,
+and one that does not raises `ValueError` naming the column (finite in,
+finite out; underflow follows `f64`). This is one rounding, not the plan's
+two (convert, then divide by `n`). `pearson` is
+`sign(N_ab) · sqrt(N_ab² / (N_aa · N_bb))`: the ratio is exact integer
+arithmetic rounded once and at most 1 by Cauchy-Schwarz, so column scales
+cancel, nothing overflows or underflows, and `|r| <= 1`; a constant
+operand gives NaN. Axis levels are copied and frozen like the arrays.
+Consequences: a constant
 column has `m2 = 0` exactly, before and after any fold or merge; swapping
 the two members swaps `m2_first` and `m2_second` and leaves a diagonal
 co-moment unchanged, so its `r` is bit-identical under the swap; a column
@@ -149,8 +154,10 @@ ceiling on its accumulators. The plan sizes one lane
 (`categories × cells × (1 + 4k + P)` accumulators of 16 bytes) and the
 host's copy of the merged accumulators once (72 bytes per accumulator: the
 two int64 halves the binding hands over, 16, plus the object-array slot, 8,
-and a CPython 3.13 `int` of up to `2^126`, 48), with every size a checked
-product, refuses with the structured `ResourceError("memory_budget_exceeded")`
+and a CPython 3.13 `int` of up to `2^126`, 48) plus the scratch of the
+conversion, which runs 4096 accumulators at a time at up to 128 bytes each
+(about 100 measured with `tracemalloc`; converting the whole table at once
+peaked near 153 bytes per accumulator), with every size a checked product, refuses with the structured `ResourceError("memory_budget_exceeded")`
 before anything is allocated when one lane plus the host copy does not fit
 or a size is not representable, and otherwise runs on
 `W = min(thread budget, largest W whose W lanes plus the host copy fit)`

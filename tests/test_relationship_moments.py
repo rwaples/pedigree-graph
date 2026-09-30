@@ -2,13 +2,14 @@
 
 The oracle is ``relationship_pairs`` plus Python integers: every pair block
 of the same receiver, the package's own quantizer, and unbounded-int sums
-converted to float64 by the same two steps the package uses, so counts,
-sums and centered moments are compared bit for bit.
+whose exact rational value (with ``Fraction``) is rounded once to float64,
+so counts, sums and centered moments are compared bit for bit.
 """
 
 from __future__ import annotations
 
 import math
+import tracemalloc
 from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,7 +22,7 @@ from conftest import parity_columns, parity_fixtures
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, ResourceError
 from pedigree_graph import _relationship_moments as boundary
 from pedigree_graph._threads import thread_budget
-from pedigree_graph.moments import HOST_BYTES_PER_ACCUMULATOR
+from pedigree_graph.moments import CONVERSION_CHUNK, MomentAxis, host_bytes
 
 if TYPE_CHECKING:
     from pedigree_graph.moments import RelationshipMoments
@@ -113,7 +114,7 @@ def _oracle(receiver, inputs: dict, codes: tuple[str, ...], symmetric: str) -> d
                 add(ci, b, a)
 
     def scaled(value: int, e: int, n_pairs: int = 1) -> float:
-        return math.ldexp(float(value) / n_pairs, -e) if n_pairs else 0.0
+        return float(Fraction(value, n_pairs) / Fraction(2) ** e) if n_pairs else 0.0
 
     out = {name: [] for name in (*ARRAYS, *EXACT)}
     for ci in range(len(codes)):
@@ -355,7 +356,7 @@ class TestCenteredMoments:
 def _lane_and_output_bytes(result: RelationshipMoments) -> tuple[int, int]:
     n_cat, cells = result.shape[0], int(np.prod(result.shape[1:]))
     accumulators = n_cat * cells * (1 + 4 * len(result.columns) + len(result.products))
-    return accumulators * 16, accumulators * HOST_BYTES_PER_ACCUMULATOR
+    return accumulators * 16, host_bytes(accumulators)
 
 
 #: A graph of more than three 2048-row task ranges, so several lanes get work.
@@ -391,6 +392,22 @@ MOMENTS_BODY = """
 
 
 class TestBudgetAndLanes:
+    def test_the_host_conversion_stays_within_its_budget_term(self):
+        accumulators = 3 * CONVERSION_CHUNK + 5
+        rng = np.random.default_rng(31)
+        hi = rng.integers(-(1 << 62), 1 << 62, accumulators, dtype=np.int64)
+        lo = rng.integers(np.iinfo(np.int64).min, np.iinfo(np.int64).max, accumulators, dtype=np.int64)
+        tracemalloc.start()
+        try:
+            exact = boundary._split_halves(hi, lo)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        # The halves themselves (16 bytes each) predate the trace.
+        assert peak <= host_bytes(accumulators) - 16 * accumulators
+        want = [(int(high) << 64) + int(low) for high, low in zip(hi[:3], lo[:3].view(np.uint64), strict=True)]
+        assert [int(v) for v in exact[:3]] == want
+
     def test_moments_are_bit_identical_under_every_thread_budget(self):
         body = (
             MOMENTS_BODY
@@ -416,7 +433,7 @@ class TestBudgetAndLanes:
     k, p = len(full.columns), len(full.products)
     accumulators = n_cat * cells * (1 + 4 * k + p)
     lane = accumulators * 16
-    out = accumulators * HOST
+    out = host_bytes(accumulators)
     print(full.lanes, full.estimated_peak_bytes == 4 * lane + out, sum(1 for p in full.lane_pairs if p > 0) >= 2)
     for w in (1, 2, 3):
         m = run(memory_budget_bytes=w * lane + out + lane - 1)
@@ -424,7 +441,7 @@ class TestBudgetAndLanes:
 """
         )
         lines = _run_child(
-            MOMENTS_PRELUDE, f"    HOST = {HOST_BYTES_PER_ACCUMULATOR}", body, PEDIGREE_GRAPH_THREADS="4"
+            MOMENTS_PRELUDE, "    from pedigree_graph.moments import host_bytes", body, PEDIGREE_GRAPH_THREADS="4"
         ).splitlines()
         assert lines[0] == "4 True True"
         assert lines[1:] == ["1 True True True", "2 True True True", "3 True True True"]
@@ -439,7 +456,7 @@ class TestBudgetAndLanes:
     k, p = len(full.columns), len(full.products)
     accumulators = n_cat * cells * (1 + 4 * k + p)
     lane = accumulators * 16
-    out = accumulators * HOST
+    out = host_bytes(accumulators)
     _native.fail_next_allocation("moment_lanes")
     try:
         run(memory_budget_bytes=lane + out - 1)
@@ -460,7 +477,7 @@ class TestBudgetAndLanes:
 """
         )
         lines = _run_child(
-            MOMENTS_PRELUDE, f"    HOST = {HOST_BYTES_PER_ACCUMULATOR}", body, PEDIGREE_GRAPH_THREADS="2"
+            MOMENTS_PRELUDE, "    from pedigree_graph.moments import host_bytes", body, PEDIGREE_GRAPH_THREADS="2"
         ).splitlines()
         assert lines == [
             "memory_budget_exceeded relationship_moments True True",
@@ -527,7 +544,8 @@ class TestBudgetAndLanes:
             graph.relationship_moments(
                 categories=["FS"], first={"a": np.arange(n)}, same={f"k{i}": np.arange(n) for i in range(16)}
             )
-        assert info.value.fields["estimated_bytes"] == 50_000**2 * 2**16 * (16 + HOST_BYTES_PER_ACCUMULATOR)
+        accumulators = 50_000**2 * 2**16
+        assert info.value.fields["estimated_bytes"] == accumulators * 16 + host_bytes(accumulators)
 
 
 class TestSurface:
@@ -653,6 +671,43 @@ class TestSurface:
         np.testing.assert_array_equal(merged.counts, a.counts + b.counts)
         np.testing.assert_array_equal(b.merge(a).q_sumsq_first, merged.q_sumsq_first)
         assert merged.m2_first.shape == a.m2_first.shape
+
+    def test_merging_extreme_scales_converts_without_a_false_overflow(self):
+        graph = _graph("random_1k")
+        n = graph.n_individuals
+        x = np.random.default_rng(23).normal(size=n)
+        halves = graph.view(rows=np.arange(n // 2)), graph.view(rows=np.arange(n // 2, n))
+        a = halves[0].relationship_moments(categories=["FS"], values={"x": x[: n // 2] * 1e100})
+        b = halves[1].relationship_moments(categories=["FS"], values={"x": x[n // 2 :] * 1e-100})
+        merged = a.merge(b)
+        e = int(merged.exponents[0])
+        n_pairs = int(merged.counts[0])
+        s, q = int(merged.q_sum_first[0, 0]), int(merged.q_sumsq_first[0, 0])
+        assert q.bit_length() > 1100, "the aligned integers must exceed float64 for this test to bite"
+        assert merged.sumsq_first[0, 0] == float(Fraction(q) / Fraction(2) ** (2 * e))
+        assert merged.m2_first[0, 0] == float(Fraction(n_pairs * q - s * s, n_pairs) / Fraction(2) ** (2 * e))
+        assert np.isfinite(merged.comoment).all()
+        r = merged.pearson("first.x", "second.x")
+        assert np.all(np.abs(r) <= 1.0)
+
+    def test_count_only_and_product_free_results_have_empty_float_views(self):
+        graph = _graph("random_1k")
+        n = graph.n_individuals
+        counted = graph.relationship_moments(max_degree=1, first={"s": np.arange(n) % 2})
+        for name in ARRAYS[1:]:
+            assert getattr(counted, name).shape == (*counted.shape, 0), name
+        plain = graph.relationship_moments(max_degree=1, values={"x": np.arange(n, dtype=float)}, products=[])
+        assert plain.cross.shape == plain.comoment.shape == (*plain.shape, 0)
+        assert plain.m2_first.shape == (*plain.shape, 1)
+
+    def test_axis_levels_are_read_only_and_copied(self):
+        got = _graph("random_1k").relationship_moments(max_degree=1)
+        with pytest.raises(ValueError, match="read-only"):
+            got.axis("category").levels[0] = "MZ"
+        levels = np.array([3, 5])
+        MomentAxis("first_g", levels)
+        levels[0] = 4
+        assert levels.flags.writeable
 
     def test_both_orientations_equal_canonical_plus_its_transpose_for_symmetric_codes(self):
         graph = _graph("random_1k")

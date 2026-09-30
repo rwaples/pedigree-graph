@@ -35,7 +35,7 @@ from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._input import _INT32_MAX, _INT64_MAX
 from pedigree_graph._relationship_pairs import _should_compact_view
 from pedigree_graph._threads import thread_budget
-from pedigree_graph.moments import MomentAxis, RelationshipMoments, side_column
+from pedigree_graph.moments import CONVERSION_CHUNK, MomentAxis, RelationshipMoments, side_column
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -181,8 +181,19 @@ def _operand(name: str, columns: tuple[str, ...]) -> tuple[int, int]:
 
 
 def _split_halves(hi: np.ndarray, lo: np.ndarray) -> np.ndarray:
-    """The exact ``i128`` values from their signed high and unsigned low halves, as Python ints."""
-    return hi.astype(object) * (1 << 64) + lo.view(np.uint64).astype(object)
+    """The exact ``i128`` values from their signed high and unsigned low halves, as Python ints.
+
+    Converted ``CONVERSION_CHUNK`` accumulators at a time, so the scratch
+    beyond the result is bounded as the budget plan assumes.
+    """
+    out = np.empty(len(hi), dtype=object)
+    unsigned = lo.view(np.uint64)
+    for start in range(0, len(hi), CONVERSION_CHUNK):
+        stop = start + CONVERSION_CHUNK
+        out[start:stop] = [
+            (h << 64) | low for h, low in zip(hi[start:stop].tolist(), unsigned[start:stop].tolist(), strict=True)
+        ]
+    return out
 
 
 def relationship_moments(

@@ -18,7 +18,8 @@ live on the corresponding GitHub release pages.
   scale and summed exactly in `i128`, so results are bit-identical across
   thread budgets, lane counts and the compact and full view paths. The
   result keeps the exact integer accumulators (`q_*` object arrays with the
-  column exponents) and derives every float on access, so `select`, `sum`
+  column exponents) and derives every float on access as the exact value
+  rounded once, so `select`, `sum`
   and `merge` are exact integer folds, a constant column has a centered
   moment of exactly zero before and after any fold, and `pearson` is
   scale-free. `symmetric="both"` counts a symmetric pair in both
@@ -28,7 +29,7 @@ live on the corresponding GitHub release pages.
   `ResourceError("memory_budget_exceeded")` before anything is allocated
   (new resource code; allocation families `moment_lanes`, `moment_output`).
   On `pedsum_2M` see `benchmarks/bench_relationship_moments.md`. Python
-  only; the R binding is a follow-up.
+  only; the R binding is #30.
 - **Changed: MZ co-twins take part in sibling groups** (issue #29; ADR 0010
   as amended). Up to 0.10.0 a co-twin had no FS, MHS or PHS pair with its
   non-twin siblings and no collateral pair built from sibling lists (Av,

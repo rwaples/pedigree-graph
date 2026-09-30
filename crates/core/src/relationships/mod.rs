@@ -18,9 +18,10 @@ pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
 pub use compact::CompactView;
 pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};
 pub use moments::{
-    reduce_pairs, relationship_moments, CellReducer, Moments, MomentsInput, MomentsOutput,
-    MomentsPlan, MomentsShape, Product, Reduced, Reducer, Side, Symmetric,
-    HOST_BYTES_PER_ACCUMULATOR, MAX_CELL_PAIRS, MAX_QUANTIZED,
+    host_bytes, reduce_pairs, relationship_moments, CellReducer, Moments, MomentsInput,
+    MomentsOutput, MomentsPlan, MomentsShape, Product, Reduced, Reducer, Side, Symmetric,
+    CONVERSION_BYTES_PER_ACCUMULATOR, CONVERSION_CHUNK, HOST_BYTES_PER_ACCUMULATOR, MAX_CELL_PAIRS,
+    MAX_QUANTIZED,
 };
 pub use multiplicity::Mult;
 pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};

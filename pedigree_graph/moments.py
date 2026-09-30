@@ -19,14 +19,22 @@ integer additions, so they are exact and order-independent, and the
 centered moments of a fold equal those of a direct engine call bit for bit.
 Every float the table offers (``sum_first``, ``sumsq_first``, ``cross``,
 ``m2_first``, ``comoment``, ``mean``, ``pearson``, ...) is derived from the
-integers by one path: an exact integer numerator, one correctly rounded
-conversion to float64, a division by the count where the moment is
-centered, and ``ldexp`` by the column exponents.
+integers by one path: an exact integer numerator, divided by the count
+where the moment is centered and by ``2**exponent``, as an exact rational
+rounded once to float64.
 """
 
 from __future__ import annotations
 
-__all__ = ["HOST_BYTES_PER_ACCUMULATOR", "MomentAxis", "RelationshipMoments", "side_column"]
+__all__ = [
+    "CONVERSION_BYTES_PER_ACCUMULATOR",
+    "CONVERSION_CHUNK",
+    "HOST_BYTES_PER_ACCUMULATOR",
+    "MomentAxis",
+    "RelationshipMoments",
+    "host_bytes",
+    "side_column",
+]
 
 import math
 from dataclasses import dataclass, replace
@@ -44,6 +52,21 @@ if TYPE_CHECKING:
 #: over (16) plus the object-array slot (8) and a Python ``int`` of up to
 #: ``2**126`` (48 on CPython 3.13).
 HOST_BYTES_PER_ACCUMULATOR = 16 + 8 + 48
+
+#: Accumulators the host converts to Python ints at a time, and the scratch
+#: bytes each one of a chunk may hold while it is converted (two int lists
+#: and the result list; about 100 measured with tracemalloc on CPython 3.13).
+#: Mirrors ``CONVERSION_CHUNK`` and ``CONVERSION_BYTES_PER_ACCUMULATOR`` in
+#: ``moments.rs``.
+CONVERSION_CHUNK = 4096
+CONVERSION_BYTES_PER_ACCUMULATOR = 128
+
+
+def host_bytes(accumulators: int) -> int:
+    """The host term of the budget estimate for *accumulators* accumulators (``host_bytes`` in ``moments.rs``)."""
+    return accumulators * HOST_BYTES_PER_ACCUMULATOR + min(accumulators, CONVERSION_CHUNK) * (
+        CONVERSION_BYTES_PER_ACCUMULATOR
+    )
 
 
 def _frozen(values: np.ndarray) -> np.ndarray:
@@ -68,6 +91,9 @@ class MomentAxis:
     name: str
     levels: np.ndarray
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "levels", _frozen(np.array(self.levels, copy=True)))
+
     def position(self, value: object) -> int:
         """The index of *value* along this axis."""
         hits = np.flatnonzero(self.levels == value)
@@ -87,32 +113,45 @@ def side_column(name: str, columns: Sequence[str]) -> tuple[int, int]:
 def to_float(
     numerators: np.ndarray, exponents: np.ndarray, divisor: np.ndarray | None, what: str, names: Sequence[str]
 ) -> np.ndarray:
-    """``float(numerator) / divisor · 2^-exponent`` per trailing column, the one integer-to-float path.
+    """``numerator / (divisor · 2^exponent)`` per trailing column, the one integer-to-float path.
 
     *numerators* is an object array of Python ints with one trailing axis
     over *names*; *exponents* is one int per trailing entry; *divisor*
     (counts, broadcast over the trailing axis) is applied where it is
-    positive and yields ``0.0`` elsewhere.  Each conversion rounds once, to
-    nearest even; a value that does not fit float64 raises ``ValueError``
+    positive and yields ``0.0`` elsewhere.  Each value is the exact rational
+    rounded once to the nearest float64, ties to even (Python's int true
+    division), so an integer too large for float64 still converts when the
+    scaled value fits; a value that does not fit raises ``ValueError``
     naming the column.
     """
-    out = np.empty(numerators.shape, dtype=np.float64)
-    flat_out = out.reshape(-1, numerators.shape[-1]) if numerators.ndim else out.reshape(1, 1)
-    flat_in = numerators.reshape(-1, numerators.shape[-1]) if numerators.ndim else numerators.reshape(1, 1)
-    for j in range(flat_in.shape[1]):
+    shape = numerators.shape
+    if numerators.size == 0:
+        return _frozen(np.zeros(shape, dtype=np.float64))
+    width = shape[-1] if numerators.ndim else 1
+    flat = numerators.reshape(-1, width)
+    counts = (
+        np.ones(flat.shape, dtype=np.int64)
+        if divisor is None
+        else np.broadcast_to(np.asarray(divisor)[..., np.newaxis], shape).reshape(-1, width)
+    )
+    out = np.empty(flat.shape, dtype=np.float64)
+    for j in range(width):
+        e = int(np.asarray(exponents).reshape(-1)[j])
         try:
-            flat_out[:, j] = [float(v) for v in flat_in[:, j]]
+            out[:, j] = [
+                _divide_exact(int(v), int(n), e) if n > 0 else 0.0
+                for v, n in zip(flat[:, j], counts[:, j], strict=True)
+            ]
         except OverflowError:
             raise ValueError(f"{what} of {names[j]!r} is not representable in float64 (an output overflowed)") from None
-    if divisor is not None:
-        safe = np.where(divisor > 0, divisor, 1).astype(np.float64)
-        out = np.where(divisor[..., np.newaxis] > 0, out / safe[..., np.newaxis], 0.0)
-    with np.errstate(over="ignore"):
-        scaled = np.ldexp(out, -np.asarray(exponents, dtype=np.int64))
-    if not np.all(np.isfinite(scaled)):
-        bad = int(np.flatnonzero(~np.isfinite(scaled).reshape(-1, scaled.shape[-1]).all(axis=0))[0])
-        raise ValueError(f"{what} of {names[bad]!r} is not representable in float64 (an output overflowed)")
-    return _frozen(scaled)
+    return _frozen(out.reshape(shape))
+
+
+def _divide_exact(numerator: int, count: int, exponent: int) -> float:
+    """``numerator / (count · 2^exponent)`` rounded once; ``OverflowError`` past float64."""
+    if exponent >= 0:
+        return numerator / (count << exponent)
+    return (numerator << -exponent) / count
 
 
 def _ints(values: np.ndarray) -> np.ndarray:
@@ -376,9 +415,11 @@ class RelationshipMoments:
 
         *a* and *b* are ``"<side>.<column>"`` names of a requested product,
         in either order.  Computed from the exact numerators as
-        ``N_ab / (sqrt(N_aa) · sqrt(N_bb))``, each converted to float64
-        once, so column scales cancel and neither overflow nor underflow
-        enters.  NaN where the cell is empty or either operand is constant.
+        ``sign(N_ab) · sqrt(N_ab² / (N_aa · N_bb))``: the ratio is exact
+        integer arithmetic rounded once and at most 1 by Cauchy-Schwarz, so
+        column scales cancel, nothing overflows or underflows, and
+        ``|r| <= 1`` always.  NaN where the cell is empty or either operand
+        is constant.
         """
         if (a, b) in self.products:
             index = self.products.index((a, b))
@@ -393,7 +434,9 @@ class RelationshipMoments:
         for cell in np.ndindex(*self.shape):
             aa, bb = n_aa[cell], n_bb[cell]
             if aa > 0 and bb > 0:
-                out[cell] = float(n_ab[cell]) / (math.sqrt(float(aa)) * math.sqrt(float(bb)))
+                ab = n_ab[cell]
+                r = math.sqrt(ab * ab / (aa * bb))
+                out[cell] = -r if ab < 0 else r
         return _frozen(out)
 
     def _own_numerator(self, name: str) -> np.ndarray:
