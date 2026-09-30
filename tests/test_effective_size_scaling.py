@@ -592,7 +592,6 @@ def test_ltc_tracks_the_census_size_at_n2000_g10() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.slow
 def test_streaming_ne_coancestry_recovery_at_n2000_g8() -> None:
     """Stationary random-mating Ne_C from the streaming path matches Ne_V.
 

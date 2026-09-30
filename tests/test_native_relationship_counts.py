@@ -119,7 +119,6 @@ def test_a_view_of_one_row_counts_nothing(small_pedigree):
     assert set(counts.values()) == {0}
 
 
-@pytest.mark.slow
 @settings(max_examples=300, deadline=None)
 @given(pedigree_columns(), st.integers(min_value=0, max_value=5))
 def test_random_pedigrees_count_their_emitted_blocks(columns, max_degree):

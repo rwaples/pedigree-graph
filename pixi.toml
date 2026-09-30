@@ -19,10 +19,10 @@ pedigree-graph = { path = ".", editable = true, extras = ["test", "typecheck"] }
 
 [tasks]
 # Two tiers. `test` is the inner loop and matches CI's push job: everything but
-# the 19 `slow` tests (3335 tests). `test-all` is the full suite, run before a
-# commit and by the consumer gate (3354 tests). A test is `slow` when its median
+# the 16 `slow` tests (3371 tests). `test-all` is the full suite, run before a
+# commit and by the consumer gate (3387 tests). A test is `slow` when its median
 # call time over three `test-all` runs is 5 s or more, and is unmarked when it
-# falls below (measured 2026-09-30, 12 cores capped at 2600 MHz: the random_30k
+# falls below (measured 2026-10-01, 12 cores capped at 2600 MHz: the random_30k
 # gates, the random_1k and deep_inbred_60g row-order cases at 24-29 s, and the
 # whole-graph sim_d6_n3000 moment parity at 9-11 s). -n 6 --dist worksteal: xdist dispatches in collection
 # order and the long random_30k tests are collected late, so worksteal is what

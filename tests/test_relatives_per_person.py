@@ -107,7 +107,7 @@ class TestParity:
         thresholds = _thresholds(target.n_individuals, 3) if with_thresholds else {}
         _assert_parity(target, thresholds, fixture=name, receiver=receiver)
 
-    @pytest.mark.parametrize("receiver", [pytest.param("graph", marks=pytest.mark.slow), "view"])
+    @pytest.mark.parametrize("receiver", ["graph", "view"])
     def test_random_30k_equals_the_pair_oracle(self, receiver):
         import pedigrees
 
