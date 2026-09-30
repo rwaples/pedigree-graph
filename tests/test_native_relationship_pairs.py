@@ -219,6 +219,10 @@ KINSHIP_FAMILIES = frozenset(
 #: reaches them.
 MOMENT_FAMILIES = frozenset({"moment_lanes", "moment_output"})
 
+#: The family only the per-person reducer reserves; a pair or count call
+#: never reaches it.
+RELATIVE_FAMILIES = frozenset({"relative_counts"})
+
 #: The plant's size floor. Without one it fires on whichever reservation of
 #: the family comes first, which for a collected iterator is its zero lower
 #: bound, leaving ``requested_elements`` meaningless. One element is the
@@ -230,7 +234,7 @@ SEAM_MIN_ELEMENTS = 1
 
 def test_the_family_list_covers_the_counting_families():
     """``COUNT_FAMILIES`` and ``KINSHIP_FAMILIES`` name families the core still has."""
-    assert set(FAMILIES) >= COUNT_FAMILIES | KINSHIP_FAMILIES | MOMENT_FAMILIES
+    assert set(FAMILIES) >= COUNT_FAMILIES | KINSHIP_FAMILIES | MOMENT_FAMILIES | RELATIVE_FAMILIES
     assert len(FAMILIES) == len(set(FAMILIES))
 
 
@@ -254,7 +258,7 @@ def test_a_refused_allocation_raises_a_resource_error(family):
         def counts():
             return _native.relationship_counts(graph._built, max_degree=5, threads=1)
         expect_failure = {{
-            "pairs": family not in {sorted(KINSHIP_FAMILIES | MOMENT_FAMILIES)!r},
+            "pairs": family not in {sorted(KINSHIP_FAMILIES | MOMENT_FAMILIES | RELATIVE_FAMILIES)!r},
             "counts": family in {sorted(COUNT_FAMILIES)!r},
         }}
         for label, call in (("pairs", pairs), ("counts", counts)):

@@ -546,6 +546,33 @@ pub struct Moments {
     pub estimated_peak_bytes: u64,
 }
 
+/// The receiver's row count: graph rows without a view, view rows with one.
+///
+/// # Errors
+///
+/// [`Error::InvalidViewMap`] when `view` is not a partial permutation.
+///
+/// # Panics
+///
+/// If `view` does not have one entry per graph row.
+pub(super) fn receiver_len(ped: &Pedigree, view: Option<&[i32]>) -> Result<usize, Error> {
+    let Some(map) = view else {
+        return Ok(ped.len());
+    };
+    assert_eq!(
+        map.len(),
+        ped.len(),
+        "view map must have one entry per graph row"
+    );
+    check_view_map(map)?;
+    Ok(map
+        .iter()
+        .copied()
+        .filter(|&m| m >= 0)
+        .max()
+        .map_or(0, |m| m as usize + 1))
+}
+
 /// The relationship moments of every requested category, using the current
 /// Rayon pool.
 ///
@@ -578,23 +605,7 @@ pub fn relationship_moments(
     threads: NonZeroUsize,
     budget_bytes: u64,
 ) -> Result<Moments, Error> {
-    let receiver_len = match view {
-        None => ped.len(),
-        Some(map) => {
-            assert_eq!(
-                map.len(),
-                ped.len(),
-                "view map must have one entry per graph row"
-            );
-            check_view_map(map)?;
-            map.iter()
-                .copied()
-                .filter(|&m| m >= 0)
-                .max()
-                .map_or(0, |m| m as usize + 1)
-        }
-    };
-    input.check(receiver_len)?;
+    input.check(receiver_len(ped, view)?)?;
     let plan = MomentsPlan::new(input.shape(requested), threads, budget_bytes)?;
     let reducer = CellReducer::new(*input, requested, plan);
     let reduced = match (view, compact) {

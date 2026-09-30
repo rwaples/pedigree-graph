@@ -69,10 +69,13 @@ pub enum Family {
     MomentLanes,
     /// The relationship-moments output, one `f64` per accumulator and moment.
     MomentOutput,
+    /// The per-person relative counts, one `u32` per receiver row, requested
+    /// category and count column.
+    RelativeCounts,
 }
 
 impl Family {
-    pub const ALL: [Family; 22] = [
+    pub const ALL: [Family; 23] = [
         Family::ParentEdges,
         Family::Csr,
         Family::SiblingIndex,
@@ -95,6 +98,7 @@ impl Family {
         Family::FounderMeans,
         Family::MomentLanes,
         Family::MomentOutput,
+        Family::RelativeCounts,
     ];
 
     /// The `operation` field of the error.
@@ -122,6 +126,7 @@ impl Family {
             Family::FounderMeans => "founder_means",
             Family::MomentLanes => "moment_lanes",
             Family::MomentOutput => "moment_output",
+            Family::RelativeCounts => "relative_counts",
         }
     }
 

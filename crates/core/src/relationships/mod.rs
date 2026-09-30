@@ -8,6 +8,7 @@ mod engine;
 mod moments;
 mod multiplicity;
 mod pairs;
+mod relatives;
 mod sets;
 mod sibling_index;
 #[cfg(test)]
@@ -25,6 +26,7 @@ pub use moments::{
 };
 pub use multiplicity::Mult;
 pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};
+pub use relatives::{relatives_per_person, RelativesPerPerson, Threshold, ThresholdColumn};
 
 use crate::error::Error;
 use rayon::prelude::*;

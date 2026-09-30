@@ -753,8 +753,8 @@ mod tests {
             Family::TaskChunk => execution == Some(Execution::Speed),
             Family::TaskTable | Family::PairBlock => execution.is_some(),
             // Reserved only by the kinship walk, the kinship matrix DP, the
-            // inbreeding, lineage and generation sweeps, and the moments
-            // reducer; their own seam tests cover them.
+            // inbreeding, lineage and generation sweeps, and the moments and
+            // per-person reducers; their own seam tests cover them.
             Family::KinshipMemo
             | Family::KinshipStack
             | Family::KinshipOutput
@@ -767,7 +767,8 @@ mod tests {
             | Family::LineageOutput
             | Family::FounderMeans
             | Family::MomentLanes
-            | Family::MomentOutput => false,
+            | Family::MomentOutput
+            | Family::RelativeCounts => false,
             _ => true,
         }
     }
