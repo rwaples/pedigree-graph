@@ -1182,7 +1182,9 @@ def main(suite: Suite) -> NoReturn:
 
     declared = suite.resolved_cells()
     cells = [Cell.parse(name) for name in args.only] if args.only else list(declared)
-    unknown = [str(cell) for cell in cells if cell not in declared]
+    # --only may pick any fixture x arm, including ones the default sweep leaves out.
+    known = [Cell(f.name, a.name) for f in suite.fixtures for a in suite.arms]
+    unknown = [str(cell) for cell in cells if cell not in known]
     if unknown:
         raise SystemExit(f"unknown cells: {unknown}")
 
