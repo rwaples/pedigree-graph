@@ -65,10 +65,14 @@ pub enum Family {
     /// The founder-contribution sweep's order, adjoint vector and
     /// `(cohort, genome)` means.
     FounderMeans,
+    /// A relationship-moments lane: the `i128` accumulators of every cell.
+    MomentLanes,
+    /// The relationship-moments output, one `f64` per accumulator and moment.
+    MomentOutput,
 }
 
 impl Family {
-    pub const ALL: [Family; 20] = [
+    pub const ALL: [Family; 22] = [
         Family::ParentEdges,
         Family::Csr,
         Family::SiblingIndex,
@@ -89,6 +93,8 @@ impl Family {
         Family::LineageSets,
         Family::LineageOutput,
         Family::FounderMeans,
+        Family::MomentLanes,
+        Family::MomentOutput,
     ];
 
     /// The `operation` field of the error.
@@ -114,6 +120,8 @@ impl Family {
             Family::LineageSets => "lineage_sets",
             Family::LineageOutput => "lineage_output",
             Family::FounderMeans => "founder_means",
+            Family::MomentLanes => "moment_lanes",
+            Family::MomentOutput => "moment_output",
         }
     }
 

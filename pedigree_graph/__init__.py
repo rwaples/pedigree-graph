@@ -25,7 +25,13 @@ Public API:
     PedigreeView         — ordered view of a graph's rows, built with
         graph.view(ids=...) or graph.view(rows=...); exposes read-only ids,
         graph_rows, n_individuals, len, relationship_pairs /
-        relationship_counts, and pair_kinship in view rows
+        relationship_counts / relationship_moments, and pair_kinship in
+        view rows
+    RelationshipMoments  — what graph.relationship_moments(...) or
+        view.relationship_moments(...) returns: per category and per
+        pair-label cell, the pair count, raw sums, cross sums and exact
+        centered moments of caller-supplied per-individual values, with
+        select / sum / merge and the count / mean / pearson / table accessors
 
 Errors (ADR 0006 — each carries a stable ``.code`` and immutable ``.fields``):
     PedigreeValidationError, MissingMetadataError (both ValueError),
@@ -39,6 +45,7 @@ Threads:
 
 Public non-root modules:
     pedigree_graph.relationships — the registry and the pair / count result types
+    pedigree_graph.moments       — RelationshipMoments and MomentAxis
     pedigree_graph.summaries     — GenerationKinshipSummary
     pedigree_graph.effective_size — estimators, result classes,
         estimate_effective_sizes, and the cohort utilities
@@ -54,6 +61,7 @@ from pedigree_graph._errors import (
 )
 from pedigree_graph._threads import configure_threads
 from pedigree_graph._view import PedigreeView
+from pedigree_graph.moments import RelationshipMoments
 from pedigree_graph.relationships import (
     MAX_DEGREE,
     RELATIONSHIPS,
@@ -73,6 +81,7 @@ __all__ = [
     "RelationshipBurden",
     "RelationshipCategory",
     "RelationshipCountResult",
+    "RelationshipMoments",
     "RelationshipPairBlock",
     "RelationshipPairs",
     "ResourceError",

@@ -261,6 +261,17 @@ pub enum Error {
         /// The name as given.
         name: String,
     },
+    /// One lane of accumulators plus the output would not fit the caller's
+    /// memory budget, so nothing was allocated.
+    MemoryBudgetExceeded {
+        /// The operation that planned the allocation, e.g. `"relationship_moments"`.
+        operation: &'static str,
+        /// The planned peak in bytes; `u64::MAX` when a size was not
+        /// representable, which the message says instead of the number.
+        estimated_bytes: u64,
+        /// The budget the caller set, in bytes.
+        budget_bytes: u64,
+    },
 }
 
 impl Error {
@@ -284,6 +295,7 @@ impl Error {
             Error::AllocationFailed { .. } => ErrorClass::Resource,
             Error::ArithmeticOverflow { .. } => ErrorClass::Resource,
             Error::CscIndexOverflow { .. } => ErrorClass::Resource,
+            Error::MemoryBudgetExceeded { .. } => ErrorClass::Resource,
             Error::KinshipThresholdOutOfRange { .. } => ErrorClass::Usage,
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => {
                 ErrorClass::Usage
@@ -315,6 +327,7 @@ impl Error {
             Error::KinshipSupportUnsorted { .. } => "kinship_support_unsorted",
             Error::KinshipSupportAsymmetric { .. } => "kinship_support_asymmetric",
             Error::CscIndexOverflow { .. } => "csc_index_overflow",
+            Error::MemoryBudgetExceeded { .. } => "memory_budget_exceeded",
             Error::KinshipThresholdOutOfRange { .. }
             | Error::InvalidViewMap { .. }
             | Error::UnknownSexEncoding { .. } => "",
@@ -461,6 +474,21 @@ impl Error {
             Error::CscIndexOverflow { nnz, maximum } => {
                 vec![("nnz", Int(*nnz as i64)), ("maximum", Int(*maximum))]
             }
+            Error::MemoryBudgetExceeded {
+                operation,
+                estimated_bytes,
+                budget_bytes,
+            } => vec![
+                ("operation", Str(operation)),
+                (
+                    "estimated_bytes",
+                    Int(i64::try_from(*estimated_bytes).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "budget_bytes",
+                    Int(i64::try_from(*budget_bytes).unwrap_or(i64::MAX)),
+                ),
+            ],
             Error::KinshipThresholdOutOfRange { .. } | Error::UnknownSexEncoding { .. } => {
                 Vec::new()
             }
@@ -655,6 +683,25 @@ impl std::fmt::Display for Error {
                 "sex_encoding must be one of ['plink', 'simace'], got {}",
                 python_str(name)
             ),
+            Error::MemoryBudgetExceeded {
+                operation,
+                estimated_bytes,
+                budget_bytes,
+            } => {
+                if *estimated_bytes == u64::MAX {
+                    write!(
+                        f,
+                        "{operation} accumulator sizes are not representable in memory"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "{operation} needs about {} bytes of accumulators, over the memory budget of {} bytes",
+                        grouped(*estimated_bytes as usize),
+                        grouped(*budget_bytes as usize)
+                    )
+                }
+            }
         }
     }
 }

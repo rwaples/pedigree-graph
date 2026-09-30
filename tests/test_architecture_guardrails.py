@@ -70,6 +70,7 @@ ROOT_EXPORTS = (
     "RelationshipBurden",
     "RelationshipCategory",
     "RelationshipCountResult",
+    "RelationshipMoments",
     "RelationshipPairBlock",
     "RelationshipPairs",
     "ResourceError",
@@ -217,6 +218,8 @@ PARALLEL_MODULES = {
     "test_counts_are_the_same_under_every_thread_budget",
     "relationships/burden.rs": "tests/test_compact_view_and_burden.py::"
     "test_burden_is_bit_identical_under_every_thread_budget",
+    "relationships/moments.rs": "tests/test_relationship_moments.py::TestBudgetAndLanes::"
+    "test_moments_are_bit_identical_under_every_thread_budget",
 }
 # The pool itself: it builds and installs the Rayon pool and runs no kernel.
 POOL_INFRASTRUCTURE = frozenset({"pool.rs"})

@@ -752,9 +752,9 @@ mod tests {
             Family::ViewSortScratch => view,
             Family::TaskChunk => execution == Some(Execution::Speed),
             Family::TaskTable | Family::PairBlock => execution.is_some(),
-            // Reserved only by the kinship walk, the kinship matrix DP and
-            // the inbreeding, lineage and generation sweeps; their own seam
-            // tests cover them.
+            // Reserved only by the kinship walk, the kinship matrix DP, the
+            // inbreeding, lineage and generation sweeps, and the moments
+            // reducer; their own seam tests cover them.
             Family::KinshipMemo
             | Family::KinshipStack
             | Family::KinshipOutput
@@ -765,7 +765,9 @@ mod tests {
             | Family::InbreedingWalk
             | Family::LineageSets
             | Family::LineageOutput
-            | Family::FounderMeans => false,
+            | Family::FounderMeans
+            | Family::MomentLanes
+            | Family::MomentOutput => false,
             _ => true,
         }
     }

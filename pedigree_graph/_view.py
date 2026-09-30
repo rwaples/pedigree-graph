@@ -32,6 +32,8 @@ from pedigree_graph._input import (
 )
 from pedigree_graph._kinship_pairwise import view_pair_kinship
 from pedigree_graph._relationship_counts import view_relationship_counts
+from pedigree_graph._relationship_moments import DEFAULT_MEMORY_BUDGET_BYTES
+from pedigree_graph._relationship_moments import relationship_moments as _relationship_moments
 from pedigree_graph._relationship_pairs import check_execution, view_relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
 
@@ -39,6 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph.moments import RelationshipMoments
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
 
 # Named for the keyword each one validates, so a shape or coercion failure names
@@ -259,6 +262,42 @@ class PedigreeView:
             over all 23 codes, ``None`` for unselected categories.
         """
         return view_relationship_counts(self, RelationshipSelection.parse(max_degree, categories))
+
+    def relationship_moments(
+        self,
+        *,
+        max_degree: int | None = None,
+        categories: Iterable[str] | None = None,
+        first: Mapping[str, object] | None = None,
+        second: Mapping[str, object] | None = None,
+        values: Mapping[str, object] | None = None,
+        products: Iterable[tuple[str, str]] | None = None,
+        same: Mapping[str, object] | None = None,
+        symmetric: str = "canonical",
+        memory_budget_bytes: int = DEFAULT_MEMORY_BUDGET_BYTES,
+    ) -> RelationshipMoments:
+        """Return pair counts and value moments over the pairs inside this view.
+
+        The same arguments, result and guarantees as
+        :meth:`pedigree_graph.PedigreeGraph.relationship_moments`; every
+        per-row input has one entry per view row, in view order.  Pairs are
+        classified through the full graph and reduced when both members are
+        selected, in the category's semantic orientation with the lower
+        view row first for symmetric categories.  A view of fewer than two
+        rows has no pairs and skips the engine.
+        """
+        return _relationship_moments(
+            self._graph,
+            self,
+            RelationshipSelection.parse(max_degree, categories),
+            first=first,
+            second=second,
+            values=values,
+            products=products,
+            same=same,
+            symmetric=symmetric,
+            memory_budget_bytes=memory_budget_bytes,
+        )
 
     @overload
     def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...

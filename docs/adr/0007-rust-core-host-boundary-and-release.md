@@ -6,6 +6,8 @@
 (simACE `docs/plans/pedigree-graph-rust-core.md`); builds on ADR 0006
 
 Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+Qualified 2026-09-30 by ADR 0013 (0.11.0): `relationship_moments` has a
+default memory budget and a lane limit inside the shared pool.
 
 ## Context
 
@@ -148,7 +150,8 @@ Every output, integer and float, is bit-identical across thread budgets.
 There is no per-kernel tolerance. `tests/test_architecture_guardrails.py`
 enforces this: it maps every core module that uses Rayon or the pool
 (`PARALLEL_MODULES`: `relationships/pairs.rs`, `relationships/mod.rs`,
-`relationships/burden.rs`; `POOL_INFRASTRUCTURE`: `pool.rs`) to a test that
+`relationships/burden.rs`, `relationships/moments.rs`; `POOL_INFRASTRUCTURE`:
+`pool.rs`) to a test that
 compares budget 1 with budget 4 for bit equality. An unmapped parallel module
 or a missing mapped test fails. The kinship, inbreeding, and lineage kernels
 are serial.
@@ -184,7 +187,12 @@ Potentially large buffers use fallible reservation and surface as the
 structured error `allocation_failed` (fields `operation`,
 `requested_elements`, `dtype`; Python `ResourceError`) instead of aborting.
 Subprocess tests force each allocation family to fail through a private test
-seam. No default memory budget is set.
+seam. No default memory budget is set, with one exception:
+`relationship_moments` (ADR 0013) takes a per-call accumulator budget
+(`memory_budget_bytes`, default 1 GiB), refuses before allocating when one
+lane does not fit, and otherwise runs on as many lanes as fit. Those lanes
+run inside the one package pool; the lane limit restricts how many tasks of
+that call are live at once, and never changes the pool or its size.
 
 ### Structured errors
 

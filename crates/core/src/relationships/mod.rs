@@ -1,10 +1,11 @@
-//! Relationship pairs and counts up to the fifth degree, one row at a time.
+//! Relationship pairs, counts and moments up to the fifth degree, one row at a time.
 
 mod burden;
 mod category;
 mod compact;
 mod csr;
 mod engine;
+mod moments;
 mod multiplicity;
 mod pairs;
 mod sets;
@@ -16,6 +17,11 @@ pub use burden::{relationship_burden, Burden};
 pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
 pub use compact::CompactView;
 pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};
+pub use moments::{
+    reduce_pairs, relationship_moments, CellReducer, Moments, MomentsInput, MomentsOutput,
+    MomentsPlan, MomentsShape, Product, Reduced, Reducer, Side, Symmetric,
+    HOST_BYTES_PER_ACCUMULATOR, MAX_CELL_PAIRS, MAX_QUANTIZED,
+};
 pub use multiplicity::Mult;
 pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};
 

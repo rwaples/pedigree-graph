@@ -109,6 +109,19 @@ count of related pairs whose members share a **structural depth**. MZ co-twins
 count in the category totals but not in the per-degree counts.
 _Avoid_: relative count (without saying per person), load
 
+**Relationship moments**:
+Per relationship category and per pair of **pair labels** (first member's,
+second member's), the pair count and the sums of caller-supplied
+per-individual values over the category's relationship pairs, each pair
+counted once under its **closest category** in its semantic orientation.
+_Avoid_: pair stats, moments sink (the sink is the engine mechanism, not the
+result), sufficient statistics (true of the use, not a name for the result)
+
+**Pair label**:
+A small caller-chosen integer per individual that keys relationship
+moments; a caller packs any strata and binary flags it needs into it.
+_Avoid_: stratum (one use of a label, not the label), group, bucket
+
 **Compact view**:
 The call-local pedigree a sparse view query runs on instead of the full graph:
 the view's individuals plus the ancestry their relationships pass through, in

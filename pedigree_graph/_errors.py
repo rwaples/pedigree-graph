@@ -94,6 +94,7 @@ RESOURCE_CODES: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "csc_index_overflow": ("nnz", "maximum"),
         "arithmetic_overflow": ("operation", "dtype"),
         "allocation_failed": ("operation", "requested_elements", "dtype"),
+        "memory_budget_exceeded": ("operation", "estimated_bytes", "budget_bytes"),
     }
 )
 

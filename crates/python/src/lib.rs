@@ -6,14 +6,20 @@
 //! `pedigree_graph._errors`, keyed by their `.code`, with the keyword fields
 //! rebuilt from `Error::fields`.  A usage error crosses as a plain `ValueError`.
 
-use numpy::{IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1};
+use numpy::{
+    IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
+    PyUntypedArrayMethods,
+};
 use pedigree_graph_core::alloc::{self, Family};
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
 use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree};
 use pedigree_graph_core::lineage::{self, ParentColumns};
 use pedigree_graph_core::pool;
-use pedigree_graph_core::relationships::{self, Category, CategorySet, Execution, Pedigree};
+use pedigree_graph_core::relationships::{
+    self, Category, CategorySet, Execution, MomentsInput, MomentsPlan, MomentsShape, Pedigree,
+    Product, Side, Symmetric,
+};
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -399,25 +405,13 @@ fn relationship_pairs<'py>(
     let columns = EngineColumns::borrow(py, pedigree);
     let ped = columns.pedigree(py)?;
     let max_degree = checked_max_degree(py, max_degree)?;
-    let mut categories = CategorySet::EMPTY;
-    for code in &requested {
-        let cat = Category::parse(code)
-            .ok_or_else(|| PyValueError::new_err(format!("unknown relationship code {code:?}")))?;
-        categories.insert(cat);
-    }
+    let categories = requested_categories(&requested)?;
     let execution = Execution::parse(execution).ok_or_else(|| {
         PyValueError::new_err(format!(
             "execution must be \"speed\" or \"memory\", got {execution:?}"
         ))
     })?;
-    let view = match &view_rows {
-        Some(array) => {
-            let map = array.as_slice()?;
-            check_same_length("view_rows", map.len(), ped.len())?;
-            Some(map)
-        }
-        None => None,
-    };
+    let view = view_map(&view_rows, ped.len())?;
     if compact && view.is_none() {
         return Err(PyValueError::new_err("compact requires view_rows"));
     }
@@ -446,6 +440,184 @@ fn relationship_pairs<'py>(
         values.set_item(cat.code(), PyTuple::new(py, [first, second])?)?;
     }
     Ok(values)
+}
+
+/// The requested categories of a pair query, from their registry codes.
+fn requested_categories(requested: &[String]) -> PyResult<CategorySet> {
+    let mut categories = CategorySet::EMPTY;
+    for code in requested {
+        let cat = Category::parse(code)
+            .ok_or_else(|| PyValueError::new_err(format!("unknown relationship code {code:?}")))?;
+        categories.insert(cat);
+    }
+    Ok(categories)
+}
+
+/// The view map of a query, checked to have one entry per graph row.
+fn view_map<'a>(
+    view_rows: &'a Option<PyReadonlyArray1<'_, i32>>,
+    n: usize,
+) -> PyResult<Option<&'a [i32]>> {
+    match view_rows {
+        Some(array) => {
+            let map = array.as_slice()?;
+            check_same_length("view_rows", map.len(), n)?;
+            Ok(Some(map))
+        }
+        None => Ok(None),
+    }
+}
+
+/// What [`relationship_moments`] hands back: the high and low int64 halves
+/// of every `i128` accumulator, the cells per category, the integers per
+/// cell, the lanes the pass ran on, the pairs each lane reduced, and the
+/// planned accumulator peak in bytes.
+type MomentsArrays<'py> = (
+    Bound<'py, PyArray1<i64>>,
+    Bound<'py, PyArray1<i64>>,
+    usize,
+    usize,
+    usize,
+    Vec<u64>,
+    u64,
+);
+
+/// The lane count and planned accumulator peak of a call of the given
+/// sizes, as `(lanes, estimated_peak_bytes)`, without running it; the same
+/// plan the pass makes, so a degenerate call can be refused the same way.
+#[pyfunction]
+#[pyo3(signature = (*, n_categories, n_labels_first, n_labels_second, n_columns, n_products, n_same, threads, memory_budget_bytes))]
+#[allow(clippy::too_many_arguments)]
+fn moments_plan(
+    py: Python<'_>,
+    n_categories: usize,
+    n_labels_first: usize,
+    n_labels_second: usize,
+    n_columns: usize,
+    n_products: usize,
+    n_same: usize,
+    threads: usize,
+    memory_budget_bytes: u64,
+) -> PyResult<(usize, u64)> {
+    let threads = NonZeroUsize::new(threads)
+        .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
+    let shape = MomentsShape {
+        n_categories,
+        n_labels_first,
+        n_labels_second,
+        n_columns,
+        n_products,
+        n_same,
+    };
+    let plan =
+        MomentsPlan::new(shape, threads, memory_budget_bytes).map_err(|e| to_pyerr(py, e))?;
+    Ok((plan.lanes.get(), plan.estimated_peak_bytes))
+}
+
+/// Relationship moments per requested category and pair-label cell (ADR
+/// 0013): the exact `i128` accumulators `MomentsOutput` describes, split
+/// into int64 halves, in a `(hi, lo, cells, stride, lanes, lane_pairs,
+/// estimated_peak_bytes)` tuple.
+///
+/// Inputs are in receiver rows: `labels_first` / `labels_second` are one
+/// int32 label per row below their label counts, `values` is a C-contiguous
+/// int64 `[n, k]` array of quantized values, `products` names each cross
+/// product as `(side_a, column_a, side_b, column_b)` with side `0` for the
+/// first member and `1` for the second, and `same` is an int64 `[n, s]`
+/// array of equality keys.  `symmetric` is `"canonical"` or `"both"`.  The
+/// lane count is at most `threads` and is cut to fit `memory_budget_bytes`;
+/// a budget one lane cannot fit raises `ResourceError` before anything is
+/// allocated.  The GIL is released for the pass.
+#[pyfunction]
+#[pyo3(signature = (pedigree, *, max_degree, requested, threads, labels_first, n_labels_first, labels_second, n_labels_second, values, products, same, symmetric, memory_budget_bytes, view_rows=None, compact=false))]
+#[allow(clippy::too_many_arguments)]
+fn relationship_moments<'py>(
+    py: Python<'py>,
+    pedigree: &BuiltPedigree,
+    max_degree: u8,
+    requested: Vec<String>,
+    threads: usize,
+    labels_first: PyReadonlyArray1<'py, i32>,
+    n_labels_first: usize,
+    labels_second: PyReadonlyArray1<'py, i32>,
+    n_labels_second: usize,
+    values: PyReadonlyArray2<'py, i64>,
+    products: Vec<(u8, usize, u8, usize)>,
+    same: PyReadonlyArray2<'py, i64>,
+    symmetric: &str,
+    memory_budget_bytes: u64,
+    view_rows: Option<PyReadonlyArray1<'py, i32>>,
+    compact: bool,
+) -> PyResult<MomentsArrays<'py>> {
+    let columns = EngineColumns::borrow(py, pedigree);
+    let ped = columns.pedigree(py)?;
+    let max_degree = checked_max_degree(py, max_degree)?;
+    let categories = requested_categories(&requested)?;
+    let symmetric = Symmetric::parse(symmetric).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "symmetric must be \"canonical\" or \"both\", got {symmetric:?}"
+        ))
+    })?;
+    let view = view_map(&view_rows, ped.len())?;
+    if compact && view.is_none() {
+        return Err(PyValueError::new_err("compact requires view_rows"));
+    }
+    let n_columns = values.shape()[1];
+    let n_same = same.shape()[1];
+    let side = |code: u8| match code {
+        0 => Ok(Side::First),
+        1 => Ok(Side::Second),
+        _ => Err(PyValueError::new_err(format!(
+            "product sides are 0 (first) or 1 (second), got {code}"
+        ))),
+    };
+    let mut resolved = Vec::with_capacity(products.len());
+    for (side_a, a, side_b, b) in products {
+        resolved.push(Product {
+            a: (side(side_a)?, a),
+            b: (side(side_b)?, b),
+        });
+    }
+    let input = MomentsInput {
+        labels_first: labels_first.as_slice()?,
+        n_labels_first,
+        labels_second: labels_second.as_slice()?,
+        n_labels_second,
+        values: values.as_slice()?,
+        n_columns,
+        products: &resolved,
+        same: same.as_slice()?,
+        n_same,
+    };
+    let threads = NonZeroUsize::new(threads)
+        .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
+    let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
+    let moments = py
+        .detach(|| {
+            pool.install(|| {
+                relationships::relationship_moments(
+                    &ped,
+                    max_degree,
+                    categories,
+                    view,
+                    compact,
+                    &input,
+                    symmetric,
+                    threads,
+                    memory_budget_bytes,
+                )
+            })
+        })
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok((
+        moments.output.hi.into_pyarray(py),
+        moments.output.lo.into_pyarray(py),
+        moments.cells,
+        moments.stride,
+        moments.lanes,
+        moments.lane_pairs,
+        moments.estimated_peak_bytes,
+    ))
 }
 
 /// What [`relationship_burden`] hands back: category counts keyed by code,
@@ -889,6 +1061,8 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compact_view_counts, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_pairs, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_burden, m)?)?;
+    m.add_function(wrap_pyfunction!(relationship_moments, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_plan, m)?)?;
     m.add_function(wrap_pyfunction!(pair_kinship, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_support_values, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_csc, m)?)?;

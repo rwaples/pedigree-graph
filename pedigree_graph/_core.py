@@ -32,6 +32,8 @@ from pedigree_graph._lineage import distinct_ancestor_counts as _distinct_ancest
 from pedigree_graph._ne_rates import _generation_kinship_summary
 from pedigree_graph._properties import PedigreeProperties
 from pedigree_graph._relationship_counts import relationship_counts as _relationship_counts
+from pedigree_graph._relationship_moments import DEFAULT_MEMORY_BUDGET_BYTES
+from pedigree_graph._relationship_moments import relationship_moments as _relationship_moments
 from pedigree_graph._relationship_pairs import check_execution
 from pedigree_graph._relationship_pairs import relationship_pairs as _relationship_pairs
 from pedigree_graph._selection import RelationshipSelection
@@ -47,6 +49,7 @@ if TYPE_CHECKING:
     from pedigree_graph._burden import RelationshipBurden
     from pedigree_graph._frames import FrameLike
     from pedigree_graph._view import PedigreeView
+    from pedigree_graph.moments import RelationshipMoments
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
     from pedigree_graph.summaries import GenerationKinshipSummary
 
@@ -358,6 +361,106 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         """
         return _relationship_pairs(
             self, RelationshipSelection.parse(max_degree, categories), check_execution(execution)
+        )
+
+    def relationship_moments(
+        self,
+        *,
+        max_degree: int | None = None,
+        categories: Iterable[str] | None = None,
+        first: Mapping[str, object] | None = None,
+        second: Mapping[str, object] | None = None,
+        values: Mapping[str, object] | None = None,
+        products: Iterable[tuple[str, str]] | None = None,
+        same: Mapping[str, object] | None = None,
+        symmetric: str = "canonical",
+        memory_budget_bytes: int = DEFAULT_MEMORY_BUDGET_BYTES,
+    ) -> RelationshipMoments:
+        """Return pair counts and value moments per category and pair-label cell.
+
+        Every pair of a selected category is classified as by
+        :meth:`relationship_pairs` (closest category, semantic orientation)
+        and reduced in the engine without a pair list: per category and per
+        cell of (first member's factors, second member's factors, equality
+        keys) the result holds the pair count, the sums and sums of squares
+        of every value column for each member, the cross sums of the
+        requested products, and the exact centered second moments (ADR
+        0013).  Values are quantized to fixed point at a per-column
+        power-of-two scale chosen from their largest magnitude over every
+        row of the receiver (so a row a factor level masks out should still
+        carry a finite value of ordinary magnitude) and summed exactly, so
+        the result is bit-identical across thread budgets, lane counts and
+        view execution paths.  The result keeps the exact integers and
+        derives every float on access: ``select``, ``sum`` and ``merge``
+        are exact, a constant column has a centered moment of exactly zero
+        before and after any fold, and swapping the two members swaps the
+        per-member moments and leaves a diagonal co-moment unchanged.
+
+        Args:
+            max_degree: Select every category at or below this degree (0-5).
+                Exclusive with *categories*.
+            categories: Registry codes to select, any order.  Exclusive with
+                *max_degree*.
+            first: Named factors of the first member: each an integer or
+                boolean array with one value per row.  Distinct values map to
+                axis levels; the axes are ``first_<name>``.  ``None`` keys
+                every pair to one cell.
+            second: Named factors of the second member, as ``second_<name>``
+                axes.  ``None`` reuses *first*.
+            values: Named value columns, one finite numeric array per row
+                each, at most 32.  A non-finite value is an error; mask with a
+                factor level instead.
+            products: ``("<side>.<column>", "<side>.<column>")`` pairs with
+                side ``first`` or ``second``, whose per-pair products are
+                summed.  ``None`` is the ``first × second`` diagonal of every
+                column.
+            same: Named equality keys, one integer array per row each, at
+                most 16.  Each adds a ``same_<name>`` axis with levels 0 (the
+                members' values differ) and 1 (they are equal) and doubles
+                the cells; a negative value never equals anything.
+            symmetric: ``"canonical"`` (default) counts a symmetric pair once
+                with the lower row first; ``"both"`` counts it in both
+                orientations.  Asymmetric categories are unchanged.
+            memory_budget_bytes: Ceiling on the accumulators of this call,
+                default 1 GiB: the engine's lanes plus the result's exact
+                copy.  The pass runs on at most as many lanes as the thread
+                budget, fewer when the budget requires.  The graph, the
+                input arrays and one engine workspace per lane (about 9
+                bytes per graph row each) are outside it.
+
+        Returns:
+            A :class:`~pedigree_graph.moments.RelationshipMoments` over the
+            axes ``category`` then the factor and key axes, with
+            ``select``, ``sum`` and ``merge``.
+
+        Raises:
+            TypeError: Both selectors, neither, a bare ``str`` for
+                *categories*, or a factor or key that is not integer-valued.
+            ValueError: A non-finite value, an unknown product operand, more
+                than 32 columns or 16 keys, an unknown *symmetric*, or a
+                budget outside ``[0, 2**64 - 1]``.  A float view whose value
+                overflows float64 raises ``ValueError`` naming the column
+                when it is read.
+            PedigreeValidationError: ``max_degree_out_of_range``,
+                ``unknown_relationship_category``, ``invalid_shape`` or
+                ``length_mismatch`` for an input array, ``value_out_of_range``
+                for a factor or key beyond int64 or factors that pack past
+                the int32 label range.
+            ResourceError: ``memory_budget_exceeded`` when a single lane does
+                not fit the budget (nothing is allocated), ``allocation_failed``,
+                or ``arithmetic_overflow`` past 2^40 pairs in one cell.
+        """
+        return _relationship_moments(
+            self,
+            None,
+            RelationshipSelection.parse(max_degree, categories),
+            first=first,
+            second=second,
+            values=values,
+            products=products,
+            same=same,
+            symmetric=symmetric,
+            memory_budget_bytes=memory_budget_bytes,
         )
 
     def relationship_counts(

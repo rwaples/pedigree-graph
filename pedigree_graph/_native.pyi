@@ -66,6 +66,36 @@ def relationship_pairs(
     view_rows: NDArray[np.int32] | None = None,
     compact: bool = False,
 ) -> dict[str, tuple[NDArray[np.int32], NDArray[np.int32]]]: ...
+def relationship_moments(
+    pedigree: BuiltPedigree,
+    /,
+    *,
+    max_degree: int,
+    requested: list[str],
+    threads: int,
+    labels_first: NDArray[np.int32],
+    n_labels_first: int,
+    labels_second: NDArray[np.int32],
+    n_labels_second: int,
+    values: NDArray[np.int64],
+    products: list[tuple[int, int, int, int]],
+    same: NDArray[np.int64],
+    symmetric: str,
+    memory_budget_bytes: int,
+    view_rows: NDArray[np.int32] | None = None,
+    compact: bool = False,
+) -> tuple[NDArray[np.int64], NDArray[np.int64], int, int, int, list[int], int]: ...
+def moments_plan(
+    *,
+    n_categories: int,
+    n_labels_first: int,
+    n_labels_second: int,
+    n_columns: int,
+    n_products: int,
+    n_same: int,
+    threads: int,
+    memory_budget_bytes: int,
+) -> tuple[int, int]: ...
 def relationship_burden(
     pedigree: BuiltPedigree,
     depth: NDArray[np.int32],
