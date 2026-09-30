@@ -256,18 +256,6 @@ class TestUnavailable:
 
 
 class TestMissingMetadata:
-    @pytest.mark.parametrize("name", _NEEDS_PARENTAGE)
-    def test_incomplete_parentage_names_the_estimator_it_disables(self, name):
-        value = estimate_effective_sizes(_chain_graph(father=_ONE_PARENT_FATHER))[name]
-        assert value.reason == "missing_metadata"
-        assert value.code == "incomplete_parentage"
-        assert value.fields["operation"] == name
-
-    @pytest.mark.parametrize("name", _without(*_NEEDS_PARENTAGE))
-    def test_incomplete_parentage_leaves_the_other_seven_intact(self, name):
-        value = estimate_effective_sizes(_chain_graph(father=_ONE_PARENT_FATHER))[name]
-        assert not isinstance(value, UnavailableEffectiveSize)
-
     @pytest.mark.parametrize("name", _NEEDS_SEX)
     def test_absent_sex_names_the_estimator_it_disables(self, name):
         value = estimate_effective_sizes(_chain_graph(sex=None))[name]

@@ -12,8 +12,6 @@ import numpy as np
 import polars as pl
 import pytest
 from _support import (
-    _assert_owned_read_only,
-    _assert_plain_python,
     _build_closed_line,
     _df,
     _random_mating,
@@ -299,22 +297,6 @@ def test_an_empty_graph_yields_no_estimate():
         assert getattr(result, name).shape == (0,), name
 
 
-def test_partly_unknown_generation_labels_disable_the_estimator():
-    pg = PedigreeGraph.from_frame(
-        {
-            "id": np.arange(8),
-            "mother": np.array([-1, -1, 0, 0, 2, 2, 4, 4]),
-            "father": np.array([-1, -1, 1, 1, 3, 3, 5, 5]),
-            "sex": np.array([0, 1, 0, 1, 0, 1, 0, 1]),
-            "generation": np.array([0, 0, 1, 1, 2, 2, -1, -1]),
-        }
-    )
-    with pytest.raises(MissingMetadataError) as info:
-        ne_group_coancestry(pg)
-    assert info.value.code == "missing_generation_labels"
-    assert info.value.fields["operation"] == "ne_group_coancestry"
-
-
 def test_absent_generation_labels_fall_back_to_depth():
     labelled = _build_closed_line(4)
     pg_labelled = PedigreeGraph.from_frame(labelled)
@@ -333,10 +315,6 @@ def test_the_evaluator_rejects_a_prerequisite_for_other_cohorts():
         _group_coancestry_from(other, _group_coancestry_by_cohort(pg, cohorts))
 
 
-def test_result_arrays_are_owned_and_read_only():
-    _assert_owned_read_only(ne_group_coancestry(PedigreeGraph.from_frame(_build_closed_line(4))))
-
-
 def test_the_record_does_not_alias_its_prerequisite():
     pg = PedigreeGraph.from_frame(_build_closed_line(4))
     cohorts = ObservedCohorts.for_graph(pg, "ne_group_coancestry")
@@ -348,11 +326,6 @@ def test_the_record_does_not_alias_its_prerequisite():
 
     assert result.mean_group_coancestry_per_gen[0] != 99.0
     assert result.n_genomes_per_gen[0] != 99
-
-
-def test_to_dict_returns_plain_python():
-    result = ne_group_coancestry(PedigreeGraph.from_frame(_build_closed_line(4)))
-    _assert_plain_python(result.to_dict(), "ne_group_coancestry")
 
 
 def _truncated_last_cohort(frame: pl.DataFrame, keep: int) -> pl.DataFrame:

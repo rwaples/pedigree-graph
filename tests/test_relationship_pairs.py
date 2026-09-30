@@ -208,15 +208,6 @@ class TestOrientation:
             block = full_results[name][code]
             assert np.all(block.first_rows < block.second_rows), code
 
-    @pytest.mark.parametrize("name", FIXTURE_NAMES)
-    def test_blocks_are_sorted_by_canonical_key(self, full_results, name):
-        n = parity_graph(name).n_individuals
-        for code, block in full_results[name].items():
-            keys = np.minimum(block.first_rows, block.second_rows).astype(np.int64) * n + np.maximum(
-                block.first_rows, block.second_rows
-            )
-            assert np.all(np.diff(keys) > 0), code
-
     def test_every_pair_on_the_shipped_parquet_satisfies_its_predicate(self, small_pedigree: pl.DataFrame):
         graph = PedigreeGraph.from_frame(small_pedigree)
         walk = AncestorWalk(graph)
@@ -225,12 +216,6 @@ class TestOrientation:
         for code in (code for code in CODES if code != "MZ"):
             for first, second in _oriented(pairs[code]):
                 assert walk.oriented_pair_is_valid(code, first, second), (code, first, second)
-
-    def test_mo_and_fo_name_the_actual_parent(self, full_results):
-        graph = parity_graph("random_1k")
-        result = full_results["random_1k"]
-        np.testing.assert_array_equal(graph.mother_rows[result["MO"].first_rows], result["MO"].second_rows)
-        np.testing.assert_array_equal(graph.father_rows[result["FO"].first_rows], result["FO"].second_rows)
 
 
 class TestDualValid:

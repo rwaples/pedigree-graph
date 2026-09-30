@@ -1,9 +1,10 @@
 """Property-based tests for the kinship matrix and pairwise kinship.
 
 Generalises the example-driven kinship tests across random pedigrees:
-symmetry, bounds, the inbreeding-encoding diagonal, founder base cases,
-the Mendelian quarter for parent-offspring, the kinship recursion, the
-matrix-DP vs pairwise-recurrence consistency, and id-relabel invariance.
+symmetry, bounds, founder base cases, the Mendelian quarter for
+parent-offspring, the kinship recursion, the matrix-DP vs
+pairwise-recurrence consistency, and id-relabel invariance.  The diagonal's
+F identity is in test_inbreeding_properties.py.
 """
 
 from __future__ import annotations
@@ -31,15 +32,6 @@ def test_kinship_matrix_symmetric_and_bounded(pg):
     assert np.array_equal(dense, dense.T)
     assert np.all(K.data >= 0)
     assert np.all(K.data <= 1)
-
-
-@_SETTINGS
-@given(pg=random_pedigree())
-def test_kinship_diagonal_encodes_inbreeding(pg):
-    # The builders never set twins, so the matrix diagonal (1+F)/2 matches ML F.
-    K = pg.kinship_matrix()
-    F = pg.inbreeding()
-    assert np.allclose(np.asarray(K.diagonal()), 0.5 * (1.0 + F), atol=1e-9)
 
 
 @_SETTINGS

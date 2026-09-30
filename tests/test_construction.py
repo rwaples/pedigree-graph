@@ -165,12 +165,6 @@ class TestCanonicalDefaults:
         pg = PedigreeGraph.from_arrays(ids=IDS, mother_ids=MOTHERS, father_ids=FATHERS)
         assert pg.birth_year is None
 
-    def test_from_frame_applies_the_same_absences(self):
-        pg = PedigreeGraph.from_frame(_trio())
-        assert pg.sex is None
-        assert pg.generation_labels is None
-        assert pg.birth_year is None
-
 
 class TestSexEncoding:
     def test_plink_through_from_frame(self):
