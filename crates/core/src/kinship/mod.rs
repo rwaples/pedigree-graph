@@ -12,6 +12,7 @@
 //! ([`depth_order`]) but not its values: the Meuwissen-Luo inbreeding walk
 //! ([`inbreeding()`]) and the two Ne prerequisites of [`generations`].
 
+pub mod ancestry;
 pub(crate) mod depth_order;
 pub mod generations;
 pub mod inbreeding;

@@ -20,7 +20,7 @@ from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 
-KINSHIP_FAMILIES = ("kinship_memo", "kinship_stack", "kinship_output")
+KINSHIP_FAMILIES = ("kinship_memo", "kinship_stack", "kinship_signatures", "kinship_output")
 
 
 def _native_kinship(graph: PedigreeGraph, first, second) -> np.ndarray:

@@ -40,6 +40,9 @@ pub enum Family {
     KinshipMemo,
     /// The pairwise-kinship work stack.
     KinshipStack,
+    /// The pairwise-kinship ancestor signatures and the stack they are
+    /// built with.
+    KinshipSignatures,
     /// The pairwise-kinship output, per pair or per support entry.
     KinshipOutput,
     /// The kinship DP's row storage and its growth, and the compacted
@@ -80,7 +83,7 @@ pub enum Family {
 }
 
 impl Family {
-    pub const ALL: [Family; 25] = [
+    pub const ALL: [Family; 26] = [
         Family::ParentEdges,
         Family::Csr,
         Family::SiblingIndex,
@@ -92,6 +95,7 @@ impl Family {
         Family::ViewSortScratch,
         Family::KinshipMemo,
         Family::KinshipStack,
+        Family::KinshipSignatures,
         Family::KinshipOutput,
         Family::KinshipRows,
         Family::KinshipCsc,
@@ -122,6 +126,7 @@ impl Family {
             Family::ViewSortScratch => "view_sort_scratch",
             Family::KinshipMemo => "kinship_memo",
             Family::KinshipStack => "kinship_stack",
+            Family::KinshipSignatures => "kinship_signatures",
             Family::KinshipOutput => "kinship_output",
             Family::KinshipRows => "kinship_rows",
             Family::KinshipCsc => "kinship_csc",
