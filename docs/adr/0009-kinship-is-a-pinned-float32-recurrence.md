@@ -15,7 +15,7 @@ this final float32 rounding", and deferred to issue #6 whether `pair_kinship`
 may sample an already cached complete matrix, on the condition that "both paths
 must agree".
 
-A decision study (`simACE/plans/pair-kinship-float32-study.md`) measured the
+A decision study ([`docs/pair-kinship-float32-study.md`](../pair-kinship-float32-study.md)) measured the
 candidates on a focused corpus (all 23 registry motifs, the ADR 0008 MZ
 fixtures, selfing, backcross, double cousins, 50 to 60 generation inbred
 lineages, 120 random pedigrees) and on four simACE pedigrees from 20k to 536k
