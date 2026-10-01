@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased (0.12.0)
+## v0.12.0
 
 - **Changed: `pair_kinship` and `relationship_kinship_matrix` walk only
   the keys that can be nonzero, on every thread of the budget** (issue #34;
