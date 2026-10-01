@@ -5,9 +5,10 @@ Rust core (``pedigree_graph_core::kinship``) in graph space with structural
 depth as the peel input: ``phi(a, a) = (1 + phi(m, f)) / 2`` with a missing
 parent contributing 0 and an MZ co-twin taking the self formula; otherwise the
 endpoint of greater depth, ties to the greater row, is peeled to its parents.
-The core builds one memo per call, shares it across the whole query, and frees
-it before returning; nothing is retained on the graph (ADR 0007), so a value
-never depends on call history and two calls store the same bits.
+The core builds one memo per pool worker, shares it across the pairs that
+worker takes, and frees it before returning; nothing is retained on the graph
+(ADR 0007, 0016), so a value never depends on call history or thread budget and
+two calls store the same bits.
 
 What stays host-side is the receiver boundary: the three call forms and their
 validation codes, the translation of view rows to graph rows, and splitting a
@@ -166,12 +167,12 @@ def _shape_result(query: _PairQuery, values: np.ndarray) -> np.ndarray | Mapping
 
 def _evaluate(graph: PedigreeGraph, first: np.ndarray, second: np.ndarray) -> np.ndarray:
     """One native walk over graph-row endpoints; the result is owned and frozen without a copy."""
-    thread_budget()
     values = _native.pair_kinship(
         graph._built,
         graph.depth,
         np.ascontiguousarray(first, dtype=np.int32),
         np.ascontiguousarray(second, dtype=np.int32),
+        threads=thread_budget(),
     )
     return _own_native(values, np.float32)
 

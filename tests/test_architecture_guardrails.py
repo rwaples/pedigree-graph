@@ -213,6 +213,8 @@ def test_the_package_does_not_import_numba():
 CHECKOUT = Path(__file__).resolve().parents[1]
 CORE_SRC = CHECKOUT / "crates" / "core" / "src"
 PARALLEL_MODULES = {
+    "kinship/pairwise.rs": "tests/test_native_pair_kinship.py::"
+    "test_both_entries_return_the_same_bits_under_every_thread_budget",
     "relationships/pairs.rs": "tests/test_native_relationship_pairs.py::TestProcessWidePool::"
     "test_blocks_are_identical_under_every_thread_budget",
     "relationships/mod.rs": "tests/test_native_relationship_counts.py::TestSelectorsAndErrors::"

@@ -11,19 +11,24 @@
 //! The walk is an explicit-stack post-order: a key is pushed for *expand*
 //! (discover unresolved dependencies) and re-pushed for *compute* (combine
 //! them).  LIFO order resolves a node's whole subtree before its compute
-//! marker, so every distinct key is computed exactly once even when shared
-//! across requested pairs, and endpoint order cannot change a bit.
+//! marker, so every distinct key is computed once per walker even when
+//! shared across requested pairs, and endpoint order cannot change a bit.
 //!
 //! A key whose value needs no walk is never pushed or stored ([`Rule`]):
 //! a self-like key with a missing parent, a key whose peeled endpoint is a
 //! founder, and a key whose endpoints share no ancestor, which
-//! [`AncestorSignatures`] proves.
+//! [`AncestorSignatures`] proves.  A call splits its pairs or support
+//! columns into chunks over the current Rayon pool, one walker per worker
+//! ([`run_chunks`]); since a key has one value whoever computes it, the
+//! output is the same bits for every thread count.
 
 use super::ancestry::AncestorSignatures;
 use super::memo::PairMemo;
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use crate::relationships::{check_column_length, check_row_range};
+use rayon::prelude::*;
+use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// The columns the recurrence reads, borrowed from the host for one call.
 #[derive(Clone, Copy)]
@@ -135,7 +140,7 @@ impl Rule {
 }
 
 /// One memo and one stack over a pedigree and its ancestor signatures: the
-/// state of a single call.
+/// state of one worker of a call.
 pub struct Walker<'a> {
     ped: KinshipPedigree<'a>,
     signatures: &'a AncestorSignatures,
@@ -248,6 +253,78 @@ impl<'a> Walker<'a> {
     }
 }
 
+/// A float32 output the workers of one call write at disjoint positions.
+struct SharedOutput(Vec<AtomicU32>);
+
+impl SharedOutput {
+    fn new(len: usize) -> Result<Self, Error> {
+        let mut bits = alloc::with_capacity(len, Family::KinshipOutput, "float32")?;
+        bits.resize_with(len, || AtomicU32::new(0));
+        Ok(SharedOutput(bits))
+    }
+
+    #[inline]
+    fn set(&self, position: usize, value: f32) {
+        self.0[position].store(value.to_bits(), Ordering::Relaxed);
+    }
+
+    /// The values, in the same allocation: `AtomicU32` and `f32` share size
+    /// and alignment, so the standard library collects in place
+    /// (`shared_output_converts_in_place` holds it to that).
+    fn into_values(self) -> Vec<f32> {
+        self.0
+            .into_iter()
+            .map(|bits| f32::from_bits(bits.into_inner()))
+            .collect()
+    }
+}
+
+/// Run `fill` on chunks `0..chunks` across the current Rayon pool.
+///
+/// Each worker takes the next chunk from a shared counter and keeps one
+/// walker, built on its first chunk, for every chunk it takes, so shared
+/// ancestor keys are walked once per worker rather than once per chunk.  A
+/// key's value does not depend on which walker reaches it, so the result is
+/// the same for every thread count.  After a failure the remaining chunks
+/// are abandoned and one error is returned.
+fn run_chunks<F>(
+    ped: KinshipPedigree<'_>,
+    signatures: &AncestorSignatures,
+    chunks: usize,
+    fill: F,
+) -> Result<(), Error>
+where
+    F: Fn(&mut Walker<'_>, usize) -> Result<(), Error> + Sync,
+{
+    let next = AtomicUsize::new(0);
+    let workers = rayon::current_num_threads().min(chunks);
+    (0..workers).into_par_iter().try_for_each(|_| {
+        let mut walker = None;
+        loop {
+            let chunk = next.fetch_add(1, Ordering::Relaxed);
+            if chunk >= chunks {
+                return Ok(());
+            }
+            let result = match &mut walker {
+                Some(walker) => fill(walker, chunk),
+                None => {
+                    Walker::new(ped, signatures).and_then(|built| fill(walker.insert(built), chunk))
+                }
+            };
+            if result.is_err() {
+                next.fetch_max(chunks, Ordering::Relaxed);
+                return result;
+            }
+        }
+    })
+}
+
+/// Pairs per chunk of a [`pair_kinship`] call.
+const PAIR_CHUNK: usize = 4096;
+
+/// Columns per chunk of a [`support_values`] call.
+const COLUMN_CHUNK: usize = 256;
+
 fn check_pairs(ped: &KinshipPedigree<'_>, first: &[i32], second: &[i32]) -> Result<(), Error> {
     check_column_length("second", second.len(), first.len())?;
     let n = ped.len();
@@ -282,13 +359,22 @@ pub fn pair_kinship(
     second: &[i32],
 ) -> Result<Vec<f32>, Error> {
     check_pairs(&ped, first, second)?;
-    let mut out = alloc::with_capacity(first.len(), Family::KinshipOutput, "float32")?;
+    let out = SharedOutput::new(first.len())?;
     let signatures = AncestorSignatures::build(&ped)?;
-    let mut walker = Walker::new(ped, &signatures)?;
-    for (&a, &b) in first.iter().zip(second) {
-        out.push(walker.resolve(a, b)?);
-    }
-    Ok(out)
+    run_chunks(
+        ped,
+        &signatures,
+        first.len().div_ceil(PAIR_CHUNK),
+        |walker, chunk| {
+            let start = chunk * PAIR_CHUNK;
+            let end = (start + PAIR_CHUNK).min(first.len());
+            for k in start..end {
+                out.set(k, walker.resolve(first[k], second[k])?);
+            }
+            Ok(())
+        },
+    )?;
+    Ok(out.into_values())
 }
 
 /// Where column `column`'s sorted index range holds `row`, if it does.
@@ -307,32 +393,40 @@ fn support_with(
     indices: &[i32],
 ) -> Result<Vec<f32>, Error> {
     let n = ped.len();
-    let mut data = alloc::filled(0.0f32, indices.len(), Family::KinshipOutput, "float32")?;
+    let data = SharedOutput::new(indices.len())?;
     let signatures = AncestorSignatures::build(&ped)?;
-    let mut walker = Walker::new(ped, &signatures)?;
-    for column in 0..n {
-        let start = indptr[column] as usize;
-        let end = indptr[column + 1] as usize;
-        for position in start..end {
-            let row = indices[position];
-            if row as usize > column {
-                break;
+    run_chunks(
+        ped,
+        &signatures,
+        n.div_ceil(COLUMN_CHUNK),
+        |walker, chunk| {
+            let first_column = chunk * COLUMN_CHUNK;
+            for column in first_column..(first_column + COLUMN_CHUNK).min(n) {
+                let start = indptr[column] as usize;
+                let end = indptr[column + 1] as usize;
+                for position in start..end {
+                    let row = indices[position];
+                    if row as usize > column {
+                        break;
+                    }
+                    let value = walker.resolve(row, column as i32)?;
+                    data.set(position, value);
+                    if row as usize == column {
+                        continue;
+                    }
+                    let mirrored = mirror(indptr, indices, row as usize, column as i32).ok_or(
+                        Error::KinshipSupportAsymmetric {
+                            row: row as usize,
+                            column,
+                        },
+                    )?;
+                    data.set(mirrored, value);
+                }
             }
-            let value = walker.resolve(row, column as i32)?;
-            data[position] = value;
-            if row as usize == column {
-                continue;
-            }
-            let mirrored = mirror(indptr, indices, row as usize, column as i32).ok_or(
-                Error::KinshipSupportAsymmetric {
-                    row: row as usize,
-                    column,
-                },
-            )?;
-            data[mirrored] = value;
-        }
-    }
-    Ok(data)
+            Ok(())
+        },
+    )?;
+    Ok(data.into_values())
 }
 
 fn check_support(ped: &KinshipPedigree<'_>, indptr: &[i64], indices: &[i32]) -> Result<(), Error> {
@@ -615,6 +709,16 @@ mod tests {
         }
         fail_next(None);
         assert!(run(ped).is_ok());
+    }
+
+    #[test]
+    fn shared_output_converts_in_place() {
+        let out = SharedOutput::new(1000).unwrap();
+        out.set(7, 0.25);
+        let before = out.0.as_ptr() as usize;
+        let values = out.into_values();
+        assert_eq!(values.as_ptr() as usize, before);
+        assert_eq!((values.len(), values[7], values[8]), (1000, 0.25, 0.0));
     }
 
     #[test]

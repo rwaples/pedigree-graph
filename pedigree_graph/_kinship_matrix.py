@@ -214,15 +214,17 @@ class PedigreeMatrixMethods:
 def _exactify_support(graph: PedigreeGraph, matrix: sp.csc_matrix) -> sp.csc_matrix:
     """Replace every value on a symmetric CSC support with pair-recurrence bits.
 
-    One native walk over the support: each upper entry and the diagonal is
-    evaluated once through a call-local memo and written with its mirror, so
-    the only scratch beyond the memo is the ``data`` array the matrix owns.
+    One native walk over the support in the package pool: each upper entry and
+    the diagonal is evaluated once through its worker's call-local memo and
+    written with its mirror, so the only scratch beyond the memos is the
+    ``data`` array the matrix owns.
     """
     values = _native.kinship_support_values(
         graph._built,
         graph.depth,
         np.ascontiguousarray(matrix.indptr, dtype=np.int64),
         np.ascontiguousarray(matrix.indices, dtype=np.int32),
+        threads=thread_budget(),
     )
     matrix.data = _own_native(values, np.float32)
     return matrix

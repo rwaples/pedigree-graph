@@ -151,11 +151,13 @@ Every output, integer and float, is bit-identical across thread budgets.
 There is no per-kernel tolerance. `tests/test_architecture_guardrails.py`
 enforces this: it maps every core module that uses Rayon or the pool
 (`PARALLEL_MODULES`: `relationships/pairs.rs`, `relationships/mod.rs`,
-`relationships/burden.rs`, `relationships/moments.rs`; `POOL_INFRASTRUCTURE`:
+`relationships/burden.rs`, `relationships/moments.rs`,
+`relationships/relatives.rs`, `kinship/pairwise.rs`; `POOL_INFRASTRUCTURE`:
 `pool.rs`) to a test that
 compares budget 1 with budget 4 for bit equality. An unmapped parallel module
-or a missing mapped test fails. The kinship, inbreeding, and lineage kernels
-are serial.
+or a missing mapped test fails. The pairwise kinship walk runs one walker per
+worker (ADR 0016); the kinship matrix DP, inbreeding, and lineage kernels are
+serial.
 
 ### Safety and allocation
 

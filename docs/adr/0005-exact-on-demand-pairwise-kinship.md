@@ -58,9 +58,9 @@ step, and that is the value the package returns. `kinship_matrix()` and
 
 The recurrence runs in the Rust core (`kinship::pair_kinship`,
 `crates/core/src/kinship/pairwise.rs`), reached through
-`_native.pair_kinship` from `pedigree_graph/_kinship_pairwise.py`. One memo
-is built per call, shared across every pair of the query, and freed before
-the call returns (ADR 0007). `pair_kinship` never reads a cached matrix, so
+`_native.pair_kinship` from `pedigree_graph/_kinship_pairwise.py`. Each
+pool worker of a call builds one memo, shares it across the pairs it takes,
+and frees it before the call returns (ADR 0007, 0016). `pair_kinship` never reads a cached matrix, so
 its result does not depend on call history. The readable recurrence is the
 test oracle `tests/oracle/pair_kinship.py`, which the package never imports
 and which the native kernel must match bit for bit.
@@ -75,7 +75,8 @@ and which the native kernel must match bit for bit.
 * **Output dtype is float32** (ADR 0009). This ADR first chose float64; ADR
   0009 replaced that when it pinned the recurrence to float32.
 * **Scaling:** the work follows the ancestor pairs the requested pairs reach
-  through the memo, not `n²`. Deeply inbred or high-overlap pedigrees can
+  through the memo, not `n²`; since ADR 0016 only those that can be nonzero,
+  as ancestor signatures tell. Deeply inbred or high-overlap pedigrees can
   still grow the memo; pathologically deep pedigrees are out of scope.
 * `kinship_matrix()` is a separate path with its own cache.
   `mean_kinship_by_generation()` streams kinship from the DP, or walks the

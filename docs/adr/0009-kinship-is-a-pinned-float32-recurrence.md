@@ -57,8 +57,8 @@ Consequences of that definition:
 * `pair_kinship(first_rows, second_rows)`, `pair_kinship(block)`, and
   `pair_kinship(pairs)` return read-only **float32**. The memo stores float32.
   The pairwise kernel takes structural depth as an input and builds one memo
-  per call, freed before returning (ADR 0007); no value depends on call
-  history.
+  per pool worker, all freed before returning (ADR 0007, 0016); no value
+  depends on call history or thread budget.
 * `kinship_matrix()` and `relationship_kinship_matrix(...)` entries are
   **bit-identical** to `pair_kinship` for the same pair. That parity is a
   property test on every fixture, including deep inbred and row-permuted ones,

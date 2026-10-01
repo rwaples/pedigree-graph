@@ -20,6 +20,7 @@ from oracle.kinship_dp.dp import KinshipDPConfig, _build_kinship_csc, _run_dp_co
 import pedigree_graph
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 from pedigree_graph._cohorts import _densify_labels
+from pedigree_graph._threads import thread_budget
 
 THRESHOLD = 0.001
 PERMUTATION_SEEDS = (None, 5, 11)
@@ -39,7 +40,9 @@ def _oracle_csc(graph: PedigreeGraph, threshold: float) -> tuple[bytes, bytes, b
         graph.n_individuals, graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, threshold
     )
     if threshold > 0.0:
-        data = _native.kinship_support_values(graph._built, graph.depth, indptr.astype(np.int64), indices)
+        data = _native.kinship_support_values(
+            graph._built, graph.depth, indptr.astype(np.int64), indices, threads=thread_budget()
+        )
     return indptr.tobytes(), indices.tobytes(), data.tobytes()
 
 

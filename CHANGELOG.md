@@ -6,6 +6,16 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased (0.12.0)
 
+- **Changed: `pair_kinship` and `relationship_kinship_matrix` walk only
+  the keys that can be nonzero, on every thread of the budget** (issue #34;
+  ADR 0016). Ancestor signatures prove when two rows share no ancestor, so
+  the walk no longer descends to the founders to learn a zero, and each
+  pool worker runs its own walker over chunks of pairs or columns. Every
+  value is bit-identical to 0.11 at every thread budget. On simACE's
+  3.58M-row PA-FGRS pedigree at degree 2 the matrix build goes from 75 s
+  and 7.6 GB to 28 s and 2.7 GB on one thread, and to 11 s and 3.5 GB on
+  eight. Peak memory now grows with the budget. New allocation family
+  `kinship_signatures`.
 - **Added (R): `relationship_moments()`, `moments_select()`,
   `moments_sum()`, `moments_merge()`, `as.data.frame()` and `print()` for
   its result, `relationship_counts()` and `relationship_burden()`** (issue
