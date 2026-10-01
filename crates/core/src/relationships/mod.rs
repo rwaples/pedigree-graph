@@ -6,6 +6,7 @@ mod compact;
 mod csr;
 mod engine;
 mod moments;
+mod moments_table;
 mod multiplicity;
 mod pairs;
 mod relatives;
@@ -20,9 +21,12 @@ pub use compact::CompactView;
 pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};
 pub use moments::{
     host_bytes, reduce_pairs, relationship_moments, CellReducer, Moments, MomentsInput,
-    MomentsOutput, MomentsPlan, MomentsShape, Product, Reduced, Reducer, Side, Symmetric,
-    CONVERSION_BYTES_PER_ACCUMULATOR, CONVERSION_CHUNK, HOST_BYTES_PER_ACCUMULATOR, MAX_CELL_PAIRS,
-    MAX_QUANTIZED,
+    MomentsPlan, MomentsShape, Product, Reduced, Reducer, Side, Symmetric,
+    HOST_BYTES_PER_ACCUMULATOR, MAX_CELL_PAIRS, MAX_QUANTIZED,
+};
+pub use moments_table::{
+    encode_big, encode_i128, pack_labels, quantize_column, ratio, MomentsTable, PackedLabels,
+    Statistic, MAX_EXPONENT, MAX_SAME_KEYS, MAX_VALUE_COLUMNS, QUANTIZED_BITS,
 };
 pub use multiplicity::Mult;
 pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};

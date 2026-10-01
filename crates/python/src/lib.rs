@@ -6,8 +6,9 @@
 //! `pedigree_graph._errors`, keyed by their `.code`, with the keyword fields
 //! rebuilt from `Error::fields`.  A usage error crosses as a plain `ValueError`.
 
+use num_bigint::{BigInt, BigUint};
 use numpy::{
-    IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2,
+    IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray2,
     PyUntypedArrayMethods,
 };
 use pedigree_graph_core::alloc::{self, Family};
@@ -17,14 +18,16 @@ use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree};
 use pedigree_graph_core::lineage::{self, ParentColumns};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
-    self, Category, CategorySet, Execution, MomentsInput, MomentsPlan, MomentsShape, Pedigree,
-    Product, Side, Symmetric, Threshold, ThresholdColumn,
+    self, Category, CategorySet, Execution, MomentsInput, MomentsPlan, MomentsShape, MomentsTable,
+    Pedigree, Product, Side, Statistic, Symmetric, Threshold, ThresholdColumn,
 };
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple};
+use std::borrow::Cow;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 
 /// `(order, inverse)` intp arrays of a depth-major permutation.
 type Permutation<'py> = (Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>);
@@ -468,13 +471,13 @@ fn view_map<'a>(
     }
 }
 
-/// What [`relationship_moments`] hands back: the high and low int64 halves
-/// of every `i128` accumulator, the cells per category, the integers per
-/// cell, the lanes the pass ran on, the pairs each lane reduced, and the
-/// planned accumulator peak in bytes.
+/// What [`relationship_moments`] hands back: the bytes per accumulator and
+/// the encoded accumulators (adopted, not copied), the cells per category,
+/// the integers per cell, the lanes the pass ran on, the pairs each lane
+/// reduced, and the planned accumulator peak in bytes.
 type MomentsArrays<'py> = (
-    Bound<'py, PyArray1<i64>>,
-    Bound<'py, PyArray1<i64>>,
+    usize,
+    Bound<'py, PyArray1<u8>>,
     usize,
     usize,
     usize,
@@ -515,9 +518,9 @@ fn moments_plan(
 }
 
 /// Relationship moments per requested category and pair-label cell (ADR
-/// 0013): the exact `i128` accumulators `MomentsOutput` describes, split
-/// into int64 halves, in a `(hi, lo, cells, stride, lanes, lane_pairs,
-/// estimated_peak_bytes)` tuple.
+/// 0013, ADR 0015): the exact accumulators `CellReducer::finish` describes,
+/// encoded at their minimal width, in a `(width, table, cells, stride,
+/// lanes, lane_pairs, estimated_peak_bytes)` tuple.
 ///
 /// Inputs are in receiver rows: `labels_first` / `labels_second` are one
 /// int32 label per row below their label counts, `values` is a C-contiguous
@@ -564,20 +567,7 @@ fn relationship_moments<'py>(
     }
     let n_columns = values.shape()[1];
     let n_same = same.shape()[1];
-    let side = |code: u8| match code {
-        0 => Ok(Side::First),
-        1 => Ok(Side::Second),
-        _ => Err(PyValueError::new_err(format!(
-            "product sides are 0 (first) or 1 (second), got {code}"
-        ))),
-    };
-    let mut resolved = Vec::with_capacity(products.len());
-    for (side_a, a, side_b, b) in products {
-        resolved.push(Product {
-            a: (side(side_a)?, a),
-            b: (side(side_b)?, b),
-        });
-    }
+    let resolved = resolve_products(products)?;
     let input = MomentsInput {
         labels_first: labels_first.as_slice()?,
         n_labels_first,
@@ -610,14 +600,228 @@ fn relationship_moments<'py>(
         })
         .map_err(|e| to_pyerr(py, e))?;
     Ok((
-        moments.output.hi.into_pyarray(py),
-        moments.output.lo.into_pyarray(py),
+        moments.width,
+        moments.table.into_pyarray(py),
         moments.cells,
         moments.stride,
         moments.lanes,
         moments.lane_pairs,
         moments.estimated_peak_bytes,
     ))
+}
+
+/// Product operands as the host spells them, `(side_a, column_a, side_b,
+/// column_b)` with side `0` for the first member and `1` for the second.
+type ProductArg = (u8, usize, u8, usize);
+
+fn resolve_products(products: Vec<ProductArg>) -> PyResult<Vec<Product>> {
+    let side = |code: u8| match code {
+        0 => Ok(Side::First),
+        1 => Ok(Side::Second),
+        _ => Err(PyValueError::new_err(format!(
+            "product sides are 0 (first) or 1 (second), got {code}"
+        ))),
+    };
+    products
+        .into_iter()
+        .map(|(side_a, a, side_b, b)| {
+            Ok(Product {
+                a: (side(side_a)?, a),
+                b: (side(side_b)?, b),
+            })
+        })
+        .collect()
+}
+
+/// What [`moments_pack`] hands back: the labels, the label count and each
+/// factor's levels.
+type Packed<'py> = (
+    Bound<'py, PyArray1<i32>>,
+    usize,
+    Vec<Bound<'py, PyArray1<i64>>>,
+);
+
+/// Named factors packed by mixed radix into int32 labels (ADR 0015), as
+/// `(labels, n_labels, levels)`: `levels` holds each factor's distinct
+/// values ascending.  `kind` is `"first"` or `"second"`, which names the
+/// label range a refusal reports.
+#[pyfunction]
+fn moments_pack<'py>(
+    py: Python<'py>,
+    factors: Vec<PyReadonlyArray1<'py, i64>>,
+    n: usize,
+    kind: &str,
+) -> PyResult<Packed<'py>> {
+    let field = match kind {
+        "first" => "first label",
+        "second" => "second label",
+        _ => {
+            return Err(PyValueError::new_err(format!(
+                "kind must be 'first' or 'second', got {kind:?}"
+            )))
+        }
+    };
+    let columns = factors
+        .iter()
+        .map(|f| f.as_slice())
+        .collect::<Result<Vec<_>, _>>()?;
+    let packed = relationships::pack_labels(&columns, n, field).map_err(|e| to_pyerr(py, e))?;
+    let levels = packed
+        .levels
+        .into_iter()
+        .map(|l| l.into_pyarray(py))
+        .collect();
+    Ok((packed.labels.into_pyarray(py), packed.n_labels, levels))
+}
+
+/// Quantize one float64 value column into column `j` of the C-contiguous
+/// int64 `[n, k]` array `out` and return its exponent (ADR 0013, ADR 0015).
+/// `field` names the column in a non-finite refusal.
+#[pyfunction]
+fn moments_quantize(
+    py: Python<'_>,
+    column: PyReadonlyArray1<'_, f64>,
+    mut out: PyReadwriteArray2<'_, i64>,
+    j: usize,
+    field: &str,
+) -> PyResult<i64> {
+    let k = out.shape()[1];
+    let column = column.as_slice()?;
+    if out.shape()[0] != column.len() || j >= k {
+        return Err(PyValueError::new_err(format!(
+            "out must be [{}, k] with j < k, got {:?} and j={j}",
+            column.len(),
+            out.shape()
+        )));
+    }
+    let out = out.as_slice_mut()?;
+    relationships::quantize_column(column, out, k, j, field).map_err(|e| to_pyerr(py, e))
+}
+
+/// `numerator / (denominator · 2^shift)` rounded once to float64 (ADR
+/// 0015), the integers as decimal strings; `None` past the float64 range.
+#[pyfunction]
+fn moments_ratio(numerator: &str, denominator: &str, shift: i64) -> PyResult<Option<f64>> {
+    let parse_error =
+        |what: &str| PyValueError::new_err(format!("{what} is not a decimal integer"));
+    let numerator = BigInt::from_str(numerator).map_err(|_| parse_error("numerator"))?;
+    let denominator = BigUint::from_str(denominator).map_err(|_| parse_error("denominator"))?;
+    if denominator == BigUint::ZERO {
+        return Err(PyValueError::new_err("denominator must be positive"));
+    }
+    Ok(relationships::ratio(&numerator, &denominator, shift))
+}
+
+/// A moments table as the host hands it over: `(shape, n_columns, products,
+/// exponents, width, data)`, `data` a uint8 array of little-endian two's
+/// complement accumulators, `width` bytes each.  Core borrows `data`.
+type TableArg<'py> = (
+    Vec<usize>,
+    usize,
+    Vec<ProductArg>,
+    Vec<i64>,
+    usize,
+    PyReadonlyArray1<'py, u8>,
+);
+
+/// A table core returns: `(shape, exponents, width, data)`, at its minimal
+/// width.
+type TableOut<'py> = (Vec<usize>, Vec<i64>, usize, Bound<'py, PyArray1<u8>>);
+
+fn table<'a>(py: Python<'_>, arg: &'a TableArg<'_>) -> PyResult<MomentsTable<'a>> {
+    let (shape, n_columns, products, exponents, width, data) = arg;
+    MomentsTable::from_bytes(
+        shape.clone(),
+        *n_columns,
+        resolve_products(products.clone())?,
+        exponents.clone(),
+        *width,
+        Cow::Borrowed(data.as_slice()?),
+    )
+    .map_err(|e| to_pyerr(py, e))
+}
+
+fn table_out<'py>(py: Python<'py>, table: MomentsTable<'_>) -> TableOut<'py> {
+    let (shape, exponents, width) = (
+        table.shape().to_vec(),
+        table.exponents().to_vec(),
+        table.width(),
+    );
+    (shape, exponents, width, table.into_bytes().into_pyarray(py))
+}
+
+/// The int64 pair count of every cell of a moments table, after core has
+/// checked the table: its layout, and every count in `[0, 2^63 - 1]`.
+#[pyfunction]
+fn moments_table_counts<'py>(
+    py: Python<'py>,
+    table_arg: TableArg<'py>,
+) -> PyResult<Bound<'py, PyArray1<i64>>> {
+    Ok(table(py, &table_arg)?.counts().into_pyarray(py))
+}
+
+/// Fold `axis` of a moments table away, exactly (ADR 0015); refuses a cell
+/// whose pair count would pass 2^63 - 1.
+#[pyfunction]
+fn moments_table_sum<'py>(
+    py: Python<'py>,
+    table_arg: TableArg<'py>,
+    axis: usize,
+) -> PyResult<TableOut<'py>> {
+    let input = table(py, &table_arg)?;
+    let out = py.detach(|| input.sum(axis)).map_err(|e| to_pyerr(py, e))?;
+    Ok(table_out(py, out))
+}
+
+/// Keep `positions` of `axis` of a moments table, in that order (ADR 0015).
+#[pyfunction]
+fn moments_table_select<'py>(
+    py: Python<'py>,
+    table_arg: TableArg<'py>,
+    axis: usize,
+    positions: Vec<usize>,
+) -> PyResult<TableOut<'py>> {
+    let input = table(py, &table_arg)?;
+    let out = py
+        .detach(|| input.select(axis, &positions))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(table_out(py, out))
+}
+
+/// Add two moments tables of one layout cell by cell, aligning differing
+/// exponents exactly (ADR 0015); refuses a cell whose pair count would
+/// pass 2^63 - 1.
+#[pyfunction]
+fn moments_table_merge<'py>(
+    py: Python<'py>,
+    a: TableArg<'py>,
+    b: TableArg<'py>,
+) -> PyResult<TableOut<'py>> {
+    let (left, right) = (table(py, &a)?, table(py, &b)?);
+    let out = py
+        .detach(|| left.merge(&right))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(table_out(py, out))
+}
+
+/// One float64 per cell of `statistic` (`"sum_first"`, ..., `"pearson"`)
+/// for column or product `index` of a moments table (ADR 0015); `name`
+/// spells that column or product in an unrepresentable-output refusal.
+#[pyfunction]
+fn moments_table_derive<'py>(
+    py: Python<'py>,
+    table_arg: TableArg<'py>,
+    statistic: &str,
+    index: usize,
+    name: &str,
+) -> PyResult<Bound<'py, PyArray1<f64>>> {
+    let statistic = Statistic::parse(statistic)
+        .ok_or_else(|| PyValueError::new_err(format!("unknown statistic {statistic:?}")))?;
+    let input = table(py, &table_arg)?;
+    let out = py
+        .detach(|| input.derive(statistic, index, name))
+        .map_err(|e| to_pyerr(py, e))?;
+    Ok(out.into_pyarray(py))
 }
 
 /// What [`relationship_burden`] hands back: category counts keyed by code,
@@ -1148,6 +1352,19 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(relationship_burden, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_moments, m)?)?;
     m.add_function(wrap_pyfunction!(moments_plan, m)?)?;
+    m.add(
+        "MOMENTS_MAX_VALUE_COLUMNS",
+        relationships::MAX_VALUE_COLUMNS,
+    )?;
+    m.add("MOMENTS_MAX_SAME_KEYS", relationships::MAX_SAME_KEYS)?;
+    m.add_function(wrap_pyfunction!(moments_pack, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_quantize, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_ratio, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_table_counts, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_table_sum, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_table_select, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_table_merge, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_table_derive, m)?)?;
     m.add_function(wrap_pyfunction!(relatives_per_person, m)?)?;
     m.add_function(wrap_pyfunction!(pair_kinship, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_support_values, m)?)?;

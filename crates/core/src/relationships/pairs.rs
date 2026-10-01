@@ -768,6 +768,8 @@ mod tests {
             | Family::FounderMeans
             | Family::MomentLanes
             | Family::MomentOutput
+            | Family::MomentInput
+            | Family::MomentTable
             | Family::RelativeCounts => false,
             _ => true,
         }

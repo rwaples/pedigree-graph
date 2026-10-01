@@ -11,24 +11,28 @@ categories under ``symmetric="both"``, once per orientation.
 The table holds the engine's accumulators as they are: per cell the pair
 count and, in quantized integer units, the sums of every value column over
 each member, their sums of squares, and the cross sums of the requested
-products, as NumPy object arrays of Python ``int`` with the per-column
-exponents beside them.  :meth:`~RelationshipMoments.select` narrows an
-axis, :meth:`~RelationshipMoments.sum` folds one away and
-:meth:`~RelationshipMoments.merge` combines two results; all three are
-integer additions, so they are exact and order-independent, and the
-centered moments of a fold equal those of a direct engine call bit for bit.
-Every float the table offers (``sum_first``, ``sumsq_first``, ``cross``,
-``m2_first``, ``comoment``, ``mean``, ``pearson``, ...) is derived from the
-integers by one path: an exact integer numerator, divided by the count
-where the moment is centered and by ``2**exponent``, as an exact rational
-rounded once to float64.
+products, with the per-column exponents beside them.
+:meth:`~RelationshipMoments.select` narrows an axis,
+:meth:`~RelationshipMoments.sum` folds one away and
+:meth:`~RelationshipMoments.merge` combines two results; the fold and the
+merge are integer additions, so they are exact and order-independent, and
+the centered moments of a fold equal those of a direct engine call bit for
+bit.  Every float the table offers (``sum_first``, ``sumsq_first``,
+``cross``, ``m2_first``, ``comoment``, ``mean``, ``pearson``, ...) is
+derived from the integers by one path: an exact integer numerator, divided
+by the count where the moment is centered and by ``2**exponent``, as an
+exact rational rounded once to float64.
+
+The Rust core holds that arithmetic for the Python and R hosts alike (ADR
+0015).  A result keeps the accumulators in core's encoding, little-endian
+two's complement integers of one width per table, and hands them to core
+for every fold, merge, selection and float; the ``q_*`` attributes decode
+them to Python ints on access.
 """
 
 from __future__ import annotations
 
 __all__ = [
-    "CONVERSION_BYTES_PER_ACCUMULATOR",
-    "CONVERSION_CHUNK",
     "HOST_BYTES_PER_ACCUMULATOR",
     "MomentAxis",
     "RelationshipMoments",
@@ -36,37 +40,27 @@ __all__ = [
     "side_column",
 ]
 
-import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
+
+from pedigree_graph import _native
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
 
-#: Bytes the host keeps per accumulator, the term the engine's budget plan
-#: adds once (``HOST_BYTES_PER_ACCUMULATOR`` in ``moments.rs``, which the
-#: budget tests hold to this value): the two int64 halves the binding hands
-#: over (16) plus the object-array slot (8) and a Python ``int`` of up to
-#: ``2**126`` (48 on CPython 3.13).
-HOST_BYTES_PER_ACCUMULATOR = 16 + 8 + 48
-
-#: Accumulators the host converts to Python ints at a time, and the scratch
-#: bytes each one of a chunk may hold while it is converted (two int lists
-#: and the result list; about 100 measured with tracemalloc on CPython 3.13).
-#: Mirrors ``CONVERSION_CHUNK`` and ``CONVERSION_BYTES_PER_ACCUMULATOR`` in
-#: ``moments.rs``.
-CONVERSION_CHUNK = 4096
-CONVERSION_BYTES_PER_ACCUMULATOR = 128
+#: Bytes per accumulator the engine's budget plan adds once beyond its lanes
+#: (``HOST_BYTES_PER_ACCUMULATOR`` in ``moments.rs``, which the budget tests
+#: hold to this value): the encoded table, at most 16, and one host copy of
+#: it, which R makes and Python does not.  One figure for both hosts.
+HOST_BYTES_PER_ACCUMULATOR = 16 + 16
 
 
 def host_bytes(accumulators: int) -> int:
     """The host term of the budget estimate for *accumulators* accumulators (``host_bytes`` in ``moments.rs``)."""
-    return accumulators * HOST_BYTES_PER_ACCUMULATOR + min(accumulators, CONVERSION_CHUNK) * (
-        CONVERSION_BYTES_PER_ACCUMULATOR
-    )
+    return accumulators * HOST_BYTES_PER_ACCUMULATOR
 
 
 def _frozen(values: np.ndarray) -> np.ndarray:
@@ -111,64 +105,38 @@ def side_column(name: str, columns: Sequence[str]) -> tuple[int, int]:
     return (0 if side == "first" else 1), columns.index(column)
 
 
-def to_float(
-    numerators: np.ndarray, exponents: np.ndarray, divisor: np.ndarray | None, what: str, names: Sequence[str]
-) -> np.ndarray:
-    """``numerator / (divisor · 2^exponent)`` per trailing column, the one integer-to-float path.
-
-    *numerators* is an object array of Python ints with one trailing axis
-    over *names*; *exponents* is one int per trailing entry; *divisor*
-    (counts, broadcast over the trailing axis) is applied where it is
-    positive and yields ``0.0`` elsewhere.  Each value is the exact rational
-    rounded once to the nearest float64, ties to even (Python's int true
-    division), so an integer too large for float64 still converts when the
-    scaled value fits; a value that does not fit raises ``ValueError``
-    naming the column.
-    """
-    shape = numerators.shape
-    if numerators.size == 0:
-        return _frozen(np.zeros(shape, dtype=np.float64))
-    width = shape[-1] if numerators.ndim else 1
-    flat = numerators.reshape(-1, width)
-    counts = (
-        np.ones(flat.shape, dtype=np.int64)
-        if divisor is None
-        else np.broadcast_to(np.asarray(divisor)[..., np.newaxis], shape).reshape(-1, width)
-    )
-    out = np.empty(flat.shape, dtype=np.float64)
-    flat_exponents = np.asarray(exponents).reshape(-1)
-    for j in range(width):
-        e = int(flat_exponents[j])
-        try:
-            out[:, j] = [
-                _divide_exact(int(v), int(n), e) if n > 0 else 0.0
-                for v, n in zip(flat[:, j], counts[:, j], strict=True)
-            ]
-        except OverflowError:
-            raise ValueError(f"{what} of {names[j]!r} is not representable in float64 (an output overflowed)") from None
-    return _frozen(out.reshape(shape))
+def _encode_exact(values: np.ndarray) -> tuple[int, np.ndarray]:
+    """Integers in core's encoding at a width that holds them all: ``(width, uint8 bytes)``."""
+    ints = [int(v) for v in np.asarray(values).reshape(-1).tolist()]
+    width = max(((v if v >= 0 else ~v).bit_length() // 8 + 1 for v in ints), default=1)
+    data = b"".join(v.to_bytes(width, "little", signed=True) for v in ints)
+    return width, np.frombuffer(data, dtype=np.uint8)
 
 
-def _divide_exact(numerator: int, count: int, exponent: int) -> float:
-    """``numerator / (count · 2^exponent)`` rounded once; ``OverflowError`` past float64."""
-    if exponent >= 0:
-        return numerator / (count << exponent)
-    return (numerator << -exponent) / count
-
-
-def _ints(values: np.ndarray) -> np.ndarray:
-    """*values* as an object array of Python ints."""
-    return np.asarray(values, dtype=object)
+def _decode_exact(width: int, data: np.ndarray) -> np.ndarray:
+    """Integers in core's encoding, ``(width, uint8 bytes)``, as an object array of Python ints."""
+    if width > 8:
+        raw = data.tobytes()
+        return np.array(
+            [int.from_bytes(raw[i : i + width], "little", signed=True) for i in range(0, len(raw), width)],
+            dtype=object,
+        )
+    rows = data.reshape(-1, width)
+    full = np.zeros((len(rows), 8), dtype=np.uint8)
+    full[:, :width] = rows
+    full[rows[:, width - 1] >= 0x80, width:] = 0xFF
+    return full.view("<i8").reshape(-1).astype(object)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
 class RelationshipMoments:
     """Pair counts and value moments per category and pair-label cell.
 
-    The exact accumulators are the ``q_*`` object arrays (Python ints, in
-    quantized units of ``2^-exponents[c]`` per column ``c``); every other
-    array is a float64 view derived from them on access.  ``shape`` is the
-    tuple of axis sizes; the per-column arrays carry one trailing axis over
+    The exact accumulators are in :attr:`encoded`, core's encoding; the
+    ``q_*`` attributes decode them to object arrays of Python ints, in
+    quantized units of ``2^-exponents[c]`` per column ``c``, and every float
+    array is derived from them on access.  ``shape`` is the tuple of axis
+    sizes; the per-column arrays carry one trailing axis over
     :attr:`columns`, the per-product arrays one over :attr:`products`.
     Every array is read-only.
 
@@ -179,38 +147,87 @@ class RelationshipMoments:
             "<side>.<column>")`` pairs, in call order.
         exponents: int64 scale exponent per column: the integers are the
             values times ``2**exponents[c]``.
-        counts: int64 pairs per cell.
-        q_sum_first: Σq of each column over the first member, per cell.
-        q_sum_second: The same over the second member.
-        q_sumsq_first: Σq² of each column over the first member.
-        q_sumsq_second: The same over the second member.
-        q_cross: Σ q_a q_b of each product over the pairs.
+        width: Bytes per accumulator in :attr:`encoded`.
+        encoded: The accumulators as uint8: per cell in row-major order over
+            :attr:`shape`, the pair count, ``Σq`` of each column over the
+            first member, over the second, ``Σq²`` of each over the first,
+            over the second, and ``Σ q_a q_b`` of each product, each
+            ``width`` bytes of little-endian two's complement.
         symmetric: The orientation rule the result was computed under.
         lanes: The accumulator lanes the engine pass ran on (0 without a pass).
         lane_pairs: The pairs each lane reduced, a diagnostic.
         estimated_peak_bytes: The planned accumulator peak of that pass.
+        counts: int64 pairs per cell, decoded from :attr:`encoded`.
     """
 
     axes: tuple[MomentAxis, ...]
     columns: tuple[str, ...]
     products: tuple[tuple[str, str], ...]
     exponents: np.ndarray
-    counts: np.ndarray
-    q_sum_first: np.ndarray
-    q_sum_second: np.ndarray
-    q_sumsq_first: np.ndarray
-    q_sumsq_second: np.ndarray
-    q_cross: np.ndarray
+    width: int
+    encoded: np.ndarray
     symmetric: str
     lanes: int = 0
     lane_pairs: tuple[int, ...] = ()
     estimated_peak_bytes: int = 0
+    counts: np.ndarray = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "exponents", _frozen(np.asarray(self.exponents, dtype=np.int64)))
-        object.__setattr__(self, "counts", _frozen(np.asarray(self.counts, dtype=np.int64)))
-        for name in _EXACT:
-            object.__setattr__(self, name, _frozen(_ints(getattr(self, name))))
+        object.__setattr__(self, "encoded", _frozen(np.asarray(self.encoded, dtype=np.uint8).reshape(-1)))
+        # Core checks the layout and that every count is in [0, 2^63 - 1].
+        counts = _native.moments_table_counts(self._core_table())
+        object.__setattr__(self, "counts", _frozen(counts.reshape(self.shape)))
+
+    @classmethod
+    def from_exact(
+        cls,
+        *,
+        axes: Sequence[MomentAxis],
+        columns: Sequence[str],
+        products: Sequence[tuple[str, str]],
+        exponents: np.ndarray,
+        counts: np.ndarray,
+        q_sum_first: np.ndarray,
+        q_sum_second: np.ndarray,
+        q_sumsq_first: np.ndarray,
+        q_sumsq_second: np.ndarray,
+        q_cross: np.ndarray,
+        symmetric: str,
+    ) -> RelationshipMoments:
+        """A table from its exact accumulators, for tables built without a pedigree.
+
+        *counts* has the axes' shape; each ``q_*`` adds a trailing axis over
+        *columns* (over *products* for ``q_cross``) of integers in quantized
+        units, as the attributes of the same names hold them.
+
+        Raises:
+            ValueError: A count outside ``[0, 2**63 - 1]`` or arrays that do not
+                fit the axes.
+        """
+        shape = tuple(len(axis.levels) for axis in axes)
+        slabs = [np.asarray(counts, dtype=object).reshape(*shape, 1)]
+        for name, values, width in (
+            ("q_sum_first", q_sum_first, len(columns)),
+            ("q_sum_second", q_sum_second, len(columns)),
+            ("q_sumsq_first", q_sumsq_first, len(columns)),
+            ("q_sumsq_second", q_sumsq_second, len(columns)),
+            ("q_cross", q_cross, len(products)),
+        ):
+            array = np.asarray(values, dtype=object)
+            if array.shape != (*shape, width):
+                raise ValueError(f"{name} has shape {array.shape}, expected {(*shape, width)}")
+            slabs.append(array)
+        width, encoded = _encode_exact(np.concatenate(slabs, axis=-1))
+        return cls(
+            axes=tuple(axes),
+            columns=tuple(columns),
+            products=tuple(products),
+            exponents=exponents,
+            width=width,
+            encoded=encoded,
+            symmetric=symmetric,
+        )
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -227,20 +244,16 @@ class RelationshipMoments:
 
     def __repr__(self) -> str:
         axes = ", ".join(f"{axis.name}={len(axis.levels)}" for axis in self.axes)
-        return f"RelationshipMoments({axes}; pairs={int(self.counts.sum())})"
+        # Python ints: several valid int64 cells can together pass 2^63.
+        pairs = sum(self.counts.reshape(-1).tolist())
+        return f"RelationshipMoments({axes}; pairs={pairs})"
 
     def axis(self, name: str) -> MomentAxis:
         """The axis called *name*."""
         return self.axes[self._axis_index(name)]
 
     def _axis_index(self, name: str) -> int:
-        for i, axis in enumerate(self.axes):
-            if axis.name == name:
-                return i
-        raise ValueError(f"no axis {name!r}; the axes are {tuple(a.name for a in self.axes)}")
-
-    def _arrays(self) -> dict[str, np.ndarray]:
-        return {name: getattr(self, name) for name in ("counts", *_EXACT)}
+        return _axis_index(self.axes, name)
 
     def select(self, **levels: object) -> RelationshipMoments:
         """Narrow axes to the given levels, keeping every axis.
@@ -257,15 +270,13 @@ class RelationshipMoments:
         result = self
         for name, value in levels.items():
             axis = result._axis_index(name)
-            wanted = _levels_of(value)
-            positions = [result.axes[axis].position(v) for v in wanted]
+            positions = [result.axes[axis].position(v) for v in _levels_of(value)]
             if len(set(positions)) != len(positions):
                 raise ValueError(f"select({name}=...) names a level more than once")
-            index = np.array(positions, dtype=np.intp)
-            arrays = {key: np.take(array, index, axis=axis) for key, array in result._arrays().items()}
+            _, exponents, width, data = _native.moments_table_select(result._core_table(), axis, positions)
             axes = list(result.axes)
-            axes[axis] = MomentAxis(axes[axis].name, _frozen(result.axes[axis].levels[index]))
-            result = replace(result, axes=tuple(axes), **arrays)
+            axes[axis] = MomentAxis(axes[axis].name, axes[axis].levels[np.array(positions, dtype=np.intp)])
+            result = result._from_core(tuple(axes), exponents, width, data, keep_pass=True)
         return result
 
     def sum(self, *names: str) -> RelationshipMoments:
@@ -274,14 +285,22 @@ class RelationshipMoments:
         ``sum("category")`` merges categories (``PO`` from ``MO`` and
         ``FO``), ``sum("first_sex")`` pools a stratum.  An axis with no
         levels folds to zero pairs.
+
+        Raises:
+            ResourceError: A cell's pair count would pass ``2**63 - 1``
+                (``arithmetic_overflow``); nothing wraps.
         """
-        result = self
+        if not names:
+            return self
+        axes = list(self.axes)
+        shape, n_columns, operands, exponents, width, data = self._core_table()
         for name in names:
-            axis = result._axis_index(name)
-            arrays = {key: _sum_axis(array, axis) for key, array in result._arrays().items()}
-            axes = tuple(a for i, a in enumerate(result.axes) if i != axis)
-            result = replace(result, axes=axes, **arrays)
-        return result
+            axis = _axis_index(axes, name)
+            shape, exponents, width, data = _native.moments_table_sum(
+                (shape, n_columns, operands, exponents, width, data), axis
+            )
+            del axes[axis]
+        return self._from_core(tuple(axes), exponents, width, data, keep_pass=True)
 
     def merge(self, other: RelationshipMoments) -> RelationshipMoments:
         """Add two results over identical axes, columns, products and orientation, cell by cell.
@@ -293,6 +312,8 @@ class RelationshipMoments:
 
         Raises:
             ValueError: The layouts or the ``symmetric`` rules differ.
+            ResourceError: A cell's pair count would pass ``2**63 - 1``
+                (``arithmetic_overflow``); nothing wraps.
         """
         same_axes = len(self.axes) == len(other.axes) and all(
             a.name == b.name and a.levels.shape == b.levels.shape and bool(np.all(a.levels == b.levels))
@@ -302,27 +323,79 @@ class RelationshipMoments:
             raise ValueError("merge needs two results with the same axes, columns and products")
         if self.symmetric != other.symmetric:
             raise ValueError(f"merge needs one symmetric rule, got {self.symmetric!r} and {other.symmetric!r}")
-        exponents = np.maximum(self.exponents, other.exponents)
-        a, b = self._aligned(exponents), other._aligned(exponents)
-        arrays = {key: a[key] + b[key] for key in a}
-        return replace(self, exponents=exponents, lanes=0, lane_pairs=(), estimated_peak_bytes=0, **arrays)
+        _, exponents, width, data = _native.moments_table_merge(self._core_table(), other._core_table())
+        return self._from_core(self.axes, exponents, width, data)
 
-    def _aligned(self, exponents: np.ndarray) -> dict[str, np.ndarray]:
-        """The exact arrays rescaled to *exponents* (at or above this result's own)."""
-        shift = [int(e) for e in exponents - self.exponents]
-        if any(s < 0 for s in shift):
-            raise ValueError("cannot align to a coarser exponent")
-        one = np.array([2**s for s in shift], dtype=object)
-        two = np.array([2 ** (2 * s) for s in shift], dtype=object)
-        cross = np.array([2 ** (shift[ca] + shift[cb]) for _, ca, _, cb in self._product_operands()], dtype=object)
-        return {
-            "counts": self.counts,
-            "q_sum_first": self.q_sum_first * one,
-            "q_sum_second": self.q_sum_second * one,
-            "q_sumsq_first": self.q_sumsq_first * two,
-            "q_sumsq_second": self.q_sumsq_second * two,
-            "q_cross": self.q_cross * cross,
-        }
+    def _core_table(self) -> tuple:
+        """This table as core reads it: ``(shape, n_columns, operands, exponents, width, bytes)``."""
+        operands = list(self._product_operands())
+        exponents = [int(e) for e in self.exponents]
+        return (list(self.shape), len(self.columns), operands, exponents, self.width, self.encoded)
+
+    def _from_core(
+        self,
+        axes: tuple[MomentAxis, ...],
+        exponents: list[int],
+        width: int,
+        data: np.ndarray,
+        *,
+        keep_pass: bool = False,
+    ) -> RelationshipMoments:
+        """A result over *axes* from core's table; a merge has no single engine pass, so it keeps none."""
+        return RelationshipMoments(
+            axes=tuple(axes),
+            columns=self.columns,
+            products=self.products,
+            exponents=np.asarray(exponents, dtype=np.int64),
+            width=width,
+            encoded=data,
+            symmetric=self.symmetric,
+            lanes=self.lanes if keep_pass else 0,
+            lane_pairs=self.lane_pairs if keep_pass else (),
+            estimated_peak_bytes=self.estimated_peak_bytes if keep_pass else 0,
+        )
+
+    def _exact(self, at: int, size: int) -> np.ndarray:
+        """Accumulators ``at .. at + size`` of every cell, as Python ints over ``(*shape, size)``."""
+        stride = 1 + 4 * len(self.columns) + len(self.products)
+        slots = self.encoded.reshape(-1, stride, self.width)[:, at : at + size, :]
+        return _frozen(_decode_exact(self.width, np.ascontiguousarray(slots).reshape(-1)).reshape(*self.shape, size))
+
+    @property
+    def q_sum_first(self) -> np.ndarray:
+        """Σq of each column over the first member, per cell (Python ints)."""
+        return self._exact(1, len(self.columns))
+
+    @property
+    def q_sum_second(self) -> np.ndarray:
+        """Σq of each column over the second member, per cell (Python ints)."""
+        k = len(self.columns)
+        return self._exact(1 + k, k)
+
+    @property
+    def q_sumsq_first(self) -> np.ndarray:
+        """Σq² of each column over the first member, per cell (Python ints)."""
+        k = len(self.columns)
+        return self._exact(1 + 2 * k, k)
+
+    @property
+    def q_sumsq_second(self) -> np.ndarray:
+        """Σq² of each column over the second member, per cell (Python ints)."""
+        k = len(self.columns)
+        return self._exact(1 + 3 * k, k)
+
+    @property
+    def q_cross(self) -> np.ndarray:
+        """Σ q_a q_b of each product over the pairs, per cell (Python ints)."""
+        return self._exact(1 + 4 * len(self.columns), len(self.products))
+
+    def _derive(self, statistic: str, names: Sequence[str]) -> np.ndarray:
+        """*statistic* of every column or product in *names*, stacked on a trailing axis (core)."""
+        table = self._core_table()
+        out = np.empty((*self.shape, len(names)), dtype=np.float64)
+        for j, name in enumerate(names):
+            out[..., j] = _native.moments_table_derive(table, statistic, j, name).reshape(self.shape)
+        return _frozen(out)
 
     def _product_operands(self) -> tuple[tuple[int, int, int, int], ...]:
         """Each product as ``(side_a, column_a, side_b, column_b)`` indices."""
@@ -333,80 +406,54 @@ class RelationshipMoments:
             operands.append((side_a, column_a, side_b, column_b))
         return tuple(operands)
 
-    def _product_exponents(self) -> np.ndarray:
-        return np.array(
-            [self.exponents[ca] + self.exponents[cb] for _, ca, _, cb in self._product_operands()], dtype=np.int64
-        )
-
     def _product_names(self) -> tuple[str, ...]:
         return tuple(f"{a} x {b}" for a, b in self.products)
 
     @property
     def sum_first(self) -> np.ndarray:
         """Σx of each column over the first member, per cell (float64)."""
-        return to_float(self.q_sum_first, self.exponents, None, "sum_first", self.columns)
+        return self._derive("sum_first", self.columns)
 
     @property
     def sum_second(self) -> np.ndarray:
         """Σx of each column over the second member, per cell (float64)."""
-        return to_float(self.q_sum_second, self.exponents, None, "sum_second", self.columns)
+        return self._derive("sum_second", self.columns)
 
     @property
     def sumsq_first(self) -> np.ndarray:
         """Σx² of each column over the first member, per cell (float64)."""
-        return to_float(self.q_sumsq_first, 2 * self.exponents, None, "sumsq_first", self.columns)
+        return self._derive("sumsq_first", self.columns)
 
     @property
     def sumsq_second(self) -> np.ndarray:
         """Σx² of each column over the second member, per cell (float64)."""
-        return to_float(self.q_sumsq_second, 2 * self.exponents, None, "sumsq_second", self.columns)
+        return self._derive("sumsq_second", self.columns)
 
     @property
     def cross(self) -> np.ndarray:
         """Σ x_a y_b of each product over the pairs, per cell (float64)."""
-        return to_float(self.q_cross, self._product_exponents(), None, "cross", self._product_names())
-
-    def _numerator(self, sumsq: np.ndarray, sum_a: np.ndarray, sum_b: np.ndarray) -> np.ndarray:
-        """``n·Σq_a q_b − Σq_a·Σq_b`` exactly, per cell."""
-        n = _ints(self.counts)[..., np.newaxis]
-        return n * sumsq - sum_a * sum_b
+        return self._derive("cross", self._product_names())
 
     @property
     def m2_first(self) -> np.ndarray:
         """Exact centered second moment ``Σ(x − x̄)²`` of each column over the first member."""
-        numerator = self._numerator(self.q_sumsq_first, self.q_sum_first, self.q_sum_first)
-        return to_float(numerator, 2 * self.exponents, self.counts, "m2_first", self.columns)
+        return self._derive("m2_first", self.columns)
 
     @property
     def m2_second(self) -> np.ndarray:
         """Exact centered second moment of each column over the second member."""
-        numerator = self._numerator(self.q_sumsq_second, self.q_sum_second, self.q_sum_second)
-        return to_float(numerator, 2 * self.exponents, self.counts, "m2_second", self.columns)
-
-    def _comoment_numerators(self) -> np.ndarray:
-        sums = (self.q_sum_first, self.q_sum_second)
-        operands = self._product_operands()
-        if not operands:
-            return np.zeros((*self.shape, 0), dtype=object)
-        columns = [
-            self._numerator(self.q_cross[..., i : i + 1], sums[sa][..., ca : ca + 1], sums[sb][..., cb : cb + 1])
-            for i, (sa, ca, sb, cb) in enumerate(operands)
-        ]
-        return np.concatenate(columns, axis=-1)
+        return self._derive("m2_second", self.columns)
 
     @property
     def comoment(self) -> np.ndarray:
         """Exact centered co-moment ``Σ(x − x̄)(y − ȳ)`` of each product."""
-        return to_float(
-            self._comoment_numerators(), self._product_exponents(), self.counts, "comoment", self._product_names()
-        )
+        return self._derive("comoment", self._product_names())
 
     def mean(self, name: str) -> np.ndarray:
         """The mean of ``"first.<column>"`` or ``"second.<column>"`` per cell, NaN where empty."""
         side, column = side_column(name, self.columns)
-        total = (self.q_sum_first, self.q_sum_second)[side][..., column : column + 1]
-        scaled = to_float(total, self.exponents[column : column + 1], self.counts, "mean", (name,))[..., 0]
-        return _frozen(np.where(self.counts > 0, scaled, np.nan))
+        statistic = ("mean_first", "mean_second")[side]
+        return _frozen(_native.moments_table_derive(self._core_table(), statistic, column, name).reshape(self.shape))
 
     def pearson(self, a: str, b: str) -> np.ndarray:
         """Pearson correlation of the product ``(a, b)`` per cell.
@@ -425,23 +472,8 @@ class RelationshipMoments:
             index = self.products.index((b, a))
         else:
             raise ValueError(f"({a!r}, {b!r}) is not a requested product; the products are {self.products}")
-        n_ab = self._comoment_numerators()[..., index]
-        n_aa = self._own_numerator(a)
-        n_bb = self._own_numerator(b)
-        out = np.full(self.shape, np.nan, dtype=np.float64)
-        for cell in np.ndindex(*self.shape):
-            aa, bb = n_aa[cell], n_bb[cell]
-            if aa > 0 and bb > 0:
-                ab = n_ab[cell]
-                r = math.sqrt(ab * ab / (aa * bb))
-                out[cell] = -r if ab < 0 else r
-        return _frozen(out)
-
-    def _own_numerator(self, name: str) -> np.ndarray:
-        side, column = side_column(name, self.columns)
-        sums = (self.q_sum_first, self.q_sum_second)[side][..., column : column + 1]
-        sumsq = (self.q_sumsq_first, self.q_sumsq_second)[side][..., column : column + 1]
-        return self._numerator(sumsq, sums, sums)[..., 0]
+        name = self._product_names()[index]
+        return _frozen(_native.moments_table_derive(self._core_table(), "pearson", index, name).reshape(self.shape))
 
     def table(self, flag_a: str, flag_b: str) -> np.ndarray:
         """Pair counts by two factor axes, every other factor axis folded away.
@@ -464,7 +496,11 @@ class RelationshipMoments:
         return {axis.name: _frozen(axis.levels[grid]) for axis, grid in zip(self.axes, grids, strict=True)}
 
 
-_EXACT = ("q_sum_first", "q_sum_second", "q_sumsq_first", "q_sumsq_second", "q_cross")
+def _axis_index(axes: Sequence[MomentAxis], name: str) -> int:
+    for i, axis in enumerate(axes):
+        if axis.name == name:
+            return i
+    raise ValueError(f"no axis {name!r}; the axes are {tuple(a.name for a in axes)}")
 
 
 def _levels_of(value: object) -> list[object]:
@@ -473,11 +509,3 @@ def _levels_of(value: object) -> list[object]:
     if isinstance(value, str | bytes) or not hasattr(value, "__iter__"):
         return [value]
     return list(cast("Iterable[object]", value))
-
-
-def _sum_axis(array: np.ndarray, axis: int) -> np.ndarray:
-    """Exact sum along *axis*; an empty axis gives zeros of the array's dtype."""
-    if array.shape[axis] == 0:
-        shape = tuple(size for i, size in enumerate(array.shape) if i != axis)
-        return np.zeros(shape, dtype=array.dtype)
-    return np.sum(array, axis=axis)

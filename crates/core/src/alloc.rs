@@ -67,15 +67,20 @@ pub enum Family {
     FounderMeans,
     /// A relationship-moments lane: the `i128` accumulators of every cell.
     MomentLanes,
-    /// The relationship-moments output, one `f64` per accumulator and moment.
+    /// What a relationship-moments call or view hands the host: the
+    /// encoded accumulators of an engine pass, or one `f64` per cell.
     MomentOutput,
+    /// A relationship-moments host input: the packed labels of every row.
+    MomentInput,
+    /// An exact relationship-moments table, `width` bytes per accumulator.
+    MomentTable,
     /// The per-person relative counts, one `u32` per receiver row, requested
     /// category and count column.
     RelativeCounts,
 }
 
 impl Family {
-    pub const ALL: [Family; 23] = [
+    pub const ALL: [Family; 25] = [
         Family::ParentEdges,
         Family::Csr,
         Family::SiblingIndex,
@@ -98,6 +103,8 @@ impl Family {
         Family::FounderMeans,
         Family::MomentLanes,
         Family::MomentOutput,
+        Family::MomentInput,
+        Family::MomentTable,
         Family::RelativeCounts,
     ];
 
@@ -126,6 +133,8 @@ impl Family {
             Family::FounderMeans => "founder_means",
             Family::MomentLanes => "moment_lanes",
             Family::MomentOutput => "moment_output",
+            Family::MomentInput => "moment_input",
+            Family::MomentTable => "moment_table",
             Family::RelativeCounts => "relative_counts",
         }
     }

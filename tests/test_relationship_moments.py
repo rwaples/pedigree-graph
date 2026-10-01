@@ -22,7 +22,7 @@ from conftest import parity_columns, parity_fixtures
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, ResourceError
 from pedigree_graph import _relationship_moments as boundary
 from pedigree_graph._threads import thread_budget
-from pedigree_graph.moments import CONVERSION_CHUNK, MomentAxis, host_bytes
+from pedigree_graph.moments import MomentAxis, host_bytes
 
 if TYPE_CHECKING:
     from pedigree_graph.moments import RelationshipMoments
@@ -243,7 +243,7 @@ class TestParity:
 class TestQuantization:
     def test_exponents_follow_the_binary_exponent_rule(self):
         for magnitude, want in [(0.0, 0), (1.0, 43), (1024.0, 33), (3.0, 41), (0.75, 43), (1e-3, 52)]:
-            got = boundary._exponent(np.array([magnitude, -magnitude / 2]))
+            got = boundary._quantize({"x": np.array([magnitude, -magnitude / 2])}, 2)[1][0]
             assert got == want, magnitude
             if magnitude:
                 assert Fraction(magnitude) * Fraction(2) ** got <= Fraction(2) ** 43
@@ -251,7 +251,7 @@ class TestQuantization:
 
     def test_halfway_values_round_to_even_at_both_signs(self):
         magnitude = 16.0
-        e = boundary._exponent(np.array([magnitude]))
+        e = int(boundary._quantize({"x": np.array([magnitude])}, 1)[1][0])
         step = Fraction(1, 2**e)
         halfway = [float(step * (k + Fraction(1, 2))) for k in (2, 3, -3, -4)]
         column = np.array([magnitude, *halfway])
@@ -271,7 +271,7 @@ class TestQuantization:
     def test_an_all_zero_column_has_exponent_zero_and_exact_zero_moments(self):
         graph = _graph("random_1k")
         got = graph.relationship_moments(categories=["FS", "MO"], values={"z": np.zeros(graph.n_individuals)})
-        assert boundary._exponent(np.zeros(3)) == 0
+        assert boundary._quantize({"z": np.zeros(3)}, 3)[1][0] == 0
         assert got.counts.sum() > 0
         for name in ARRAYS[1:]:
             assert np.all(getattr(got, name) == 0.0), name
@@ -403,21 +403,16 @@ MOMENTS_BODY = """
 
 
 class TestBudgetAndLanes:
-    def test_the_host_conversion_stays_within_its_budget_term(self):
-        accumulators = 3 * CONVERSION_CHUNK + 5
-        rng = np.random.default_rng(31)
-        hi = rng.integers(-(1 << 62), 1 << 62, accumulators, dtype=np.int64)
-        lo = rng.integers(np.iinfo(np.int64).min, np.iinfo(np.int64).max, accumulators, dtype=np.int64)
-        tracemalloc.start()
-        try:
-            exact = boundary._split_halves(hi, lo)
-            _, peak = tracemalloc.get_traced_memory()
-        finally:
-            tracemalloc.stop()
-        # The halves themselves (16 bytes each) predate the trace.
-        assert peak <= host_bytes(accumulators) - 16 * accumulators
-        want = [(int(high) << 64) + int(low) for high, low in zip(hi[:3], lo[:3].view(np.uint64), strict=True)]
-        assert [int(v) for v in exact[:3]] == want
+    def test_the_engine_hands_over_one_table_within_its_budget_term(self):
+        graph = _graph("random_1k")
+        n = graph.n_individuals
+        got = graph.relationship_moments(
+            categories=["FS", "MO"], first={"g": np.arange(n) % 7}, values={"x": np.linspace(-1, 1, n)}
+        )
+        accumulators = int(np.prod(got.shape)) * (1 + 4 + 1)
+        # At most 16 bytes per accumulator, half the host term; R's copy is the other half.
+        assert got.width <= 16
+        assert got.encoded.nbytes == got.width * accumulators <= host_bytes(accumulators) // 2
 
     def test_moments_are_bit_identical_under_every_thread_budget(self):
         body = (
@@ -493,7 +488,7 @@ class TestBudgetAndLanes:
         assert lines == [
             "memory_budget_exceeded relationship_moments True True",
             "allocation_failed moment_lanes int128",
-            "allocation_failed moment_output int64",
+            "allocation_failed moment_output uint8",
             "2",
         ]
 
@@ -878,3 +873,153 @@ class TestSurface:
             with pytest.raises(ValueError, match="read-only"):
                 getattr(got, name)[...] = 0
         assert repr(got).startswith("RelationshipMoments(category=1, first_s=1, second_s=1; pairs=")
+
+
+def _counts_table(counts: list[int]) -> RelationshipMoments:
+    """A one-column table over a category axis with the given pair counts and no value sums."""
+    from pedigree_graph.moments import RelationshipMoments
+
+    cells = len(counts)
+    zeros = np.zeros((cells, 1), dtype=object)
+    return RelationshipMoments.from_exact(
+        axes=(MomentAxis("category", np.array(["FS", "MO", "FO", "MZ"][:cells], dtype=object)),),
+        columns=("x",),
+        products=(("first.x", "second.x"),),
+        exponents=np.zeros(1, dtype=np.int64),
+        counts=np.array(counts, dtype=object),
+        q_sum_first=zeros,
+        q_sum_second=zeros,
+        q_sumsq_first=zeros,
+        q_sumsq_second=zeros,
+        q_cross=zeros,
+        symmetric="canonical",
+    )
+
+
+class TestCheckedCounts:
+    """Counts are exact per cell, and no fold or merge wraps (ADR 0015, D9)."""
+
+    def test_a_cell_at_the_int64_maximum_is_accepted(self):
+        full = _counts_table([2**63 - 1, 0])
+        assert int(full.sum("category").counts) == 2**63 - 1
+        assert int(full.merge(_counts_table([0, 0])).counts[0]) == 2**63 - 1
+
+    def test_a_fold_or_merge_reaching_two_to_the_63_is_refused(self):
+        with pytest.raises(ResourceError) as info:
+            _counts_table([2**62, 2**62]).sum("category")
+        assert info.value.code == "arithmetic_overflow"
+        # 0.11 added the int64 counts with NumPy, so this merge wrapped to -2^63.
+        with pytest.raises(ResourceError) as info:
+            _counts_table([2**63 - 1]).merge(_counts_table([1]))
+        assert info.value.code == "arithmetic_overflow"
+
+    def test_a_count_outside_int64_is_refused_at_construction(self):
+        with pytest.raises(ValueError, match="pair count"):
+            _counts_table([2**63])
+        with pytest.raises(ValueError, match="pair count"):
+            _counts_table([-1])
+
+    def test_the_total_of_several_valid_cells_is_shown_exactly(self):
+        table = _counts_table([2**63 - 1, 2**63 - 1, 2**63 - 1, 5])
+        assert repr(table) == f"RelationshipMoments(category=4; pairs={3 * (2**63 - 1) + 5})"
+
+
+class TestOverflowFixtures:
+    """Outputs past float64 raise naming the statistic and the column (ADR 0015, D10)."""
+
+    STATISTICS = ("sum_first", "sum_second", "sumsq_first", "sumsq_second", "cross", "m2_first", "m2_second")
+
+    def _result(self, values: np.ndarray) -> RelationshipMoments:
+        graph = _graph("random_1k")
+        return graph.relationship_moments(categories=["FS", "MO"], values={"big": values})
+
+    @staticmethod
+    def _raises(result: RelationshipMoments, statistic: str) -> None:
+        name = "'first.big x second.big'" if statistic in ("cross", "comoment") else "'big'"
+        with pytest.raises(ValueError, match=rf"^{statistic} of {name} is not representable in float64"):
+            getattr(result, statistic)
+
+    def test_constant_large_values(self):
+        result = self._result(np.full(_graph("random_1k").n_individuals, 1e200))
+        counts = result.counts.astype(np.float64)
+        assert np.all(result.sum_first[..., 0] > 0)
+        assert np.all(np.isnan(result.mean("first.big")) | (result.mean("first.big") == result.mean("second.big")))
+        assert np.all(result.sum_first[..., 0] == result.sum_second[..., 0])
+        assert np.all(np.isfinite(result.sum_first[..., 0]))
+        assert np.all((counts == 0) | np.isclose(result.mean("first.big"), 1e200, rtol=2**-42))
+        for statistic in ("sumsq_first", "sumsq_second", "cross"):
+            self._raises(result, statistic)
+        assert np.all(result.m2_first == 0.0)
+        assert np.all(result.m2_second == 0.0)
+        assert np.all(result.comoment == 0.0)
+        assert np.all(np.isnan(result.pearson("first.big", "second.big")))
+
+    def test_varying_large_values(self):
+        n = _graph("random_1k").n_individuals
+        values = np.where(np.random.default_rng(30).integers(0, 2, n) == 1, 2e200, 1e200)
+        result = self._result(values)
+        assert np.all(np.isfinite(result.sum_first))
+        assert np.all(np.isfinite(result.mean("second.big")) | (result.counts == 0))
+        for statistic in ("sumsq_first", "sumsq_second", "cross", "m2_first", "m2_second", "comoment"):
+            self._raises(result, statistic)
+        r = result.pearson("first.big", "second.big")
+        assert np.any(np.isfinite(r))
+        assert np.all(np.isnan(r) | (np.abs(r) <= 1.0))
+
+
+class TestPythonSideMemory:
+    """The Python objects a fold, merge or view holds beyond the result (ADR 0015, D7).
+
+    Core's own scratch is bounded by ``crates/core/tests/moments_table_scratch.rs``;
+    tracemalloc sees only what Python allocates.  Python hands core the
+    table it holds and keeps the table core returns, so beyond a view's
+    floats it holds nothing that grows with the table.
+    """
+
+    def _result(self) -> RelationshipMoments:
+        graph = _graph("random_1k")
+        n = graph.n_individuals
+        rng = np.random.default_rng(31)
+        return graph.relationship_moments(
+            categories=["FS", "MO", "FO", "MHS", "PHS"],
+            first={"g": rng.integers(0, 30, n), "s": rng.integers(0, 2, n)},
+            second={"s": rng.integers(0, 2, n)},
+            values={"x": rng.normal(size=n), "y": rng.normal(size=n)},
+            same={"k": rng.integers(0, 3, n)},
+        )
+
+    @staticmethod
+    def _peak(call) -> int:
+        tracemalloc.start()
+        try:
+            call()
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+    def test_no_operation_copies_the_table_into_python(self):
+        result = self._result()
+        accumulators = int(np.prod(result.shape)) * (1 + 4 * len(result.columns) + len(result.products))
+        assert result.encoded.nbytes > 64 << 10
+        slack = 16 << 10
+        floats = 8 * int(np.prod(result.shape)) * len(result.columns)
+        assert self._peak(lambda: result.m2_first) <= 2 * floats + slack
+        assert self._peak(lambda: result.pearson("first.x", "second.x")) <= floats + slack
+        assert self._peak(lambda: result.merge(result)) <= slack
+        assert self._peak(lambda: result.sum(*(a.name for a in result.axes[1:]))) <= slack
+        assert self._peak(lambda: result.select(first_s=[1])) <= slack
+        assert accumulators * result.width == result.encoded.nbytes
+
+
+def test_a_fold_or_selection_keeps_the_pass_diagnostics_and_a_merge_has_none():
+    graph = _graph("random_1k")
+    n = graph.n_individuals
+    got = graph.relationship_moments(categories=["FS", "MO"], first={"g": np.arange(n) % 3}, values={"x": np.ones(n)})
+    for derived in (got.sum("first_g"), got.select(category="FS")):
+        assert (derived.lanes, derived.lane_pairs, derived.estimated_peak_bytes) == (
+            got.lanes,
+            got.lane_pairs,
+            got.estimated_peak_bytes,
+        )
+    merged = got.merge(got)
+    assert (merged.lanes, merged.lane_pairs, merged.estimated_peak_bytes) == (0, (), 0)

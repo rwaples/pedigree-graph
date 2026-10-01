@@ -217,7 +217,7 @@ KINSHIP_FAMILIES = frozenset(
 #: The families only the relationship-moments reducer reserves;
 #: ``test_relationship_moments`` holds those, and a pair or count call never
 #: reaches them.
-MOMENT_FAMILIES = frozenset({"moment_lanes", "moment_output"})
+MOMENT_FAMILIES = frozenset({"moment_lanes", "moment_output", "moment_input", "moment_table"})
 
 #: The family only the per-person reducer reserves; a pair or count call
 #: never reaches it.

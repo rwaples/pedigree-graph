@@ -70,7 +70,7 @@ const _: () = {
     send_sync::<relationships::MomentsInput<'static>>();
     send_sync::<relationships::MomentsPlan>();
     send_sync::<relationships::MomentsShape>();
-    send_sync::<relationships::MomentsOutput>();
+    send_sync::<relationships::MomentsTable<'static>>();
     send_sync::<relationships::CellReducer<'static>>();
     send_sync::<relationships::Moments>();
 };
