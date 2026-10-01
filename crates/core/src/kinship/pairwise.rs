@@ -28,6 +28,7 @@ use crate::alloc::{self, Family};
 use crate::error::Error;
 use crate::relationships::{check_column_length, check_row_range};
 use rayon::prelude::*;
+use std::ops::Range;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// The columns the recurrence reads, borrowed from the host for one call.
@@ -279,7 +280,8 @@ impl SharedOutput {
     }
 }
 
-/// Run `fill` on chunks `0..chunks` across the current Rayon pool.
+/// Run `fill` on the chunks of `0..len`, `chunk` items each, across the
+/// current Rayon pool.
 ///
 /// Each worker takes the next chunk from a shared counter and keeps one
 /// walker, built on its first chunk, for every chunk it takes, so shared
@@ -290,25 +292,28 @@ impl SharedOutput {
 fn run_chunks<F>(
     ped: KinshipPedigree<'_>,
     signatures: &AncestorSignatures,
-    chunks: usize,
+    len: usize,
+    chunk: usize,
     fill: F,
 ) -> Result<(), Error>
 where
-    F: Fn(&mut Walker<'_>, usize) -> Result<(), Error> + Sync,
+    F: Fn(&mut Walker<'_>, Range<usize>) -> Result<(), Error> + Sync,
 {
+    let chunks = len.div_ceil(chunk);
     let next = AtomicUsize::new(0);
     let workers = rayon::current_num_threads().min(chunks);
     (0..workers).into_par_iter().try_for_each(|_| {
         let mut walker = None;
         loop {
-            let chunk = next.fetch_add(1, Ordering::Relaxed);
-            if chunk >= chunks {
+            let index = next.fetch_add(1, Ordering::Relaxed);
+            if index >= chunks {
                 return Ok(());
             }
+            let items = index * chunk..((index + 1) * chunk).min(len);
             let result = match &mut walker {
-                Some(walker) => fill(walker, chunk),
+                Some(walker) => fill(walker, items),
                 None => {
-                    Walker::new(ped, signatures).and_then(|built| fill(walker.insert(built), chunk))
+                    Walker::new(ped, signatures).and_then(|built| fill(walker.insert(built), items))
                 }
             };
             if result.is_err() {
@@ -364,11 +369,10 @@ pub fn pair_kinship(
     run_chunks(
         ped,
         &signatures,
-        first.len().div_ceil(PAIR_CHUNK),
-        |walker, chunk| {
-            let start = chunk * PAIR_CHUNK;
-            let end = (start + PAIR_CHUNK).min(first.len());
-            for k in start..end {
+        first.len(),
+        PAIR_CHUNK,
+        |walker, pairs| {
+            for k in pairs {
                 out.set(k, walker.resolve(first[k], second[k])?);
             }
             Ok(())
@@ -395,37 +399,31 @@ fn support_with(
     let n = ped.len();
     let data = SharedOutput::new(indices.len())?;
     let signatures = AncestorSignatures::build(&ped)?;
-    run_chunks(
-        ped,
-        &signatures,
-        n.div_ceil(COLUMN_CHUNK),
-        |walker, chunk| {
-            let first_column = chunk * COLUMN_CHUNK;
-            for column in first_column..(first_column + COLUMN_CHUNK).min(n) {
-                let start = indptr[column] as usize;
-                let end = indptr[column + 1] as usize;
-                for position in start..end {
-                    let row = indices[position];
-                    if row as usize > column {
-                        break;
-                    }
-                    let value = walker.resolve(row, column as i32)?;
-                    data.set(position, value);
-                    if row as usize == column {
-                        continue;
-                    }
-                    let mirrored = mirror(indptr, indices, row as usize, column as i32).ok_or(
-                        Error::KinshipSupportAsymmetric {
-                            row: row as usize,
-                            column,
-                        },
-                    )?;
-                    data.set(mirrored, value);
+    run_chunks(ped, &signatures, n, COLUMN_CHUNK, |walker, columns| {
+        for column in columns {
+            let start = indptr[column] as usize;
+            let end = indptr[column + 1] as usize;
+            for position in start..end {
+                let row = indices[position];
+                if row as usize > column {
+                    break;
                 }
+                let value = walker.resolve(row, column as i32)?;
+                data.set(position, value);
+                if row as usize == column {
+                    continue;
+                }
+                let mirrored = mirror(indptr, indices, row as usize, column as i32).ok_or(
+                    Error::KinshipSupportAsymmetric {
+                        row: row as usize,
+                        column,
+                    },
+                )?;
+                data.set(mirrored, value);
             }
-            Ok(())
-        },
-    )?;
+        }
+        Ok(())
+    })?;
     Ok(data.into_values())
 }
 
