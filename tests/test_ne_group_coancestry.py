@@ -111,7 +111,7 @@ def test_the_closed_line_matches_the_hand_derived_eq_3_values():
     The dense oracle above reads the package's own kinship matrix, so it
     cannot catch a kinship error the two share.  These four values come from
     the full-sib recursion instead: ``F = 0, 0, 0.25, 0.375`` down the line
-    (``tests/test_effective_size.py::test_toy4_closed_line_F_recursion``), and
+    (``tests/test_ne_exact.py::test_the_closed_line_rates_are_the_hand_values``), and
     within-cohort φ of ``0, 0.25, 0.375, 0.5``, giving
     ``f̄ = (2φ + (1 + F)) / 4`` per cohort.
     """
@@ -129,10 +129,10 @@ def test_the_scalar_lands_on_the_full_sib_chain_rate(n_gens, expected):
 
     A full-sib mating chain has asymptotic ``Ne ≈ 2.62`` (the eigenvalue
     ``(1 + √5)/4 ≈ 0.809`` of the F recursion), which the regression
-    approaches from below on a finite chain the way
-    ``test_toy4_closed_line_F_recursion`` bands ``ne_inbreeding``.  Pinning
-    the value as well as the band is what separates this reduction from one
-    off by a factor of two, a sign, or the wrong series.
+    approaches from below on a finite chain, as ``ne_inbreeding`` does
+    (``test_ne_exact.py`` pins its closed-line scalar).  Pinning the value
+    is what separates this reduction from one off by a factor of two, a
+    sign, or the wrong series.
     """
     result = ne_group_coancestry(PedigreeGraph.from_frame(_build_closed_line(n_gens)))
 

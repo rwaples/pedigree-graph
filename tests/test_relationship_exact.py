@@ -27,7 +27,6 @@ from oracle.relationship_paths import relationship_paths
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 
 _SETTINGS = settings(deadline=None, max_examples=100)
-_SIBLING_CODES = ("MZ", "MO", "FO", "FS", "MHS", "PHS")
 _MOTIF_OFFSET = 1_000_000
 
 
