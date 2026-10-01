@@ -1,0 +1,109 @@
+{
+  "unit": "simACE",
+  "stage": "0.12.0",
+  "routing": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.0/wheel-site",
+  "cwd": ".",
+  "started": "2026-10-01T16:21:27",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.0/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.7,
+      "max_rss_mib": 59.6,
+      "tree_peak_mib": 50.3,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.0/simACE/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.0/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 42.1,
+      "tree_peak_mib": 21.6,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.0/simACE/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 42.3,
+      "tree_peak_mib": 21.6,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.0/simACE/format.log",
+      "tail": [
+        "332 files already formatted"
+      ]
+    },
+    {
+      "step": "test",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen test",
+      "exit": 0,
+      "wall_s": 93.8,
+      "max_rss_mib": 644.3,
+      "tree_peak_mib": 2987.2,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.0/simACE/test.log",
+      "tail": [
+        "  /data/Documents/simACE/simace/plotting/plot_heritability.py:737: UserWarning: Glyph 75 (K) missing from font(s) Nimbus Sans.",
+        "    fig.tight_layout(rect=(0, 0, 1, 0.97))",
+        "",
+        "tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_runs_without_error",
+        "tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_runs_without_error",
+        "tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_both_nonzero_no_crash",
+        "tests/analysis/test_mate_correlation.py::TestPlotMateCorrelation::test_both_nonzero_no_crash",
+        "  /data/Documents/simACE/.pixi/envs/default/lib/python3.14/site-packages/seaborn/matrix.py:243: PendingDeprecationWarning: The set_bad function will be deprecated in a future version. Use cmap.with_extremes(bad=...) or Colormap(bad=...) instead.",
+        "    self.cmap.set_bad(bad)",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "============ 2843 passed, 2 skipped, 6 warnings in 92.35s (0:01:32) ============"
+      ]
+    },
+    {
+      "step": "smoke",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen simace run --force small_test",
+      "exit": 0,
+      "wall_s": 37.0,
+      "max_rss_mib": 389.2,
+      "tree_peak_mib": 1140.3,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.0/simACE/smoke.log",
+      "tail": [
+        "[small_test/rep3] simulate started",
+        "[small_test/rep3] simulate finished in 1.2s, max RSS 208 MB, tree peak 101 MB",
+        "[small_test/rep3] cohort started",
+        "[small_test/rep3] cohort finished in 1.6s, max RSS 224 MB, tree peak 110 MB",
+        "[small_test/rep3] analyze started",
+        "[small_test/rep3] analyze finished in 2.9s, max RSS 277 MB, tree peak 146 MB",
+        "[small_test] summary: 3 computed",
+        "[small_test] plot started",
+        "[small_test] plot finished in 17.4s",
+        "[small_test] atlas started",
+        "[small_test] atlas finished in 1.7s",
+        "[small_test] plots: current"
+      ]
+    },
+    {
+      "step": "gather",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/pixi.toml --frozen simace gather test",
+      "exit": 0,
+      "wall_s": 8.2,
+      "max_rss_mib": 371.4,
+      "tree_peak_mib": 251.0,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.0/simACE/gather.log",
+      "tail": [
+        "simace gather: skipping results/test/coverage_scenario/rep1 (absent)",
+        "simace gather: test/coverage_scenario: 0 of 1 reps",
+        "simace gather: test/small_test: 3 of 3 reps",
+        "INFO: Gathered 3 report summaries -> results/test/report_summary.tsv",
+        "INFO: Generating validation plots in results/test/plots",
+        "INFO: HTML atlas saved to results/test/plots/atlas.html (12 plots)"
+      ]
+    }
+  ],
+  "ok": true
+}
