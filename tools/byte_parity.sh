@@ -6,8 +6,8 @@
 # Rebuilds, from scratch on simACE's smoke scenario, the consumer products that
 # carry pedigree-graph's results furthest into consumer space, and hashes them:
 #   - simACE report.yaml: relationship correlations and counts;
-#   - simACE effective_size.yaml: the eight Ne records (an opt-in target
-#     outside report.yaml's chain);
+#   - simACE effective_size.yaml: the eight Ne records (`simace run` does not
+#     compute it, so it is run here as its own stage);
 #   - fitACE exports/pairwise_relatedness.tsv: the canonical pair list;
 #   - fitACE grm/A.grm.sp.bin and A.grm.id: the sparse GRM, i.e. the
 #     approximate kinship matrix at the grm_matrix rule's default
@@ -34,13 +34,18 @@ FITACE_GRM_BIN="results/test/small_test/rep1/grm/A.grm.sp.bin"
 FITACE_GRM_ID="results/test/small_test/rep1/grm/A.grm.id"
 FITACE_INBREEDING="results/test/small_test/rep1/exports/inbreeding.tsv"
 PEDIGREE="results/test/small_test/rep1/pedigree.parquet"
+COHORT="results/test/small_test/rep1/cohort.parquet"
+PARAMS="results/test/small_test/rep1/params.yaml"
 
 mkdir -p "$OUT"
 
-# simACE rebuilds the whole simulate -> phenotype -> analyze chain; fitACE then
-# forces only the export rule, off the pedigree simACE just wrote (fitACE/results
-# is a symlink to the same tree), so the two artifacts describe one pedigree.
-( cd "$ROOT" && pixi run --frozen snakemake --cores 4 --forceall "$SIMACE_REPORT" "$SIMACE_NE" )
+# simACE rebuilds the whole simulate -> cohort -> analyze chain (`simace run`,
+# simACE ADR 0020) and the Ne stage beside it; fitACE then forces only its
+# export rules, off the pedigree simACE just wrote (fitACE/results is a symlink
+# to the same tree), so the artifacts describe one pedigree.
+( cd "$ROOT" && pixi run --frozen simace run --force --no-plots small_test )
+( cd "$ROOT" && pixi run --frozen simace effective-size --pedigree "$PEDIGREE" --cohort "$COHORT" \
+    --params "$PARAMS" --output "$SIMACE_NE" )
 ( cd "$ROOT/fitACE" && pixi run --frozen snakemake --cores 4 -f "$FITACE_TSV" "$FITACE_GRM_BIN" "$FITACE_GRM_ID" "$FITACE_INBREEDING" )
 
 cp "$ROOT/$SIMACE_REPORT" "$OUT/report.yaml"
