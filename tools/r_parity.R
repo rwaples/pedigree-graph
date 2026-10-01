@@ -23,6 +23,36 @@ if (args[5] == "1") {
   put(timed("pair_kinship", pair_kinship(pg, pairs$first[close], pairs$second[close])),
       "pair_kinship.bin", 8L)
 }
+counts <- timed("counts", relationship_counts(pg, max_degree = max_degree))
+counts[is.na(counts)] <- -1
+put(as.double(counts), "counts.bin", 8L)
+burden <- timed("burden", relationship_burden(pg))
+put(as.vector(burden$per_person), "burden_rows.bin", 4L)
+put(burden$category_counts, "burden_categories.bin", 8L)
+put(burden$same_depth_pairs, "burden_depth.bin", 8L)
+
+# tools/r_golden.py::_moments_spec, as test-golden.R builds it.
+ped <- read.delim(args[1])
+n <- nrow(ped)
+rows <- as.double(seq_len(n))
+tie <- (rows %% 7) - 2.5
+tie[1] <- 2^43
+m <- timed("moments", relationship_moments(
+  pg, categories = c("MZ", "FS", "MO", "FO", "MHS", "PHS", "GP", "Av", "1C"),
+  first = list(parity = pg$native$depth %% 2L,
+               code = factor(c("r0", "r1")[(seq_len(n) - 1L) %% 2L + 1L], levels = c("r0", "r1"))),
+  values = list(ordinary = ((rows * 37) %% 101) / 7 - 5, constant = rep(0.3, n), tie = tie,
+                large = 1e150 * (((rows * 13) %% 17) - 8)),
+  products = list(c("first.ordinary", "second.ordinary"), c("first.constant", "second.constant"),
+                  c("first.tie", "second.tie"), c("first.large", "second.large"),
+                  c("first.ordinary", "first.tie")),
+  same = list(mother = ped$mother)
+))
+df <- timed("moments_frame", as.data.frame(m))
+axes <- vapply(m$axes, `[[`, character(1), "name")
+put(unlist(df[setdiff(names(df), axes)], use.names = FALSE), "moments_stats.bin", 8L)
+writeBin(charToRaw(paste(pedigreegraph:::.moments_exact(m), collapse = "\n")), file.path(out, "moments_exact.txt"))
+
 if (args[4] == "1") {
   K <- timed("kinship_matrix", kinship_matrix(pg))
   stored <- Matrix::summary(K)

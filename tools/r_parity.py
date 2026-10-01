@@ -4,8 +4,12 @@ The goldens (``tools/r_golden.py``) ship in the R tarball and so cover only
 small fixtures.  This gate runs the larger core fixtures and the simACE study
 pedigrees through both hosts and compares every product byte for byte:
 degree-``d`` relationship pairs (registry index, 1-based rows), inbreeding,
-pairwise kinship of the pairs up to degree 3, and the stored upper triangle
-of the kinship matrix, in ``(column, row)`` order.  R writes raw
+pairwise kinship of the pairs up to degree 3, the stored upper triangle of
+the kinship matrix, in ``(column, row)`` order, the degree-``d`` pair counts
+(``-1`` where not requested), the relationship burden, and the moments of
+the golden spec (``tools/r_golden.py::_moments_spec``): every statistic of
+every cell in R's ``as.data.frame`` column order, and every exact
+accumulator in decimal.  R writes raw
 little-endian arrays (``tools/r_parity.R``); this script writes the same
 arrays from Python, compares them and prints both SHA-256s.
 
@@ -67,13 +71,42 @@ CELLS: dict[str, tuple[str, int, bool, bool]] = {
 }
 
 
-def _fixture_frame(name: str) -> pl.DataFrame:
+def _golden():
     spec = importlib.util.spec_from_file_location("r_golden", REPO / "tools" / "r_golden.py")
     assert spec is not None
     assert spec.loader is not None
     golden = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(golden)
-    return golden._frame(pl.read_csv(FIXTURES / f"{name}.tsv", separator="\t"))
+    return golden
+
+
+def _fixture_frame(name: str) -> pl.DataFrame:
+    return _golden()._frame(pl.read_csv(FIXTURES / f"{name}.tsv", separator="\t"))
+
+
+def _moment_products(graph: PedigreeGraph, mother: np.ndarray) -> dict[str, bytes]:
+    golden = _golden()
+    m = graph.relationship_moments(**golden._moments_spec(graph), same={"mother": mother})
+    stats = [m.counts.astype(np.float64)]
+    for stat in golden.MOMENT_STATS:
+        for j, column in enumerate(m.columns):
+            if stat.startswith("mean_"):
+                stats.append(m.mean(f"{stat.removeprefix('mean_')}.{column}"))
+            else:
+                stats.append(getattr(m, stat)[..., j])
+    for stat in ("cross", "comoment"):
+        stats += [getattr(m, stat)[..., j] for j in range(len(m.products))]
+    stats += [m.pearson(a, b) for a, b in m.products]
+    flat = np.concatenate([np.asarray(v, dtype="<f8").reshape(-1) for v in stats])
+    # R writes NaN as its own NaN payload; compare every NaN as one value.
+    flat[np.isnan(flat)] = np.nan
+    stride = 1 + 4 * len(m.columns) + len(m.products)
+    slabs = [m.counts[..., np.newaxis], m.q_sum_first, m.q_sum_second, m.q_sumsq_first, m.q_sumsq_second, m.q_cross]
+    exact = np.concatenate([np.asarray(x, dtype=object) for x in slabs], axis=-1).reshape(-1, stride)
+    return {
+        "moments_stats.bin": flat.view("<u8").astype("<u8").tobytes(),
+        "moments_exact.txt": "\n".join(str(int(v)) for v in exact.reshape(-1)).encode(),
+    }
 
 
 def _frame(source: str) -> pl.DataFrame:
@@ -100,6 +133,13 @@ def _python_products(frame: pl.DataFrame, max_degree: int, matrix: bool, pairwis
         close = degree[code - 1] <= 3
         values = graph.pair_kinship(first[close] - 1, second[close] - 1)
         out["pair_kinship.bin"] = np.asarray(values, dtype="<f8").tobytes()
+    counts = graph.relationship_counts(max_degree=max_degree)
+    out["counts.bin"] = np.array([-1 if counts[c] is None else counts[c] for c in codes], dtype="<f8").tobytes()
+    burden = graph.relationship_burden()
+    out["burden_rows.bin"] = np.ascontiguousarray(burden.per_person.T).astype("<i4").tobytes()
+    out["burden_categories.bin"] = np.array([burden.category_counts[c] for c in codes], dtype="<f8").tobytes()
+    out["burden_depth.bin"] = burden.same_depth_pairs.astype("<f8").tobytes()
+    out.update(_moment_products(graph, frame["mother"].to_numpy()))
     if matrix:
         upper = sp.triu(graph.kinship_matrix(), format="coo")
         order = np.lexsort((upper.row, upper.col))
@@ -107,6 +147,12 @@ def _python_products(frame: pl.DataFrame, max_degree: int, matrix: bool, pairwis
         out["kinship_j.bin"] = (upper.col[order] + 1).astype("<i4").tobytes()
         out["kinship_x.bin"] = upper.data[order].astype("<f8").tobytes()
     return out
+
+
+def _canonical_nan(raw: bytes) -> bytes:
+    values = np.frombuffer(raw, dtype="<f8").copy()
+    values[np.isnan(values)] = np.nan
+    return values.view("<u8").tobytes()
 
 
 def _run(name: str, tmp: Path) -> list[tuple[str, str, int, str, str, bool]]:
@@ -142,10 +188,12 @@ def _run(name: str, tmp: Path) -> list[tuple[str, str, int, str, str, bool]]:
     rows = []
     for product, py_bytes in want.items():
         r_bytes = (work / product).read_bytes()
+        if product == "moments_stats.bin":
+            r_bytes = _canonical_nan(r_bytes)
         rows.append(
             (
                 name,
-                product.removesuffix(".bin"),
+                product.removesuffix(".bin").removesuffix(".txt"),
                 len(py_bytes),
                 hashlib.sha256(py_bytes).hexdigest()[:16],
                 hashlib.sha256(r_bytes).hexdigest()[:16],

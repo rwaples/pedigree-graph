@@ -145,7 +145,63 @@ test_that("every kernel refuses a modified graph", {
   expect_pg_error(pair_kinship(pg, 1L, 1L), "usage", "graph_modified")
   expect_pg_error(inbreeding(pg), "usage", "graph_modified")
   expect_pg_error(kinship_matrix(pg), "usage", "graph_modified")
+  expect_pg_error(relationship_counts(pg, max_degree = 2), "usage", "graph_modified")
+  expect_pg_error(relationship_burden(pg), "usage", "graph_modified")
   expect_pg_error(relationship_pairs(unclass(pg), max_degree = 2), "usage")
+})
+
+test_that("counts equal the pair rows of each requested category and are NA elsewhere", {
+  pg <- pedigree_graph(three_gen())
+  counts <- relationship_counts(pg, categories = c("GP", "FS", "MO"))
+  expect_identical(names(counts), relationship_categories()$code)
+  expect_identical(names(which(attr(counts, "requested"))), c("MO", "FS", "GP"))
+  pairs <- relationship_pairs(pg, categories = c("GP", "FS", "MO"))
+  expect_identical(counts[c("MO", "FS", "GP")], c(MO = 3, FS = 1, GP = 2))
+  expect_identical(as.vector(counts[c("MO", "FS", "GP")]), as.numeric(table(pairs$code)[c("MO", "FS", "GP")]))
+  expect_true(all(is.na(counts[!attr(counts, "requested")])))
+  expect_identical(relationship_counts(pg, max_degree = 5), relationship_burden(pg)$category_counts,
+                   ignore_attr = TRUE)
+  expect_pg_error(relationship_counts(pg), "usage")
+  expect_pg_error(relationship_counts(pg, max_degree = 6), "validation", "max_degree_out_of_range")
+  expect_pg_error(relationship_counts(pg, categories = "ZZ"), "validation", "unknown_relationship_category")
+})
+
+test_that("graphs with fewer than two individuals count zero pairs and no relatives", {
+  for (n in 0:1) {
+    pg <- pedigree_graph(data.frame(id = seq_len(n), mother = rep(NA, n), father = rep(NA, n)))
+    counts <- relationship_counts(pg, max_degree = 5)
+    expect_true(all(counts == 0))
+    burden <- relationship_burden(pg)
+    expect_identical(dim(burden$per_person), c(n, 5L))
+    expect_true(all(burden$category_counts == 0))
+  }
+})
+
+test_that("burden counts each row's relatives by degree, in input order", {
+  pg <- pedigree_graph(three_gen())
+  burden <- relationship_burden(pg)
+  expect_identical(colnames(burden$per_person), paste0("degree_", 1:5))
+  expect_type(burden$per_person, "integer")
+  # 3: parents 1, 2, sib 4, child 6 at degree 1; 6: parents 3, 5.
+  expect_identical(unname(burden$per_person[3, "degree_1"]), 4L)
+  expect_identical(unname(burden$per_person[6, "degree_1"]), 2L)
+  expect_identical(unname(burden$per_person[6, "degree_2"]), 3L)
+  # Depths 0 (1, 2, 5), 1 (3, 4) and 2 (6): only the full sibs 3 and 4 share one.
+  expect_identical(burden$same_depth_pairs, c(0, 1, 0))
+})
+
+test_that("a pair total past 2^53 is refused, not rounded", {
+  hook <- get0("wrap__count_as_double_for_test", envir = asNamespace("pedigreegraph"), inherits = FALSE)
+  if (is.null(hook)) {
+    if (identical(Sys.getenv("PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS"), "1")) {
+      fail("the package was built without the test-hooks feature; run `pixi run -e r r-install`")
+    }
+    skip("installed without the test-hooks feature")
+  }
+  as_double <- function(count) pedigreegraph:::.pg_call(.Call(hook, count))
+  expect_identical(as_double("9007199254740992"), 2^53)
+  err <- expect_pg_error(as_double("9007199254740993"), "resource", "count_exceeds_double")
+  expect_identical(err$fields$count, "9007199254740993")
 })
 
 test_that("forked workers run pair queries after the parent used its pool", {

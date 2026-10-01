@@ -51,6 +51,69 @@ relationship_pairs <- function(pg, max_degree = NULL, categories = NULL,
   )
 }
 
+#' Relationship counts
+#'
+#' The number of pairs in each selected relationship category, each pair
+#' under its closest category, without building the pairs.
+#'
+#' @inheritParams relationship_pairs
+#' @return A named double vector over all 23 category codes in registry
+#'   order: the pair count of each selected category (equal to its number of
+#'   rows in [relationship_pairs()]) and `NA` for every other.
+#'   `attr(counts, "requested")` is a named logical over the 23 codes.  A
+#'   count above 2^53, past which a double does not hold every integer, is
+#'   refused with a `pedigree_graph_resource_error` (code
+#'   `count_exceeds_double`).
+#' @examples
+#' pg <- pedigree_graph(data.frame(
+#'   id = 1:6, mother = c(NA, NA, 1, 1, NA, 3), father = c(NA, NA, 2, 2, NA, 5)
+#' ))
+#' relationship_counts(pg, categories = c("FS", "MO", "FO", "GP"))
+#' @export
+relationship_counts <- function(pg, max_degree = NULL, categories = NULL) {
+  native <- .pg_native(pg)
+  if (!is.null(max_degree) && !is.numeric(max_degree)) max_degree <- NaN
+  found <- .pg_call(.native_relationship_counts(native, pg$seal, max_degree, categories))
+  codes <- .pg_codes()
+  structure(
+    stats::setNames(found$counts, codes),
+    requested = stats::setNames(found$requested, codes)
+  )
+}
+
+#' Relationship burden
+#'
+#' Every individual's relatives at degrees 1 to 5 and the pairs of every
+#' category, from one pass that never builds the pairs.
+#'
+#' @param pg A graph from [pedigree_graph()].
+#' @return A list:
+#'   * `per_person`: an integer matrix with one row per input row, in input
+#'     order, and columns `degree_1` to `degree_5`, the distinct relatives
+#'     of that degree.  MZ co-twins are not counted here.
+#'   * `category_counts`: a named double vector of the pairs of each of the
+#'     23 categories (MZ included), as [relationship_counts()] with
+#'     `max_degree = 5`.
+#'   * `same_depth_pairs`: a double vector of the related pairs whose two
+#'     members share a structural depth; element `d + 1` is depth `d`.
+#'
+#'   A total above 2^53 is refused as in [relationship_counts()].
+#' @examples
+#' pg <- pedigree_graph(data.frame(
+#'   id = 1:6, mother = c(NA, NA, 1, 1, NA, 3), father = c(NA, NA, 2, 2, NA, 5)
+#' ))
+#' burden <- relationship_burden(pg)
+#' burden$per_person
+#' burden$category_counts[c("FS", "MO", "FO")]
+#' @export
+relationship_burden <- function(pg) {
+  native <- .pg_native(pg)
+  found <- .pg_call(.native_relationship_burden(native, pg$seal))
+  dimnames(found$per_person) <- list(NULL, paste0("degree_", 1:5))
+  names(found$category_counts) <- .pg_codes()
+  found
+}
+
 #' Pairwise kinship
 #'
 #' The pedigree-expected kinship of each pair `(first[k], second[k])`.

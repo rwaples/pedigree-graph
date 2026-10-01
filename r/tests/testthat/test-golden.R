@@ -45,4 +45,88 @@ for (fixture in fixtures) {
     want <- read_golden(fixture, "inbreeding.tsv", classes = "character")
     expect_identical(inbreeding(pg), hex(want$F))
   })
+
+  test_that(paste("counts and burden match Python on", fixture), {
+    pg <- pedigree_graph(read.delim(file.path(golden_dir, fixture, "pedigree.tsv")))
+
+    want <- read_golden(fixture, "counts.tsv", classes = c("character", "numeric"))
+    counts <- relationship_counts(pg, max_degree = 5)
+    expect_identical(names(counts), want$code)
+    expect_identical(as.vector(counts), want$count)
+    expect_true(all(attr(counts, "requested")))
+
+    burden <- relationship_burden(pg)
+    want_rows <- read_golden(fixture, "burden.tsv", classes = rep("integer", 5))
+    expect_identical(burden$per_person, `dimnames<-`(as.matrix(want_rows), list(NULL, names(want_rows))))
+    expect_identical(burden$category_counts, stats::setNames(want$count, want$code))
+    want <- read_golden(fixture, "burden_depth.tsv", classes = c("integer", "numeric"))
+    expect_identical(burden$same_depth_pairs, want$pairs)
+  })
+}
+
+# The spec of tools/r_golden.py::_moments_spec, built the same way here.
+moments_of <- function(pg, ped, symmetric, scale = 1) {
+  n <- nrow(ped)
+  rows <- as.double(seq_len(n))
+  tie <- (rows %% 7) - 2.5
+  tie[1] <- 2^43
+  values <- list(
+    ordinary = ((rows * 37) %% 101) / 7 - 5, constant = rep(0.3, n), tie = tie,
+    large = 1e150 * (((rows * 13) %% 17) - 8)
+  )
+  relationship_moments(
+    pg, categories = c("MZ", "FS", "MO", "FO", "MHS", "PHS", "GP", "Av", "1C"),
+    first = list(parity = pg$native$depth %% 2L,
+                 code = factor(c("r0", "r1")[(seq_len(n) - 1L) %% 2L + 1L], levels = c("r0", "r1"))),
+    values = lapply(values, function(v) v * scale),
+    products = list(c("first.ordinary", "second.ordinary"), c("first.constant", "second.constant"),
+                    c("first.tie", "second.tie"), c("first.large", "second.large"),
+                    c("first.ordinary", "first.tie")),
+    same = list(mother = ped$mother), symmetric = symmetric
+  )
+}
+
+# The cells holding pairs, every column as the golden's text.
+moment_rows <- function(m, symmetric) {
+  df <- as.data.frame(m)
+  df <- df[df$n > 0, , drop = FALSE]
+  axes <- vapply(m$axes, `[[`, character(1), "name")
+  for (column in names(df)) {
+    df[[column]] <- if (column %in% c(axes, "n")) as.character(df[[column]]) else df[[column]]
+  }
+  cbind(symmetric = rep(symmetric, nrow(df)), df, stringsAsFactors = FALSE)
+}
+
+expect_moments_frame <- function(got, fixture, file) {
+  want <- read.delim(file.path(golden_dir, fixture, file), colClasses = "character", check.names = FALSE)
+  expect_identical(names(got), names(want))
+  for (column in names(want)) {
+    expected <- if (is.character(got[[column]])) want[[column]] else as.numeric(want[[column]])
+    expect_identical(unname(got[[column]]), expected, label = paste(file, column))
+  }
+}
+
+for (fixture in fixtures) {
+  test_that(paste("moments match Python bit for bit on", fixture), {
+    ped <- read.delim(file.path(golden_dir, fixture, "pedigree.tsv"))
+    pg <- pedigree_graph(ped)
+    frames <- list(moments = NULL, exact = NULL, folded = NULL, merged = NULL)
+    for (symmetric in c("canonical", "both")) {
+      m <- moments_of(pg, ped, symmetric)
+      frames$moments <- rbind(frames$moments, moment_rows(m, symmetric))
+      stride <- 1 + 4 * length(m$columns) + length(m$products)
+      exact <- matrix(pedigreegraph:::.moments_exact(m), nrow = stride)
+      counts <- as.numeric(exact[1, ])
+      kept <- as.vector(exact[, counts > 0])
+      frames$exact <- rbind(frames$exact, data.frame(symmetric = rep(symmetric, length(kept)), value = kept))
+      folded <- moments_sum(moments_select(m, category = c("MO", "FO")), "category")
+      frames$folded <- rbind(frames$folded, moment_rows(folded, symmetric))
+      merged <- moments_merge(m, moments_of(pg, ped, symmetric, scale = 2^-600))
+      frames$merged <- rbind(frames$merged, moment_rows(merged, symmetric))
+    }
+    expect_moments_frame(frames$moments, fixture, "moments.tsv")
+    expect_moments_frame(frames$exact, fixture, "moments_exact.tsv")
+    expect_moments_frame(frames$folded, fixture, "moments_folded.tsv")
+    expect_moments_frame(frames$merged, fixture, "moments_merged.tsv")
+  })
 }

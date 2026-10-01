@@ -1,6 +1,7 @@
-//! The four kernels (slice 16b): pairs, pairwise kinship, the kinship
-//! matrix and inbreeding.  Each starts from a graph whose seal checked out
-//! (`graph::verified`), borrows its `native` columns, and runs the core.
+//! The kernels: pairs, pair counts, the per-person burden, pairwise
+//! kinship, the kinship matrix and inbreeding.  Each starts from a graph
+//! whose seal checked out (`graph::verified`), borrows its `native`
+//! columns, and runs the core.
 
 use crate::errors::{HostError, HostResult};
 use crate::graph::{self, NATIVE_FIELDS};
@@ -11,7 +12,8 @@ use pedigree_graph_core::error::Error;
 use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
-    pair_blocks, Category, CategorySet, Execution, MaxDegree, PairBlock, Pedigree, N_CATEGORIES,
+    count_pairs, pair_blocks, relationship_burden as burden_of, Category, CategorySet, Counts,
+    Execution, MaxDegree, PairBlock, Pedigree, N_CATEGORIES,
 };
 use std::num::NonZeroUsize;
 
@@ -59,6 +61,23 @@ impl Native {
 
     fn id_type(&self) -> IdType {
         IdType::parse(self.field("id_type").as_str().unwrap_or("")).expect("a sealed id type")
+    }
+
+    /// Run `f` on the graph's relationship pedigree.
+    pub fn with_pedigree<T>(
+        &self,
+        f: impl FnOnce(&Pedigree<'_>) -> HostResult<T>,
+    ) -> HostResult<T> {
+        let mother_ids = self.int64("mother_ids");
+        let father_ids = self.int64("father_ids");
+        let ped = Pedigree::try_new(
+            self.rows("mother_rows"),
+            self.rows("father_rows"),
+            self.rows("twin_rows"),
+            &mother_ids,
+            &father_ids,
+        )?;
+        f(&ped)
     }
 
     fn kinship(&self) -> HostResult<KinshipPedigree<'_>> {
@@ -124,7 +143,7 @@ impl<I: Iterator> Iterator for Exact<I> {
 impl<I: Iterator> ExactSizeIterator for Exact<I> {}
 
 /// The categories one selector names, in registry order.
-fn selection(max_degree: &Robj, categories: &Robj) -> HostResult<CategorySet> {
+pub fn selection(max_degree: &Robj, categories: &Robj) -> HostResult<CategorySet> {
     match (max_degree.is_null(), categories.is_null()) {
         (false, true) => {
             let degree = match (
@@ -189,7 +208,7 @@ fn selection(max_degree: &Robj, categories: &Robj) -> HostResult<CategorySet> {
 }
 
 /// The package pool at the committed budget.
-fn package_pool() -> HostResult<&'static rayon::ThreadPool> {
+pub fn package_pool() -> HostResult<&'static rayon::ThreadPool> {
     let threads = NonZeroUsize::new(threads::budget()?).expect("a budget of at least 1");
     Ok(pool::configure(threads)?)
 }
@@ -221,18 +240,12 @@ pub fn relationship_pairs(
 
     let mut blocks: Vec<PairBlock> = vec![PairBlock::default(); N_CATEGORIES];
     if let (Some(top), true) = (requested.top_degree(), graph.len() >= 2) {
-        let mother_ids = graph.int64("mother_ids");
-        let father_ids = graph.int64("father_ids");
-        let ped = Pedigree::try_new(
-            graph.rows("mother_rows"),
-            graph.rows("father_rows"),
-            graph.rows("twin_rows"),
-            &mother_ids,
-            &father_ids,
-        )?;
         let max_degree = MaxDegree::try_new(top)?;
-        let found = pool.install(|| pair_blocks(&ped, max_degree, requested, None, execution))?;
-        blocks = found.0;
+        blocks = graph
+            .with_pedigree(|ped| {
+                Ok(pool.install(|| pair_blocks(ped, max_degree, requested, None, execution))?)
+            })?
+            .0;
     }
 
     let total: usize = blocks.iter().map(PairBlock::len).sum();
@@ -288,6 +301,109 @@ pub fn relationship_pairs(
     Ok(List::from_names_and_values(names, values)
         .expect("one value per name")
         .into_robj())
+}
+
+/// Past 2^53 a double no longer holds every integer.
+const MAX_EXACT_DOUBLE: u64 = 1 << 53;
+
+/// A pair total as an R double, refused past 2^53 rather than rounded.
+pub fn exact_double(what: &str, count: u64) -> HostResult<f64> {
+    if count > MAX_EXACT_DOUBLE {
+        return Err(HostError::resource(
+            "count_exceeds_double",
+            format!(
+                "{what} has {count} pairs, past 2^53, beyond which an R double does not hold \
+                 every integer"
+            ),
+            vec![
+                (
+                    "count",
+                    Strings::from_values([count.to_string()]).into_robj(),
+                ),
+                ("maximum", (MAX_EXACT_DOUBLE as f64).into()),
+            ],
+        ));
+    }
+    Ok(count as f64)
+}
+
+/// `list(counts, requested)`: the pairs of each of the 23 categories in
+/// registry order, `NA` where not requested.
+pub fn relationship_counts(
+    native: &Robj,
+    seal: &Robj,
+    max_degree: &Robj,
+    categories: &Robj,
+) -> HostResult<Robj> {
+    let graph = Native::verified(native, seal)?;
+    let requested = selection(max_degree, categories)?;
+    let pool = package_pool()?;
+    let counts = match (requested.top_degree(), graph.len() >= 2) {
+        (Some(top), true) => {
+            let max_degree = MaxDegree::try_new(top)?;
+            graph.with_pedigree(|ped| Ok(pool.install(|| count_pairs(ped, max_degree, None))?))?
+        }
+        _ => Counts::default(),
+    };
+    let values = Category::ALL
+        .iter()
+        .map(|&c| match requested.contains(c) {
+            true => exact_double(c.code(), counts.get(c)).map(Rfloat::from),
+            false => Ok(Rfloat::na()),
+        })
+        .collect::<HostResult<Vec<_>>>()?;
+    let requested_flags =
+        Logicals::from_values(Category::ALL.iter().map(|c| requested.contains(*c))).into_robj();
+    Ok(List::from_names_and_values(
+        ["counts", "requested"],
+        [Doubles::from_values(values).into_robj(), requested_flags],
+    )
+    .expect("two names and two values")
+    .into_robj())
+}
+
+/// `list(per_person, category_counts, same_depth_pairs)`: the relatives of
+/// each row at degrees 1 to 5 as an integer `n x 5` matrix in input order,
+/// the pairs of every category, and the related pairs per structural depth.
+pub fn relationship_burden(native: &Robj, seal: &Robj) -> HostResult<Robj> {
+    let graph = Native::verified(native, seal)?;
+    let pool = package_pool()?;
+    let depth = graph.rows("depth");
+    let burden = graph.with_pedigree(|ped| Ok(pool.install(|| burden_of(ped, depth))?))?;
+    let n = graph.len();
+    // A row has at most n - 1 relatives at a degree, and n fits an int32.
+    let mut per_person = Integers::from_values(Exact::new(
+        (0..5)
+            .flat_map(|d| (0..n).map(move |r| (r, d)))
+            .map(|(r, d)| burden.per_person[r * 5 + d] as i32),
+        n * 5,
+    ))
+    .into_robj();
+    per_person
+        .set_attrib(dim_symbol(), [n as i32, 5])
+        .expect("an integer dim");
+    let doubles = |what: &str, counts: &[u64]| -> HostResult<Robj> {
+        let values = counts
+            .iter()
+            .map(|&c| exact_double(what, c))
+            .collect::<HostResult<Vec<_>>>()?;
+        Ok(Doubles::from_values(values).into_robj())
+    };
+    let category_counts = Category::ALL
+        .iter()
+        .zip(burden.categories)
+        .map(|(c, count)| exact_double(c.code(), count))
+        .collect::<HostResult<Vec<_>>>()?;
+    Ok(List::from_names_and_values(
+        ["per_person", "category_counts", "same_depth_pairs"],
+        [
+            per_person,
+            Doubles::from_values(category_counts).into_robj(),
+            doubles("a structural depth", &burden.same_depth)?,
+        ],
+    )
+    .expect("three names and three values")
+    .into_robj())
 }
 
 /// 1-based R rows to 0-based graph rows, or the first one that is not a row.

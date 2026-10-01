@@ -5,9 +5,9 @@ Authors@R: c(
     person("Ryan", "Waples", email = "ryan.waples@gmail.com", role = c("aut", "cre", "cph")),
     person("Authors of the bundled Rust crates", role = c("ctb", "cph"),
            comment = "see inst/AUTHORS in the source tarball"))
-Description: Exact pedigree relationship pairs, pedigree-expected kinship and
-    inbreeding, computed by the Rust core shared with the 'pedigree-graph'
-    Python package.
+Description: Exact pedigree relationship pairs, pair counts and per-pair
+    value moments, pedigree-expected kinship and inbreeding, computed by the
+    Rust core shared with the 'pedigree-graph' Python package.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Depends: R (>= 4.2)
