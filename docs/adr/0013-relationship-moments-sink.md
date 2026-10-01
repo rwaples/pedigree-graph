@@ -1,6 +1,6 @@
 # ADR 0013: relationship moments are an exact fixed-point sink on the row-streaming engine
 
-**Status:** accepted
+**Status:** accepted; amended by ADR 0015
 **Date:** 2026-09-30
 **Context:** issue #28 (simACE #25); builds on the pair sinks of ADR 0010 and
 the host boundary, thread and allocation rules of ADR 0007, which this ADR
@@ -103,6 +103,11 @@ value of ordinary magnitude.
 
 ### Exact accumulators in the host, floats derived on access
 
+> Amended by ADR 0015: core now owns the packing, quantization, folds,
+> merges and every derived float for both hosts, and a result holds core's
+> encoding of the accumulators; the `q_*` arrays decode it on access. The
+> algebra and the rounding below are unchanged.
+
 `RelationshipMoments` (`pedigree_graph/moments.py`) keeps the accumulators
 as NumPy object arrays of Python `int` (`counts`, `q_sum_first`,
 `q_sum_second`, `q_sumsq_first`, `q_sumsq_second`, `q_cross`) with the
@@ -148,6 +153,10 @@ deriving the floats last is what makes the algebra exact, and it removed
 the engine's 256-bit arithmetic.
 
 ### A memory budget and pooled lanes
+
+> Amended by ADR 0015: the host term is 32 bytes per accumulator (the
+> encoded table and one host copy) for Python and R alike, with no
+> conversion chunk.
 
 `relationship_moments` takes `memory_budget_bytes` (default 1 GiB) as a
 ceiling on its accumulators. The plan sizes one lane

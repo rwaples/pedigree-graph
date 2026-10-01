@@ -70,11 +70,16 @@ pairs <- relationship_pairs(pg, max_degree = 3)    # one row per pair
 pairs$kinship <- pair_kinship(pg, pairs$first, pairs$second)
 K <- kinship_matrix(pg)                            # Matrix::dsCMatrix
 F <- inbreeding(pg)
+counts <- relationship_counts(pg, max_degree = 3)  # pairs per category
+m <- relationship_moments(pg, categories = c("MO", "FO", "FS"),
+                          values = list(x = c(0.1, -0.4, 0.7, 0.3, 1.2, -0.2)))
+as.data.frame(m, stats = c("n", "pearson"))        # bit-identical to Python
 ```
 
-It covers construction, relationship pairs, pairwise kinship, the complete
-kinship matrix and inbreeding; views, counts, lineage and effective size are
-Python-only for now. For development, the `r` pixi environment carries R:
+It covers construction, relationship pairs, counts, burden and moments,
+pairwise kinship, the complete kinship matrix and inbreeding; views,
+lineage, per-person relative counts and effective size are Python-only for
+now. For development, the `r` pixi environment carries R:
 `pixi run -e r r-test` installs `r/` in place and runs its tests,
 `pixi run -e r r-doc` regenerates `r/man/`, and
 `pixi run -e r tools/r_build_tarball.sh` builds the source tarball.
