@@ -250,14 +250,41 @@ def routing_check(prefix: str) -> Step:
     return Step("routing", ("python", "-c", code))
 
 
-def run_step(unit: Unit, step: Step, env: dict[str, str], frozen: bool, log_dir: Path, tmp: Path) -> dict:
-    """Run one step under ``/usr/bin/time``, log it, and return its evidence record."""
+# Each step runs in its own delegated systemd scope, so the scope's cgroup
+# memory.peak is the exact high-water mark of every process the step starts
+# (page cache included), where /usr/bin/time's %M is only the largest one.
+# The step moves into a child of the scope, and simACE's `simace run` tests
+# adopt the scope through SIMACE_CGROUP_ROOT instead of opening scopes outside
+# it. The shell reads the peak after the step exits and passes its status on.
+_SCOPE_SCRIPT = """
+cg=/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)
+mkdir "$cg/step" && echo 0 > "$cg/step/cgroup.procs" && echo +memory > "$cg/cgroup.subtree_control" || exit 125
+SIMACE_CGROUP_ROOT=$cg "$@"; s=$?; cat "$cg/memory.peak" > "$0"; exit $s
+"""
+_SCOPE = ("systemd-run", "--user", "--scope", "--quiet", "-p", "Delegate=yes", "--", "sh", "-c", _SCOPE_SCRIPT)
+
+
+def _scope_works() -> bool:
+    try:
+        probe = subprocess.run(
+            ["systemd-run", "--user", "--scope", "--quiet", "true"], capture_output=True, check=False
+        )
+    except FileNotFoundError:
+        return False
+    return probe.returncode == 0
+
+
+def run_step(unit: Unit, step: Step, env: dict[str, str], frozen: bool, log_dir: Path, tmp: Path, scoped: bool) -> dict:
+    """Run one step under ``/usr/bin/time`` and, if *scoped*, a systemd scope; log it and return its evidence record."""
     argv = tuple(a.replace("{tmp}", str(tmp)) for a in step.argv)
     pixi = ["pixi", "run", "--manifest-path", str(unit.manifest)]
     if frozen:
         pixi.append("--frozen")
     stats = tmp / f"{unit.label}-{step.name}.time"
+    peak = tmp / f"{unit.label}-{step.name}.peak"
     cmd = ["/usr/bin/time", "-f", "%e %M", "-o", str(stats), *pixi, *argv]
+    if scoped:
+        cmd = [*_SCOPE, str(peak), *cmd]
     log = log_dir / f"{step.name}.log"
     started = time.time()
     with log.open("w") as fh:
@@ -270,6 +297,7 @@ def run_step(unit: Unit, step: Step, env: dict[str, str], frozen: bool, log_dir:
         fields = stats.read_text().split()
         if len(fields) >= 2 and fields[-1].isdigit():
             max_rss_kib = int(fields[-1])
+    tree_peak_mib = round(int(peak.read_text()) / 2**20, 1) if peak.exists() and peak.stat().st_size else None
     tail = log.read_text(errors="replace").splitlines()[-LOG_TAIL:]
     return {
         "step": step.name,
@@ -277,12 +305,13 @@ def run_step(unit: Unit, step: Step, env: dict[str, str], frozen: bool, log_dir:
         "exit": rc,
         "wall_s": round(wall, 1),
         "max_rss_mib": None if max_rss_kib is None else round(max_rss_kib / 1024, 1),
+        "tree_peak_mib": tree_peak_mib,
         "log": str(log.relative_to(ROOT)),
         "tail": tail,
     }
 
 
-def run_unit(unit: Unit, routing: str, stage: str, slow: bool, tmp: Path) -> dict:
+def run_unit(unit: Unit, routing: str, stage: str, slow: bool, tmp: Path, scoped: bool) -> dict:
     """Run a unit's routing check and steps; write and return its JSON record."""
     env, prefix = routing_env(routing) if unit.routed else ({}, "")
     frozen = routing != "locked"
@@ -300,9 +329,13 @@ def run_unit(unit: Unit, routing: str, stage: str, slow: bool, tmp: Path) -> dic
     }
     for step in steps:
         print(f"[{unit.label}] {step.name} ...", end="", flush=True)
-        result = run_step(unit, step, env, frozen, log_dir, tmp)
+        result = run_step(unit, step, env, frozen, log_dir, tmp, scoped)
         record["steps"].append(result)
-        print(f" exit={result['exit']} wall={result['wall_s']}s rss={result['max_rss_mib']}MiB", flush=True)
+        print(
+            f" exit={result['exit']} wall={result['wall_s']}s rss={result['max_rss_mib']}MiB"
+            f" tree_peak={result['tree_peak_mib']}MiB",
+            flush=True,
+        )
         if step.name == "routing" and result["exit"] != 0:
             record["aborted"] = "misrouted"
             break
@@ -470,8 +503,14 @@ def summary(stage: str) -> int:
         bad = [s["step"] for s in rec["steps"] if s["exit"] != 0]
         wall = sum(s["wall_s"] for s in rec["steps"])
         rss = max((s["max_rss_mib"] or 0) for s in rec["steps"])
+        # Records written before tree_peak_mib existed, or without a scope, have none.
+        trees = [s.get("tree_peak_mib") for s in rec["steps"]]
+        tree = "-" if not trees or None in trees else f"{max(trees):.1f}MiB"
         status = "ok" if rec["ok"] else f"FAIL {','.join(bad)}"
-        print(f"{rec['unit']:<18} {status:<28} wall={wall:8.1f}s peak_rss={rss:8.1f}MiB routing={rec['routing']}")
+        print(
+            f"{rec['unit']:<18} {status:<28} wall={wall:8.1f}s peak_rss={rss:8.1f}MiB tree_peak={tree:>11}"
+            f" routing={rec['routing']}"
+        )
         worst |= not rec["ok"]
     return worst
 
@@ -512,8 +551,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.wheel_ref:
         work = (args.work or PG_SOURCE / "target" / "consumer-gate" / args.stage).resolve()
         routing = str(build_stage(args.wheel_ref, work, args.stage))
+    scoped = _scope_works()
+    if not scoped:
+        print("systemd-run --user --scope is unavailable; tree_peak_mib will be null", file=sys.stderr)
     with tempfile.TemporaryDirectory(prefix="consumer-gate-") as tmp:
-        records = [run_unit(unit, routing, args.stage, args.slow, Path(tmp)) for unit in selected]
+        records = [run_unit(unit, routing, args.stage, args.slow, Path(tmp), scoped) for unit in selected]
     failed = [r["unit"] for r in records if not r["ok"]]
     print("failed units:", failed or "none")
     return 1 if failed else 0
