@@ -4,6 +4,39 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased (0.12.0)
+
+- **Added (R): `relationship_moments()`, `moments_select()`,
+  `moments_sum()`, `moments_merge()`, `as.data.frame()` and `print()` for
+  its result, `relationship_counts()` and `relationship_burden()`** (issue
+  #30; ADR 0015). The moments keywords are Python's; `first` and `second`
+  take factors (codes in, labels kept for the levels that occur), integer,
+  logical and whole-number double vectors, and refuse character vectors and
+  `NA`; `NA` in a `same` key is unknown. The result holds the exact
+  accumulators as a raw matrix and saves with `saveRDS()`.
+  `as.data.frame(m, stats = )` derives any of `n`, the sums, sums of
+  squares, means and centered moments per column, and `cross`, `comoment`
+  and `pearson` per product, bit-identical to Python's. A statistic past the
+  double range is a `pedigree_graph_usage_error` naming it; a count or pair
+  total above 2^53 is a `pedigree_graph_resource_error`
+  (`count_exceeds_double`).
+- **Changed: the moments arithmetic is in the Rust core** (ADR 0015). Label
+  packing, quantization, `sum`, `merge`, `select` and every derived float
+  run in core for both hosts, with identical results to 0.11 (held by the
+  0.11 Python code as a test oracle). Views are 3 to 8 times faster and
+  `sum` and `merge` about twice as fast on a 16,128-cell table, and no
+  longer hold Python ints. `RelationshipMoments` now stores core's encoded
+  accumulators: its constructor takes `width` and `encoded` in place of
+  `counts` and the `q_*` arrays, which are read-only properties decoded on
+  access. **Breaking:** code that built a table from its exact integers
+  calls the new `RelationshipMoments.from_exact(...)` with the 0.11 keyword
+  arguments (simACE's `tests/analysis/moments_oracle.py` does). `HOST_BYTES_PER_ACCUMULATOR` is 32 (was 72), so a budget fits
+  more lanes; `CONVERSION_CHUNK` and `CONVERSION_BYTES_PER_ACCUMULATOR` are
+  removed. New allocation families `moment_input` and `moment_table`.
+- **Fixed: `RelationshipMoments.sum()` and `.merge()` no longer wrap a
+  cell count past 2^63 - 1.** They raise `ResourceError`
+  (`arithmetic_overflow`); `repr` totals the counts exactly.
+
 ## v0.11.1
 
 - **Added: `PedigreeGraph.relatives_per_person()`,

@@ -16,8 +16,11 @@ Python has no mechanism for that.  ``benchmarks/tests/test_benchmark_contract.py
 the two symptoms that reached tracked artifacts last time: a note citing a
 ``/tmp`` driver as its method, and a result file with no environment.
 
-Two memory scopes exist here on purpose.  :class:`PeakRss` measures one region
-inside a process, which is what attributing cost to a phase requires.
+Three memory meters exist here on purpose, and no comparison mixes them.
+:class:`PeakRss` measures one region inside a process, which is what
+attributing cost to a phase requires.  :class:`TreePeak` measures the same
+region as the cgroup's ``memory.peak`` when the child runs in its own
+``systemd-run`` scope: the whole process tree, page cache included.
 :attr:`ChildOutcome.ru_maxrss_mib` is the whole child process including fixture
 construction, which is what ``bench_estimate_counts.py`` documents and compares.
 Collapsing them would silently change what that gate means.
@@ -45,6 +48,7 @@ __all__ = [
     "Prepared",
     "RunOrder",
     "Suite",
+    "TreePeak",
     "Verdict",
     "checksum_array",
     "checksum_ints",
@@ -61,10 +65,12 @@ __all__ = [
 ]
 
 import argparse
+import functools
 import hashlib
 import json
 import os
 import platform
+import shutil
 import statistics
 import subprocess
 import sys
@@ -214,6 +220,46 @@ class PeakRss:
     @property
     def growth_mib(self) -> float:
         return self.peak_mib - self.baseline_mib
+
+
+SCOPE_ENV: Final[str] = "PEDIGREE_GRAPH_BENCH_SCOPE"
+"""Set by :func:`_spawn` when the child runs alone in its own ``systemd-run`` scope."""
+
+TREE_METHOD: Final[str] = "cgroup v2 memory.peak of the child's own systemd-run scope, reset per fd at region start"
+
+
+class TreePeak:
+    """Peak cgroup memory over one timed region, for a child alone in its scope.
+
+    Writing to ``memory.peak`` resets the peak seen through that file
+    descriptor to the cgroup's current usage (Linux 6.12+), so a read through
+    the same descriptor afterwards is the kernel's peak for the region: every
+    process in the scope, page cache included, with no sampling.  Outside a
+    scope of its own (``SCOPE_ENV`` unset) the cgroup holds other processes,
+    so the meter records nothing rather than a number that means something
+    else.
+    """
+
+    def __init__(self) -> None:
+        self.baseline_mib: float | None = None
+        self.peak_mib: float | None = None
+        self._fd: int | None = None
+
+    def __enter__(self) -> TreePeak:
+        if os.environ.get(SCOPE_ENV) != "1":
+            return self
+        cgroup = Path("/sys/fs/cgroup") / Path("/proc/self/cgroup").read_text().strip().split(":", 2)[2].lstrip("/")
+        self._fd = os.open(cgroup / "memory.peak", os.O_RDWR)
+        os.write(self._fd, b"reset\n")
+        self.baseline_mib = int(os.pread(self._fd, 64, 0)) / 2**20
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._fd is None:
+            return
+        self.peak_mib = int(os.pread(self._fd, 64, 0)) / 2**20
+        os.close(self._fd)
+        self._fd = None
 
 
 def checksum_values(values: np.ndarray) -> int:
@@ -382,6 +428,7 @@ class Environment:
     suite_sha256: str
     threads_pinned: int
     rss_method: str = "kernel VmHWM, reset via /proc/self/clear_refs at region start"
+    tree_method: str = ""
 
     REQUIRED: ClassVar[tuple[str, ...]] = (
         "git_commit",
@@ -418,6 +465,7 @@ class Environment:
             "suite_sha256": self.suite_sha256,
             "threads_pinned": self.threads_pinned,
             "rss_method": self.rss_method,
+            "tree_method": self.tree_method,
         }
 
     @classmethod
@@ -471,6 +519,7 @@ class Environment:
             harness_sha256=sha(HARNESS_PATH),
             suite_sha256=sha(suite_path),
             threads_pinned=int(PINNED_ENV["PEDIGREE_GRAPH_THREADS"]),
+            tree_method=TREE_METHOD if _scope_prefix() else "unavailable (no systemd-run user scope)",
         )
 
 
@@ -488,6 +537,8 @@ class RunRecord:
     facts: Mapping[str, Any]
     environment: str
     started_at: str
+    tree_peak_mib: float | None = None
+    tree_baseline_mib: float | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -496,6 +547,8 @@ class RunRecord:
             "peak_rss_mib": self.peak_rss_mib,
             "baseline_rss_mib": self.baseline_rss_mib,
             "ru_maxrss_mib": self.ru_maxrss_mib,
+            "tree_peak_mib": self.tree_peak_mib,
+            "tree_baseline_mib": self.tree_baseline_mib,
             "checksum": self.checksum,
             "n_individuals": self.n_individuals,
             "facts": dict(self.facts),
@@ -520,6 +573,10 @@ class CellResult:
     def median(self, metric: str) -> float:
         self._require_completed()
         return statistics.median(getattr(run, metric) for run in self.runs)
+
+    def measured(self, metric: str) -> bool:
+        """Whether every run recorded *metric*; :class:`TreePeak` records nothing outside a scope."""
+        return all(getattr(run, metric) is not None for run in self.runs)
 
     def spread_pct(self, metric: str) -> float:
         self._require_completed()
@@ -774,7 +831,7 @@ def _measure_cell(suite: Suite, cell: Cell, environment: str) -> RunRecord:
     prepared = arm.setup(graph) if arm.setup is not None else Prepared()
 
     started_at = datetime.now(UTC).isoformat(timespec="seconds")
-    with PeakRss() as region:
+    with TreePeak() as tree, PeakRss() as region:
         measurement = arm.run(graph, prepared.payload)
     measurement = measurement.resolved()
 
@@ -789,6 +846,8 @@ def _measure_cell(suite: Suite, cell: Cell, environment: str) -> RunRecord:
         facts={**package_facts(), **dict(prepared.facts), **dict(measurement.facts)},
         environment=environment,
         started_at=started_at,
+        tree_peak_mib=tree.peak_mib,
+        tree_baseline_mib=tree.baseline_mib,
     )
 
 
@@ -797,6 +856,20 @@ class _ChildOutcome:
     record: dict[str, Any] | None
     ru_maxrss_mib: float
     timed_out: bool
+
+
+@functools.cache
+def _scope_prefix() -> tuple[str, ...]:
+    """``systemd-run`` arguments that put a child alone in a new user scope, or ``()`` without one.
+
+    ``--scope`` execs the command in place, so the child keeps the pid that
+    ``wait4`` reaps and its ``ru_maxrss`` is the child's own.
+    """
+    prefix = ("systemd-run", "--user", "--scope", "--quiet", "--")
+    usable = shutil.which("systemd-run") is not None and (
+        subprocess.run([*prefix, "true"], capture_output=True, check=False).returncode == 0
+    )
+    return prefix if usable else ()
 
 
 def _spawn(script: Path, cell: Cell, timeout_s: float, arm: Arm | None = None) -> _ChildOutcome:
@@ -817,7 +890,10 @@ def _spawn(script: Path, cell: Cell, timeout_s: float, arm: Arm | None = None) -
         env.update(arm.env)
         if arm.interpreter is not None:
             interpreter = str(arm.interpreter)
-    command = [interpreter, str(script), "--cell", str(cell)]
+    prefix = _scope_prefix()
+    if prefix:
+        env[SCOPE_ENV] = "1"
+    command = [*prefix, interpreter, str(script), "--cell", str(cell)]
     with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
         proc = subprocess.Popen(command, env=env, stdout=out, stderr=err)
         deadline = time.monotonic() + timeout_s
@@ -959,6 +1035,8 @@ def _read_report(path: Path) -> Report:
                 facts=run["facts"],
                 environment=run["environment"],
                 started_at=run["started_at"],
+                tree_peak_mib=run.get("tree_peak_mib"),
+                tree_baseline_mib=run.get("tree_baseline_mib"),
             )
             for run in entry["runs"]
         )
@@ -1026,6 +1104,7 @@ def render_markdown(suite: Suite, report: Report) -> str:
         f"- Python {primary.python}, pixi lock `{primary.pixi_lock_sha256}`, harness `{primary.harness_sha256}`",
         f"- every backend pinned to {primary.threads_pinned} thread",
         f"- peak RSS is {primary.rss_method}",
+        f"- tree peak is {primary.tree_method or 'not recorded'}",
     ]
     for key in sorted(k for k in report.environments if k != primary_key):
         other = report.environments[key]
@@ -1034,8 +1113,8 @@ def render_markdown(suite: Suite, report: Report) -> str:
 
     verdicts = report.verdicts(suite.gate)
     table = [
-        "| input | strategy | reps | wall (median) | spread | peak RSS (median) | checksum |",
-        "|---|---|---:|---:|---:|---:|---|",
+        "| input | strategy | reps | wall (median) | spread | peak RSS (median) | tree peak (median) | checksum |",
+        "|---|---|---:|---:|---:|---:|---:|---|",
     ]
     for result in report.cells:
         fixture = suite.fixture(result.cell.fixture)
@@ -1043,11 +1122,13 @@ def render_markdown(suite: Suite, report: Report) -> str:
         if result.outcome is Outcome.TIMED_OUT:
             table.append(
                 f"| {fixture.label} | {arm.label} | 0 | did not finish within "
-                f"{result.timeout_s:.0f} s | n/a | n/a | n/a |"
+                f"{result.timeout_s:.0f} s | n/a | n/a | n/a | n/a |"
             )
             continue
         if result.outcome is Outcome.UNAVAILABLE:
-            table.append(f"| {fixture.label} | {arm.label} | 0 | input unavailable on this host | n/a | n/a | n/a |")
+            table.append(
+                f"| {fixture.label} | {arm.label} | 0 | input unavailable on this host | n/a | n/a | n/a | n/a |"
+            )
             continue
         checksum = f"`{result.checksum}`" if result.checksum_stable else "**unstable**"
         flag = ""
@@ -1055,10 +1136,11 @@ def render_markdown(suite: Suite, report: Report) -> str:
             flag = " **BLOCK**"
         elif verdicts.get(result.cell) is Verdict.INCONCLUSIVE:
             flag = " (inconclusive)"
+        tree = f"{result.median('tree_peak_mib'):,.0f} MiB" if result.measured("tree_peak_mib") else "n/a"
         table.append(
             f"| {fixture.label} | {arm.label}{flag} | {len(result.runs)} | "
             f"{_seconds(result.median('wall_s'))} | {result.spread_pct('wall_s'):.1f}% | "
-            f"{result.median('peak_rss_mib'):,.0f} MiB | {checksum} |"
+            f"{result.median('peak_rss_mib'):,.0f} MiB | {tree} | {checksum} |"
         )
     return "\n".join(lines) + "\n\n" + "\n".join(table) + "\n"
 
@@ -1103,9 +1185,15 @@ def _drive(
             facts=outcome.record["facts"],
             environment=fingerprint,
             started_at=outcome.record["started_at"],
+            tree_peak_mib=outcome.record.get("tree_peak_mib"),
+            tree_baseline_mib=outcome.record.get("tree_baseline_mib"),
         )
         runs[cell].append(record)
-        print(f"{record.wall_s:.2f}s  peak {record.peak_rss_mib:.0f} MiB  (proc {record.ru_maxrss_mib:.0f} MiB)")
+        tree = "n/a" if record.tree_peak_mib is None else f"{record.tree_peak_mib:.0f} MiB"
+        print(
+            f"{record.wall_s:.2f}s  peak {record.peak_rss_mib:.0f} MiB  tree {tree}  "
+            f"(proc {record.ru_maxrss_mib:.0f} MiB)"
+        )
 
         if out is not None:
             _write(suite, out, runs, outcomes, {fingerprint: environment}, timeout_s)

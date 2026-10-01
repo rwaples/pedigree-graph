@@ -17,6 +17,17 @@ pedigree at scale, the generator writes, under
 * ``kinship.tsv``: the upper triangle (``i <= j``, 1-based) of the complete
   kinship matrix, values as hex floats so R compares them exactly.
 * ``inbreeding.tsv``: ``F`` per row, as hex floats.
+* ``counts.tsv``: the pairs of every category up to degree 5, by code.
+* ``moments.tsv``, ``moments_exact.tsv``, ``moments_folded.tsv`` and
+  ``moments_merged.tsv``: ``relationship_moments`` of nine categories under
+  one fixed spec (:func:`_moments_spec`), in both ``symmetric`` modes, for
+  the cells that hold pairs: every statistic R's ``as.data.frame`` gives,
+  as hex floats; every exact accumulator, in decimal; the ``MO`` and ``FO``
+  cells folded into one; and the merge of two calls whose second has every
+  value scaled by 2^-600.
+* ``burden.tsv``: each row's relatives at degrees 1 to 5
+  (``relationship_burden``), and ``burden_depth.tsv``, its related pairs
+  per structural depth.
 
 and ``categories.tsv``, the Python registry, so the R registry (read from the
 core) is held to it.
@@ -131,6 +142,126 @@ def _golden(fixture: Path, out: Path) -> None:
         out / "kinship.tsv",
     )
     _write(pl.DataFrame({"F": _hex(graph.inbreeding())}), out / "inbreeding.tsv")
+
+    counts = graph.relationship_counts(max_degree=5)
+    _write(pl.DataFrame({"code": list(counts), "count": [counts[code] for code in counts]}), out / "counts.tsv")
+    burden = graph.relationship_burden()
+    _write(
+        pl.DataFrame({f"degree_{d}": burden.per_person[:, d - 1].astype(np.int64) for d in range(1, 6)}),
+        out / "burden.tsv",
+    )
+    same_depth = burden.same_depth_pairs.astype(np.int64)
+    _write(pl.DataFrame({"depth": np.arange(len(same_depth)), "pairs": same_depth}), out / "burden_depth.tsv")
+    _moments(graph, columns["mother"], out)
+
+
+MOMENT_CATEGORIES = ("MZ", "FS", "MO", "FO", "MHS", "PHS", "GP", "Av", "1C")
+MOMENT_STATS = (
+    "sum_first",
+    "sum_second",
+    "sumsq_first",
+    "sumsq_second",
+    "mean_first",
+    "mean_second",
+    "m2_first",
+    "m2_second",
+)
+
+
+def _moments_spec(graph: PedigreeGraph) -> dict:
+    """The moments spec both hosts run: factors, values, products and categories.
+
+    Depth parity and a two-level row code over each member; ordinary,
+    constant, half-ulp-tie and large values; the default products and one
+    first x first; the mother as the equality key (passed separately).  R
+    builds the same spec in ``test-golden.R`` and ``tools/r_parity.R``.
+    """
+    n = graph.n_individuals
+    rows = np.arange(1, n + 1, dtype=np.float64)
+    # max|x| = 2^43 gives e = 0, so every half-integer quantizes on a tie.
+    tie = (rows % 7) - 2.5
+    tie[0] = 2.0**43
+    return {
+        "categories": list(MOMENT_CATEGORIES),
+        "first": {"parity": np.asarray(graph.depth) % 2, "code": (np.arange(n) % 2) + 1},
+        # Integer arithmetic and one correctly rounded division or product,
+        # so R computes every value bit for bit (no libm functions).
+        "values": {
+            "ordinary": (rows * 37 % 101) / 7 - 5,
+            "constant": np.full(n, 0.3),
+            "tie": tie,
+            "large": 1e150 * ((rows * 13 % 17) - 8),
+        },
+        "products": [
+            ("first.ordinary", "second.ordinary"),
+            ("first.constant", "second.constant"),
+            ("first.tie", "second.tie"),
+            ("first.large", "second.large"),
+            ("first.ordinary", "first.tie"),
+        ],
+    }
+
+
+def _float_text(values: np.ndarray) -> list[str]:
+    return ["NaN" if np.isnan(v) else float(v).hex() for v in values]
+
+
+def _moment_frame(m, symmetric: str) -> pl.DataFrame:
+    """R's ``as.data.frame`` of a result: axes as text (a code factor's labels), then every statistic."""
+    levels = m.cell_levels()
+    keep = m.counts.reshape(-1) > 0
+    frame = {"symmetric": [symmetric] * int(keep.sum())}
+    for axis in m.axes:
+        values = levels[axis.name].reshape(-1)[keep]
+        text = [f"r{int(v) - 1}" for v in values] if axis.name.endswith("_code") else [str(v) for v in values]
+        frame[axis.name] = text
+    frame["n"] = [str(int(v)) for v in m.counts.reshape(-1)[keep]]
+    for stat in MOMENT_STATS:
+        for j, column in enumerate(m.columns):
+            if stat.startswith("mean_"):
+                values = m.mean(f"{stat.removeprefix('mean_')}.{column}")
+            else:
+                values = getattr(m, stat)[..., j]
+            frame[f"{stat}.{column}"] = _float_text(values.reshape(-1)[keep])
+    names = [f"{a}:{b}" for a, b in m.products]
+    for stat in ("cross", "comoment"):
+        for j, name in enumerate(names):
+            frame[f"{stat}.{name}"] = _float_text(getattr(m, stat)[..., j].reshape(-1)[keep])
+    for (a, b), name in zip(m.products, names, strict=True):
+        frame[f"pearson.{name}"] = _float_text(m.pearson(a, b).reshape(-1)[keep])
+    return pl.DataFrame(frame)
+
+
+def _exact_frame(m, symmetric: str) -> pl.DataFrame:
+    """Every accumulator of the cells that hold pairs, cell by cell, in decimal."""
+    stride = 1 + 4 * len(m.columns) + len(m.products)
+    k = len(m.columns)
+    slabs = [m.counts[..., np.newaxis], m.q_sum_first, m.q_sum_second, m.q_sumsq_first, m.q_sumsq_second, m.q_cross]
+    stacked = np.concatenate([np.asarray(x, dtype=object) for x in slabs], axis=-1).reshape(-1, stride)
+    assert stacked.shape[1] == 1 + 4 * k + len(m.products)
+    values = [str(int(v)) for v in stacked[m.counts.reshape(-1) > 0].reshape(-1)]
+    return pl.DataFrame({"symmetric": [symmetric] * len(values), "value": values})
+
+
+def _moments(graph: PedigreeGraph, mother: np.ndarray, out: Path) -> None:
+    spec = _moments_spec(graph)
+    frames: dict[str, list[pl.DataFrame]] = {
+        "moments": [],
+        "moments_exact": [],
+        "moments_folded": [],
+        "moments_merged": [],
+    }
+    for symmetric in ("canonical", "both"):
+        m = graph.relationship_moments(**spec, same={"mother": mother}, symmetric=symmetric)
+        frames["moments"].append(_moment_frame(m, symmetric))
+        frames["moments_exact"].append(_exact_frame(m, symmetric))
+        folded = m.select(category=["MO", "FO"]).sum("category")
+        frames["moments_folded"].append(_moment_frame(folded, symmetric))
+        scaled = {**spec, "values": {name: column * 2.0**-600 for name, column in spec["values"].items()}}
+        merged = m.merge(graph.relationship_moments(**scaled, same={"mother": mother}, symmetric=symmetric))
+        frames["moments_merged"].append(_moment_frame(merged, symmetric))
+    for name, parts in frames.items():
+        _write(pl.concat(parts), out / f"{name}.tsv")
 
 
 def _categories(out: Path) -> None:

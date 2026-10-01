@@ -272,6 +272,26 @@ pub enum Error {
         /// The budget the caller set, in bytes.
         budget_bytes: u64,
     },
+    /// A relationship-moments value column holds a value that is not finite.
+    NonFiniteValue {
+        /// The column as the host names it, e.g. `values['x']`.
+        field: String,
+        /// The first offending row.
+        position: usize,
+    },
+    /// A float a relationship-moments table derives is past the float64 range.
+    NotRepresentable {
+        /// The statistic, e.g. `"sumsq_first"`.
+        statistic: &'static str,
+        /// The column or product as the host names it.
+        name: String,
+    },
+    /// A relationship-moments table handed in is inconsistent, or an
+    /// operation names a table it does not fit.
+    InvalidMomentsTable {
+        /// What is wrong.
+        reason: String,
+    },
 }
 
 impl Error {
@@ -301,6 +321,9 @@ impl Error {
                 ErrorClass::Usage
             }
             Error::InvalidViewMap { .. } | Error::UnknownSexEncoding { .. } => ErrorClass::Usage,
+            Error::NonFiniteValue { .. }
+            | Error::NotRepresentable { .. }
+            | Error::InvalidMomentsTable { .. } => ErrorClass::Usage,
         }
     }
 
@@ -330,7 +353,10 @@ impl Error {
             Error::MemoryBudgetExceeded { .. } => "memory_budget_exceeded",
             Error::KinshipThresholdOutOfRange { .. }
             | Error::InvalidViewMap { .. }
-            | Error::UnknownSexEncoding { .. } => "",
+            | Error::UnknownSexEncoding { .. }
+            | Error::NonFiniteValue { .. }
+            | Error::NotRepresentable { .. }
+            | Error::InvalidMomentsTable { .. } => "",
         }
     }
 
@@ -489,9 +515,11 @@ impl Error {
                     Int(i64::try_from(*budget_bytes).unwrap_or(i64::MAX)),
                 ),
             ],
-            Error::KinshipThresholdOutOfRange { .. } | Error::UnknownSexEncoding { .. } => {
-                Vec::new()
-            }
+            Error::KinshipThresholdOutOfRange { .. }
+            | Error::UnknownSexEncoding { .. }
+            | Error::NonFiniteValue { .. }
+            | Error::NotRepresentable { .. }
+            | Error::InvalidMomentsTable { .. } => Vec::new(),
         }
     }
 }
@@ -701,6 +729,18 @@ impl std::fmt::Display for Error {
                         grouped(*budget_bytes as usize)
                     )
                 }
+            }
+            Error::NonFiniteValue { field, position } => write!(
+                f,
+                "{field} is not finite at position {position}; mask with a factor level instead"
+            ),
+            Error::NotRepresentable { statistic, name } => write!(
+                f,
+                "{statistic} of {} is not representable in float64 (an output overflowed)",
+                python_str(name)
+            ),
+            Error::InvalidMomentsTable { reason } => {
+                write!(f, "invalid relationship moments table: {reason}")
             }
         }
     }

@@ -2,23 +2,23 @@
 
 ``PedigreeGraph.relationship_moments`` and ``PedigreeView.relationship_moments``
 end here.  This module is the boundary: it validates the named factors, value
-columns, products and equality keys, packs each role's factors by mixed radix
-into one int32 pair label per individual, quantizes every value column to a
-fixed-point integer under the integer-exponent scale rule, hands the arrays
-to ``_native.relationship_moments`` on the package pool, and rebuilds the
-exact accumulators as a labelled
+columns, products and equality keys, has core pack each role's factors by
+mixed radix into one int32 pair label per individual and quantize every value
+column to a fixed-point integer under the integer-exponent scale rule, hands
+the arrays to ``_native.relationship_moments`` on the package pool, and
+rebuilds the exact accumulators as a labelled
 :class:`~pedigree_graph.moments.RelationshipMoments`.
 
-Numeric contract (ADR 0013).  For a column with ``M = max|x|`` over the
-receiver's rows, the exponent ``e`` is the largest integer with
-``M · 2^e <= 2^43``, read from ``frexp`` rather than computed in floating
-point, and ``0`` for an all-zero column.  ``q = rint(ldexp(x, e))`` rounds
-half to even; ``ldexp`` scales in one exact step, so a subnormal ``M`` or one
-near the float64 maximum quantizes without an intermediate overflow.  The
-scale is taken over every receiver row, masked ones included, so a row that
-a factor level masks out should still carry a finite value of ordinary
+Numeric contract (ADR 0013, ADR 0015).  For a column with ``M = max|x|`` over
+the receiver's rows, the exponent ``e`` is the largest integer with
+``M · 2^e <= 2^43``, read from the binary exponent of ``M``, and ``0`` for an
+all-zero column; ``q`` is ``x · 2^e`` rounded half to even in exact integer
+steps, so a subnormal ``M`` or one near the float64 maximum quantizes without
+an intermediate overflow.  Core does both, for Python and R alike.  The scale
+is taken over every receiver row, masked ones included, so a row that a
+factor level masks out should still carry a finite value of ordinary
 magnitude.  The engine accumulates the integers exactly and hands them back
-as they are; the result derives every float from them.
+as they are; the result derives every float from them through core.
 """
 
 from __future__ import annotations
@@ -32,10 +32,10 @@ import numpy as np
 
 from pedigree_graph import _native
 from pedigree_graph._errors import PedigreeValidationError
-from pedigree_graph._input import _INT32_MAX, _INT64_MAX
+from pedigree_graph._input import _INT64_MAX
 from pedigree_graph._relationship_pairs import _should_compact_view
 from pedigree_graph._threads import thread_budget
-from pedigree_graph.moments import CONVERSION_CHUNK, MomentAxis, RelationshipMoments, side_column
+from pedigree_graph.moments import MomentAxis, RelationshipMoments, side_column
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -49,11 +49,9 @@ logger = logging.getLogger(__name__)
 SYMMETRIC = ("canonical", "both")
 DEFAULT_MEMORY_BUDGET_BYTES = 1 << 30
 MAX_MEMORY_BUDGET_BYTES = (1 << 64) - 1
-MAX_COLUMNS = 32
-#: Each key doubles the cells; sixteen is 65,536 times the label product,
-#: past which no cell table fits a sensible budget.
-MAX_SAME_KEYS = 16
-QUANTIZED_BITS = 43
+#: Core's limits, shared with the R binding.
+MAX_COLUMNS = _native.MOMENTS_MAX_VALUE_COLUMNS
+MAX_SAME_KEYS = _native.MOMENTS_MAX_SAME_KEYS
 
 
 def _coerce_column(kind: str, name: str, values: object, n: int, integer: bool) -> np.ndarray:
@@ -61,7 +59,8 @@ def _coerce_column(kind: str, name: str, values: object, n: int, integer: bool) 
 
     Factors and keys come back as int64.  Value columns keep their numeric
     dtype; :func:`_quantize` converts them to float64 one column at a time,
-    so a float32 table is never held twice.
+    so a float32 table is never held twice, and core refuses a value that is
+    not finite.
     """
     field = f"{kind}[{name!r}]"
     array = np.asarray(values)
@@ -94,9 +93,6 @@ def _coerce_column(kind: str, name: str, values: object, n: int, integer: bool) 
         return array.astype(np.int64, copy=False)
     if array.dtype.kind not in "iufb":
         raise TypeError(f"{field} must be a numeric array, got dtype {array.dtype}")
-    if array.dtype.kind == "f" and not np.all(np.isfinite(array)):
-        position = int(np.flatnonzero(~np.isfinite(array))[0])
-        raise ValueError(f"{field} is not finite at position {position}; mask with a factor level instead")
     return array
 
 
@@ -107,45 +103,18 @@ def _check_names(kind: str, names: Iterable[str]) -> None:
 
 
 def _pack(kind: str, factors: Mapping[str, object] | None, n: int) -> tuple[np.ndarray, int, list[MomentAxis]]:
-    """Pack named factors by mixed radix into one label per row; return (labels, n_labels, axes)."""
+    """Pack named factors by mixed radix into one label per row (core); return (labels, n_labels, axes)."""
     if factors is None:
         factors = {}
     _check_names(f"{kind} factor", factors)
-    labels = np.zeros(n, dtype=np.int64)
-    n_labels = 1
-    axes = []
-    for name, values in factors.items():
-        column = _coerce_column(kind, name, values, n, integer=True)
-        levels, index = np.unique(column, return_inverse=True)
-        n_labels *= max(len(levels), 1)
-        if n_labels > _INT32_MAX + 1:
-            raise PedigreeValidationError(
-                "value_out_of_range",
-                f"{kind} factors pack into {n_labels} labels, beyond the int32 label range",
-                field=f"{kind} label",
-                position=0,
-                value=n_labels - 1,
-                minimum=0,
-                maximum=_INT32_MAX,
-            )
-        labels = labels * len(levels) + index.astype(np.int64)
-        axes.append(MomentAxis(f"{kind}_{name}", levels))
-    return labels.astype(np.int32), n_labels, axes
-
-
-def _exponent(column: np.ndarray) -> int:
-    """The largest integer ``e`` with ``max|x| · 2^e <= 2^43``, from the binary exponent; 0 for all zeros."""
-    magnitude = max(float(column.max()), -float(column.min())) if len(column) else 0.0
-    if magnitude == 0.0:
-        return 0
-    mantissa, exponent = np.frexp(magnitude)
-    # frexp gives |x| = m · 2^E with m in [0.5, 1); m · 2^(43 - E) < 2^43
-    # always, and exactly 2^43 is allowed when m is 0.5, a power of two.
-    return int(QUANTIZED_BITS - exponent + (1 if mantissa == 0.5 else 0))
+    columns = [np.ascontiguousarray(_coerce_column(kind, name, v, n, integer=True)) for name, v in factors.items()]
+    labels, n_labels, levels = _native.moments_pack(columns, n, kind)
+    axes = [MomentAxis(f"{kind}_{name}", level) for name, level in zip(factors, levels, strict=True)]
+    return labels, n_labels, axes
 
 
 def _quantize(columns: dict[str, np.ndarray], n: int) -> tuple[np.ndarray, np.ndarray]:
-    """Row-major int64 ``[n, k]`` of quantized values and the int64 exponent per column.
+    """Row-major int64 ``[n, k]`` of quantized values and the int64 exponent per column (core).
 
     Each column is widened to float64 in turn into one reused buffer, so the
     peak beyond the inputs and the result is a single float64 column.
@@ -153,12 +122,9 @@ def _quantize(columns: dict[str, np.ndarray], n: int) -> tuple[np.ndarray, np.nd
     exponents = np.empty(len(columns), dtype=np.int64)
     quantized = np.empty((n, len(columns)), dtype=np.int64)
     buffer = np.empty(n, dtype=np.float64)
-    for j, column in enumerate(columns.values()):
+    for j, (name, column) in enumerate(columns.items()):
         np.copyto(buffer, column, casting="unsafe")
-        exponents[j] = _exponent(buffer)
-        np.ldexp(buffer, int(exponents[j]), out=buffer)
-        np.rint(buffer, out=buffer)
-        quantized[:, j] = buffer
+        exponents[j] = _native.moments_quantize(buffer, quantized, j, f"values[{name!r}]")
     return quantized, exponents
 
 
@@ -191,22 +157,6 @@ def _operand(name: str, columns: tuple[str, ...]) -> tuple[int, int]:
         raise ValueError(
             f"product operand {name!r} must be 'first.<column>' or 'second.<column>' over {columns}"
         ) from None
-
-
-def _split_halves(hi: np.ndarray, lo: np.ndarray) -> np.ndarray:
-    """The exact ``i128`` values from their signed high and unsigned low halves, as Python ints.
-
-    Converted ``CONVERSION_CHUNK`` accumulators at a time, so the scratch
-    beyond the result is bounded as the budget plan assumes.
-    """
-    out = np.empty(len(hi), dtype=object)
-    unsigned = lo.view(np.uint64)
-    for start in range(0, len(hi), CONVERSION_CHUNK):
-        stop = start + CONVERSION_CHUNK
-        out[start:stop] = [
-            (h << 64) | low for h, low in zip(hi[start:stop].tolist(), unsigned[start:stop].tolist(), strict=True)
-        ]
-    return out
 
 
 def relationship_moments(
@@ -284,7 +234,7 @@ def relationship_moments(
             threads=threads,
             memory_budget_bytes=memory_budget_bytes,
         )
-        exact = np.zeros((len(codes), cells, stride), dtype=object)
+        width, table = 1, np.zeros(len(codes) * cells * stride, dtype=np.uint8)
         lanes, lane_pairs = 0, ()
     else:
         view_rows = None if view is None else view._graph_to_view()
@@ -304,7 +254,7 @@ def relationship_moments(
             ", view" if view_rows is not None else "",
         )
         start = time.perf_counter()
-        hi, lo, native_cells, native_stride, lanes, lane_pairs, peak = _native.relationship_moments(
+        width, table, native_cells, native_stride, lanes, lane_pairs, peak = _native.relationship_moments(
             graph._built,
             max_degree=selection.top_degree,
             requested=list(codes),
@@ -322,8 +272,6 @@ def relationship_moments(
             compact=compact,
         )
         assert (native_cells, native_stride) == (cells, stride), "native layout disagrees with the packing"
-        exact = _split_halves(hi, lo).reshape(len(codes), cells, stride)
-        del hi, lo
         logger.info(
             "relationship_moments total: %d pairs in %.3fs on %d lane(s), estimated accumulator peak %d bytes",
             sum(lane_pairs),
@@ -332,22 +280,13 @@ def relationship_moments(
             peak,
         )
 
-    at = 1
-    slabs = []
-    for width in (k, k, k, k, p):
-        slabs.append(exact[:, :, at : at + width].reshape(*shape, width))
-        at += width
     return RelationshipMoments(
         axes=axes,
         columns=names,
         products=product_names,
         exponents=exponents,
-        counts=exact[:, :, 0].astype(np.int64).reshape(shape),
-        q_sum_first=slabs[0],
-        q_sum_second=slabs[1],
-        q_sumsq_first=slabs[2],
-        q_sumsq_second=slabs[3],
-        q_cross=slabs[4],
+        width=width,
+        encoded=table,
         symmetric=symmetric,
         lanes=int(lanes),
         lane_pairs=tuple(int(x) for x in lane_pairs),

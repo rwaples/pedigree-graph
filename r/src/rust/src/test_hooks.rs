@@ -13,10 +13,20 @@ fn panic_for_test() {
     panic!("pedigree-graph test hook: deliberate panic");
 }
 
+/// A pair total of `count` (a decimal string) as `relationship_counts`
+/// hands it to R, so the tests can reach the 2^53 refusal.
+#[cfg(feature = "test-hooks")]
+#[extendr]
+fn count_as_double_for_test(count: &str) -> Robj {
+    let count: u64 = count.parse().expect("a decimal u64");
+    crate::errors::finish(crate::kernels::exact_double("FS", count).map(Robj::from))
+}
+
 #[cfg(feature = "test-hooks")]
 extendr_module! {
     mod test_hooks;
     fn panic_for_test;
+    fn count_as_double_for_test;
 }
 
 #[cfg(not(feature = "test-hooks"))]

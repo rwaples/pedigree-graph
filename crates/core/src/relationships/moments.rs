@@ -18,8 +18,9 @@
 //! at most `2^86` (two quantized values of at most `2^43`), so a cell
 //! overflows only past `2^40` pairs, which one check on the counts after the
 //! pass rules out.  The merged integers are handed to the host as they are,
-//! split into high and low 64-bit halves; every centered moment and every
-//! float is the host's to derive, so the host's result algebra stays exact.
+//! encoded at their minimal width ([`super::encode_i128`]); every centered
+//! moment and every float is derived from them by
+//! [`super::MomentsTable`], so the result algebra stays exact (ADR 0015).
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
@@ -38,27 +39,17 @@ pub const MAX_CELL_PAIRS: i128 = 1 << 40;
 /// (ADR 0013) guarantees it and the overflow proof above assumes it.
 pub const MAX_QUANTIZED: i64 = 1 << 43;
 
-/// Bytes the host keeps per accumulator once the pass is over: the two
-/// `int64` halves the binding hands over (16) plus the host's exact-integer
-/// copy, an array slot (8) and a Python `int` of up to `2^126` (48 on
-/// CPython 3.13: 28 for the object and four 30-bit digits).  The host frees
-/// the halves after the copy, so the sum is the host-side peak.
-pub const HOST_BYTES_PER_ACCUMULATOR: u64 = 16 + 8 + 48;
+/// Bytes per accumulator beyond the lanes once the pass is over: the
+/// encoded table (at most 16, every accumulator being an `i128`) and one
+/// host copy of it (R copies it into a raw vector; Python adopts the
+/// buffer).  The same figure for both hosts, so a budget refuses the same
+/// calls in each (ADR 0015).
+pub const HOST_BYTES_PER_ACCUMULATOR: u64 = 16 + 16;
 
-/// Accumulators the host converts to Python ints at a time.
-pub const CONVERSION_CHUNK: u64 = 4096;
-
-/// Scratch bytes each accumulator of the chunk in conversion may hold (two
-/// int lists and the result list; about 100 measured on CPython 3.13).
-pub const CONVERSION_BYTES_PER_ACCUMULATOR: u64 = 128;
-
-/// The host term of the budget estimate: [`HOST_BYTES_PER_ACCUMULATOR`] per
-/// accumulator plus the scratch of one conversion chunk; `None` when it is
-/// not representable.
+/// The host term of the budget estimate, [`HOST_BYTES_PER_ACCUMULATOR`] per
+/// accumulator; `None` when it is not representable.
 pub fn host_bytes(accumulators: u64) -> Option<u64> {
-    accumulators
-        .checked_mul(HOST_BYTES_PER_ACCUMULATOR)?
-        .checked_add(accumulators.min(CONVERSION_CHUNK) * CONVERSION_BYTES_PER_ACCUMULATOR)
+    accumulators.checked_mul(HOST_BYTES_PER_ACCUMULATOR)
 }
 
 /// A sink for the oriented pairs of one engine pass, accumulated per lane.
@@ -427,19 +418,6 @@ pub struct CellReducer<'a> {
     slot: [usize; N_CATEGORIES],
 }
 
-/// The merged accumulators as the host receives them: per requested
-/// category in registry order, per cell in mixed-radix order (first label,
-/// second label, then the equality bits with the first key most
-/// significant), `stride` integers: the pair count; the sums of the first
-/// member's columns, of the second's, of their squares in the same order,
-/// and the cross sums per product.  Each `i128` is split into its high
-/// signed half and its low unsigned half carried in an `i64`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MomentsOutput {
-    pub hi: Vec<i64>,
-    pub lo: Vec<i64>,
-}
-
 impl<'a> CellReducer<'a> {
     pub fn new(
         input: MomentsInput<'a>,
@@ -453,14 +431,19 @@ impl<'a> CellReducer<'a> {
         CellReducer { input, plan, slot }
     }
 
-    /// Check the merged lane and split it into the host's halves.
+    /// Check the merged lane and encode it as the host receives it, `(width,
+    /// bytes)`: per requested category in registry order, per cell in
+    /// mixed-radix order (first label, second label, then the equality bits
+    /// with the first key most significant), `stride` integers: the pair
+    /// count; the sums of the first member's columns, of the second's, of
+    /// their squares in the same order, and the cross sums per product.
     ///
     /// # Errors
     ///
     /// [`Error::ArithmeticOverflow`] when a cell holds more than
     /// [`MAX_CELL_PAIRS`] pairs, so a partial may have wrapped;
-    /// [`Error::AllocationFailed`] for the output halves.
-    pub fn finish(&self, lane: &[i128]) -> Result<MomentsOutput, Error> {
+    /// [`Error::AllocationFailed`] for the output.
+    pub fn finish(&self, lane: &[i128]) -> Result<(usize, Vec<u8>), Error> {
         if lane
             .chunks_exact(self.plan.stride)
             .any(|acc| acc[0] > MAX_CELL_PAIRS)
@@ -470,11 +453,7 @@ impl<'a> CellReducer<'a> {
                 dtype: "int128",
             });
         }
-        let mut hi = alloc::with_capacity(lane.len(), Family::MomentOutput, "int64")?;
-        let mut lo = alloc::with_capacity(lane.len(), Family::MomentOutput, "int64")?;
-        hi.extend(lane.iter().map(|&v| (v >> 64) as i64));
-        lo.extend(lane.iter().map(|&v| v as u64 as i64));
-        Ok(MomentsOutput { hi, lo })
+        super::moments_table::encode_i128(lane, Family::MomentOutput)
     }
 }
 
@@ -532,8 +511,11 @@ impl Reducer for CellReducer<'_> {
 /// What a moments call hands back.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Moments {
-    /// The merged accumulators, laid out as [`MomentsOutput`] describes.
-    pub output: MomentsOutput,
+    /// Bytes per accumulator of `table`.
+    pub width: usize,
+    /// The merged accumulators, laid out as [`CellReducer::finish`]
+    /// describes, `width` bytes each, little-endian two's complement.
+    pub table: Vec<u8>,
     /// Integers per cell.
     pub stride: usize,
     /// Cells per category.
@@ -625,8 +607,11 @@ pub fn relationship_moments(
             ped, max_degree, requested, view, symmetric, plan.lanes, &reducer,
         )?,
     };
+    let (width, table) = reducer.finish(&reduced.lane)?;
+    drop(reduced.lane);
     Ok(Moments {
-        output: reducer.finish(&reduced.lane)?,
+        width,
+        table,
         stride: plan.stride,
         cells: plan.cells,
         lanes: plan.lanes.get(),
@@ -671,12 +656,15 @@ mod tests {
         lane
     }
 
-    fn joined(output: &MomentsOutput) -> Vec<i128> {
-        output
-            .hi
-            .iter()
-            .zip(&output.lo)
-            .map(|(&hi, &lo)| (i128::from(hi) << 64) | i128::from(lo as u64))
+    fn decoded((width, bytes): &(usize, Vec<u8>)) -> Vec<i128> {
+        bytes
+            .chunks_exact(*width)
+            .map(|slot| {
+                let fill = if slot[width - 1] & 0x80 == 0 { 0 } else { 0xff };
+                let mut wide = [fill; 16];
+                wide[..*width].copy_from_slice(slot);
+                i128::from_le_bytes(wide)
+            })
             .collect()
     }
 
@@ -746,7 +734,9 @@ mod tests {
         for (slot, &value) in lane.iter_mut().skip(1).zip(&probes) {
             *slot = value;
         }
-        assert_eq!(joined(&reducer.finish(&lane).unwrap()), lane);
+        let encoded = reducer.finish(&lane).unwrap();
+        assert_eq!(encoded.0, 16);
+        assert_eq!(decoded(&encoded), lane);
     }
 
     #[test]
@@ -813,7 +803,7 @@ mod tests {
                     assert_eq!(got.lane_pairs.len(), threads);
                     assert_eq!(got.lane_pairs.iter().sum::<u64>(), total);
                     assert!(
-                        joined(&got.output) == want,
+                        decoded(&(got.width, got.table.clone())) == want,
                         "threads={threads} compact={compact} {symmetric:?}"
                     );
                 }

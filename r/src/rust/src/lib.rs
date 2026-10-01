@@ -8,6 +8,7 @@ mod errors;
 mod graph;
 mod input;
 mod kernels;
+mod moments;
 mod test_hooks;
 mod threads;
 
@@ -64,6 +65,102 @@ fn relationship_pairs(
         execution,
         ids,
     ))
+}
+
+/// Pairs per category; see `kernels::relationship_counts`.
+#[extendr]
+fn relationship_counts(native: Robj, seal: Robj, max_degree: Robj, categories: Robj) -> Robj {
+    finish(kernels::relationship_counts(
+        &native,
+        &seal,
+        &max_degree,
+        &categories,
+    ))
+}
+
+/// Per-person relatives and pair totals; see `kernels::relationship_burden`.
+#[extendr]
+fn relationship_burden(native: Robj, seal: Robj) -> Robj {
+    finish(kernels::relationship_burden(&native, &seal))
+}
+
+/// Relationship moments; see `moments::relationship_moments`.
+#[extendr]
+#[allow(clippy::too_many_arguments)]
+fn relationship_moments(
+    native: Robj,
+    seal: Robj,
+    max_degree: Robj,
+    categories: Robj,
+    first: Robj,
+    second: Robj,
+    values: Robj,
+    products: Robj,
+    same: Robj,
+    symmetric: &str,
+    memory_budget_bytes: f64,
+) -> Robj {
+    finish(moments::relationship_moments(
+        &native,
+        &seal,
+        &max_degree,
+        &categories,
+        &first,
+        &second,
+        &values,
+        &products,
+        &same,
+        symmetric,
+        memory_budget_bytes,
+    ))
+}
+
+/// Keep 1-based `positions` of 1-based `axis` of a moments table.
+#[extendr]
+fn moments_select(m: Robj, axis: i32, positions: Vec<i32>) -> Robj {
+    finish(moments::select(&m, axis, &positions))
+}
+
+/// Fold 1-based `axis` of a moments table away.
+#[extendr]
+fn moments_sum(m: Robj, axis: i32) -> Robj {
+    finish(moments::sum(&m, axis))
+}
+
+/// Add two moments tables cell by cell.
+#[extendr]
+fn moments_merge(a: Robj, b: Robj) -> Robj {
+    finish(moments::merge(&a, &b))
+}
+
+/// One statistic per cell for 1-based column or product `index`.
+#[extendr]
+fn moments_derive(m: Robj, statistic: &str, index: i32, name: &str) -> Robj {
+    finish(moments::derive(&m, statistic, index, name))
+}
+
+/// The pair count of every cell, as doubles.
+#[extendr]
+fn moments_counts(m: Robj) -> Robj {
+    finish(moments::counts(&m))
+}
+
+/// The table's pairs, exactly, as a decimal string.
+#[extendr]
+fn moments_total(m: Robj) -> Robj {
+    finish(moments::total(&m))
+}
+
+/// Every accumulator as a decimal string.
+#[extendr]
+fn moments_exact(m: Robj) -> Robj {
+    finish(moments::exact(&m))
+}
+
+/// Decimal integers as an encoded table.
+#[extendr]
+fn moments_encode(values: Robj) -> Robj {
+    finish(moments::encode(&values))
 }
 
 /// Kinship per 1-based row pair.
@@ -147,6 +244,17 @@ extendr_module! {
     use test_hooks;
     fn build_pedigree;
     fn relationship_pairs;
+    fn relationship_counts;
+    fn relationship_burden;
+    fn relationship_moments;
+    fn moments_select;
+    fn moments_sum;
+    fn moments_merge;
+    fn moments_derive;
+    fn moments_counts;
+    fn moments_total;
+    fn moments_exact;
+    fn moments_encode;
     fn pair_kinship;
     fn inbreeding;
     fn kinship_matrix;

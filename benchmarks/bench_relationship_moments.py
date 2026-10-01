@@ -15,7 +15,18 @@ counts benchmark's two points (``relationship_counts_rust.md``).
 engine pass with no sink work, which issue #28 sets as the wall target.
 
 The checksum is over the pair counts per cell, which both arms produce
-exactly; the float sums are compared by the ADR 0013 tests, not here.  The
+exactly; the float sums are compared by the ADR 0013 tests, not here.
+
+The region arms (issue #30) time one step of the moments result each, in two
+specs: ``c64`` is the 64-cell table above, ``c16k`` the 288 × 8 label table
+of ADR 0013 (36 random generations × sex × two random flags for the first
+member, sex × the first flag for the second, same household; 16,128 cells,
+177,408 accumulators).  ``engine`` is the call with its conversion; every
+other region runs the call in its untimed setup and times one derived view,
+``sum`` over every non-category axis, ``merge`` of the result with itself, or
+``export``, every float the R ``as.data.frame`` offers.  Their checksums are
+over the exact integers or the float bits, so a revision that changes a
+result changes the checksum.  The
 fixtures are the ``bench_pedsum`` pedigrees generated in the simACE umbrella
 (``results/bench_pedsum/pedsum_{2M,20M}/rep1/pedigree.full.parquet``,
 or under ``$SIMACE_RESULTS``) and are unavailable elsewhere.  ``pedsum_20M`` is declared but not measured by
@@ -24,6 +35,7 @@ default: pass ``--only pedsum_20M/...`` cells to run it.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -99,6 +111,122 @@ def _inputs(columns: dict[str, np.ndarray]) -> dict[str, Any]:
     }
 
 
+HIGH_SHAPE = (len(CATEGORIES), 36, 2, 2, 2, 2, 2, 2)
+
+
+def _inputs_high(columns: dict[str, np.ndarray]) -> dict[str, Any]:
+    n = len(columns["sex"])
+    rng = np.random.default_rng(30)
+    generation, flag_a, flag_b = rng.integers(0, 36, n), rng.integers(0, 2, n), rng.integers(0, 2, n)
+    return {
+        "first": {"generation": generation, "sex": columns["sex"], "flag_a": flag_a, "flag_b": flag_b},
+        "second": {"sex": columns["sex"], "flag_a": flag_a},
+        "values": {"liability1": columns["liability1"], "liability2": columns["liability2"]},
+        "same": {"household": columns["household_id"]},
+    }
+
+
+SPECS = {"c64": ("64 cells", _inputs), "c16k": ("16,128 cells", _inputs_high)}
+
+
+def _call(graph: Any, spec: str, columns: dict[str, np.ndarray]) -> Any:
+    result = graph.relationship_moments(categories=list(CATEGORIES), **SPECS[spec][1](columns))
+    if spec == "c16k" and id(graph) in _COLUMNS:
+        assert result.shape == HIGH_SHAPE, result.shape
+    return result
+
+
+def export(m: Any) -> dict[str, np.ndarray]:
+    """Every derived view, the set R's ``as.data.frame`` computes; one function for baseline and revision."""
+    out = {
+        name: getattr(m, name)
+        for name in ("sum_first", "sum_second", "sumsq_first", "sumsq_second", "cross", "m2_first", "m2_second")
+    }
+    out["comoment"] = m.comoment
+    for side in ("first", "second"):
+        for column in m.columns:
+            out[f"mean_{side}.{column}"] = m.mean(f"{side}.{column}")
+    for a, b in m.products:
+        out[f"pearson_{a}:{b}"] = m.pearson(a, b)
+    return out
+
+
+def _floats_checksum(arrays: dict[str, np.ndarray]) -> int:
+    digest = hashlib.sha256()
+    for name in sorted(arrays):
+        digest.update(f"{name}={checksum_array(arrays[name])};".encode())
+    return int.from_bytes(digest.digest()[:8], "big")
+
+
+def _table_checksum(m: Any) -> int:
+    """The exact integers, exponents and axes of a moments table."""
+    digest = hashlib.sha256()
+    for axis in m.axes:
+        digest.update(f"{axis.name}={[str(level) for level in axis.levels]};".encode())
+    digest.update(f"exponents={m.exponents.tolist()};counts={checksum_array(m.counts)};".encode())
+    for name in ("q_sum_first", "q_sum_second", "q_sumsq_first", "q_sumsq_second", "q_cross"):
+        digest.update(f"{name}={','.join(map(str, getattr(m, name).reshape(-1).tolist()))};".encode())
+    return int.from_bytes(digest.digest()[:8], "big")
+
+
+def _table_facts(m: Any) -> dict[str, Any]:
+    return {"pairs": int(sum(int(n) for n in m.counts.reshape(-1).tolist())), "shape": list(m.shape)}
+
+
+REGIONS: dict[str, tuple[str, Any]] = {
+    "mean": ("`mean(first.liability1)`", lambda m: {"mean": m.mean("first.liability1")}),
+    "m2_first": ("`m2_first`", lambda m: {"m2_first": m.m2_first}),
+    "comoment": ("`comoment`", lambda m: {"comoment": m.comoment}),
+    "cross": ("`cross`", lambda m: {"cross": m.cross}),
+    "pearson": (
+        "`pearson(first.liability1, second.liability1)`",
+        lambda m: {"pearson": m.pearson("first.liability1", "second.liability1")},
+    ),
+    "export": ("complete export", export),
+}
+
+
+def _region_arms(spec: str) -> tuple[Arm, ...]:
+    label = SPECS[spec][0]
+    threads = {"PEDIGREE_GRAPH_THREADS": "12"}
+
+    def engine(graph: Any, columns: dict[str, np.ndarray]) -> Measurement:
+        m = _call(graph, spec, columns)
+        return Measurement(lambda: _table_checksum(m), lambda: _table_facts(m))
+
+    def called(graph: Any) -> Prepared:
+        return Prepared(payload=_call(graph, spec, _columns(graph).payload))
+
+    def view(fn: Any) -> Any:
+        def run(graph: Any, m: Any) -> Measurement:
+            arrays = fn(m)
+            return Measurement(lambda: _floats_checksum(arrays))
+
+        return run
+
+    def summed(graph: Any, m: Any) -> Measurement:
+        folded = m.sum(*(axis.name for axis in m.axes if axis.name != "category"))
+        return Measurement(lambda: _table_checksum(folded), lambda: _table_facts(folded))
+
+    def merged(graph: Any, m: Any) -> Measurement:
+        both = m.merge(m)
+        return Measurement(lambda: _table_checksum(both), lambda: _table_facts(both))
+
+    arms = [Arm(f"{spec}_engine", engine, label=f"{label}: engine call", setup=_columns, env=threads)]
+    arms += [
+        Arm(f"{spec}_{name}", view(fn), label=f"{label}: {what}", setup=called, env=threads)
+        for name, (what, fn) in REGIONS.items()
+    ]
+    arms += [
+        Arm(f"{spec}_sum", summed, label=f"{label}: `sum` over every non-category axis", setup=called, env=threads),
+        Arm(f"{spec}_merge", merged, label=f"{label}: `merge` with itself", setup=called, env=threads),
+    ]
+    return tuple(arms)
+
+
+REGION_ARMS = (*_region_arms("c64"), *_region_arms("c16k"))
+
+
 def _moments(graph: Any, columns: dict[str, np.ndarray]) -> Measurement:
     result = graph.relationship_moments(categories=list(CATEGORIES), **_inputs(columns))
     return Measurement(
@@ -170,8 +298,9 @@ SUITE = Suite(
             setup=_columns,
             env={"PEDIGREE_GRAPH_THREADS": "12"},
         ),
+        *REGION_ARMS,
     ),
-    cells=tuple(f"pedsum_2M/{arm}" for arm in ("moments_1t", "pairs_numpy_1t", "moments_12t", "pairs_numpy_12t")),
+    cells=tuple(f"pedsum_2M/{arm.name}" for arm in REGION_ARMS),
     gate=None,
     order=RunOrder.INTERLEAVED,
     timeout_s=7200.0,

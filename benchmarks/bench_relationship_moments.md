@@ -109,11 +109,120 @@ SIMACE_RESULTS=/data/Documents/simACE/results \
   --out /tmp/moments_20M.json
 ```
 
+## Region baseline for issue #30
+
+Measured 2026-10-01 on `main` at `4931d4ad06` (the 0.11.1 code; the
+working tree held only this script and the harness's tree-peak meter),
+before core takes over the boundary arithmetic (ADR 0015). Five
+interleaved repetitions per cell in fresh pinned processes, each child
+alone in a `systemd-run --user --scope`. Every region arm runs the engine
+at twelve threads; the derived regions run the call in their untimed setup
+and time one step. `c64` is the 64-cell table above, `c16k` the
+`(7, 36, 2, 2, 2, 2, 2, 2)` table: 16,128 cells, stride 11, 177,408
+accumulators, 10,990,130 pairs.
+
+- Intel(R) Core(TM) i7-9750H CPU @ 2.60GHz, 12 logical CPUs,
+  `platform_profile` `balanced`, `no_turbo` 0, `max_perf_pct` 100, but
+  `scaling_max_freq` 2600 MHz on every core; a busy loop held every core
+  at 2600 MHz in `/proc/cpuinfo` before the sweep. Other sessions ran test
+  bursts during it (load average 4.3 at the start), which is the spread
+  of the engine cells.
+- Python 3.14.7, pixi lock `80bb1e2c78b5c931`, harness `53f0d336036f7432`,
+  native extension built by `pixi run build-dev` at this commit
+- wall is the region's `perf_counter`; `rss+` is VmHWM above the region's
+  starting RSS (`clear_refs`); `tree+` is the scope cgroup's
+  `memory.peak` above its usage at region start (per-fd reset). The two
+  meters are never compared with each other.
+
+| cell | wall median (ms) | wall range (ms) | rss+ median (MiB) | tree+ median (MiB) | checksum |
+|---|---:|---:|---:|---:|---|
+| `c64_engine` | 2,668.45 | 2,474.12 to 4,615.67 | 304.2 | 306.4 | `80102806278128935` |
+| `c64_mean` | 0.27 | 0.27 to 0.59 | 0.0 | 0.0 | `12053625478470716356` |
+| `c64_m2_first` | 0.53 | 0.53 to 0.90 | 0.0 | 0.0 | `14358246025188411139` |
+| `c64_comoment` | 0.59 | 0.58 to 0.73 | 0.0 | 0.0 | `2878769951903852980` |
+| `c64_cross` | 0.49 | 0.48 to 0.51 | 0.0 | 0.0 | `1599632063308298045` |
+| `c64_pearson` | 0.71 | 0.70 to 0.71 | 0.0 | 0.0 | `17250025275507118495` |
+| `c64_export` | 6.97 | 5.56 to 9.47 | 0.0 | 0.0 | `15624322561619599958` |
+| `c64_sum` | 0.47 | 0.45 to 0.78 | 0.0 | 0.0 | `1333705551228726269` |
+| `c64_merge` | 0.76 | 0.68 to 1.92 | 0.2 | 0.2 | `10611122335786047183` |
+| `c16k_engine` | 3,200.48 | 3,014.73 to 3,369.24 | 381.3 | 382.6 | `12344696441518330834` |
+| `c16k_mean` | 4.51 | 4.45 to 4.69 | 0.0 | 0.0 | `17885692230901075073` |
+| `c16k_m2_first` | 16.61 | 16.07 to 18.58 | 1.7 | 1.8 | `1339972897945427418` |
+| `c16k_comoment` | 15.97 | 15.70 to 19.25 | 1.1 | 1.2 | `8480704721490216858` |
+| `c16k_cross` | 15.90 | 14.87 to 25.38 | 0.3 | 0.2 | `11543833117043843022` |
+| `c16k_pearson` | 24.33 | 24.25 to 28.93 | 1.9 | 1.8 | `11036575727330612972` |
+| `c16k_export` | 192.90 | 179.31 to 213.49 | 1.9 | 1.8 | `6850338734063697698` |
+| `c16k_sum` | 4.62 | 4.48 to 9.04 | 0.1 | 0.0 | `1333705551228726269` |
+| `c16k_merge` | 20.03 | 19.45 to 28.92 | 7.8 | 8.8 | `4373962563598087776` |
+
+The checksums are over the exact integers (engine, `sum`, `merge`) or the
+float bits (every view), so the revision must reproduce each one. The two
+`sum` cells agree because both fold to the same seven per-category totals.
+Every derived region but `c16k_merge` stays within 2 MiB of its starting
+memory; the baseline process sits at 790 to 850 MiB (graph, parquet
+columns and the result), so the gate compares the growth columns, not the
+absolute peaks the harness table prints.
+
+### After core takes over the boundary arithmetic (ADR 0015)
+
+The same sweep, same day, same machine and clock (2600 MHz on every core
+under a busy loop), at `4931d4ad06` with the ADR 0015 working tree: core
+packs, quantizes, folds, merges and derives every float, and the result
+holds core's encoded table instead of Python ints. Ratios are new median
+over baseline median; the process peak ratio is the whole child's
+`ru_maxrss`.
+
+| cell | wall median (ms) | ratio to baseline | wall range (ms) | rss+ median (MiB) | tree+ median (MiB) | process peak ratio | checksum equal |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `c64_engine` | 2,562.44 | 0.96 | 2,506.72 to 2,906.31 | 310.0 | 312.7 | 1.007 | yes |
+| `c64_mean` | 0.07 | 0.26 | 0.07 to 0.16 | 0.0 | 0.0 | 1.018 | yes |
+| `c64_m2_first` | 0.13 | 0.25 | 0.12 to 0.28 | 0.0 | 0.0 | 1.018 | yes |
+| `c64_comoment` | 0.13 | 0.23 | 0.13 to 0.17 | 0.0 | 0.0 | 1.018 | yes |
+| `c64_cross` | 0.17 | 0.34 | 0.12 to 0.19 | 0.0 | 0.0 | 1.018 | yes |
+| `c64_pearson` | 0.25 | 0.35 | 0.24 to 0.26 | 0.0 | 0.0 | 1.018 | yes |
+| `c64_export` | 1.26 | 0.18 | 1.22 to 1.71 | 0.0 | 0.0 | 1.018 | yes |
+| `c64_sum` | 0.22 | 0.46 | 0.20 to 0.51 | 0.0 | 0.0 | 1.018 | yes |
+| `c64_merge` | 0.47 | 0.62 | 0.44 to 0.67 | 0.0 | 0.0 | 1.019 | yes |
+| `c16k_engine` | 3,108.81 | 0.97 | 2,858.89 to 3,188.13 | 380.7 | 383.1 | 0.999 | yes |
+| `c16k_mean` | 1.01 | 0.22 | 0.82 to 2.41 | 0.0 | 0.0 | 1.030 | yes |
+| `c16k_m2_first` | 2.08 | 0.13 | 2.06 to 3.05 | 0.0 | 0.0 | 1.028 | yes |
+| `c16k_comoment` | 2.24 | 0.14 | 2.19 to 2.95 | 0.0 | 0.0 | 1.028 | yes |
+| `c16k_cross` | 3.42 | 0.22 | 2.10 to 3.93 | 0.0 | 0.0 | 1.030 | yes |
+| `c16k_pearson` | 7.82 | 0.32 | 7.80 to 21.23 | 0.0 | 0.0 | 1.027 | yes |
+| `c16k_export` | 36.36 | 0.19 | 34.17 to 37.51 | 0.0 | 0.0 | 1.027 | yes |
+| `c16k_sum` | 2.44 | 0.53 | 2.40 to 3.02 | 0.0 | 0.0 | 1.029 | yes |
+| `c16k_merge` | 10.89 | 0.54 | 10.34 to 11.81 | 0.0 | 0.0 | 1.022 | yes |
+
+* Every checksum equals the baseline's: the exact integers and every float
+  bit are unchanged.
+* Wall: every region is faster, the views 3 to 8 times (no Python-int
+  loop), `sum` and `merge` about twice (no object arrays). The engine
+  call is within its spread (0.96 and 0.97).
+* Memory: no derived region grows any more (it held 0.3 to 8.8 MiB of
+  Python ints before). The engine call's growth is +1.9% (`c64`) and
+  -0.2% (`c16k`). Whole-process peaks of the derived arms are 1.8% to
+  3.0% higher. They start 14 MiB (`c64`) and 24 MiB (`c16k`) above the
+  baseline after the same setup call, although the result they hold is
+  smaller; the cause is not established. Every figure is inside the 5%
+  gate.
+
+The command, from this directory:
+
+```bash
+SIMACE_RESULTS=/data/Documents/simACE/results \
+  pixi run python benchmarks/bench_relationship_moments.py --repeat 5 --out /tmp/moments_regions.json
+```
+
+The default sweep is these eighteen region cells; the four pair-arm cells
+above and the 20M cells run through `--only`.
+
 ## Reproduce
 
 ```bash
 SIMACE_RESULTS=/data/Documents/simACE/results \
-  pixi run python benchmarks/bench_relationship_moments.py --repeat 3 --out /tmp/moments.json
+  pixi run python benchmarks/bench_relationship_moments.py --repeat 3 \
+  --only pedsum_2M/moments_1t pedsum_2M/pairs_numpy_1t pedsum_2M/moments_12t pedsum_2M/pairs_numpy_12t \
+  --out /tmp/moments.json
 pixi run python benchmarks/bench_relationship_moments.py --render /tmp/moments.json
 ```
 

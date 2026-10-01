@@ -49,7 +49,8 @@ coordinate-space token and passes a view-row map to the core, which relabels
 and sorts pairs into view order.
 
 The crate stays unpublished until 1.0. Python depends on it by workspace
-path; the R source tarball copies it in and vendors its dependencies.
+path; the R source tarball copies it in and vendors its dependencies
+(`rayon`, and since ADR 0015 `num-bigint`, `num-integer` and `num-traits`).
 
 ### Relationship engine
 
