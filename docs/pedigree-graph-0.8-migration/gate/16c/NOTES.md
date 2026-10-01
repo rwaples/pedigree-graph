@@ -1,7 +1,7 @@
 # 16c R source tarball gate for pedigree-graph 0.10.0 (2026-09-23)
 
 The packaging half of slice 16 (simACE
-`plans/pedigree-graph-slice-16-r-package.md`): the R source tarball, its
+`plans/pedigree-graph-slice-16-r-package.md`, session-local draft): the R source tarball, its
 offline check, the CI and publish jobs, and the 0.10.0 version. `../16b/` is
 the parity record. The wheel-site and post-publish gates follow at the tag.
 

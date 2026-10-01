@@ -5,7 +5,7 @@
 **Context:** issue #28 (simACE #25); builds on the pair sinks of ADR 0010 and
 the host boundary, thread and allocation rules of ADR 0007, which this ADR
 qualifies for one operation. Plan: simACE
-`plans/relationship-moments-v10.md`.
+`plans/relationship-moments-v10.md` (session-local draft).
 
 ## Context
 

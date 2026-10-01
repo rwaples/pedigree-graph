@@ -1,6 +1,6 @@
 # 13a evidence for slice 13: pairwise kinship on the Rust core (2026-09-22/23)
 
-Plan: `simACE/plans/pedigree-graph-slice-13-pair-kinship.md` (locked
+Plan: `simACE/plans/pedigree-graph-slice-13-pair-kinship.md` (session-local draft, locked
 2026-09-22). Tree measured: `c50be63` (commit 3 of the slice, both memo
 layouts present and selectable through `PEDIGREE_GRAPH_KINSHIP_LAYOUT`) with
 the uncommitted benchmark and tool files of commit 4. Baseline: the 0.9.0 PyPI

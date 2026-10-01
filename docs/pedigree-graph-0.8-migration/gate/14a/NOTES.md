@@ -1,6 +1,6 @@
 # 14a evidence for slice 14: the kinship matrix DP on the Rust core (2026-09-23)
 
-Plan: `simACE/plans/pedigree-graph-slice-14-kinship-matrix-dp.md` (locked
+Plan: `simACE/plans/pedigree-graph-slice-14-kinship-matrix-dp.md` (session-local draft, locked
 2026-09-23). Tree measured: `2d8b958` (commit 3 of the slice, both row
 layouts present and selectable through `PEDIGREE_GRAPH_KINSHIP_ROWS`) with
 the uncommitted files of commit 4. Baseline: the 0.9.1 PyPI wheel as

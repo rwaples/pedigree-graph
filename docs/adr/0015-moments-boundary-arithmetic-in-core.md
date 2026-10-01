@@ -5,7 +5,7 @@
 **Context:** issue #30 (the R binding of `relationship_moments`,
 `relationship_counts` and `relationship_burden`). Amends ADR 0013's "Exact
 accumulators in the host, floats derived on access" and the host term of
-its memory budget. Plan: simACE `plans/pedigree-graph-issue-30-r-moments-v3.md`,
+its memory budget. Plan: simACE `plans/pedigree-graph-issue-30-r-moments-v3.md` (session-local draft),
 with D1 revised as recorded below.
 
 ## Context

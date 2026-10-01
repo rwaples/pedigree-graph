@@ -2,7 +2,7 @@
 
 Release gate for 0.11.0: `relationship_moments` (#28, ADR 0013) and MZ
 co-twins in sibling groups (#29). Plan: simACE
-`plans/relationship-moments-v10.md`, step 4.
+`plans/relationship-moments-v10.md` (session-local draft), step 4.
 
 ## Build stage
 

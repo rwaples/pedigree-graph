@@ -1,7 +1,7 @@
 # 15a evidence for slice 15: inbreeding, lineage and the Ne prerequisites on the Rust core (2026-09-23)
 
 Plan: `simACE/plans/pedigree-graph-slice-15-inbreeding-lineage-ne.md`
-(locked 2026-09-23). Tree measured: `61406fc` (`v0.9.3-7-g61406fc`), clean.
+(session-local draft, locked 2026-09-23). Tree measured: `61406fc` (`v0.9.3-7-g61406fc`), clean.
 Baseline: the 0.9.3 PyPI wheel as simACE's pixi env installs it
 (`core_version() == "0.9.3"`, `site-packages/pedigree_graph`), run under that
 env's interpreter in the same interleaved sweep as the source build.

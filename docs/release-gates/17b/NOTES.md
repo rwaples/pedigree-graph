@@ -3,7 +3,7 @@
 No release. This stage proves `tools/consumer_gate.py`, which absorbed
 `pg08_wheel_gate.sh` as its `--wheel-ref` build stage, and the renamed
 `tools/byte_parity.sh`, against the family. Plan: simACE
-`plans/pedigree-graph-1.0-stabilization.md`, slice 17b.
+`plans/pedigree-graph-1.0-stabilization.md` (session-local draft), slice 17b.
 
 ## Build stage
 

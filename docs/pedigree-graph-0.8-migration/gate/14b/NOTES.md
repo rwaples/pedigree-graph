@@ -1,6 +1,6 @@
 # 14b wheel-site gate for pedigree-graph 0.9.2 (2026-09-23)
 
-Slice 14 (`simACE/plans/pedigree-graph-slice-14-kinship-matrix-dp.md`)
+Slice 14 (`simACE/plans/pedigree-graph-slice-14-kinship-matrix-dp.md`, session-local draft)
 commit 6: the pre-publish half. The 0.9.2 wheel is built from a clean
 worktree at the `v0.9.2` tag and every family check unit runs against it
 through the routed site, with the consumer locks still frozen at 0.9.1. The

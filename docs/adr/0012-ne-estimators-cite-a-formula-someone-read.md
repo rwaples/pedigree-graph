@@ -4,7 +4,7 @@
 **Date:** 2026-09-11
 **Context:** issue #15, resolved before the 0.9 scientific contract is frozen;
 refines the effective-size surface of ADR 0006 and the genome-node pedigree of
-ADR 0008. Plan: simACE `plans/pedigree-graph-issue-15-estimator-fidelity.md`.
+ADR 0008. Plan: simACE `plans/pedigree-graph-issue-15-estimator-fidelity.md` (session-local draft).
 
 Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
 

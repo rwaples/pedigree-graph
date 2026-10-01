@@ -3,7 +3,7 @@
 `bench_relatives_per_person.py` measures `relatives_per_person` against the
 pair list the two consumers build today, on the `pedsum_2M` and `pedsum_20M`
 pedigrees of `bench_relationship_moments.md`. It is acceptance item 4 of the
-issue #33 plan (simACE `plans/pedigree-graph-issue-33-relatives-per-person.md`).
+issue #33 plan (simACE `plans/pedigree-graph-issue-33-relatives-per-person.md`, session-local draft).
 
 Measured 2026-09-30 at `bf646dd` on `pedsum_2M` and `pedsum_20M`. Every
 arm of a configuration printed one checksum at both sizes, so the engine's

@@ -4,7 +4,7 @@
 **Date:** 2026-09-30
 **Context:** issue #33 (pedsum#3, fitACE_epimight `create_input`); the
 per-person reducer ADR 0013 reserved on the same engine pass. Plan: simACE
-`plans/pedigree-graph-issue-33-relatives-per-person.md`.
+`plans/pedigree-graph-issue-33-relatives-per-person.md` (session-local draft).
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 12a benchmark record for pedigree-graph 0.9.0 (2026-09-16 to 2026-09-17)
 
-Slice 12 (`plans/pedigree-graph-slice-12-relationship-pairs-v2.md`):
+Slice 12 (`plans/pedigree-graph-slice-12-relationship-pairs-v2.md`, session-local draft):
 `PedigreeGraph.relationship_pairs` and `PedigreeView.relationship_pairs` move
 from the Python/SciPy matrix extractor onto the Rust row-streaming engine,
 behind a public `execution="speed" | "memory"` keyword (ADRs 0006, 0007 and

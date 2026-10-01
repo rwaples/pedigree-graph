@@ -1,6 +1,6 @@
 # 11a gate for pedigree-graph 0.8.3 (2026-09-09)
 
-Slice 11 (`plans/pedigree-graph-slice-11-relationship-counts.md`): `relationship_counts`
+Slice 11 (`plans/pedigree-graph-slice-11-relationship-counts.md`, session-local draft): `relationship_counts`
 on the Rust row-streaming engine, with the closest-category fold in the engine
 (ADR 0010 as amended).
 

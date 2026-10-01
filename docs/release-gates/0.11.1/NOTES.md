@@ -1,7 +1,7 @@
 # 0.11.1 consumer gate (2026-09-30)
 
 Release gate for 0.11.1: `relatives_per_person` (#33, ADR 0014). Plan:
-simACE `plans/pedigree-graph-issue-33-relatives-per-person.md`.
+simACE `plans/pedigree-graph-issue-33-relatives-per-person.md` (session-local draft).
 
 ## Build stage
 

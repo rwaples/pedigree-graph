@@ -26,7 +26,7 @@ in pedigree-graph (`19b6b20`): `tests/conftest.py` puts the repository root on
 Also run in the pedigree-graph checkout: `pytest -m slow` (`9 passed in 1746.70s`,
 slowed by the concurrent wheel build), and before commit the not-slow suite,
 `cargo test --release`, clippy, fmt, ruff, and ty (recorded in
-`plans/pedigree-graph-slice-10-native-scaffold.md`).
+`plans/pedigree-graph-slice-10-native-scaffold.md`, session-local draft).
 
 ## Consumer gate
 

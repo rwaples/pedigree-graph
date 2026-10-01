@@ -1,6 +1,6 @@
 # 16b R kernel parity gate (2026-09-23)
 
-Slice 16b (simACE `plans/pedigree-graph-slice-16-r-package.md`) gives the R
+Slice 16b (simACE `plans/pedigree-graph-slice-16-r-package.md`, session-local draft) gives the R
 package its four kernels: `relationship_pairs`, `pair_kinship`,
 `kinship_matrix` and `inbreeding`. The R and Python bindings call the same
 core, so the gate asks whether the R binding hands the core's results over

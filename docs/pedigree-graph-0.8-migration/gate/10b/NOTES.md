@@ -4,7 +4,7 @@ Slice 10b of ADR 0007 (native construction: `crates/core/src/graph.rs`,
 `_native.build_pedigree`, the Python parser deleted) is committed on
 pedigree-graph `v0.8` as `e0a0e06..81e4bcb`, with
 `[workspace.package].version = "0.8.2"`. Not yet tagged or pushed at the time of
-writing. Plan and execution record: `plans/pedigree-graph-slice-10b-native-construction.md`.
+writing. Plan and execution record: `plans/pedigree-graph-slice-10b-native-construction.md` (session-local draft).
 
 ## Wheel gate (`tools/pg08_wheel_gate.sh`)
 

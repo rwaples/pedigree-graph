@@ -1,6 +1,6 @@
 # 12b wheel-site gate for pedigree-graph 0.9.0 (2026-09-19)
 
-Slice 12 (`plans/pedigree-graph-slice-12-relationship-pairs-v2.md`) commit 8:
+Slice 12 (`plans/pedigree-graph-slice-12-relationship-pairs-v2.md`, session-local draft) commit 8:
 the pre-publish half. The 0.9.0 wheel is built from a clean worktree at the
 `v0.9.0` tag and every family check unit runs against it through `PYTHONPATH`,
 with the consumer locks still frozen at 0.8.3. The post-publish half — the four

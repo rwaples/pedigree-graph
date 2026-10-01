@@ -38,7 +38,7 @@ test-all = { cmd = "pytest -n 6 --dist worksteal", depends-on = ["build-dev"], e
 test-rust = "cargo test --release"
 
 # The R package under r/ (slice 16, plans/pedigree-graph-slice-16-r-package.md
-# in simACE). Its own environment so the default one never pulls in R; it
+# in simACE, a session-local draft). Its own environment so the default one never pulls in R; it
 # reuses the Rust pin above. `r-install` builds r/ in place into the env's
 # library; `r-test` runs its testthat suite against that install.
 [feature.r.dependencies]
