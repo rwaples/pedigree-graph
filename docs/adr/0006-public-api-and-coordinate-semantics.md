@@ -166,8 +166,8 @@ from the enum, must equal a golden written from the Python registry
 * `pair_kinship(first_rows, second_rows)`, `pair_kinship(block)`, and
   `pair_kinship(pairs)` return read-only float32 and accept arbitrary and self
   pairs. The value is the pinned float32 recurrence of ADR 0009, bit-identical
-  to the matrix entry for the same pair. A collection query is one core call
-  sharing one memo.
+  to the matrix entry for the same pair. A collection query is one core
+  call.
 * Three matrix families, no overloaded threshold argument:
   `kinship_matrix()` is complete (every nonzero pedigree kinship);
   `relationship_kinship_matrix(...)` is structurally limited to the selected

@@ -2,7 +2,8 @@
 //!
 //! [`pair_kinship`] evaluates requested pairs and [`support_values`] fills a
 //! symmetric CSC support; both walk the same memoised recurrence through
-//! [`pairwise::Walker`], one memo per call, nothing retained (ADR 0007).
+//! [`pairwise::Walker`], one memo per pool worker, nothing retained (ADR
+//! 0007, 0016).
 //! The three matrix products ([`kinship_csc`], [`approximate_kinship_csc`],
 //! [`generation_kinship_sums`]) run the depth-major DP of [`matrix`] over
 //! the row storage of [`rows`]; every entry they produce is the bit the
@@ -12,6 +13,7 @@
 //! ([`depth_order`]) but not its values: the Meuwissen-Luo inbreeding walk
 //! ([`inbreeding()`]) and the two Ne prerequisites of [`generations`].
 
+pub mod ancestry;
 pub(crate) mod depth_order;
 pub mod generations;
 pub mod inbreeding;

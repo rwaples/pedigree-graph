@@ -739,17 +739,17 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         pedigree in different row orders agree within
         ``2 * (depth_a + depth_b + 1) * 2**-25`` on deep inbred pairs.  Widen
         to float64 before comparing against a non-dyadic cutoff.  The call
-        runs on one thread and commits the package thread budget like every
-        0.8 operation.
+        commits the package thread budget like every 0.8 operation and runs
+        in its pool; every budget returns the same bits.
 
         The recurrence follows represented parent edges alone, so every value
         derives from structural depth; supplied generation labels never enter
         it.
 
-        The recurrence runs in the Rust core with one memo per call, shared
-        across every pair of the query and freed before the call returns;
-        nothing is kept on the graph, so repeated queries pay the full walk
-        each time and return identical bits.
+        The recurrence runs in the Rust core with one memo per pool worker,
+        shared across the pairs that worker takes and freed before the call
+        returns; nothing is kept on the graph, so repeated queries pay the
+        full walk each time and return identical bits.
 
         Args:
             first: ``first_rows`` (graph rows, any integer array-like), a

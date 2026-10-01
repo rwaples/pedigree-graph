@@ -19,13 +19,18 @@ from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, parity_graph
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
+from pedigree_graph._threads import thread_budget
 
-KINSHIP_FAMILIES = ("kinship_memo", "kinship_stack", "kinship_output")
+KINSHIP_FAMILIES = ("kinship_memo", "kinship_stack", "kinship_signatures", "kinship_output")
 
 
 def _native_kinship(graph: PedigreeGraph, first, second) -> np.ndarray:
     return _native.pair_kinship(
-        graph._built, graph.depth, np.asarray(first, dtype=np.int32), np.asarray(second, dtype=np.int32)
+        graph._built,
+        graph.depth,
+        np.asarray(first, dtype=np.int32),
+        np.asarray(second, dtype=np.int32),
+        threads=thread_budget(),
     )
 
 
@@ -162,7 +167,9 @@ class TestBoundary:
             _native_kinship(graph, [0], [0, 1])
         assert info.value.code == "length_mismatch"
         with pytest.raises(PedigreeValidationError) as info:
-            _native.pair_kinship(graph._built, graph.depth[:-1], np.zeros(1, np.int32), np.zeros(1, np.int32))
+            _native.pair_kinship(
+                graph._built, graph.depth[:-1], np.zeros(1, np.int32), np.zeros(1, np.int32), threads=thread_budget()
+            )
         assert info.value.code == "length_mismatch"
         assert info.value.fields["field"] == "depth"
 
@@ -185,6 +192,7 @@ class TestSupportValues:
             graph.depth,
             np.ascontiguousarray(matrix.indptr, dtype=np.int64),
             np.ascontiguousarray(matrix.indices, dtype=np.int32),
+            threads=thread_budget(),
         )
 
     @pytest.mark.parametrize("name", ["double_first_cousins", "deep_inbred_60g", "random_1k"])
@@ -192,7 +200,7 @@ class TestSupportValues:
         graph = parity_graph(name)
         matrix = graph.kinship_matrix()
         values = _native.kinship_support_values(
-            graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices
+            graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices, threads=thread_budget()
         )
         assert values.dtype == np.float32
         assert values.tobytes() == matrix.data.tobytes()
@@ -209,7 +217,7 @@ class TestSupportValues:
         indptr = np.array([0, 1, 2, 3, 4, 6], dtype=np.int64)
         indices = np.array([0, 1, 2, 3, 0, 4], dtype=np.int32)
         with pytest.raises(PedigreeValidationError) as info:
-            _native.kinship_support_values(graph._built, graph.depth, indptr, indices)
+            _native.kinship_support_values(graph._built, graph.depth, indptr, indices, threads=thread_budget())
         assert info.value.code == "kinship_support_asymmetric"
         assert dict(info.value.fields) == {"row": 0, "column": 4}
 
@@ -218,7 +226,7 @@ class TestSupportValues:
         indptr = np.array([0, 2, 3, 4, 5, 7], dtype=np.int64)
         indices = np.array([4, 0, 1, 2, 3, 0, 4], dtype=np.int32)
         with pytest.raises(PedigreeValidationError) as info:
-            _native.kinship_support_values(graph._built, graph.depth, indptr, indices)
+            _native.kinship_support_values(graph._built, graph.depth, indptr, indices, threads=thread_budget())
         assert info.value.code == "kinship_support_unsorted"
         assert info.value.fields["column"] == 0
 
@@ -232,10 +240,10 @@ def test_a_refused_allocation_raises_a_resource_error(family):
         rows = np.arange(n, dtype=np.int32)
         matrix = graph.relationship_kinship_matrix(max_degree=2)
         def pairs():
-            return _native.pair_kinship(graph._built, graph.depth, rows, rows)
+            return _native.pair_kinship(graph._built, graph.depth, rows, rows, threads=thread_budget())
         def support():
             return _native.kinship_support_values(
-                graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices
+                graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices, threads=thread_budget()
             )
         for label, call in (("pairs", pairs), ("support", support)):
             _native.fail_next_allocation(family, 1)
@@ -252,3 +260,41 @@ def test_a_refused_allocation_raises_a_resource_error(family):
     lines = _run_child(CHILD_PRELUDE, body).strip().splitlines()
     assert lines[-1] == "recovered"
     assert lines[:-1] == [f"pairs allocation_failed {family} True", f"support allocation_failed {family} True"]
+
+
+def test_both_entries_return_the_same_bits_under_every_thread_budget():
+    """Each budget runs in its own interpreter, since the package pool is built once per process.
+
+    The pedigree is wide enough that both entries split into many chunks, and
+    inbred enough that workers share ancestor keys, so a value that depended
+    on which worker reached a key first would show here.
+    """
+    body = """
+        import hashlib
+        import numpy as np
+        from pedigree_graph import PedigreeGraph, _native
+        from pedigree_graph._threads import thread_budget
+        n = 3000
+        rng = np.random.default_rng(11)
+        mother = np.full(n, -1); father = np.full(n, -1)
+        for i in range(60, n):
+            lo = max(0, i - 120)
+            mother[i], father[i] = rng.integers(lo, i), rng.integers(lo, i)
+            if father[i] == mother[i]:
+                father[i] = -1
+        graph = PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
+        first = rng.integers(0, n, 20_000).astype(np.int32)
+        second = rng.integers(0, n, 20_000).astype(np.int32)
+        matrix = graph.relationship_kinship_matrix(max_degree=3)
+        pairs = _native.pair_kinship(graph._built, graph.depth, first, second, threads=thread_budget())
+        support = _native.kinship_support_values(
+            graph._built, graph.depth, matrix.indptr.astype(np.int64), matrix.indices, threads=thread_budget()
+        )
+        print(thread_budget(), hashlib.sha256(pairs.tobytes() + support.tobytes()).hexdigest())
+    """
+    digests = {}
+    for threads in ("1", "4"):
+        budget, digest = _run_child(body, PEDIGREE_GRAPH_THREADS=threads).split()
+        assert budget == threads
+        digests[threads] = digest
+    assert digests["1"] == digests["4"]

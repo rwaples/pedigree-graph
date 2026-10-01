@@ -470,7 +470,9 @@ pub fn pair_kinship(native: &Robj, seal: &Robj, first: &Robj, second: &Robj) -> 
             second.len()
         )));
     }
-    let values = kinship::pair_kinship(graph.kinship()?, &first, &second)?;
+    let pool = package_pool()?;
+    let ped = graph.kinship()?;
+    let values = pool.install(|| kinship::pair_kinship(ped, &first, &second))?;
     Ok(Doubles::from_values(values.into_iter().map(f64::from)).into_robj())
 }
 

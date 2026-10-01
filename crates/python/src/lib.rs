@@ -989,24 +989,26 @@ impl<'py> KinshipColumns<'py> {
 /// Pedigree-expected kinship per requested pair (ADR 0009), in graph rows.
 ///
 /// `pedigree` is the graph's own [`BuiltPedigree`] and `depth` its structural
-/// depth.  `first` and `second` are validated graph rows of one length.  One
-/// memo serves the whole call and is freed before it returns; the walk runs
-/// on the calling thread with the GIL released.
+/// depth.  `first` and `second` are validated graph rows of one length.  The
+/// walk runs in the package pool at `threads` with the GIL released, one
+/// memo per worker, each freed before the call returns.
 #[pyfunction]
-#[pyo3(signature = (pedigree, depth, first, second, /))]
+#[pyo3(signature = (pedigree, depth, first, second, /, *, threads))]
 fn pair_kinship<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
     first: PyReadonlyArray1<'py, i32>,
     second: PyReadonlyArray1<'py, i32>,
+    threads: usize,
 ) -> PyResult<Bound<'py, PyArray1<f32>>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
     let first = first.as_slice()?;
     let second = second.as_slice()?;
+    let pool = checked_pool(py, threads)?;
     let values = py
-        .detach(|| kinship::pair_kinship(ped, first, second))
+        .detach(|| pool.install(|| kinship::pair_kinship(ped, first, second)))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(values.into_pyarray(py))
 }
@@ -1016,22 +1018,25 @@ fn pair_kinship<'py>(
 /// `indptr` (int64, `n + 1` entries) and `indices` (int32, sorted within
 /// each column) describe the support; the result is float32 of length
 /// `nnz`, with each upper entry evaluated once and its mirror written from
-/// it.  A missing mirror or an unsorted column is a validation error.
+/// it.  A missing mirror or an unsorted column is a validation error.  The
+/// columns are walked in the package pool at `threads`.
 #[pyfunction]
-#[pyo3(signature = (pedigree, depth, indptr, indices, /))]
+#[pyo3(signature = (pedigree, depth, indptr, indices, /, *, threads))]
 fn kinship_support_values<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
     indptr: PyReadonlyArray1<'py, i64>,
     indices: PyReadonlyArray1<'py, i32>,
+    threads: usize,
 ) -> PyResult<Bound<'py, PyArray1<f32>>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
     let indptr = indptr.as_slice()?;
     let indices = indices.as_slice()?;
+    let pool = checked_pool(py, threads)?;
     let values = py
-        .detach(|| kinship::support_values(ped, indptr, indices))
+        .detach(|| pool.install(|| kinship::support_values(ped, indptr, indices)))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(values.into_pyarray(py))
 }

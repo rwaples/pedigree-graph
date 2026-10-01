@@ -757,6 +757,7 @@ mod tests {
             // per-person reducers; their own seam tests cover them.
             Family::KinshipMemo
             | Family::KinshipStack
+            | Family::KinshipSignatures
             | Family::KinshipOutput
             | Family::KinshipRows
             | Family::KinshipCsc

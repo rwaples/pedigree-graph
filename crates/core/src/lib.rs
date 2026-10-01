@@ -50,6 +50,7 @@ const _: () = {
     send_sync::<graph::IdIndex>();
     send_sync::<graph::Columns<'static>>();
     send_sync::<graph::Limits>();
+    send_sync::<kinship::ancestry::AncestorSignatures>();
     send_sync::<kinship::matrix::Csc>();
     send_sync::<kinship::memo::PairMemo>();
     send_sync::<kinship::pairwise::KinshipPedigree<'static>>();
