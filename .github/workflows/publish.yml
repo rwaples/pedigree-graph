@@ -130,7 +130,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: |
+            3.13
+            3.14
 
       - name: Download every distribution
         uses: actions/download-artifact@v8
@@ -181,15 +183,16 @@ jobs:
           fi
           echo "Found ${wheels} wheels and ${sdists} sdist"
 
-      - name: Smoke install the linux x86_64 wheel
+      - name: Smoke install the linux x86_64 wheel on 3.13 and 3.14
         run: |
           shopt -s nullglob; wheels=(dist/*cp313-abi3-manylinux*_x86_64.whl)
           [ "${#wheels[@]}" -eq 1 ] || { echo "::error::expected exactly one linux x86_64 wheel, found ${#wheels[@]}"; exit 1; }
-          wheel="${wheels[0]}"
-          python -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install "./${wheel}"
-          cd "$RUNNER_TEMP"
-          "$RUNNER_TEMP/venv/bin/python" -c "import pedigree_graph, pedigree_graph._native"
+          wheel="$PWD/${wheels[0]}"
+          for py in 3.13 3.14; do
+            "python${py}" -m venv "$RUNNER_TEMP/venv-${py}"
+            "$RUNNER_TEMP/venv-${py}/bin/pip" install "${wheel}"
+            (cd "$RUNNER_TEMP" && "$RUNNER_TEMP/venv-${py}/bin/python" -c "import pedigree_graph, pedigree_graph._native")
+          done
 
   publish:
     name: Publish to PyPI
