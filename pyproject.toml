@@ -44,7 +44,7 @@ test = [
     "polars>=1.43.2,<2",
     "pyarrow>=17,<26",
 ]
-typecheck = ["ty==0.0.70"]
+typecheck = ["ty==0.0.84"]
 
 [tool.maturin]
 manifest-path = "crates/python/Cargo.toml"
