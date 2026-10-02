@@ -15,6 +15,8 @@ import polars as pl
 import pytest
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
+from pedigree_graph._cohorts import _densify_labels
+from pedigree_graph._ne_rates import _finalize_summary
 from pedigree_graph._topology import structural_depth
 
 if TYPE_CHECKING:
@@ -284,9 +286,6 @@ def _matrix_walk_summary(pg: PedigreeGraph, labels: np.ndarray) -> GenerationKin
     pinned float32 entries above the diagonal whose rows share an observed
     label, minus ``(i, twin[i])`` pairs, summed per label in float64.
     """
-    from pedigree_graph._cohorts import _densify_labels
-    from pedigree_graph._ne_rates import _finalize_summary
-
     dense, observed, n_unlabelled = _densify_labels(np.asarray(labels))
     twin = np.asarray(pg.twin_rows, dtype=np.int32)
     k = int(observed.shape[0])

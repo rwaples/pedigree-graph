@@ -70,8 +70,9 @@ def _finalize_summary(
     ``sum_theta`` holds, per observed bucket, the kinship summed over
     unordered same-bucket pairs with MZ co-twin pairs left out.  The
     denominator matches: ``n_g (n_g - 1) / 2`` minus the MZ pairs whose two
-    co-twins are both in bucket ``g``.  A twin whose partner is unlabelled or in another bucket is
-    an ordinary member.  The sentinel bucket (unlabelled rows) is dropped.
+    co-twins are both in bucket ``g``.  A twin whose partner is unlabelled
+    or in another bucket is an ordinary member.  The sentinel bucket
+    (unlabelled rows) is dropped.
     """
     k = int(observed.shape[0])
     dense = np.asarray(dense, dtype=np.int32)
