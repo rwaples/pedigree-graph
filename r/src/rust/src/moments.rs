@@ -8,15 +8,16 @@
 //! vector that core borrows.
 
 use crate::errors::{HostError, HostResult};
-use crate::kernels::{exact_double, package_pool, selection, Native};
+use crate::job;
+use crate::kernels::{exact_double, package_pool, selection, walk_of, Native};
 use crate::threads;
 use extendr_api::prelude::*;
 use num_bigint::BigInt;
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::relationships::{
-    encode_big, pack_labels, quantize_column, relationship_moments as moments_of, MaxDegree,
-    MomentsInput, MomentsPlan, MomentsTable, Product, Progress, Side, Statistic, Symmetric,
-    MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
+    encode_big, pack_labels, quantize_column, relationship_moments as moments_of, Moments,
+    MomentsInput, MomentsPlan, MomentsTable, PackedLabels, Product, Progress, Side, Statistic,
+    Symmetric, MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
 };
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
@@ -277,11 +278,12 @@ fn table_out(table: MomentsTable<'_>) -> Robj {
     .into_robj()
 }
 
-/// `relationship_moments()` up to the R object: the categories, each
-/// factor's levels, and the encoded table with its exponents and the pass's
-/// lanes, lane pairs and planned peak.
+/// Start `relationship_moments()`; collecting the job gives the list the R
+/// object is built from: the categories, each factor's levels, and the
+/// encoded table with its exponents and the pass's lanes, lane pairs and
+/// planned peak.
 #[allow(clippy::too_many_arguments)]
-pub fn relationship_moments(
+pub fn start_moments(
     native: &Robj,
     seal: &Robj,
     max_degree: &Robj,
@@ -318,7 +320,6 @@ pub fn relationship_moments(
     } else {
         Some(pack("second", "second label", second)?)
     };
-    let second_ref = second_packed.as_ref().unwrap_or(&first_packed);
 
     let value_columns = named_columns("values", values)?;
     if value_columns.len() > MAX_VALUE_COLUMNS {
@@ -364,103 +365,110 @@ pub fn relationship_moments(
         }
     }
 
-    let input = MomentsInput {
-        labels_first: &first_packed.labels,
-        n_labels_first: first_packed.n_labels,
-        labels_second: &second_ref.labels,
-        n_labels_second: second_ref.n_labels,
-        values: &quantized,
-        n_columns: k,
-        products: &resolved,
-        same: &same_keys,
-        n_same: s,
-    };
     let threads = NonZeroUsize::new(threads::budget()?).expect("a budget of at least 1");
     let pool = package_pool()?;
-    let codes: Vec<&str> = requested.iter().map(|c| c.code()).collect();
-    let (width, table, lanes, lane_pairs, peak) = match (requested.top_degree(), n >= 2) {
-        (Some(top), true) => {
-            let max_degree = MaxDegree::try_new(top)?;
-            let moments = graph.with_pedigree(|ped| {
-                Ok(pool.install(|| {
-                    moments_of(
-                        ped,
-                        max_degree,
-                        requested,
-                        None,
-                        false,
-                        &input,
-                        symmetric,
-                        threads,
-                        budget,
-                        &Progress::default(),
-                    )
-                })?)
-            })?;
-            (
-                moments.width,
-                Raw::from_bytes(&moments.table).into_robj(),
-                moments.lanes,
-                moments.lane_pairs,
-                moments.estimated_peak_bytes,
-            )
-        }
-        _ => {
-            let plan = MomentsPlan::new(input.shape(requested), threads, budget)?;
-            let accumulators = codes.len() * plan.cells() * plan.stride();
-            (
-                1,
-                Raw::from_bytes(&vec![0u8; accumulators]).into_robj(),
-                0,
-                Vec::new(),
-                plan.estimated_peak_bytes,
-            )
-        }
-    };
+    let walk = walk_of(&graph, requested)?;
     let operands: Vec<i32> = resolved
         .iter()
         .flat_map(|p| [p.a, p.b])
         .flat_map(|(side, column)| [i32::from(side == Side::Second), column as i32])
         .collect();
-    Ok(List::from_names_and_values(
-        [
-            "categories",
-            "first_levels",
-            "second_levels",
-            "columns",
-            "products",
-            "operands",
-            "exponents",
-            "width",
-            "table",
-            "lanes",
-            "lane_pairs",
-            "estimated_peak_bytes",
-        ],
-        [
-            Strings::from_values(codes).into_robj(),
-            levels_list(&first_packed.levels),
-            second_packed
-                .as_ref()
-                .map_or_else(|| Robj::from(()), |p| levels_list(&p.levels)),
-            Strings::from_values(&names).into_robj(),
-            List::from_values(
-                product_names
-                    .iter()
-                    .map(|(a, b)| Strings::from_values([a.as_str(), b.as_str()]).into_robj()),
-            )
-            .into_robj(),
-            Integers::from_values(operands).into_robj(),
-            Integers::from_values(exponents.iter().map(|&e| e as i32)).into_robj(),
-            (width as i32).into(),
-            table,
-            (lanes as f64).into(),
-            Doubles::from_values(lane_pairs.iter().map(|&p| p as f64)).into_robj(),
-            (peak as f64).into(),
-        ],
-    )
-    .expect("one value per name")
-    .into_robj())
+    let PackedLabels {
+        labels: first_labels,
+        n_labels: n_first,
+        levels: first_levels,
+    } = first_packed;
+    let (second_labels, second_levels) = match second_packed {
+        Some(p) => (Some((p.labels, p.n_labels)), Some(p.levels)),
+        None => (None, None),
+    };
+    let work = move |progress: &Progress| {
+        let (labels_second, n_labels_second) = match &second_labels {
+            Some((labels, n)) => (labels.as_slice(), *n),
+            None => (first_labels.as_slice(), n_first),
+        };
+        let input = MomentsInput {
+            labels_first: &first_labels,
+            n_labels_first: n_first,
+            labels_second,
+            n_labels_second,
+            values: &quantized,
+            n_columns: k,
+            products: &resolved,
+            same: &same_keys,
+            n_same: s,
+        };
+        match walk {
+            Some((max_degree, rows)) => moments_of(
+                &rows.pedigree()?,
+                max_degree,
+                requested,
+                None,
+                false,
+                &input,
+                symmetric,
+                threads,
+                budget,
+                progress,
+            ),
+            None => {
+                let plan = MomentsPlan::new(input.shape(requested), threads, budget)?;
+                let accumulators = requested.iter().count() * plan.cells() * plan.stride();
+                Ok(Moments {
+                    width: 1,
+                    table: vec![0u8; accumulators],
+                    stride: plan.stride(),
+                    cells: plan.cells(),
+                    lanes: 0,
+                    lane_pairs: Vec::new(),
+                    estimated_peak_bytes: plan.estimated_peak_bytes,
+                })
+            }
+        }
+    };
+    let finish = move |moments: Moments| {
+        let codes: Vec<&str> = requested.iter().map(|c| c.code()).collect();
+        Ok(List::from_names_and_values(
+            [
+                "categories",
+                "first_levels",
+                "second_levels",
+                "columns",
+                "products",
+                "operands",
+                "exponents",
+                "width",
+                "table",
+                "lanes",
+                "lane_pairs",
+                "estimated_peak_bytes",
+            ],
+            [
+                Strings::from_values(codes).into_robj(),
+                levels_list(&first_levels),
+                second_levels
+                    .as_deref()
+                    .map_or_else(|| Robj::from(()), levels_list),
+                Strings::from_values(&names).into_robj(),
+                List::from_values(
+                    product_names
+                        .iter()
+                        .map(|(a, b)| Strings::from_values([a.as_str(), b.as_str()]).into_robj()),
+                )
+                .into_robj(),
+                Integers::from_values(operands).into_robj(),
+                Integers::from_values(exponents.iter().map(|&e| e as i32)).into_robj(),
+                (moments.width as i32).into(),
+                Raw::from_bytes(&moments.table).into_robj(),
+                (moments.lanes as f64).into(),
+                Doubles::from_values(moments.lane_pairs.iter().map(|&p| p as f64)).into_robj(),
+                (moments.estimated_peak_bytes as f64).into(),
+            ],
+        )
+        .expect("one value per name")
+        .into_robj())
+    };
+    Ok(job::spawn(pool, work, finish))
 }
 
 fn int_field<'a>(m: &'a List, name: &str) -> HostResult<&'a [i32]> {

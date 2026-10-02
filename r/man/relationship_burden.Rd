@@ -4,10 +4,25 @@
 \alias{relationship_burden}
 \title{Relationship burden}
 \usage{
-relationship_burden(pg)
+relationship_burden(pg, progress = getOption("pedigreegraph.progress", TRUE))
 }
 \arguments{
 \item{pg}{A graph from [pedigree_graph()].}
+
+\item{progress}{How to report a long call.  `TRUE` (the default, or
+`getOption("pedigreegraph.progress")` when set) prints a message 30
+seconds into the call and every 30 seconds after, which
+[suppressMessages()] silences; a short call prints nothing.  `FALSE`
+prints nothing.  A function is called about once a second with one
+argument, `list(phase, rows_done, rows_total, elapsed)`: `phase` is
+`"preparing"` (setup, before the total is known), `"walking"` (row
+visits) or `"finishing"` (assembling the result); `rows_done` and
+`rows_total` count row visits as doubles (a `"memory"` execution visits
+every row twice), `NA` where the phase has none (`rows_done` while
+preparing or finishing, `rows_total` while preparing); `elapsed` is the
+seconds since the call started.  An error from the function stops the
+call and is raised in its place.  Ctrl-C (an interrupt) stops the call
+too.}
 }
 \value{
 A list:

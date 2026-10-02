@@ -6,14 +6,15 @@
 use crate::errors::{HostError, HostResult};
 use crate::graph::{self, NATIVE_FIELDS};
 use crate::input::IdType;
+use crate::job;
 use crate::threads;
 use extendr_api::prelude::*;
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
-    count_pairs, pair_blocks, relationship_burden as burden_of, Category, CategorySet, Counts,
-    Execution, MaxDegree, PairBlock, Pedigree, Progress, N_CATEGORIES,
+    count_pairs, pair_blocks, relationship_burden as burden_of, Burden, Category, CategorySet,
+    Counts, Execution, MaxDegree, PairBlock, Pedigree, Progress, N_CATEGORIES,
 };
 use std::num::NonZeroUsize;
 
@@ -63,21 +64,15 @@ impl Native {
         IdType::parse(self.field("id_type").as_str().unwrap_or("")).expect("a sealed id type")
     }
 
-    /// Run `f` on the graph's relationship pedigree.
-    pub fn with_pedigree<T>(
-        &self,
-        f: impl FnOnce(&Pedigree<'_>) -> HostResult<T>,
-    ) -> HostResult<T> {
-        let mother_ids = self.int64("mother_ids");
-        let father_ids = self.int64("father_ids");
-        let ped = Pedigree::try_new(
-            self.rows("mother_rows"),
-            self.rows("father_rows"),
-            self.rows("twin_rows"),
-            &mother_ids,
-            &father_ids,
-        )?;
-        f(&ped)
+    /// Copies of the columns a relationship pedigree borrows.
+    fn copy_rows(&self) -> OwnedRows {
+        OwnedRows {
+            mother_rows: self.rows("mother_rows").to_vec(),
+            father_rows: self.rows("father_rows").to_vec(),
+            twin_rows: self.rows("twin_rows").to_vec(),
+            mother_ids: self.int64("mother_ids"),
+            father_ids: self.int64("father_ids"),
+        }
     }
 
     fn kinship(&self) -> HostResult<KinshipPedigree<'_>> {
@@ -110,6 +105,40 @@ impl Native {
     /// `as.character()` cannot print without bit64.
     fn id_names(&self) -> Robj {
         Strings::from_values(self.int64("ids").iter().map(|id| id.to_string())).into_robj()
+    }
+}
+
+/// A graph's relationship columns, owned so a job on the pool can outlive
+/// the R call that started it (`job.rs`).
+pub struct OwnedRows {
+    mother_rows: Vec<i32>,
+    father_rows: Vec<i32>,
+    twin_rows: Vec<i32>,
+    mother_ids: Vec<i64>,
+    father_ids: Vec<i64>,
+}
+
+impl OwnedRows {
+    pub fn pedigree(&self) -> Result<Pedigree<'_>, Error> {
+        Pedigree::try_new(
+            &self.mother_rows,
+            &self.father_rows,
+            &self.twin_rows,
+            &self.mother_ids,
+            &self.father_ids,
+        )
+    }
+}
+
+/// The walk a selection needs: its top degree and the graph's rows, or
+/// `None` when it selects no category or the graph has fewer than two rows.
+pub fn walk_of(
+    graph: &Native,
+    requested: CategorySet,
+) -> HostResult<Option<(MaxDegree, OwnedRows)>> {
+    match (requested.top_degree(), graph.len() >= 2) {
+        (Some(top), true) => Ok(Some((MaxDegree::try_new(top)?, graph.copy_rows()))),
+        _ => Ok(None),
     }
 }
 
@@ -216,11 +245,12 @@ pub fn package_pool() -> HostResult<&'static rayon::ThreadPool> {
 /// The rows an R data frame can hold: compact row names are int32.
 const MAX_FRAME_ROWS: usize = i32::MAX as usize;
 
+/// Start `relationship_pairs()`; collecting the job gives
 /// `list(code, first, second[, first_id, second_id], requested)`.
 ///
 /// `code` is the 1-based registry index per pair (the R wrapper makes it a
 /// factor over all 23 codes); `first`/`second` are 1-based graph rows.
-pub fn relationship_pairs(
+pub fn start_pairs(
     native: &Robj,
     seal: &Robj,
     max_degree: &Robj,
@@ -237,26 +267,30 @@ pub fn relationship_pairs(
     })?;
     // Every public operation commits the budget, as in Python.
     let pool = package_pool()?;
+    let walk = walk_of(&graph, requested)?;
+    let work = move |progress: &Progress| match walk {
+        Some((max_degree, rows)) => Ok(pair_blocks(
+            &rows.pedigree()?,
+            max_degree,
+            requested,
+            None,
+            execution,
+            progress,
+        )?
+        .0),
+        None => Ok(vec![PairBlock::default(); N_CATEGORIES]),
+    };
+    Ok(job::spawn(pool, work, move |blocks| {
+        pairs_list(&graph, requested, ids, blocks)
+    }))
+}
 
-    let mut blocks: Vec<PairBlock> = vec![PairBlock::default(); N_CATEGORIES];
-    if let (Some(top), true) = (requested.top_degree(), graph.len() >= 2) {
-        let max_degree = MaxDegree::try_new(top)?;
-        blocks = graph
-            .with_pedigree(|ped| {
-                Ok(pool.install(|| {
-                    pair_blocks(
-                        ped,
-                        max_degree,
-                        requested,
-                        None,
-                        execution,
-                        &Progress::default(),
-                    )
-                })?)
-            })?
-            .0;
-    }
-
+fn pairs_list(
+    graph: &Native,
+    requested: CategorySet,
+    ids: bool,
+    blocks: Vec<PairBlock>,
+) -> HostResult<Robj> {
     let total: usize = blocks.iter().map(PairBlock::len).sum();
     if total > MAX_FRAME_ROWS {
         return Err(HostError::resource(
@@ -336,9 +370,10 @@ pub fn exact_double(what: &str, count: u64) -> HostResult<f64> {
     Ok(count as f64)
 }
 
+/// Start `relationship_counts()`; collecting the job gives
 /// `list(counts, requested)`: the pairs of each of the 23 categories in
 /// registry order, `NA` where not requested.
-pub fn relationship_counts(
+pub fn start_counts(
     native: &Robj,
     seal: &Robj,
     max_degree: &Robj,
@@ -347,15 +382,17 @@ pub fn relationship_counts(
     let graph = Native::verified(native, seal)?;
     let requested = selection(max_degree, categories)?;
     let pool = package_pool()?;
-    let counts = match (requested.top_degree(), graph.len() >= 2) {
-        (Some(top), true) => {
-            let max_degree = MaxDegree::try_new(top)?;
-            graph.with_pedigree(|ped| {
-                Ok(pool.install(|| count_pairs(ped, max_degree, None, &Progress::default()))?)
-            })?
-        }
-        _ => Counts::default(),
+    let walk = walk_of(&graph, requested)?;
+    let work = move |progress: &Progress| match walk {
+        Some((max_degree, rows)) => count_pairs(&rows.pedigree()?, max_degree, None, progress),
+        None => Ok(Counts::default()),
     };
+    Ok(job::spawn(pool, work, move |counts| {
+        counts_list(requested, counts)
+    }))
+}
+
+fn counts_list(requested: CategorySet, counts: Counts) -> HostResult<Robj> {
     let values = Category::ALL
         .iter()
         .map(|&c| match requested.contains(c) {
@@ -373,16 +410,21 @@ pub fn relationship_counts(
     .into_robj())
 }
 
+/// Start `relationship_burden()`; collecting the job gives
 /// `list(per_person, category_counts, same_depth_pairs)`: the relatives of
 /// each row at degrees 1 to 5 as an integer `n x 5` matrix in input order,
 /// the pairs of every category, and the related pairs per structural depth.
-pub fn relationship_burden(native: &Robj, seal: &Robj) -> HostResult<Robj> {
+pub fn start_burden(native: &Robj, seal: &Robj) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
     let pool = package_pool()?;
-    let depth = graph.rows("depth");
-    let burden = graph
-        .with_pedigree(|ped| Ok(pool.install(|| burden_of(ped, depth, &Progress::default()))?))?;
+    let rows = graph.copy_rows();
+    let depth = graph.rows("depth").to_vec();
     let n = graph.len();
+    let work = move |progress: &Progress| burden_of(&rows.pedigree()?, &depth, progress);
+    Ok(job::spawn(pool, work, move |burden| burden_list(n, burden)))
+}
+
+fn burden_list(n: usize, burden: Burden) -> HostResult<Robj> {
     // A row has at most n - 1 relatives at a degree, and n fits an int32.
     let mut per_person = Integers::from_values(Exact::new(
         (0..5)

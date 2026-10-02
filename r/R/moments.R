@@ -49,7 +49,8 @@
 relationship_moments <- function(pg, max_degree = NULL, categories = NULL,
                                  first = list(), second = NULL, values = list(),
                                  products = NULL, same = list(), symmetric = "canonical",
-                                 memory_budget_bytes = 2^30) {
+                                 memory_budget_bytes = 2^30,
+                                 progress = getOption("pedigreegraph.progress", TRUE)) {
   native <- .pg_native(pg)
   if (!is.null(max_degree) && !is.numeric(max_degree)) max_degree <- NaN
   if (!is.character(symmetric) || length(symmetric) != 1L || is.na(symmetric)) symmetric <- ""
@@ -58,10 +59,12 @@ relationship_moments <- function(pg, max_degree = NULL, categories = NULL,
   }
   first <- .pg_factor_list("first", first)
   if (!is.null(second)) second <- .pg_factor_list("second", second)
-  found <- .pg_call(.native_relationship_moments(
+  report <- .pg_progress(progress, "relationship_moments")
+  handle <- .pg_call(.native_start_moments(
     native, pg$seal, max_degree, categories, first, second, values, products, same,
     symmetric, as.double(memory_budget_bytes)
   ))
+  found <- .pg_watch(handle, report)
   axes <- unname(c(
     list(list(name = "category", levels = found$categories)),
     .pg_factor_axes("first", first, found$first_levels),

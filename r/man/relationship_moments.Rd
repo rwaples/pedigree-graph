@@ -14,7 +14,8 @@ relationship_moments(
   products = NULL,
   same = list(),
   symmetric = "canonical",
-  memory_budget_bytes = 2^30
+  memory_budget_bytes = 2^30,
+  progress = getOption("pedigreegraph.progress", TRUE)
 )
 }
 \arguments{
@@ -52,6 +53,21 @@ otherwise.  `NA` and negative keys are unknown and never equal.}
 fewer lanes run when a lane per thread would not fit, and a call that
 cannot fit one lane is refused with a `pedigree_graph_resource_error`
 (code `memory_budget_exceeded`).}
+
+\item{progress}{How to report a long call.  `TRUE` (the default, or
+`getOption("pedigreegraph.progress")` when set) prints a message 30
+seconds into the call and every 30 seconds after, which
+[suppressMessages()] silences; a short call prints nothing.  `FALSE`
+prints nothing.  A function is called about once a second with one
+argument, `list(phase, rows_done, rows_total, elapsed)`: `phase` is
+`"preparing"` (setup, before the total is known), `"walking"` (row
+visits) or `"finishing"` (assembling the result); `rows_done` and
+`rows_total` count row visits as doubles (a `"memory"` execution visits
+every row twice), `NA` where the phase has none (`rows_done` while
+preparing or finishing, `rows_total` while preparing); `elapsed` is the
+seconds since the call started.  An error from the function stops the
+call and is raised in its place.  Ctrl-C (an interrupt) stops the call
+too.}
 }
 \value{
 A `relationship_moments` object.  Narrow it with

@@ -10,6 +10,20 @@
 #' @param execution `"speed"` (default) or `"memory"`, which uses about half
 #'   the peak memory at roughly twice the time.  The result is identical.
 #' @param ids Include `first_id` and `second_id` columns (default `TRUE`).
+#' @param progress How to report a long call.  `TRUE` (the default, or
+#'   `getOption("pedigreegraph.progress")` when set) prints a message 30
+#'   seconds into the call and every 30 seconds after, which
+#'   [suppressMessages()] silences; a short call prints nothing.  `FALSE`
+#'   prints nothing.  A function is called about once a second with one
+#'   argument, `list(phase, rows_done, rows_total, elapsed)`: `phase` is
+#'   `"preparing"` (setup, before the total is known), `"walking"` (row
+#'   visits) or `"finishing"` (assembling the result); `rows_done` and
+#'   `rows_total` count row visits as doubles (a `"memory"` execution visits
+#'   every row twice), `NA` where the phase has none (`rows_done` while
+#'   preparing or finishing, `rows_total` while preparing); `elapsed` is the
+#'   seconds since the call started.  An error from the function stops the
+#'   call and is raised in its place.  Ctrl-C (an interrupt) stops the call
+#'   too.
 #' @return A data frame with one row per pair: `code`, a factor whose levels
 #'   are all 23 category codes in registry order (so `table(pairs$code)`
 #'   shows empty categories too); `first` and `second`, 1-based rows of the
@@ -29,16 +43,17 @@
 #' relationship_pairs(pg, categories = c("FS", "GP"), ids = FALSE)
 #' @export
 relationship_pairs <- function(pg, max_degree = NULL, categories = NULL,
-                               execution = "speed", ids = TRUE) {
+                               execution = "speed", ids = TRUE,
+                               progress = getOption("pedigreegraph.progress", TRUE)) {
   native <- .pg_native(pg)
   if (!is.character(execution) || length(execution) != 1L || is.na(execution)) execution <- ""
   if (!is.logical(ids) || length(ids) != 1L || is.na(ids)) {
     .pg_usage("`ids` must be TRUE or FALSE")
   }
   if (!is.null(max_degree) && !is.numeric(max_degree)) max_degree <- NaN
-  found <- .pg_call(.native_relationship_pairs(
-    native, pg$seal, max_degree, categories, execution, ids
-  ))
+  report <- .pg_progress(progress, "relationship_pairs")
+  handle <- .pg_call(.native_start_pairs(native, pg$seal, max_degree, categories, execution, ids))
+  found <- .pg_watch(handle, report)
   codes <- .pg_codes()
   columns <- found[setdiff(names(found), "requested")]
   columns$code <- structure(columns$code, levels = codes, class = "factor")
@@ -70,10 +85,13 @@ relationship_pairs <- function(pg, max_degree = NULL, categories = NULL,
 #' ))
 #' relationship_counts(pg, categories = c("FS", "MO", "FO", "GP"))
 #' @export
-relationship_counts <- function(pg, max_degree = NULL, categories = NULL) {
+relationship_counts <- function(pg, max_degree = NULL, categories = NULL,
+                                progress = getOption("pedigreegraph.progress", TRUE)) {
   native <- .pg_native(pg)
   if (!is.null(max_degree) && !is.numeric(max_degree)) max_degree <- NaN
-  found <- .pg_call(.native_relationship_counts(native, pg$seal, max_degree, categories))
+  report <- .pg_progress(progress, "relationship_counts")
+  handle <- .pg_call(.native_start_counts(native, pg$seal, max_degree, categories))
+  found <- .pg_watch(handle, report)
   codes <- .pg_codes()
   structure(
     stats::setNames(found$counts, codes),
@@ -86,7 +104,7 @@ relationship_counts <- function(pg, max_degree = NULL, categories = NULL) {
 #' Every individual's relatives at degrees 1 to 5 and the pairs of every
 #' category, from one pass that never builds the pairs.
 #'
-#' @param pg A graph from [pedigree_graph()].
+#' @inheritParams relationship_pairs
 #' @return A list:
 #'   * `per_person`: an integer matrix with one row per input row, in input
 #'     order, and columns `degree_1` to `degree_5`, the distinct relatives
@@ -106,9 +124,11 @@ relationship_counts <- function(pg, max_degree = NULL, categories = NULL) {
 #' burden$per_person
 #' burden$category_counts[c("FS", "MO", "FO")]
 #' @export
-relationship_burden <- function(pg) {
+relationship_burden <- function(pg, progress = getOption("pedigreegraph.progress", TRUE)) {
   native <- .pg_native(pg)
-  found <- .pg_call(.native_relationship_burden(native, pg$seal))
+  report <- .pg_progress(progress, "relationship_burden")
+  handle <- .pg_call(.native_start_burden(native, pg$seal))
+  found <- .pg_watch(handle, report)
   dimnames(found$per_person) <- list(NULL, paste0("degree_", 1:5))
   names(found$category_counts) <- .pg_codes()
   found

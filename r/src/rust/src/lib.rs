@@ -7,6 +7,7 @@
 mod errors;
 mod graph;
 mod input;
+mod job;
 mod kernels;
 mod moments;
 mod test_hooks;
@@ -47,9 +48,9 @@ fn check_graph(native: Robj, seal: Robj) -> Robj {
     finish(graph::verified(&native, &seal).map(|_| true.into()))
 }
 
-/// Pairs of the selected categories; see `kernels::relationship_pairs`.
+/// Start a pairs call; see `kernels::start_pairs`.
 #[extendr]
-fn relationship_pairs(
+fn relationship_pairs_start(
     native: Robj,
     seal: Robj,
     max_degree: Robj,
@@ -57,7 +58,7 @@ fn relationship_pairs(
     execution: &str,
     ids: bool,
 ) -> Robj {
-    finish(kernels::relationship_pairs(
+    finish(kernels::start_pairs(
         &native,
         &seal,
         &max_degree,
@@ -67,10 +68,10 @@ fn relationship_pairs(
     ))
 }
 
-/// Pairs per category; see `kernels::relationship_counts`.
+/// Start a counts call; see `kernels::start_counts`.
 #[extendr]
-fn relationship_counts(native: Robj, seal: Robj, max_degree: Robj, categories: Robj) -> Robj {
-    finish(kernels::relationship_counts(
+fn relationship_counts_start(native: Robj, seal: Robj, max_degree: Robj, categories: Robj) -> Robj {
+    finish(kernels::start_counts(
         &native,
         &seal,
         &max_degree,
@@ -78,16 +79,16 @@ fn relationship_counts(native: Robj, seal: Robj, max_degree: Robj, categories: R
     ))
 }
 
-/// Per-person relatives and pair totals; see `kernels::relationship_burden`.
+/// Start a burden call; see `kernels::start_burden`.
 #[extendr]
-fn relationship_burden(native: Robj, seal: Robj) -> Robj {
-    finish(kernels::relationship_burden(&native, &seal))
+fn relationship_burden_start(native: Robj, seal: Robj) -> Robj {
+    finish(kernels::start_burden(&native, &seal))
 }
 
-/// Relationship moments; see `moments::relationship_moments`.
+/// Start a moments call; see `moments::start_moments`.
 #[extendr]
 #[allow(clippy::too_many_arguments)]
-fn relationship_moments(
+fn relationship_moments_start(
     native: Robj,
     seal: Robj,
     max_degree: Robj,
@@ -100,7 +101,7 @@ fn relationship_moments(
     symmetric: &str,
     memory_budget_bytes: f64,
 ) -> Robj {
-    finish(moments::relationship_moments(
+    finish(moments::start_moments(
         &native,
         &seal,
         &max_degree,
@@ -113,6 +114,24 @@ fn relationship_moments(
         symmetric,
         memory_budget_bytes,
     ))
+}
+
+/// Wait up to `tick` seconds on a started call; see `job::wait`.
+#[extendr]
+fn job_wait(handle: Robj, tick: f64) -> Robj {
+    finish(job::wait(&handle, tick))
+}
+
+/// A started call's result, once.
+#[extendr]
+fn job_collect(handle: Robj) -> Robj {
+    finish(job::collect(&handle))
+}
+
+/// Stop a started call and wait for it; a no-op once it is collected.
+#[extendr]
+fn job_cancel(handle: Robj) -> Robj {
+    finish(job::cancel(&handle))
 }
 
 /// Keep 1-based `positions` of 1-based `axis` of a moments table.
@@ -243,10 +262,13 @@ extendr_module! {
     mod pedigreegraph;
     use test_hooks;
     fn build_pedigree;
-    fn relationship_pairs;
-    fn relationship_counts;
-    fn relationship_burden;
-    fn relationship_moments;
+    fn relationship_pairs_start;
+    fn relationship_counts_start;
+    fn relationship_burden_start;
+    fn relationship_moments_start;
+    fn job_wait;
+    fn job_collect;
+    fn job_cancel;
     fn moments_select;
     fn moments_sum;
     fn moments_merge;
