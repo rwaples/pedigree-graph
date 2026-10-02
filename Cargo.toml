@@ -5,6 +5,9 @@ members = ["crates/core", "crates/python"]
 [workspace.package]
 version = "0.12.1"
 edition = "2021"
+# The floor pixi.toml and the R binding crate already state; clippy reads it,
+# so it never suggests an API newer than R users' rustc.
+rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/rwaples/pedigree-graph"
 

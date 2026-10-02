@@ -795,9 +795,7 @@ mod tests {
             for symmetric in [Symmetric::Canonical, Symmetric::Both] {
                 let want = oracle(&cols, requested, v, &input, symmetric);
                 let total: u64 = want
-                    .as_chunks::<{ 1 + 4 * 2 + 3 }>()
-                    .0
-                    .iter()
+                    .chunks_exact(1 + 4 * 2 + 3)
                     .map(|acc| acc[0] as u64)
                     .sum();
                 for (threads, compact) in [(1, false), (4, false), (4, true)] {
