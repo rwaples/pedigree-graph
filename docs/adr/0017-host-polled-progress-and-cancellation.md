@@ -4,7 +4,8 @@
 **Date:** 2026-10-02
 **Context:** issue #37 ("relationship_counts gives no progress feedback on
 long runs"). Plan: simACE `plans/pedigree-graph-37-progress.md`
-(session-local draft). Amends ADR 0006 (a `progress=` keyword and the
+(session-local draft). Amended the same day for issue #39 (the R binding;
+plan `plans/pedigree-graph-39-r-progress.md`, session-local draft). Amends ADR 0006 (a `progress=` keyword and the
 `RelationshipProgress` root export). Keeps ADR 0007's host-neutral core.
 
 ## Context
@@ -54,8 +55,8 @@ reaches only the main thread, which is blocked in the native call.
 rows done, rows total and a cancel flag. Every entry point takes a trailing
 `&Progress`: `count_pairs`, `count_view_pairs_compact`,
 `relationship_burden`, `reduce_pairs` (and so `relationship_moments` and
-`relatives_per_person`), `pair_blocks` and `pair_blocks_compact`. The R host
-passes `&Progress::default()` and gains no keyword.
+`relatives_per_person`), `pair_blocks` and `pair_blocks_compact`. The R
+host polls the same `Progress` through a job handle (see "Binding: R").
 
 **Phases (D9).** A call starts in *preparing*: view compaction and engine
 setup, before the total is known. `walk(n)` publishes the number of row
@@ -138,6 +139,89 @@ once. `in_place_scope` then re-raises the panic, and pyo3 turns it into
 `PanicException` at the function boundary as before. The test hook
 `_panic_in_watched_worker_for_test` pins both wake-ups against a 30 s tick.
 
+### Binding: R (issue #39)
+
+`relationship_pairs()`, `relationship_counts()`, `relationship_burden()`
+and `relationship_moments()` take
+`progress = getOption("pedigreegraph.progress", TRUE)`. `TRUE` writes a
+`message()` at 30 s and every 30 s after, in the Python wording above, which
+`suppressMessages()` silences. `FALSE` writes nothing. A function receives
+`list(phase, rows_done, rows_total, elapsed)` about once a second. The
+counts are doubles, because a `"memory"` walk's `2n` visits can pass an
+int32, and a count is `NA` where the phase has none: both while preparing,
+`rows_done` while finishing. Anything else is a
+`pedigree_graph_usage_error`. R has no start or `total:` lines, so `FALSE`
+has nothing else to silence.
+
+**An R loop over a native job handle.** R can't use Python's shape, one
+native call that watches its own job. A spike (R 4.5.3, a C shim, a child
+`Rscript` and a real SIGINT) showed why:
+
+| Case | Result |
+|---|---|
+| `R_ToplevelExec(R_CheckUserInterrupt)` under SIGINT | detects it |
+| `message()` inside `R_ToplevelExec` | invisible to `suppressMessages()`, `withCallingHandlers()` and `tryCatch()` |
+| an R `repeat` loop around a 1 s blocking `.Call`, SIGINT at 0.3 s | never delivered |
+| the same loop plus `Sys.sleep(0)` per iteration | delivered to `tryCatch(interrupt=)` after one tick |
+| the `R_ToplevelExec` probe under `setTimeLimit(elapsed = 0.5)` | reports an interrupt: misclassified |
+| the `Sys.sleep(0)` loop under `setTimeLimit(elapsed = 0.5)` | R's own `reached elapsed time limit` error |
+
+So progress has to run as ordinary R code, and the loop has to call
+something that services R's pending events. In `r/src/rust/src/job.rs` a
+start entry point per kernel validates its arguments, commits the thread
+budget, copies its inputs and spawns the engine call on the package pool
+(`ThreadPool::spawn`). It returns an `ExternalPtr` handle. `.pg_watch()` in
+`r/R/progress.R` then loops: `.native_wait(handle, tick)` blocks until the
+job ends or a tick (1 s) passes, `Sys.sleep(0)` lets R raise a pending
+Ctrl-C or time limit with its own condition class, and the reporter runs.
+`.native_collect()` builds the result on the R thread. An `on.exit` calls
+`.native_cancel()`, so Ctrl-C, a time limit or an error from the callback
+unwinds the loop natively and the cancel joins the job. Nothing is
+re-signalled and no FFI is declared by hand. The cancel bound is the
+Python one: at most one tick, plus each worker's current 64 rows or
+uninterruptible step.
+
+**The job owns its inputs.** It outlives the `.Call` that starts it, so it
+copies `mother_rows`, `father_rows` and `twin_rows` (int32) and `depth` for
+burden. `mother_ids` and `father_ids` were already copied per call. That is
+12 more bytes per individual, 16 for burden, and no `unsafe` lifetime
+extension.
+
+**Lifecycle.** A slot moves `Running → Ready → Collected`. The worker runs
+the engine under `catch_unwind` (a panic out of a rayon job aborts) and
+stores its outcome in `Ready` once, panics included. `collect` waits, swaps
+the slot to `Collected` first, then resumes a panic on the R thread
+(extendr turns it into an R error), converts a core error to the classed R
+error, or runs the R-side `finish`. A second collect is a usage error.
+`cancel` sets the cancel flag, waits only while `Running`, and drops the
+outcome, so the `on.exit` after a collect never waits. The handle's GC
+finalizer is `cancel`. A callback that starts another call spawns a second
+job on the same pool; the R thread is never a pool worker, so this can't
+deadlock, even at one thread.
+
+**The loop covers the walk only (D6).** Copying the inputs, moments'
+factor packing and quantizing, and building the R vectors at collect run
+outside the loop, as Python's pack, quantize and conversion run outside its
+watched call. They show no progress, and Ctrl-C waits for them. On the
+303,000-row `random_300k` fixture at six threads, start takes at most
+0.02 s (moments' packing) and collect at most 0.013 s, except for pairs.
+Pairs' collect copies every pair into R vectors at about 80 ns a pair:
+1.0 s for 6.0M pairs at degree 3, 2.6 s for 31.6M at degree 5, against an
+8.8 s walk. That is over the plan's gate of one tick (1 s). We accepted
+the cost, because the old blocking call did the same copy
+inside its `.Call` and nothing got slower. If it matters, the fix is to
+fill the vectors in slices inside the loop.
+
+Against 0.12.0 we ran five interleaved runs per cell, each cell in its own
+child `Rscript`, and took the median. The cells were counts on 5,050 and
+303,000 rows at one and six threads, 200 small calls, pairs at degree 2,
+and burden. Median wall time stayed within 5% of 0.12.0 in every cell but
+one: counts on 5,050 rows at six threads read +7.7%. That cell timed one
+50 ms call per run at 1 ms resolution, so we measured it again with the
+median of 30 warmed calls per process over seven interleaved processes. It
+came to +1.0%, and pairs at six threads came to +1.6%. Peak RSS (`wait4`)
+changed by -0.1% to +0.5%.
+
 ## Rejected
 
 * **B: a core callback from worker threads.** It is silent while a long
@@ -151,6 +235,19 @@ once. `in_place_scope` then re-raises the panic, and pyo3 turns it into
   the caller polls (D11) costs one job spawn and no new thread.
   `std::thread::scope` remains the fallback if the pool form shows a
   problem.
+* **R: one watched `.Call`, Python's shape.** Its `message()` lines and
+  callback would run inside `R_ToplevelExec`, hidden from every handler the
+  caller set (spike above).
+* **R: the first form of the loop, an `R_ToplevelExec` interrupt probe that
+  re-signals an interrupt.** The probe can't tell Ctrl-C from a time limit
+  or anything else `R_CheckUserInterrupt` raises, and it misclassified the
+  time limit.
+* **R: a C shim with `R_UnwindProtect` and `setjmp`** that resumes the unwind
+  after the Rust frames return. Resuming from a later frame is unverified,
+  and it is the subtlest FFI of the options.
+* **R: raw `'static` slices over R memory**, kept alive by the handle,
+  instead of owned copies. It saves 12 bytes per individual for an `unsafe`
+  lifetime.
 
 ## Consequences
 
@@ -167,3 +264,11 @@ once. `in_place_scope` then re-raises the panic, and pyo3 turns it into
   where every check is.
 * Kinship kernels (`pair_kinship`, the matrix DP, inbreeding) have no
   progress yet.
+* In R, `r/tests/testthat/test-progress.R` checks bit identity under
+  `TRUE`, `FALSE` and a function and at a budget of 4, every phase through
+  a scripted job, Ctrl-C and a time limit in a child `Rscript` with the next
+  call working, the uncaught interrupt, a worker error, a callback error, a
+  nested call at one thread, a panic in a job, and a GC'd handle cancelling.
+* `Sys.sleep(0)` servicing pending events is observed on Linux with R
+  4.5.3 and pinned by those tests. On Windows and in RStudio or Positron it
+  is unverified.

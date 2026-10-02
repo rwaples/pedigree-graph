@@ -22,6 +22,16 @@ live on the corresponding GitHub release pages.
   `progress=` callable raises, cancels the call within about a second plus
   the 64 rows or assembly step each worker is in, and that exception is
   raised.
+- **Added (R): `progress =` on `relationship_pairs()`,
+  `relationship_counts()`, `relationship_burden()` and
+  `relationship_moments()`, and Ctrl-C now interrupts them** (issue #39;
+  ADR 0017). The default, `getOption("pedigreegraph.progress", TRUE)`,
+  writes a `message()` every 30 s of a long call, in the Python wording,
+  which `suppressMessages()` silences; `FALSE` writes nothing; a function
+  receives `list(phase, rows_done, rows_total, elapsed)` about once a
+  second. Ctrl-C, a `setTimeLimit()` limit or an error from the function
+  stops the call within about a second plus the 64 rows or assembly step
+  each worker is in, and R raises it as usual. Results are bit-identical.
 
 ## v0.12.0
 
