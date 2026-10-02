@@ -1,0 +1,97 @@
+{
+  "unit": "pedsum",
+  "stage": "0.12.1",
+  "routing": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.1/wheel-site",
+  "cwd": "external/pedsum",
+  "started": "2026-10-02T23:33:15",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.1/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 2.0,
+      "max_rss_mib": 60.1,
+      "tree_peak_mib": 45.7,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.1/pedsum/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.1/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.5,
+      "max_rss_mib": 39.2,
+      "tree_peak_mib": 22.1,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.1/pedsum/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.4,
+      "max_rss_mib": 39.0,
+      "tree_peak_mib": 22.3,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.1/pedsum/format.log",
+      "tail": [
+        "67 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 106.4,
+      "max_rss_mib": 707.3,
+      "tree_peak_mib": 770.6,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.1/pedsum/pytest.log",
+      "tail": [
+        "........................................................................ [ 19%]",
+        "........................................................................ [ 38%]",
+        "........................................................................ [ 57%]",
+        "........................................................................ [ 76%]",
+        "......s..s.s............................................................ [ 95%]",
+        "................                                                         [100%]",
+        "373 passed, 3 skipped in 102.65s (0:01:42)"
+      ]
+    },
+    {
+      "step": "tsv",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen python -c 'import polars as pl; pl.read_parquet('\"'\"'/data/Documents/simACE/results/test/small_test/rep1/pedigree.parquet'\"'\"').write_csv('\"'\"'/tmp/consumer-gate-0s6rpt3z/pedigree.tsv'\"'\"', separator='\"'\"'\\t'\"'\"')'",
+      "exit": 0,
+      "wall_s": 1.1,
+      "max_rss_mib": 58.3,
+      "tree_peak_mib": 45.6,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.1/pedsum/tsv.log",
+      "tail": []
+    },
+    {
+      "step": "cli-smoke",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedsum/pixi.toml --frozen python pedigree_summary.py summarize --in /tmp/consumer-gate-0s6rpt3z/pedigree.tsv --out /tmp/consumer-gate-0s6rpt3z/pedsum-smoke",
+      "exit": 0,
+      "wall_s": 3.6,
+      "max_rss_mib": 129.2,
+      "tree_peak_mib": 92.5,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.1/pedsum/cli-smoke.log",
+      "tail": [
+        "23:35:08 INFO pedigree_summary: size+structure in 0.00s",
+        "23:35:08 INFO pedigree_summary: sibship sizes in 0.01s",
+        "23:35:08 INFO pedigree_summary: mating-pair summary in 0.01s",
+        "23:35:08 INFO pedigree_graph._relationship_counts: relationship_counts: max_degree=5, threads=1",
+        "23:35:08 INFO pedigree_graph._relationship_counts: relationship_counts total: 0.343s",
+        "23:35:08 INFO pedigree_summary: relationship pair counts (relationship_counts) in 0.34s",
+        "23:35:08 INFO pedigree_summary: inbreeding (F + n_ancestors) in 0.01s",
+        "23:35:08 INFO pedigree_summary: descendants in 0.00s",
+        "23:35:09 INFO pedigree_summary: individual table built in 0.12s",
+        "23:35:09 INFO pedigree_summary: aggregate pedigree sections in 0.04s",
+        "23:35:09 INFO pedigree_summary: wrote /tmp/consumer-gate-0s6rpt3z/pedsum-smoke/{summary.yaml, summary.extra.yaml}",
+        "23:35:09 INFO pedigree_summary: wrote annotated.tsv.gz in 0.14s"
+      ]
+    }
+  ],
+  "ok": true
+}

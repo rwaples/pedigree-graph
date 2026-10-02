@@ -1,0 +1,6 @@
+simace gather: skipping results/test/coverage_scenario/rep1 (absent)
+simace gather: test/coverage_scenario: 0 of 1 reps
+simace gather: test/small_test: 3 of 3 reps
+INFO: Gathered 3 report summaries -> results/test/report_summary.tsv
+INFO: Generating validation plots in results/test/plots
+INFO: HTML atlas saved to results/test/plots/atlas.html (12 plots)
