@@ -22,6 +22,7 @@
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
+use super::progress::{Checkpoint, Progress};
 use super::{task_ranges, MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -136,6 +137,7 @@ struct Query<'a> {
     requested: CategorySet,
     view: Option<&'a [i32]>,
     pool: WorkspacePool,
+    progress: &'a Progress,
 }
 
 impl Query<'_> {
@@ -151,6 +153,10 @@ impl Query<'_> {
         // another one under the memory pressure that failed this row.
         let mut result = Ok(());
         for row in range.0..range.1 {
+            result = self.progress.check_row(row);
+            if result.is_err() {
+                break;
+            }
             if self.view.is_some_and(|map| map[row] < 0) {
                 continue;
             }
@@ -162,6 +168,7 @@ impl Query<'_> {
             }
         }
         self.pool.give(ws);
+        self.progress.advance(range.1 - range.0);
         result
     }
 
@@ -203,6 +210,9 @@ impl Query<'_> {
 /// view-space sort relies on the keys being distinct, so a repeated view row
 /// would make the order depend on the thread count.
 ///
+/// [`Error::Cancelled`] once `progress` is cancelled.  [`Execution::Memory`]
+/// walks every row twice, so its progress total is twice the row count.
+///
 /// # Panics
 ///
 /// If `view` does not have one entry per graph row; the host binding checks
@@ -213,6 +223,7 @@ pub fn pair_blocks(
     requested: CategorySet,
     view: Option<&[i32]>,
     execution: Execution,
+    progress: &Progress,
 ) -> Result<PairBlocks, Error> {
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
@@ -225,11 +236,18 @@ pub fn pair_blocks(
         requested,
         view,
         pool: WorkspacePool::new(n, true),
+        progress,
     };
     let ranges = task_ranges(n);
     let mut blocks = match execution {
-        Execution::Speed => buffered(&query, &ranges)?,
-        Execution::Memory => two_pass(&query, &ranges)?,
+        Execution::Speed => {
+            progress.walk(n)?;
+            buffered(&query, &ranges)?
+        }
+        Execution::Memory => {
+            progress.walk(2 * n)?;
+            two_pass(&query, &ranges)?
+        }
     };
     if let Some(map) = view {
         // Unselected rows carry -1, so the row count is one past the largest
@@ -242,6 +260,7 @@ pub fn pair_blocks(
             .max()
             .map_or(0, |m| m as u64 + 1);
         for cat in requested.iter() {
+            progress.checkpoint(Checkpoint::CategorySort(cat))?;
             sort_by_view_key(&mut blocks.0[cat.index()], n_view)?;
         }
     }
@@ -263,6 +282,7 @@ fn task_table<T: Send>(
 
 fn buffered(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Error> {
     let chunks = task_table(ranges, |r| query.chunk(r))?;
+    query.progress.finish()?;
     // Transpose the task-by-category table into one column per category.
     // Only `Vec` handles move, so no pair is copied and nothing is freed.
     let mut columns: Vec<Vec<PairBlock>> = (0..N_CATEGORIES).map(|_| Vec::new()).collect();
@@ -277,11 +297,13 @@ fn buffered(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
     out.0
         .par_iter_mut()
         .zip(columns)
-        .try_for_each(|(block, parts)| {
+        .zip(Category::ALL)
+        .try_for_each(|((block, parts), cat)| {
             let total: usize = parts.iter().map(PairBlock::len).sum();
             if total == 0 {
                 return Ok(());
             }
+            query.progress.checkpoint(Checkpoint::CategoryCopy(cat))?;
             block.reserve_exact(total)?;
             for part in parts {
                 block.extend_from(&part);
@@ -304,8 +326,10 @@ fn split_sizes(mut buf: &mut [i32], sizes: impl Iterator<Item = usize>) -> Vec<&
 
 fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Error> {
     let counts = task_table(ranges, |r| query.count(r))?;
+    query.progress.checkpoint(Checkpoint::BetweenPasses)?;
     let mut out = PairBlocks::empty();
     for cat in query.requested.iter() {
+        query.progress.checkpoint(Checkpoint::CategoryAlloc(cat))?;
         let i = cat.index();
         let total: usize = counts.iter().map(|c| c[i]).sum();
         out.0[i].reserve_exact(total)?;
@@ -345,6 +369,7 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
             }
             Ok(())
         })?;
+    query.progress.finish()?;
     Ok(out)
 }
 
@@ -414,7 +439,15 @@ mod tests {
         let blocks: Vec<PairBlocks> = EXECUTIONS
             .iter()
             .map(|&e| {
-                pair_blocks(&ped, MaxDegree::MAX, CategorySet::up_to_degree(5), view, e).unwrap()
+                pair_blocks(
+                    &ped,
+                    MaxDegree::MAX,
+                    CategorySet::up_to_degree(5),
+                    view,
+                    e,
+                    &Progress::default(),
+                )
+                .unwrap()
             })
             .collect();
         assert!(
@@ -633,12 +666,20 @@ mod tests {
         let cols = crate::relationships::testing::random_pedigree(400, 7);
         let ped = cols.try_borrow().unwrap();
         let got = all(&cols, None);
-        let counts = count_pairs(&ped, MaxDegree::MAX, None).unwrap();
+        let counts = count_pairs(&ped, MaxDegree::MAX, None, &Progress::default()).unwrap();
         for cat in Category::ALL {
             assert_eq!(got.get(cat).len() as u64, counts.get(cat), "{}", cat.code());
         }
         let only: CategorySet = [Category::C1, Category::Av].into_iter().collect();
-        let some = pair_blocks(&ped, MaxDegree::MAX, only, None, Execution::Speed).unwrap();
+        let some = pair_blocks(
+            &ped,
+            MaxDegree::MAX,
+            only,
+            None,
+            Execution::Speed,
+            &Progress::default(),
+        )
+        .unwrap();
         for cat in Category::ALL {
             if only.contains(cat) {
                 assert_eq!(some.get(cat), got.get(cat));
@@ -677,6 +718,7 @@ mod tests {
                                 CategorySet::up_to_degree(5),
                                 v,
                                 execution,
+                                &Progress::default(),
                             )
                         })
                         .unwrap();
@@ -715,6 +757,7 @@ mod tests {
                 cats,
                 Some(map.as_slice()),
                 Execution::Speed,
+                &Progress::default(),
             )
         };
 
@@ -840,10 +883,19 @@ mod tests {
         let all_cats = CategorySet::up_to_degree(5);
         fail_next(Some(family));
         let result = match execution {
-            None => count_pairs(&ped, MaxDegree::MAX, None).map(|c| c.get(Category::FS) as usize),
+            None => count_pairs(&ped, MaxDegree::MAX, None, &Progress::default())
+                .map(|c| c.get(Category::FS) as usize),
             Some(execution) => {
                 let v = view.then_some(view_map.as_slice());
-                pair_blocks(&ped, MaxDegree::MAX, all_cats, v, execution).map(|b| b.total())
+                pair_blocks(
+                    &ped,
+                    MaxDegree::MAX,
+                    all_cats,
+                    v,
+                    execution,
+                    &Progress::default(),
+                )
+                .map(|b| b.total())
             }
         };
         let expect_failure = std::env::var("PG_SEAM_EXPECT").as_deref() == Ok("fail");
@@ -857,6 +909,14 @@ mod tests {
             (_, other) => panic!("{name}/{mode} expecting {expect_failure} gave {other:?}"),
         }
         fail_next(None);
-        assert!(pair_blocks(&ped, MaxDegree::MAX, all_cats, None, Execution::Speed).is_ok());
+        assert!(pair_blocks(
+            &ped,
+            MaxDegree::MAX,
+            all_cats,
+            None,
+            Execution::Speed,
+            &Progress::default()
+        )
+        .is_ok());
     }
 }

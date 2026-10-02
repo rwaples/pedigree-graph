@@ -346,7 +346,16 @@ fn relationship_counts<'py>(
     };
     let pool = checked_pool(py, threads)?;
     let counts = py
-        .detach(|| pool.install(|| relationships::count_pairs(&ped, max_degree, mask)))
+        .detach(|| {
+            pool.install(|| {
+                relationships::count_pairs(
+                    &ped,
+                    max_degree,
+                    mask,
+                    &relationships::Progress::default(),
+                )
+            })
+        })
         .map_err(|e| to_pyerr(py, e))?;
     let values = PyDict::new(py);
     for &cat in Category::ALL.iter() {
@@ -372,7 +381,16 @@ fn compact_view_counts<'py>(
     let max_degree = checked_max_degree(py, max_degree)?;
     let pool = checked_pool(py, threads)?;
     let counts = py
-        .detach(|| pool.install(|| relationships::count_view_pairs_compact(&ped, max_degree, view)))
+        .detach(|| {
+            pool.install(|| {
+                relationships::count_view_pairs_compact(
+                    &ped,
+                    max_degree,
+                    view,
+                    &relationships::Progress::default(),
+                )
+            })
+        })
         .map_err(|e| to_pyerr(py, e))?;
     let values = PyDict::new(py);
     for &cat in Category::ALL.iter() {
@@ -429,9 +447,17 @@ fn relationship_pairs<'py>(
                         categories,
                         view.unwrap(),
                         execution,
+                        &relationships::Progress::default(),
                     )
                 } else {
-                    relationships::pair_blocks(&ped, max_degree, categories, view, execution)
+                    relationships::pair_blocks(
+                        &ped,
+                        max_degree,
+                        categories,
+                        view,
+                        execution,
+                        &relationships::Progress::default(),
+                    )
                 }
             })
         })
@@ -595,6 +621,7 @@ fn relationship_moments<'py>(
                     symmetric,
                     threads,
                     memory_budget_bytes,
+                    &relationships::Progress::default(),
                 )
             })
         })
@@ -854,7 +881,11 @@ fn relationship_burden<'py>(
     }
     let pool = checked_pool(py, threads)?;
     let burden = py
-        .detach(|| pool.install(|| relationships::relationship_burden(&ped, depth)))
+        .detach(|| {
+            pool.install(|| {
+                relationships::relationship_burden(&ped, depth, &relationships::Progress::default())
+            })
+        })
         .map_err(|e| to_pyerr(py, e))?;
     let categories = PyDict::new(py);
     for (cat, count) in Category::ALL.iter().zip(burden.categories) {
@@ -926,7 +957,14 @@ fn relatives_per_person<'py>(
         .detach(|| {
             pool.install(|| {
                 relationships::relatives_per_person(
-                    &ped, max_degree, categories, view, compact, &borrowed, threads,
+                    &ped,
+                    max_degree,
+                    categories,
+                    view,
+                    compact,
+                    &borrowed,
+                    threads,
+                    &relationships::Progress::default(),
                 )
             })
         })

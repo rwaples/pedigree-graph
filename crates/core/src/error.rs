@@ -292,6 +292,10 @@ pub enum Error {
         /// What is wrong.
         reason: String,
     },
+    /// The host cancelled the call through its `Progress` (ADR 0017).  The
+    /// Python host raises the exception that caused the cancel instead, so
+    /// this reaches a user only from a host that cancels without one.
+    Cancelled,
 }
 
 impl Error {
@@ -324,6 +328,7 @@ impl Error {
             Error::NonFiniteValue { .. }
             | Error::NotRepresentable { .. }
             | Error::InvalidMomentsTable { .. } => ErrorClass::Usage,
+            Error::Cancelled => ErrorClass::Usage,
         }
     }
 
@@ -356,7 +361,8 @@ impl Error {
             | Error::UnknownSexEncoding { .. }
             | Error::NonFiniteValue { .. }
             | Error::NotRepresentable { .. }
-            | Error::InvalidMomentsTable { .. } => "",
+            | Error::InvalidMomentsTable { .. }
+            | Error::Cancelled => "",
         }
     }
 
@@ -519,7 +525,8 @@ impl Error {
             | Error::UnknownSexEncoding { .. }
             | Error::NonFiniteValue { .. }
             | Error::NotRepresentable { .. }
-            | Error::InvalidMomentsTable { .. } => Vec::new(),
+            | Error::InvalidMomentsTable { .. }
+            | Error::Cancelled => Vec::new(),
         }
     }
 }
@@ -742,6 +749,7 @@ impl std::fmt::Display for Error {
             Error::InvalidMomentsTable { reason } => {
                 write!(f, "invalid relationship moments table: {reason}")
             }
+            Error::Cancelled => write!(f, "the call was cancelled"),
         }
     }
 }

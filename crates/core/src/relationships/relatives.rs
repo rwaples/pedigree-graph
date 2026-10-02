@@ -13,6 +13,7 @@
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::moments::{receiver_len, reduce_pairs, Reducer, Symmetric};
+use super::progress::{Checkpoint, Progress};
 use super::{check_column_length, CompactView, MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -115,11 +116,12 @@ const OPERATION: &str = "relative_counts";
 /// `threshold` rows, do not have one entry per receiver row;
 /// [`Error::ArithmeticOverflow`] when the counter array's length is not
 /// representable; [`Error::AllocationFailed`] for the counters or from the
-/// engine.
+/// engine; [`Error::Cancelled`] once `progress` is cancelled.
 ///
 /// # Panics
 ///
 /// If `view` does not have one entry per graph row.
+#[allow(clippy::too_many_arguments)]
 pub fn relatives_per_person(
     ped: &Pedigree,
     max_degree: MaxDegree,
@@ -128,6 +130,7 @@ pub fn relatives_per_person(
     compact: bool,
     columns: &[ThresholdColumn<'_>],
     threads: NonZeroUsize,
+    progress: &Progress,
 ) -> Result<RelativesPerPerson, Error> {
     let rows = receiver_len(ped, view)?;
     for column in columns {
@@ -160,6 +163,7 @@ pub fn relatives_per_person(
     let reduced = match (view, compact) {
         (Some(map), true) => {
             let compact = CompactView::build(ped, map)?;
+            progress.checkpoint(Checkpoint::Compacted)?;
             reduce_pairs(
                 &compact.columns.try_borrow()?,
                 max_degree,
@@ -168,6 +172,7 @@ pub fn relatives_per_person(
                 Symmetric::Both,
                 threads,
                 &reducer,
+                progress,
             )?
         }
         _ => reduce_pairs(
@@ -178,6 +183,7 @@ pub fn relatives_per_person(
             Symmetric::Both,
             threads,
             &reducer,
+            progress,
         )?,
     };
     Ok(RelativesPerPerson {
@@ -274,7 +280,15 @@ mod tests {
         rows: usize,
     ) -> Vec<u32> {
         let ped = cols.try_borrow().unwrap();
-        let blocks = pair_blocks(&ped, MaxDegree::MAX, requested, view, Execution::Speed).unwrap();
+        let blocks = pair_blocks(
+            &ped,
+            MaxDegree::MAX,
+            requested,
+            view,
+            Execution::Speed,
+            &Progress::default(),
+        )
+        .unwrap();
         let n_cat = requested.iter().count();
         let stride = 1 + columns.len();
         let mut counts = vec![0u32; rows * n_cat * stride];
@@ -325,6 +339,7 @@ mod tests {
                 compact,
                 columns,
                 NonZeroUsize::new(threads).unwrap(),
+                &Progress::default(),
             )
         })
         .unwrap()
@@ -459,7 +474,16 @@ mod tests {
         let one = NonZeroUsize::new(1).unwrap();
         let requested = subset();
         let call = |view: Option<&[i32]>, columns: &[ThresholdColumn<'_>]| {
-            relatives_per_person(&ped, MaxDegree::MAX, requested, view, false, columns, one)
+            relatives_per_person(
+                &ped,
+                MaxDegree::MAX,
+                requested,
+                view,
+                false,
+                columns,
+                one,
+                &Progress::default(),
+            )
         };
         let (fit, short) = (vec![0.0; 100], vec![0.0; 99]);
         assert!(call(

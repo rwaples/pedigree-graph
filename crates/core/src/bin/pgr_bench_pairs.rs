@@ -13,7 +13,7 @@
 //! for an element-for-element comparison by the qualification driver.
 
 use pedigree_graph_core::relationships::{
-    pair_blocks, Category, CategorySet, Execution, MaxDegree, PedigreeColumns,
+    pair_blocks, Category, CategorySet, Execution, MaxDegree, PedigreeColumns, Progress,
 };
 use std::path::Path;
 use std::time::Instant;
@@ -104,6 +104,7 @@ fn main() {
                 requested,
                 view.as_deref(),
                 execution,
+                &Progress::default(),
             )
         })
         .unwrap_or_else(|e| panic!("{e}"));

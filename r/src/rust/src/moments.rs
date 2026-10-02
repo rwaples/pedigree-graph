@@ -15,8 +15,8 @@ use num_bigint::BigInt;
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::relationships::{
     encode_big, pack_labels, quantize_column, relationship_moments as moments_of, MaxDegree,
-    MomentsInput, MomentsPlan, MomentsTable, Product, Side, Statistic, Symmetric, MAX_SAME_KEYS,
-    MAX_VALUE_COLUMNS,
+    MomentsInput, MomentsPlan, MomentsTable, Product, Progress, Side, Statistic, Symmetric,
+    MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
 };
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
@@ -384,7 +384,16 @@ pub fn relationship_moments(
             let moments = graph.with_pedigree(|ped| {
                 Ok(pool.install(|| {
                     moments_of(
-                        ped, max_degree, requested, None, false, &input, symmetric, threads, budget,
+                        ped,
+                        max_degree,
+                        requested,
+                        None,
+                        false,
+                        &input,
+                        symmetric,
+                        threads,
+                        budget,
+                        &Progress::default(),
                     )
                 })?)
             })?;

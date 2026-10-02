@@ -25,6 +25,7 @@
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
 use super::pairs::check_view_map;
+use super::progress::{Checkpoint, Progress};
 use super::{check_column_length, task_ranges, CompactView, MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -123,11 +124,12 @@ pub struct Reduced<L> {
 /// # Errors
 ///
 /// [`Error::AllocationFailed`] from the engine, a workspace, a row set or a
-/// lane.
+/// lane; [`Error::Cancelled`] once `progress` is cancelled.
 ///
 /// # Panics
 ///
 /// If `view` does not have one entry per graph row; the host checks that.
+#[allow(clippy::too_many_arguments)]
 pub fn reduce_pairs<R: Reducer>(
     ped: &Pedigree,
     max_degree: MaxDegree,
@@ -136,6 +138,7 @@ pub fn reduce_pairs<R: Reducer>(
     symmetric: Symmetric,
     lanes: NonZeroUsize,
     reducer: &R,
+    progress: &Progress,
 ) -> Result<Reduced<R::Lane>, Error> {
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
@@ -151,6 +154,7 @@ pub fn reduce_pairs<R: Reducer>(
     for _ in 0..lanes.get() {
         slots.push(reducer.lane()?);
     }
+    progress.walk(n)?;
     let finished: Vec<(R::Lane, u64)> = slots
         .into_par_iter()
         .map(|mut lane| {
@@ -165,6 +169,11 @@ pub fn reduce_pairs<R: Reducer>(
                     break;
                 };
                 for row in start..end {
+                    result = progress.check_row(row);
+                    if result.is_err() {
+                        failed.store(true, Ordering::Relaxed);
+                        break;
+                    }
                     if view.is_some_and(|map| map[row] < 0) {
                         continue;
                     }
@@ -182,21 +191,24 @@ pub fn reduce_pairs<R: Reducer>(
                         break;
                     }
                 }
+                progress.advance(end - start);
             }
             pool.give(ws);
             result.map(|()| (lane, pairs))
         })
         .collect::<Result<Vec<_>, Error>>()?;
+    progress.finish()?;
     let (accumulators, lane_pairs): (Vec<R::Lane>, Vec<u64>) = finished.into_iter().unzip();
-    let merged = accumulators.into_iter().reduce(|mut total, lane| {
-        reducer.merge(&mut total, lane);
-        total
-    });
+    let mut accumulators = accumulators.into_iter();
     // `lanes` is non-zero, so there is always a first lane; the library does not panic.
-    let lane = match merged {
-        Some(total) => total,
+    let mut lane = match accumulators.next() {
+        Some(first) => first,
         None => reducer.lane()?,
     };
+    for from in accumulators {
+        progress.checkpoint(Checkpoint::LaneMerge)?;
+        reducer.merge(&mut lane, from);
+    }
     Ok(Reduced { lane, lane_pairs })
 }
 
@@ -570,7 +582,8 @@ pub(super) fn receiver_len(ped: &Pedigree, view: Option<&[i32]>) -> Result<usize
 /// one lane does not fit `budget_bytes`; the input errors of
 /// [`MomentsInput::check`]; [`Error::InvalidViewMap`] when `view` is not a
 /// partial permutation; [`Error::ArithmeticOverflow`] when a cell exceeds
-/// [`MAX_CELL_PAIRS`] pairs.
+/// [`MAX_CELL_PAIRS`] pairs; [`Error::Cancelled`] once `progress` is
+/// cancelled.
 ///
 /// # Panics
 ///
@@ -586,6 +599,7 @@ pub fn relationship_moments(
     symmetric: Symmetric,
     threads: NonZeroUsize,
     budget_bytes: u64,
+    progress: &Progress,
 ) -> Result<Moments, Error> {
     input.check(receiver_len(ped, view)?)?;
     let plan = MomentsPlan::new(input.shape(requested), threads, budget_bytes)?;
@@ -593,6 +607,7 @@ pub fn relationship_moments(
     let reduced = match (view, compact) {
         (Some(map), true) => {
             let compact = CompactView::build(ped, map)?;
+            progress.checkpoint(Checkpoint::Compacted)?;
             reduce_pairs(
                 &compact.columns.try_borrow()?,
                 max_degree,
@@ -601,10 +616,11 @@ pub fn relationship_moments(
                 symmetric,
                 plan.lanes,
                 &reducer,
+                progress,
             )?
         }
         _ => reduce_pairs(
-            ped, max_degree, requested, view, symmetric, plan.lanes, &reducer,
+            ped, max_degree, requested, view, symmetric, plan.lanes, &reducer, progress,
         )?,
     };
     let (width, table) = reducer.finish(&reduced.lane)?;
@@ -635,7 +651,15 @@ mod tests {
         symmetric: Symmetric,
     ) -> Vec<i128> {
         let ped = cols.try_borrow().unwrap();
-        let blocks = pair_blocks(&ped, MaxDegree::MAX, requested, view, Execution::Speed).unwrap();
+        let blocks = pair_blocks(
+            &ped,
+            MaxDegree::MAX,
+            requested,
+            view,
+            Execution::Speed,
+            &Progress::default(),
+        )
+        .unwrap();
         let plan = MomentsPlan::new(
             input.shape(requested),
             NonZeroUsize::new(1).unwrap(),
@@ -796,6 +820,7 @@ mod tests {
                                 symmetric,
                                 NonZeroUsize::new(threads).unwrap(),
                                 u64::MAX,
+                                &Progress::default(),
                             )
                         })
                         .unwrap();
@@ -1042,9 +1067,16 @@ mod tests {
             .build()
             .unwrap();
         let requested = CategorySet::up_to_degree(3);
-        let total = pair_blocks(&ped, MaxDegree::MAX, requested, None, Execution::Speed)
-            .unwrap()
-            .total();
+        let total = pair_blocks(
+            &ped,
+            MaxDegree::MAX,
+            requested,
+            None,
+            Execution::Speed,
+            &Progress::default(),
+        )
+        .unwrap()
+        .total();
         for lanes in [1usize, 3, 8] {
             let reducer = CountingReducer {
                 built: AtomicUsize::new(0),
@@ -1060,6 +1092,7 @@ mod tests {
                         Symmetric::Canonical,
                         NonZeroUsize::new(lanes).unwrap(),
                         &reducer,
+                        &Progress::default(),
                     )
                 })
                 .unwrap();

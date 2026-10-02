@@ -227,7 +227,9 @@ PARALLEL_MODULES = {
     "test_counts_are_bit_identical_under_every_thread_budget",
 }
 # The pool itself: it builds and installs the Rayon pool and runs no kernel.
-POOL_INFRASTRUCTURE = frozenset({"pool.rs"})
+# The progress atomics run no kernel either; the kernels above update them from
+# the pool, and only their unit tests build a pool, to watch a walk (ADR 0017).
+POOL_INFRASTRUCTURE = frozenset({"pool.rs", "relationships/progress.rs"})
 PARALLEL_MARKERS = ("rayon", "crate::pool", "par_iter", "par_chunks", "par_sort")
 
 

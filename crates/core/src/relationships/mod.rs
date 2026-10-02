@@ -9,6 +9,7 @@ mod moments;
 mod moments_table;
 mod multiplicity;
 mod pairs;
+mod progress;
 mod relatives;
 mod sets;
 mod sibling_index;
@@ -30,6 +31,7 @@ pub use moments_table::{
 };
 pub use multiplicity::Mult;
 pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};
+pub use progress::{Checkpoint, Progress, Snapshot};
 pub use relatives::{relatives_per_person, RelativesPerPerson, Threshold, ThresholdColumn};
 
 use crate::error::Error;
@@ -243,6 +245,7 @@ impl PedigreeColumns {
 /// Rows per parallel task.  Small enough to balance load, large enough that
 /// the workspace pool is not contended.
 const ROWS_PER_TASK: usize = 2048;
+const _: () = assert!(ROWS_PER_TASK % progress::CHECK_EVERY == 0);
 
 /// Exact closest-category pair counts up to `max_degree`, using the current Rayon pool.
 ///
@@ -260,16 +263,19 @@ const ROWS_PER_TASK: usize = 2048;
 ///
 /// # Errors
 ///
-/// [`Error::AllocationFailed`] from the engine, a workspace, or a row set.
+/// [`Error::AllocationFailed`] from the engine, a workspace, or a row set;
+/// [`Error::Cancelled`] once `progress` is cancelled.
 pub fn count_pairs(
     ped: &Pedigree,
     max_degree: MaxDegree,
     selected: Option<&[bool]>,
+    progress: &Progress,
 ) -> Result<Counts, Error> {
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
     let pool = WorkspacePool::new(n, false);
-    task_ranges(n)
+    progress.walk(n)?;
+    let counts = task_ranges(n)
         .into_par_iter()
         .map(|(start, end)| {
             let mut ws = pool.take()?;
@@ -279,6 +285,10 @@ pub fn count_pairs(
             let mut counts = Counts::default();
             let mut result = Ok(());
             for row in start..end {
+                result = progress.check_row(row);
+                if result.is_err() {
+                    break;
+                }
                 if selected.is_some_and(|s| !s[row]) {
                     continue;
                 }
@@ -288,9 +298,12 @@ pub fn count_pairs(
                 }
             }
             pool.give(ws);
+            progress.advance(end - start);
             result.map(|()| counts)
         })
-        .try_reduce(Counts::default, |a, b| Ok(a.merge(b)))
+        .try_reduce(Counts::default, |a, b| Ok(a.merge(b)))?;
+    progress.finish()?;
+    Ok(counts)
 }
 
 /// Count view pairs after restricting engine storage to their ancestry.
@@ -299,17 +312,24 @@ pub fn count_view_pairs_compact(
     ped: &Pedigree,
     max_degree: MaxDegree,
     view: &[i32],
+    progress: &Progress,
 ) -> Result<Counts, Error> {
     assert_eq!(ped.len(), view.len());
     pairs::check_view_map(view)?;
     let compact = CompactView::build(ped, view)?;
+    progress.checkpoint(Checkpoint::Compacted)?;
     let mut selected = crate::alloc::with_capacity(
         compact.view_rows.len(),
         crate::alloc::Family::RowSet,
         "bool",
     )?;
     selected.extend(compact.view_rows.iter().map(|&row| row >= 0));
-    count_pairs(&compact.columns.try_borrow()?, max_degree, Some(&selected))
+    count_pairs(
+        &compact.columns.try_borrow()?,
+        max_degree,
+        Some(&selected),
+        progress,
+    )
 }
 
 /// Emit view pairs using the same engine on an ancestry-compact pedigree.
@@ -319,16 +339,19 @@ pub fn pair_blocks_compact(
     requested: CategorySet,
     view: &[i32],
     execution: Execution,
+    progress: &Progress,
 ) -> Result<PairBlocks, Error> {
     assert_eq!(ped.len(), view.len());
     pairs::check_view_map(view)?;
     let compact = CompactView::build(ped, view)?;
+    progress.checkpoint(Checkpoint::Compacted)?;
     pair_blocks(
         &compact.columns.try_borrow()?,
         max_degree,
         requested,
         Some(&compact.view_rows),
         execution,
+        progress,
     )
 }
 

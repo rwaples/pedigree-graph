@@ -7,7 +7,9 @@
 //! default to `PEDIGREE_GRAPH_THREADS`, then 1.  Prints one JSON object with
 //! `n`, `threads`, `seconds`, and per-code `counts` to stdout.
 
-use pedigree_graph_core::relationships::{count_pairs, Category, MaxDegree, PedigreeColumns};
+use pedigree_graph_core::relationships::{
+    count_pairs, Category, MaxDegree, PedigreeColumns, Progress,
+};
 use std::time::Instant;
 
 fn main() {
@@ -62,6 +64,7 @@ fn main() {
                 &ped.try_borrow().expect("pedigree columns"),
                 max_degree,
                 None,
+                &Progress::default(),
             )
         })
         .unwrap_or_else(|e| panic!("{e}"));

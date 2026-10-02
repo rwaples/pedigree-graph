@@ -7,7 +7,7 @@
 //! Every fixture must match on all 23 categories, at one thread and at four.
 
 use pedigree_graph_core::relationships::{
-    count_pairs, Category, Counts, MaxDegree, PedigreeColumns,
+    count_pairs, Category, Counts, MaxDegree, PedigreeColumns, Progress,
 };
 use std::path::{Path, PathBuf};
 
@@ -53,7 +53,14 @@ fn run_all(threads: usize) {
         let expected = read_counts(&tsv.with_extension("counts.json"));
         let ped = PedigreeColumns::read_tsv(tsv).unwrap();
         let got = pool
-            .install(|| count_pairs(&ped.try_borrow().unwrap(), MaxDegree::MAX, None))
+            .install(|| {
+                count_pairs(
+                    &ped.try_borrow().unwrap(),
+                    MaxDegree::MAX,
+                    None,
+                    &Progress::default(),
+                )
+            })
             .unwrap();
         for cat in Category::ALL {
             if got.get(cat) != expected.get(cat) {

@@ -1,7 +1,8 @@
 //! Per-person relationship burden without materialising pair blocks.
 
 use super::{
-    task_ranges, Category, CategorySet, Engine, MaxDegree, Pedigree, WorkspacePool, N_CATEGORIES,
+    task_ranges, Category, CategorySet, Engine, MaxDegree, Pedigree, Progress, WorkspacePool,
+    N_CATEGORIES,
 };
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -19,7 +20,16 @@ pub struct Burden {
 /// Classify each unordered pair once and add its contribution directly to
 /// bounded arrays.  MZ pairs count in `categories` and `same_depth` but not
 /// `per_person`, matching the degree-1..5 pedsum burden report.
-pub fn relationship_burden(ped: &Pedigree<'_>, depth: &[i32]) -> Result<Burden, Error> {
+///
+/// # Errors
+///
+/// [`Error::AllocationFailed`] from the counters, the engine or a
+/// workspace; [`Error::Cancelled`] once `progress` is cancelled.
+pub fn relationship_burden(
+    ped: &Pedigree<'_>,
+    depth: &[i32],
+    progress: &Progress,
+) -> Result<Burden, Error> {
     assert_eq!(ped.len(), depth.len());
     let n = ped.len();
     let n_depths = depth.iter().copied().max().map_or(0, |d| d as usize + 1);
@@ -32,12 +42,17 @@ pub fn relationship_burden(ped: &Pedigree<'_>, depth: &[i32]) -> Result<Burden, 
     let engine = Engine::new(ped, MaxDegree::MAX)?;
     let pool = WorkspacePool::new(n, true);
     let requested = CategorySet::up_to_degree(MaxDegree::MAX.get());
+    progress.walk(n)?;
     task_ranges(n)
         .into_par_iter()
         .try_for_each(|(start, end)| {
             let mut ws = pool.take()?;
             let mut result = Ok(());
             for row in start..end {
+                result = progress.check_row(row);
+                if result.is_err() {
+                    break;
+                }
                 result = engine.emit_row(row, &requested, None, &mut ws, |cat: Category, a, b| {
                     categories[cat.index()].fetch_add(1, Ordering::Relaxed);
                     let degree = cat.degree();
@@ -57,8 +72,10 @@ pub fn relationship_burden(ped: &Pedigree<'_>, depth: &[i32]) -> Result<Burden, 
                 }
             }
             pool.give(ws);
+            progress.advance(end - start);
             result
         })?;
+    progress.finish()?;
 
     Ok(Burden {
         categories: categories.map(AtomicU64::into_inner),

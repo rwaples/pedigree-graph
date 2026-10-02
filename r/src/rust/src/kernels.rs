@@ -13,7 +13,7 @@ use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
     count_pairs, pair_blocks, relationship_burden as burden_of, Category, CategorySet, Counts,
-    Execution, MaxDegree, PairBlock, Pedigree, N_CATEGORIES,
+    Execution, MaxDegree, PairBlock, Pedigree, Progress, N_CATEGORIES,
 };
 use std::num::NonZeroUsize;
 
@@ -243,7 +243,16 @@ pub fn relationship_pairs(
         let max_degree = MaxDegree::try_new(top)?;
         blocks = graph
             .with_pedigree(|ped| {
-                Ok(pool.install(|| pair_blocks(ped, max_degree, requested, None, execution))?)
+                Ok(pool.install(|| {
+                    pair_blocks(
+                        ped,
+                        max_degree,
+                        requested,
+                        None,
+                        execution,
+                        &Progress::default(),
+                    )
+                })?)
             })?
             .0;
     }
@@ -341,7 +350,9 @@ pub fn relationship_counts(
     let counts = match (requested.top_degree(), graph.len() >= 2) {
         (Some(top), true) => {
             let max_degree = MaxDegree::try_new(top)?;
-            graph.with_pedigree(|ped| Ok(pool.install(|| count_pairs(ped, max_degree, None))?))?
+            graph.with_pedigree(|ped| {
+                Ok(pool.install(|| count_pairs(ped, max_degree, None, &Progress::default()))?)
+            })?
         }
         _ => Counts::default(),
     };
@@ -369,7 +380,8 @@ pub fn relationship_burden(native: &Robj, seal: &Robj) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
     let pool = package_pool()?;
     let depth = graph.rows("depth");
-    let burden = graph.with_pedigree(|ped| Ok(pool.install(|| burden_of(ped, depth))?))?;
+    let burden = graph
+        .with_pedigree(|ped| Ok(pool.install(|| burden_of(ped, depth, &Progress::default()))?))?;
     let n = graph.len();
     // A row has at most n - 1 relatives at a degree, and n fits an int32.
     let mut per_person = Integers::from_values(Exact::new(
