@@ -4,6 +4,25 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Added: `progress=` on `relationship_counts`, `relationship_pairs`,
+  `relationship_moments`, `relatives_per_person` and
+  `relationship_burden`, and the `RelationshipProgress` root export**
+  (issue #37; ADR 0017). By default a call that runs longer than 30 s logs
+  a line at INFO every 30 s, through the method's module logger, with its
+  phase, rows walked of the total and elapsed time; a shorter call logs
+  nothing new. `progress=False` logs no progress lines (the start and
+  `total:` lines stay). A callable receives a `RelationshipProgress`
+  (`phase`, `rows_done`, `rows_total`, `elapsed`) about once a second
+  instead. Results are bit-identical with and without it.
+- **Changed: Ctrl-C now interrupts `relationship_counts`,
+  `relationship_pairs`, `relationship_moments`, `relationship_burden` and
+  `relatives_per_person`** (issue #37). Ctrl-C, or an exception the
+  `progress=` callable raises, cancels the call within about a second plus
+  the 64 rows or assembly step each worker is in, and that exception is
+  raised.
+
 ## v0.12.0
 
 - **Changed: `pair_kinship` and `relationship_kinship_matrix` walk only

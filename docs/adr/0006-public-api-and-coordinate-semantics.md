@@ -160,6 +160,12 @@ from the enum, must equal a golden written from the Python registry
   1 to 5, and `same_depth_pairs`, the related-pair count per structural
   depth.
 * `close_relative_counts` and `relationship_burden` are full-graph-only.
+* `relationship_counts`, `relationship_pairs`, `relationship_moments`,
+  `relatives_per_person` (graph and view) and `relationship_burden` take
+  `progress=`: `None` (default) logs a progress line every 30 s of a long
+  call, `False` logs none, a callable receives a `RelationshipProgress`
+  about once a second. Ctrl-C or an exception from the callable cancels the
+  call (ADR 0017).
 
 ### Kinship and inbreeding
 
@@ -211,7 +217,8 @@ from the enum, must equal a golden written from the Python registry
 
 Root exports: `PedigreeGraph`, `PedigreeView`, `RelationshipCategory`,
 `RelationshipPairs`, `RelationshipPairBlock`, `RelationshipCountResult`,
-`RelationshipBurden`, `RELATIONSHIPS`, `PedigreeValidationError`,
+`RelationshipBurden`, `RelationshipMoments`, `RelativesPerPerson`,
+`RelationshipProgress`, `RELATIONSHIPS`, `PedigreeValidationError`,
 `MissingMetadataError`, `ResourceError`, `configure_threads`, `MAX_DEGREE`.
 `RelationshipCountResult` and `RelationshipBurden` are root exports because
 root-class methods return them, as with `RelationshipPairs`. `MAX_DEGREE` is

@@ -102,6 +102,19 @@ several: the lowest degree, then the earliest in registry order. Category
 definitions decide membership; closest-category precedence decides reporting.
 _Avoid_: fold (as a noun for the rule), exclusivity, dedup, "the exclusions"
 
+**Progress phase**:
+Where a running relationship call is: *preparing* (view compaction and
+engine setup, before the total is known), *walking* (row visits), or
+*finishing* (assembling the result after the last row: block copies, the
+view sort, lane merges).
+_Avoid_: stage, step
+
+**Row visit**:
+One row walked once by the row-streaming engine; the unit progress counts.
+A `"memory"` pair execution visits every row twice, and a compact view
+visits only the rows of its ancestry.
+_Avoid_: row done (without saying it can repeat), iteration
+
 **Relationship burden**:
 Per individual, the number of relatives at each degree from 1 to 5, each pair
 counted under its **closest category**, with the per-category totals and the
