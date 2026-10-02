@@ -51,10 +51,11 @@ pub enum Family {
     /// A kinship matrix's `indptr`, `indices` and `data`, and the per-column
     /// counts and cursors that assemble them.
     KinshipCsc,
-    /// The per-bucket sum vector of the generation summary.
+    /// The generation summary's per-bucket sizes, depths and sums, and its
+    /// adjoint vector.
     KinshipSums,
     /// The DP's per-row scratch: permutation, depth buckets, retirement
-    /// schedule, gathered labels and staged relatives.
+    /// schedule and staged relatives.
     KinshipScratch,
     /// The inbreeding walk's depth-major order, per-row path sums, `F`,
     /// Mendelian variances and frontier, and its touched list.

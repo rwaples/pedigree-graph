@@ -1194,8 +1194,8 @@ fn approximate_kinship_csc<'py>(
 
 /// Per bucket, the float64 kinship summed over unordered same-bucket pairs
 /// of distinct rows that are not MZ co-twins.  `labels` is one int32 bucket
-/// in `0..n_buckets` per graph row.  Rows are retired as the DP passes
-/// them, so no matrix is held.
+/// per graph row, in `0..n_buckets` or `n_buckets` for none.  One backward
+/// sweep per bucket; no kinship is stored.
 #[pyfunction]
 #[pyo3(signature = (pedigree, depth, labels, n_buckets, /))]
 fn generation_kinship_sums<'py>(

@@ -1,6 +1,6 @@
-//! The depth-major kinship DP behind the three matrix products (ADR 0009).
+//! The depth-major kinship DP behind the matrix products (ADR 0009).
 //!
-//! One kernel, three sinks.  In stable depth-major order every row `j` is
+//! One kernel, two products.  In stable depth-major order every row `j` is
 //! built from its parents' finished rows by one merge walk, `phi(j, k) =
 //! (phi(m, k) + phi(f, k)) / 2` for every relative `k` in either parent row,
 //! then its diagonal `(1 + phi(m, f)) / 2`; an MZ pass writes `phi(j, twin)
@@ -18,8 +18,6 @@
 //!   pass that captures the exact value of every candidate as its row
 //!   finishes.  The support is the 0.7.1 propagated candidate set; the
 //!   values are the pinned recurrence.
-//! * [`generation_kinship_sums`] retires rows as it goes and accumulates the
-//!   within-bucket kinship sum inline, in the order the merge walk emits.
 //!
 //! Retirement: a row is freed at the end of the depth of its last direct
 //! child, after which no merge walk reads it; a later symmetric write to it
@@ -151,8 +149,6 @@ enum Sink {
         cols: Vec<u32>,
         vals: Vec<f32>,
     },
-    /// Accumulate within-bucket sums inline during the merge walk.
-    Sums { labels: Vec<i32>, sums: Vec<f64> },
 }
 
 struct Dp<'t, S: RowStore> {
@@ -253,15 +249,6 @@ impl<'t, S: RowStore> Dp<'t, S> {
             alloc::push(&mut self.scratch, (k, val), SCRATCH, "uint64")?;
         }
 
-        if let Sink::Sums { labels, sums } = &mut self.sink {
-            let g = labels[j];
-            let twin = topo.twin[j];
-            for &(k, val) in &self.scratch {
-                if labels[k as usize] == g && k as i32 != twin && k < jc {
-                    sums[g as usize] += f64::from(val);
-                }
-            }
-        }
         for i in 0..self.scratch.len() {
             let (k, val) = self.scratch[i];
             self.store.push(j, k, val)?;
@@ -315,7 +302,7 @@ impl<'t, S: RowStore> Dp<'t, S> {
     fn depth_done(&mut self, d: usize) -> Result<(), Error> {
         let topo = self.topo;
         match &mut self.sink {
-            Sink::Rows | Sink::Sums { .. } => {}
+            Sink::Rows => {}
             Sink::Harvest { indptr, cols } => {
                 for j in topo.rows_at(d) {
                     let row = self.store.cols(j);
@@ -554,37 +541,6 @@ fn approximate_with<S: RowStore>(topo: &Topo, threshold: f64) -> Result<Csc, Err
     )
 }
 
-fn sums_with<S: RowStore>(
-    topo: &Topo,
-    labels: &[i32],
-    n_buckets: usize,
-) -> Result<Vec<f64>, Error> {
-    let gathered = alloc::collect(
-        topo.order.iter().map(|&r| labels[r as usize]),
-        SCRATCH,
-        "int32",
-    )?;
-    let mut dp = Dp::<S>::new(
-        topo,
-        0.0,
-        true,
-        Sink::Sums {
-            labels: gathered,
-            sums: alloc::filled(0.0f64, n_buckets, Family::KinshipSums, "float64")?,
-        },
-    )?;
-    dp.run()?;
-    #[expect(
-        clippy::unreachable,
-        reason = "dp was built with Sink::Sums and run() never replaces its sink"
-    )]
-    let Sink::Sums { sums, .. } = dp.sink
-    else {
-        unreachable!()
-    };
-    Ok(sums)
-}
-
 /// The complete kinship matrix: every nonzero pedigree kinship plus the
 /// diagonal, as a symmetric CSC in graph rows.
 ///
@@ -634,49 +590,10 @@ pub fn approximate_kinship_csc(ped: KinshipPedigree<'_>, threshold: f64) -> Resu
     approximate_with::<Owned>(&topo, threshold)
 }
 
-/// Per bucket, the kinship summed over unordered same-bucket pairs of
-/// distinct rows that are not MZ co-twins, as float64 in the order the DP
-/// emits them.  `labels` gives each graph row's bucket in `0..n_buckets`.
-///
-/// # Errors
-///
-/// As [`kinship_csc`], plus [`Error::LengthMismatch`] when `labels` is not
-/// one per row and [`Error::ValueOutOfRange`] on `labels` or `n_buckets`.
-pub fn generation_kinship_sums(
-    ped: KinshipPedigree<'_>,
-    labels: &[i32],
-    n_buckets: usize,
-) -> Result<Vec<f64>, Error> {
-    crate::relationships::check_column_length("labels", labels.len(), ped.len())?;
-    if n_buckets == 0 {
-        return Err(Error::ValueOutOfRange {
-            field: "n_buckets",
-            position: 0,
-            value: 0,
-            minimum: 1,
-            maximum: i64::from(i32::MAX),
-        });
-    }
-    if let Some(position) = labels
-        .iter()
-        .position(|&g| g < 0 || g as usize >= n_buckets)
-    {
-        return Err(Error::ValueOutOfRange {
-            field: "labels",
-            position,
-            value: i64::from(labels[position]),
-            minimum: 0,
-            maximum: n_buckets as i64 - 1,
-        });
-    }
-    let topo = Topo::build(&ped)?;
-    sums_with::<Owned>(&topo, labels, n_buckets)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kinship::pair_kinship;
+    use crate::kinship::{generation_kinship_sums, pair_kinship};
     use crate::topology::structural_depth;
 
     struct Cols {
@@ -920,32 +837,6 @@ mod tests {
             approximate_kinship_csc(ped, f64::NAN).unwrap_err(),
             Error::KinshipThresholdOutOfRange { .. }
         ));
-        let err = generation_kinship_sums(ped, &[0, 0], 1).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::LengthMismatch {
-                field: "labels",
-                ..
-            }
-        ));
-        let err = generation_kinship_sums(ped, &[0, 0, 1], 1).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::ValueOutOfRange {
-                field: "labels",
-                position: 2,
-                ..
-            }
-        ));
-        let err = generation_kinship_sums(ped, &[0, 0, 0], 0).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::ValueOutOfRange {
-                field: "n_buckets",
-                ..
-            }
-        ));
-
         let flat = KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &[0, 0, 0]).unwrap();
         let err = kinship_csc(flat).unwrap_err();
         assert!(matches!(
@@ -995,10 +886,9 @@ mod tests {
         assert_eq!(generation_kinship_sums(c.ped(), &[], 1).unwrap(), vec![0.0]);
     }
 
-    const MATRIX_FAMILIES: [Family; 4] = [
+    const MATRIX_FAMILIES: [Family; 3] = [
         Family::KinshipRows,
         Family::KinshipCsc,
-        Family::KinshipSums,
         Family::KinshipScratch,
     ];
 
@@ -1008,12 +898,7 @@ mod tests {
     fn a_refused_allocation_of_any_matrix_family_is_an_error() {
         let exe = std::env::current_exe().unwrap();
         for family in MATRIX_FAMILIES {
-            for product in ["complete", "approximate", "sums"] {
-                if family == Family::KinshipCsc && product == "sums"
-                    || family == Family::KinshipSums && product != "sums"
-                {
-                    continue;
-                }
+            for product in ["complete", "approximate"] {
                 let out = std::process::Command::new(&exe)
                     .args([
                         "--exact",
@@ -1046,11 +931,9 @@ mod tests {
         let c = crate::relationships::testing::random_pedigree(300, 5);
         let depth = structural_depth(&c.mother, &c.father);
         let ped = KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &depth).unwrap();
-        let labels = vec![0i32; 300];
         let run = |ped| match product.as_str() {
             "complete" => kinship_csc(ped).map(|c| c.data.len()),
-            "approximate" => approximate_kinship_csc(ped, 0.01).map(|c| c.data.len()),
-            _ => generation_kinship_sums(ped, &labels, 1).map(|s| s.len()),
+            _ => approximate_kinship_csc(ped, 0.01).map(|c| c.data.len()),
         };
         fail_next(Some(family));
         match run(ped) {

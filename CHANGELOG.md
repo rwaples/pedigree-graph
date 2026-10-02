@@ -32,6 +32,33 @@ live on the corresponding GitHub release pages.
   second. Ctrl-C, a `setTimeLimit()` limit or an error from the function
   stops the call within about a second plus the 64 rows or assembly step
   each worker is in, and R raises it as usual. Results are bit-identical.
+- **Changed: `mean_kinship_by_generation`, `ne_coancestry` and
+  `ne_group_coancestry` no longer run the kinship DP, and their memory is
+  linear in the rows** (issue #38). Each cohort's pair sum is one backward
+  sweep of the genome-node pedigree in float64, `cᵀAc = Σ D·y²` with
+  `y = Tᵀc` and `D` the Mendelian variances the inbreeding walk already
+  computes, so no kinship row is held. The DP kept a row for every
+  individual with children still to come, and on a deep closed pedigree
+  those rows fill: on the 783,029-row horse pedigree `ne_group_coancestry`
+  was killed at 12 GiB after 70 s and now takes 0.8 s and 290 MB. Medians of
+  5 interleaved runs against 0.12.0 (`benchmarks/bench_kinship_matrix.py`):
+  `baseline100K/rep1` (536,036 rows) 12.82 s and 3,555 MiB to 0.35 s and
+  289 MiB, `random_30k` 3.90 s and 1,279 MiB to 0.04 s and 71 MiB, with
+  byte-identical summaries on both. The v0.9.0 entry's claim that
+  `ne_group_coancestry` "carries no OOM exposure" was wrong until now: it
+  read the same DP as `ne_coancestry`.
+- **Changed: the generation kinship summary is the exact pedigree kinship
+  to float64 rounding, not a float64 sum of ADR 0009's pinned float32
+  values.** The two agree wherever float32 holds every kinship, which is
+  every simACE pedigree and every parity fixture but `deep_inbred_60g`; there
+  they part by float32 rounding, at most 4.4e-8 relative. `pair_kinship` and
+  the kinship matrices are unchanged. A cached `kinship_matrix()` no longer
+  changes how the summary is computed. `_native.generation_kinship_sums`
+  takes `n_buckets` for a row in no bucket instead of a sentinel bucket of
+  its own, and accepts `n_buckets = 0`; it and `_native.inbreeding` reject a
+  raised `depth` that puts MZ co-twins at different depths, which the
+  genome-node walk cannot sweep. `PedigreeGraph` always passes structural
+  depth, where co-twins share one.
 
 ## v0.12.0
 

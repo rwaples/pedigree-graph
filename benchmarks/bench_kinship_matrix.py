@@ -1,9 +1,10 @@
 """The three kinship-matrix products across builds: the slice 14 benchmark.
 
-``kinship_matrix()``, ``approximate_kinship_matrix(0.001)`` and
-``mean_kinship_by_generation()`` share one depth-major DP kernel.  Slice 14
-moved it to the Rust core, and the sweep interleaves two builds in one run,
-as ADR 0007 requires for a gated comparison:
+``kinship_matrix()`` and ``approximate_kinship_matrix(0.001)`` share one
+depth-major DP kernel, and ``mean_kinship_by_generation()`` shared it until
+issue #38 replaced it with per-cohort backward sweeps.  Slice 14 moved the DP
+to the Rust core, and the sweep interleaves two builds in one run, as ADR
+0007 requires for a gated comparison:
 
 * ``wheel``: the 0.9.1 PyPI wheel as the simACE umbrella env installs it,
   run under that env's interpreter;
@@ -15,8 +16,7 @@ Every record carries the import path and versions of the package the child
 measured.
 
 Each fixture here is one input crossed with one product, built fresh in the
-child so no product ever takes a cached route (the summary walks the complete
-matrix when a graph already holds it).  Every arm returns a checksum over the
+child so no product ever takes a cached route.  Every arm returns a checksum over the
 whole CSC structure, or over the summary arrays, so the cells also show the
 three builds returning the same bytes.
 

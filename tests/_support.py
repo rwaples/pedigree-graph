@@ -277,6 +277,29 @@ def _chain_graph(**overrides) -> PedigreeGraph:
     return PedigreeGraph.from_frame({k: v for k, v in columns.items() if v is not None})
 
 
+def _matrix_walk_summary(pg: PedigreeGraph, labels: np.ndarray) -> GenerationKinshipSummary:
+    """The generation kinship summary of *labels* summed off the complete kinship matrix.
+
+    The test oracle of ``mean_kinship_by_generation``'s backward sweeps: the
+    pinned float32 entries above the diagonal whose rows share an observed
+    label, minus ``(i, twin[i])`` pairs, summed per label in float64.
+    """
+    from pedigree_graph._cohorts import _densify_labels
+    from pedigree_graph._ne_rates import _finalize_summary
+
+    dense, observed, n_unlabelled = _densify_labels(np.asarray(labels))
+    twin = np.asarray(pg.twin_rows, dtype=np.int32)
+    k = int(observed.shape[0])
+    coo = pg.kinship_matrix().tocoo()
+    rows, cols = coo.row, coo.col
+    pair_mask = (rows < cols) & (dense[rows] == dense[cols]) & (dense[rows] < k)
+    pair_mask &= ~((twin[rows] >= 0) & (twin[rows] == cols))
+    sum_theta = np.bincount(
+        dense[rows[pair_mask]].astype(np.intp), weights=coo.data[pair_mask].astype(np.float64), minlength=k
+    )
+    return _finalize_summary(sum_theta, dense, twin, observed, n_unlabelled)
+
+
 def _assert_summaries_agree(a: GenerationKinshipSummary, b: GenerationKinshipSummary) -> None:
     """Two generation kinship summaries agree to float64 accumulation order (``atol=1e-12``)."""
     np.testing.assert_array_equal(a.generations, b.generations)

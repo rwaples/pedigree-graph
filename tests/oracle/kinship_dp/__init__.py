@@ -5,6 +5,6 @@ not a fallback.  These modules are ``_kinship_dp``, ``_kinship_dp_depth``,
 ``_kinship_allocator``, ``_kinship_csc`` and the retirement-depth kernel of
 ``_kinship_depth`` as they were when the DP went native, with only their imports rewritten,
 so ``tests/test_native_kinship_matrix.py`` can hold
-``_native.kinship_csc``, ``_native.approximate_kinship_csc`` and
-``_native.generation_kinship_sums`` to the bytes the Python DP produced.
+``_native.kinship_csc`` and ``_native.approximate_kinship_csc`` to the bytes
+the Python DP produced, and ``_native.generation_kinship_sums`` to its sums.
 """

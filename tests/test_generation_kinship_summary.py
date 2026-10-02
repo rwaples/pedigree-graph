@@ -1,18 +1,19 @@
 """``mean_kinship_by_generation`` groups by observed labels and pins the MZ rule.
 
 Every expected value here is computed by hand on
-a small pedigree; the two large fixtures only check that the streamed DP and
-the cached-matrix walk agree and that row order does not matter.
+a small pedigree; the parity fixtures only check that the core's sweeps agree
+with a walk of the complete kinship matrix and that row order does not matter.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from _support import _build_closed_line
+from _support import _build_closed_line, _matrix_walk_summary
 from conftest import FIXTURES, parity_columns
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
+from pedigree_graph._ne_common import _genome_node_labels
 from pedigree_graph.effective_size import ne_coancestry
 from pedigree_graph.summaries import GenerationKinshipSummary
 
@@ -149,18 +150,20 @@ def test_summary_is_computed_once_per_graph():
     assert pg.mean_kinship_by_generation() is first
 
 
-def test_cached_matrix_path_and_streamed_path_agree_on_partial_labels():
+def test_a_cached_matrix_leaves_the_summary_unchanged_on_partial_labels():
     labels = [0, 0, 1, -1, 0, 0, 1, 1, 2, 2]
     twin = [-1, -1, 3, 2, -1, -1, -1, -1, -1, -1]
-    streamed = _graph(generation=labels, twin=twin).mean_kinship_by_generation()
+    swept = _graph(generation=labels, twin=twin).mean_kinship_by_generation()
     with_matrix = _graph(generation=labels, twin=twin)
     with_matrix.kinship_matrix()
-    walked = with_matrix.mean_kinship_by_generation()
-    _assert_summary(walked, streamed.generations, streamed.mean_kinship, streamed.pair_counts, 1)
+    after = with_matrix.mean_kinship_by_generation()
+    _assert_summary(after, swept.generations, swept.mean_kinship, swept.pair_counts, 1)
+    walked = _matrix_walk_summary(with_matrix, _genome_node_labels(with_matrix))
+    _assert_summary(walked, swept.generations, swept.mean_kinship, swept.pair_counts, 1)
 
 
 @pytest.mark.parametrize("name", sorted(FIXTURES))
-def test_matrix_path_parity_on_safe_sizes(name):
+def test_summary_matches_the_matrix_walk(name):
     fixture = FIXTURES[name]
     depth = np.asarray(PedigreeGraph.from_frame(parity_columns(fixture)).depth, dtype=np.int64)
     # Merge adjacent depths, blank one row in three, and rebase, so the
@@ -171,9 +174,7 @@ def test_matrix_path_parity_on_safe_sizes(name):
 
     graph = PedigreeGraph.from_frame(columns)
     streamed = graph.mean_kinship_by_generation()
-    with_matrix = PedigreeGraph.from_frame(columns)
-    with_matrix.kinship_matrix()
-    walked = with_matrix.mean_kinship_by_generation()
+    walked = _matrix_walk_summary(graph, _genome_node_labels(graph))
 
     # A column that is -1 everywhere parses as no labels at all, so the tiny
     # motifs fall back to depth; the summary follows the graph's own labels.
@@ -181,7 +182,8 @@ def test_matrix_path_parity_on_safe_sizes(name):
         labels = depth
     np.testing.assert_array_equal(streamed.generations, np.unique(labels[labels >= 0]))
     np.testing.assert_array_equal(streamed.pair_counts, walked.pair_counts)
-    np.testing.assert_allclose(streamed.mean_kinship, walked.mean_kinship, rtol=0, atol=1e-12, equal_nan=True)
+    # Equal wherever float32 holds every kinship; deep_inbred_60g parts by its rounding.
+    np.testing.assert_allclose(streamed.mean_kinship, walked.mean_kinship, rtol=1e-6, atol=1e-12, equal_nan=True)
     assert streamed.unlabelled_individual_count == int(np.count_nonzero(labels < 0))
 
 

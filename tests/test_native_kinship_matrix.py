@@ -1,10 +1,13 @@
 """The three kinship-matrix bindings against the 0.9.1 numba DP kept under ``tests/oracle``.
 
-The depth-major DP behind ``kinship_matrix``, ``approximate_kinship_matrix``
-and ``mean_kinship_by_generation`` runs in the Rust core (ADR 0007, 0009).  These tests hold the raw bindings to the bytes the
-Python DP produced on every parity fixture, in permuted row orders too, and
-pin the boundary contract: owned arrays, structured errors, and every matrix
-allocation family surfacing as ``allocation_failed``.
+The depth-major DP behind ``kinship_matrix`` and ``approximate_kinship_matrix``
+runs in the Rust core (ADR 0007, 0009).  These tests hold those bindings to
+the bytes the Python DP produced on every parity fixture, in permuted row
+orders too.  ``generation_kinship_sums``, behind ``mean_kinship_by_generation``,
+no longer runs the DP: it is held to the oracle's sums exactly where float32
+holds every kinship, and to rounding elsewhere.  The boundary contract is
+pinned for all three: owned arrays, structured errors, and every allocation
+family surfacing as ``allocation_failed``.
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ import numpy as np
 import pytest
 from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
 from conftest import FIXTURE_NAMES, parity_graph
-from oracle.kinship_dp.dp import KinshipDPConfig, _build_kinship_csc, _run_dp_core, _stream_sum_theta_per_gen
+from oracle.kinship_dp.dp import KinshipDPConfig, _build_kinship_csc, _run_dp_core
 
 import pedigree_graph
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
@@ -24,6 +27,9 @@ from pedigree_graph._threads import thread_budget
 
 THRESHOLD = 0.001
 PERMUTATION_SEEDS = (None, 5, 11)
+# Fixtures with a kinship float32 cannot hold, where the oracle's float32 sums
+# and the float64 sweep part by rounding.
+FLOAT32_INEXACT = frozenset({"deep_inbred_60g"})
 
 
 def _oracle_csc(graph: PedigreeGraph, threshold: float) -> tuple[bytes, bytes, bytes]:
@@ -46,9 +52,7 @@ def _oracle_csc(graph: PedigreeGraph, threshold: float) -> tuple[bytes, bytes, b
     return indptr.tobytes(), indices.tobytes(), data.tobytes()
 
 
-def _oracle_sums(
-    graph: PedigreeGraph, dense: np.ndarray, n_buckets: int, init_cap_per_row: int | None = None
-) -> np.ndarray:
+def _oracle_sums(graph: PedigreeGraph, dense: np.ndarray, n_buckets: int) -> np.ndarray:
     result = _run_dp_core(
         graph.n_individuals,
         graph.mother_rows,
@@ -56,7 +60,7 @@ def _oracle_sums(
         graph.twin_rows,
         graph.depth,
         0.0,
-        init_cap_per_row,
+        None,
         labels=dense,
         config=KinshipDPConfig(retire=True, lazy=True, debug_asserts=False),
     )
@@ -83,16 +87,21 @@ def test_complete_and_approximate_match_the_oracle_bytes(name, seed):
 
 @pytest.mark.parametrize("seed", PERMUTATION_SEEDS)
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-def test_generation_sums_match_the_oracle_bits(name, seed):
+def test_generation_sums_match_the_oracle(name, seed):
+    """The sentinel bucket of the densified labels joins no bucket."""
     graph = parity_graph(name, seed)
     n = graph.n_individuals
     shuffled = np.random.default_rng(3).integers(-1, 4, n).astype(np.int32)
     for labels in (np.asarray(graph.depth, dtype=np.int32), shuffled):
         dense, observed, _ = _densify_labels(labels)
-        n_buckets = int(observed.shape[0]) + 1
-        got = _native.generation_kinship_sums(graph._built, graph.depth, dense, n_buckets)
+        k = int(observed.shape[0])
+        got = _native.generation_kinship_sums(graph._built, graph.depth, dense, k)
+        want = _oracle_sums(graph, dense, k + 1)[:k]
         assert got.dtype == np.float64
-        assert got.tobytes() == _oracle_sums(graph, dense, n_buckets).tobytes()
+        if name in FLOAT32_INEXACT:
+            np.testing.assert_allclose(got, want, rtol=1e-6, atol=0.0)
+        else:
+            assert got.tobytes() == want.tobytes()
 
 
 @pytest.mark.parametrize("build", _PAIRWISE_FIXTURES, ids=lambda b: b.__name__)
@@ -127,16 +136,16 @@ def test_a_parentless_row_above_depth_zero_keeps_its_diagonal():
     assert _bytes(_native.kinship_csc(graph._built, depth)) == _oracle_csc(Raised, 0.0)
     assert _bytes(_native.approximate_kinship_csc(graph._built, depth, THRESHOLD)) == _oracle_csc(Raised, THRESHOLD)
     dense, observed, _ = _densify_labels(np.asarray(graph.depth, dtype=np.int32))
-    n_buckets = int(observed.shape[0]) + 1
-    got = _native.generation_kinship_sums(graph._built, depth, dense, n_buckets)
-    assert got.tobytes() == _oracle_sums(Raised, dense, n_buckets).tobytes()
+    k = int(observed.shape[0])
+    got = _native.generation_kinship_sums(graph._built, depth, dense, k)
+    assert got.tobytes() == _oracle_sums(Raised, dense, k + 1)[:k].tobytes()
 
 
 def test_a_retired_row_cannot_be_resurrected():
     """A founder whose last child is at depth 1 retires; a depth-2 write to it dissolves.
 
-    Every row shares one bucket, so a resurrected founder row would change
-    the sum the oracle produces.
+    The approximate product's second pass retires rows, so a resurrected
+    founder row would change its bytes against the oracle's.
     """
     graph = PedigreeGraph.from_frame(
         {
@@ -145,72 +154,11 @@ def test_a_retired_row_cannot_be_resurrected():
             "father": np.array([-1, -1, 1, -1, 3]),
         }
     )
+    assert _bytes(_native.approximate_kinship_csc(graph._built, graph.depth, 0.0)) == _oracle_csc(graph, 0.0)
+    assert graph.kinship_matrix()[0, 4] == 0.125
     dense = np.zeros(5, dtype=np.int32)
     got = _native.generation_kinship_sums(graph._built, graph.depth, dense, 1)
-    assert got.tobytes() == _oracle_sums(graph, dense, 1).tobytes()
-    matrix = graph.kinship_matrix()
-    assert matrix[0, 4] == 0.125
-    assert got[0] == 4 * 0.25 + 2 * 0.125
-
-
-def _relocation_free_walk(graph: PedigreeGraph, dense: np.ndarray, n_buckets: int) -> np.ndarray:
-    """The oracle's non-retiring DP with slots no row outgrows, summed after the fact.
-
-    No row ever relocates and the free list is never used, so this walk is
-    free of the 0.9.1 hazard below and is the reference the retiring paths
-    are held to.
-    """
-    result = _run_dp_core(
-        graph.n_individuals,
-        graph.mother_rows,
-        graph.father_rows,
-        graph.twin_rows,
-        graph.depth,
-        0.0,
-        4096,
-        labels=dense,
-        config=KinshipDPConfig(retire=False, lazy=False, debug_asserts=False),
-    )
-    return _stream_sum_theta_per_gen(
-        result.cols,
-        result.vals,
-        result.row_start,
-        result.row_count,
-        result.labels,
-        result.tw_idx,
-        np.int32(n_buckets - 1),
-    )[:n_buckets]
-
-
-def test_native_sums_are_free_of_the_0_9_1_slot_reuse_hazard():
-    """The 0.9.1 retiring DP could read a slot its own merge walk had just freed.
-
-    When a parent row relocated during a child's merge walk, its old slot went
-    to the free list and a later append in the same walk could take it back
-    and overwrite what the walk was still reading.  It needs a row to outgrow
-    its first slot, which no parity fixture does at the default capacity;
-    ``baseline100K/rep1`` did, and its deepest-generation mean under the
-    0.9.1 wheel is wrong by 1.4e-5 relative (gate 14a).  Forcing tiny slots
-    reproduces it on a small pedigree.  The native DP stages each walk's
-    relatives before writing, so it matches the relocation-free walk.
-    """
-    rng = np.random.default_rng(0)
-    n = 349
-    mother = np.full(n, -1)
-    father = np.full(n, -1)
-    for i in range(12, n):
-        low = max(0, i - 60)
-        mother[i], father[i] = rng.integers(low, i), rng.integers(low, i)
-        if mother[i] == father[i]:
-            father[i] = -1
-    graph = PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
-    dense, observed, _ = _densify_labels(np.asarray(graph.depth, dtype=np.int32))
-    n_buckets = int(observed.shape[0]) + 1
-    reference = _relocation_free_walk(graph, dense, n_buckets)
-    native = _native.generation_kinship_sums(graph._built, graph.depth, dense, n_buckets)
-    assert np.abs(native - reference).max() <= 1e-12
-    hazard = _oracle_sums(graph, dense, n_buckets, init_cap_per_row=2)
-    assert np.abs(hazard - reference).max() > 1e-3, "the 0.9.1 DP no longer shows the hazard; retire this test"
+    assert got.tolist() == [4 * 0.25 + 2 * 0.125]
 
 
 class TestBoundary:
@@ -252,12 +200,18 @@ class TestBoundary:
         graph = parity_graph("nuclear_full_sibs")
         n = graph.n_individuals
         with pytest.raises(PedigreeValidationError) as info:
-            _native.generation_kinship_sums(graph._built, graph.depth, np.full(n, 2, np.int32), 2)
+            _native.generation_kinship_sums(graph._built, graph.depth, np.full(n, 3, np.int32), 2)
         assert info.value.code == "value_out_of_range"
         assert info.value.fields["field"] == "labels"
         with pytest.raises(PedigreeValidationError) as info:
-            _native.generation_kinship_sums(graph._built, graph.depth, np.zeros(n, np.int32), 0)
-        assert info.value.fields["field"] == "n_buckets"
+            _native.generation_kinship_sums(graph._built, graph.depth, np.full(n, -1, np.int32), 2)
+        assert info.value.fields["field"] == "labels"
+
+    def test_a_row_labelled_n_buckets_joins_no_bucket(self):
+        graph = parity_graph("nuclear_full_sibs")
+        n = graph.n_individuals
+        sums = _native.generation_kinship_sums(graph._built, graph.depth, np.zeros(n, np.int32), 0)
+        assert sums.shape == (0,)
 
     def test_the_stub_names_the_three_entries(self):
         stub = (Path(pedigree_graph.__file__).parent / "_native.pyi").read_text()
@@ -276,10 +230,12 @@ class TestBoundary:
 
 
 SEAM_CASES = [
-    (family, product)
-    for family in ("kinship_rows", "kinship_csc", "kinship_sums", "kinship_scratch")
-    for product in ("complete", "approximate", "sums")
-    if not (family == "kinship_csc" and product == "sums") and not (family == "kinship_sums" and product != "sums")
+    *(
+        (family, product)
+        for family in ("kinship_rows", "kinship_csc", "kinship_scratch")
+        for product in ("complete", "approximate")
+    ),
+    *((family, "sums") for family in ("inbreeding_walk", "kinship_sums")),
 ]
 
 

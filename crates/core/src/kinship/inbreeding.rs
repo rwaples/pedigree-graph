@@ -34,21 +34,47 @@ const NIL: u32 = u32::MAX;
 ///
 /// # Errors
 ///
-/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
-/// not above both parents', and [`Error::AllocationFailed`] for any buffer.
+/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative, not
+/// above both parents', or not its MZ co-twin's, and
+/// [`Error::AllocationFailed`] for any buffer.
 pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
+    Ok(genome_walk(ped)?.f)
+}
+
+/// What the walk leaves behind: the genome-node pedigree it swept, and `F`
+/// and `D` for every graph row.
+pub(super) struct GenomeWalk<'a> {
+    pub(super) sweep: DepthOrder,
+    /// Each row's parents as genome nodes.
+    pub(super) mother: Cow<'a, [i32]>,
+    pub(super) father: Cow<'a, [i32]>,
+    pub(super) f: Vec<f64>,
+    /// The Mendelian sampling variance of each row, on the `A = 2φ` scale.
+    pub(super) d_var: Vec<f64>,
+}
+
+/// A row's genome node: the lower graph row of an MZ pair, else the row.
+pub(super) fn genome_node(twin: &[i32], row: usize) -> usize {
+    let t = twin[row];
+    if t >= 0 && (t as usize) < row {
+        t as usize
+    } else {
+        row
+    }
+}
+
+/// The Meuwissen-Luo walk itself, behind [`inbreeding()`].
+///
+/// # Errors
+///
+/// As [`inbreeding()`].
+pub(super) fn genome_walk(ped: KinshipPedigree<'_>) -> Result<GenomeWalk<'_>, Error> {
     let n = ped.len();
+    check_twin_depths(ped.twin(), ped.depth())?;
     let sweep = DepthOrder::build(ped.mother(), ped.father(), ped.depth(), WALK)?;
     let depth = ped.depth();
     let twin = ped.twin();
-    let node = |row: usize| -> usize {
-        let t = twin[row];
-        if t >= 0 && (t as usize) < row {
-            t as usize
-        } else {
-            row
-        }
-    };
+    let node = |row: usize| genome_node(twin, row);
     let (mother, father) = genome_parents(&ped, node)?;
 
     let mut f = alloc::filled(0.0f64, n, WALK, "float64")?;
@@ -133,7 +159,32 @@ pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
         touched.clear();
         next.clear();
     }
-    Ok(f)
+    Ok(GenomeWalk {
+        sweep,
+        mother,
+        father,
+        f,
+        d_var,
+    })
+}
+
+/// Co-twins are one node, swept at one depth.  Structural depth always puts
+/// them there, since they share their parents; a raised depth handed to the
+/// bindings need not.
+fn check_twin_depths(twin: &[i32], depth: &[i32]) -> Result<(), Error> {
+    for (row, &t) in twin.iter().enumerate() {
+        if t >= 0 && depth[t as usize] != depth[row] {
+            let partner = i64::from(depth[t as usize]);
+            return Err(Error::ValueOutOfRange {
+                field: "depth",
+                position: row,
+                value: i64::from(depth[row]),
+                minimum: partner,
+                maximum: partner,
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Each row's parents as genome nodes; the input columns themselves when

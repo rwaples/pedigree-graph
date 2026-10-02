@@ -7,11 +7,13 @@ a scalar by the ``ln(1 − x)`` regression the other rate estimators share.
 The genome-node collapse is a row mask: a masked co-twin's ``-1`` label
 sends it to the sentinel bucket
 :func:`~pedigree_graph._cohorts._densify_labels` already discards.  So the
-prerequisite reads per-cohort θ sums off the streaming DP rather than
-materialising a kinship matrix, and it reuses outright the summary the graph
-memoises for :func:`~pedigree_graph._ne_rates.ne_coancestry`: since issue #25
-that summary is itself genome-node, so both estimators share one convention
-and one DP pass whether or not the pedigree has MZ twins.
+prerequisite reads per-cohort θ sums off the generation kinship summary
+rather than materialising a kinship matrix, and it reuses outright the
+summary the graph memoises for :func:`~pedigree_graph._ne_rates.ne_coancestry`:
+since issue #25 that summary is itself genome-node, so both estimators share
+one convention and one computation whether or not the pedigree has MZ twins.
+That computation holds no kinship rows (issue #38), so memory stays linear in
+the rows.
 """
 
 from __future__ import annotations

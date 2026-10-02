@@ -669,11 +669,14 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         from the result, so the labels here can be a strict subset of the
         distinct labels supplied.
 
-        The kinship is streamed from the retiring DP without materializing
-        the kinship matrix, unless the complete matrix is already cached, in
-        which case that matrix is walked instead; both routes give the same
-        values.  The summary is computed once per graph and the same frozen
-        object returned afterwards.  The call commits the package thread
+        No kinship is stored: each group's pair sum comes from one backward
+        sweep of the genome-node pedigree, in float64, so memory stays linear
+        in the rows however related they are.  The sums are the exact
+        pedigree kinship to float64 rounding rather than sums of the pinned
+        float32 values :meth:`pair_kinship` returns; the two agree wherever
+        float32 holds every kinship and otherwise part by that rounding.  The
+        summary is computed once per graph and the same frozen object
+        returned afterwards.  The call commits the package thread
         budget (:func:`~pedigree_graph.configure_threads`) like every 0.8
         operation.
 

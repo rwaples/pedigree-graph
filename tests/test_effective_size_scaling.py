@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 import scipy.sparse as sp
-from _support import _assert_summaries_agree, _build_closed_line, _df
+from _support import _assert_summaries_agree, _build_closed_line, _df, _matrix_walk_summary
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
@@ -32,7 +32,7 @@ from pedigree_graph._ne_founders import (
     _ltc_from,
     _per_gen_founder_means,
 )
-from pedigree_graph._ne_rates import _summary_from_matrix, _summary_from_native
+from pedigree_graph._ne_rates import _kinship_summary_for_labels
 from pedigree_graph.effective_size import (
     ALL_EFFECTIVE_SIZE_ESTIMATORS,
     estimate_effective_sizes,
@@ -201,24 +201,19 @@ def test_per_gen_founder_means_matches_reference(parity_pedigree: PedigreeGraph)
 
 
 def _kernel_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
-    """The generation kinship summary straight from the core's streaming DP, no graph caches."""
-    return _summary_from_native(pg, np.asarray(pg.generation_labels))
+    """The generation kinship summary straight from the core's sweeps, no graph caches."""
+    return _kinship_summary_for_labels(pg, np.asarray(pg.generation_labels))
 
 
-def test_the_public_summary_is_the_streamed_one(parity_pedigree: PedigreeGraph) -> None:
+def test_the_public_summary_is_the_kernel_one(parity_pedigree: PedigreeGraph) -> None:
     pg = parity_pedigree
     assert pg.mean_kinship_by_generation() == _kernel_summary(pg)
 
 
-def test_streamed_summary_matches_the_matrix_walk(parity_pedigree: PedigreeGraph) -> None:
+def test_the_summary_matches_the_matrix_walk(parity_pedigree: PedigreeGraph) -> None:
     pg = parity_pedigree
-    streamed = pg.mean_kinship_by_generation()
-    walked = _summary_from_matrix(
-        pg.kinship_matrix(),
-        np.asarray(pg.generation_labels),
-        np.asarray(pg.twin_rows),
-    )
-    _assert_summaries_agree(streamed, walked)
+    walked = _matrix_walk_summary(pg, np.asarray(pg.generation_labels))
+    _assert_summaries_agree(pg.mean_kinship_by_generation(), walked)
 
 
 def test_the_kernel_summary_never_reads_the_graph_caches(parity_pedigree: PedigreeGraph) -> None:

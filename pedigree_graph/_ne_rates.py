@@ -13,11 +13,9 @@ on an :class:`~pedigree_graph._cohorts.ObservedCohorts` grouping.  The
 orchestrator calls the same evaluators, so a direct call and an
 orchestrated call cannot disagree.
 
-Also owns the two routes to :meth:`PedigreeGraph.mean_kinship_by_generation`
-— :func:`_summary_from_matrix` over a cached kinship matrix and
-:func:`_summary_from_native`, the core's retiring DP — and
-:func:`_kinship_summary_for_labels`, the one place that chooses between them
-for any labelling, the genome-node one included.
+Also owns :func:`_kinship_summary_for_labels`, the one route to
+:meth:`PedigreeGraph.mean_kinship_by_generation` for any labelling, the
+genome-node one included.
 """
 
 from __future__ import annotations
@@ -54,8 +52,6 @@ from pedigree_graph._ne_results import (
 from pedigree_graph.summaries import GenerationKinshipSummary
 
 if TYPE_CHECKING:
-    import scipy.sparse as sp
-
     from pedigree_graph._core import PedigreeGraph
 
 
@@ -71,11 +67,10 @@ def _finalize_summary(
 ) -> GenerationKinshipSummary:
     """Turn per-bucket θ sums into a :class:`GenerationKinshipSummary`.
 
-    ``sum_theta`` holds, per dense bucket, the kinship summed over unordered
-    same-bucket pairs with MZ co-twin pairs left out (the kernel and the
-    matrix walk both apply ``j != twin[i]``).  The denominator matches:
-    ``n_g (n_g - 1) / 2`` minus the MZ pairs whose two co-twins are both in
-    bucket ``g``.  A twin whose partner is unlabelled or in another bucket is
+    ``sum_theta`` holds, per observed bucket, the kinship summed over
+    unordered same-bucket pairs with MZ co-twin pairs left out.  The
+    denominator matches: ``n_g (n_g - 1) / 2`` minus the MZ pairs whose two
+    co-twins are both in bucket ``g``.  A twin whose partner is unlabelled or in another bucket is
     an ordinary member.  The sentinel bucket (unlabelled rows) is dropped.
     """
     k = int(observed.shape[0])
@@ -90,7 +85,7 @@ def _finalize_summary(
     pair_counts = n_per_g * (n_per_g - 1) // 2 - twin_per_g
     mean_kinship = np.full(k, np.nan, dtype=np.float64)
     eligible = pair_counts > 0
-    mean_kinship[eligible] = np.asarray(sum_theta, dtype=np.float64)[:k][eligible] / pair_counts[eligible]
+    mean_kinship[eligible] = np.asarray(sum_theta, dtype=np.float64)[eligible] / pair_counts[eligible]
     return GenerationKinshipSummary(
         generations=observed,
         mean_kinship=mean_kinship,
@@ -99,63 +94,16 @@ def _finalize_summary(
     )
 
 
-def _summary_from_native(pg: PedigreeGraph, labels: np.ndarray) -> GenerationKinshipSummary:
-    """Generation kinship summary streamed from the core's retiring DP.
-
-    ``labels`` are densified first (:func:`_densify_labels`), so the kernel
-    accumulates one bucket per observed label plus one sentinel for
-    unlabelled rows, whatever the label values are.  No matrix is held: the
-    DP frees each row once no descendant reads it and sums inline.  Labels
-    never affect the traversal or any kinship value.
-    """
-    dense, observed, n_unlabelled = _densify_labels(np.asarray(labels))
-    sums = _native.generation_kinship_sums(pg._built, pg.depth, dense, int(observed.shape[0]) + 1)
-    return _finalize_summary(sums, dense, np.asarray(pg.twin_rows), observed, n_unlabelled)
-
-
-def _summary_from_matrix(
-    K: sp.csc_matrix,
-    labels: np.ndarray,
-    twin_idx: np.ndarray,
-) -> GenerationKinshipSummary:
-    """Generation kinship summary walked from a complete kinship matrix.
-
-    Same grouping and MZ rule as the streamed DP path
-    (:func:`_summary_from_native`), so the two are interchangeable oracles:
-    upper-triangle entries whose rows share an observed label, minus
-    ``(i, twin[i])`` pairs, summed per label and divided by
-    :func:`_finalize_summary`.
-
-    Args:
-        K: full-symmetric sparse kinship (φ-scale) from
-            :meth:`PedigreeGraph.kinship_matrix`.
-        labels: per-row cohort label, ``-1`` unknown.
-        twin_idx: per-row twin partner row index, ``-1`` for non-twins.
-    """
-    dense, observed, n_unlabelled = _densify_labels(labels)
-    twin = np.ascontiguousarray(twin_idx, dtype=np.int32)
-    k = int(observed.shape[0])
-    coo = K.tocoo()
-    rows, cols, vals = coo.row, coo.col, coo.data
-    pair_mask = (rows < cols) & (dense[rows] == dense[cols]) & (dense[rows] < k)
-    pair_mask &= ~((twin[rows] >= 0) & (twin[rows] == cols))
-    sum_theta = np.bincount(
-        dense[rows[pair_mask]].astype(np.intp),
-        weights=vals[pair_mask].astype(np.float64),
-        minlength=k + 1,
-    )
-    return _finalize_summary(sum_theta, dense, twin, observed, n_unlabelled)
-
-
 def _kinship_summary_for_labels(pg: PedigreeGraph, labels: np.ndarray) -> GenerationKinshipSummary:
-    """Generation kinship summary of *labels*, by whichever route the graph affords.
+    """Generation kinship summary of *labels*, from the core's backward sweeps.
 
-    Walks the complete kinship matrix when the graph already caches it, else
-    streams the retiring DP.  :func:`_summary_from_matrix` is written to be
-    the matrix oracle of the DP path, so the route is an implementation
-    choice and never a semantic one; both the memoised graph-label summary
-    and the masked-label summary the group-coancestry prerequisite needs go
-    through here rather than each picking a route of its own.
+    ``labels`` are densified first (:func:`_densify_labels`), so the core
+    sweeps one bucket per observed label and the sentinel's unlabelled rows
+    join none, whatever the label values are.  The core reads no kinship
+    rows: per bucket it sweeps the genome-node pedigree once, backwards, in
+    float64, so memory stays linear in the rows however related they are.
+    Both the memoised graph-label summary and the masked-label summary the
+    group-coancestry prerequisite needs go through here.
 
     Args:
         pg: Pedigree graph supplying the structure.
@@ -166,10 +114,9 @@ def _kinship_summary_for_labels(pg: PedigreeGraph, labels: np.ndarray) -> Genera
         The :class:`~pedigree_graph.summaries.GenerationKinshipSummary` over
         those labels.
     """
-    K = pg._complete_kinship_cache
-    if K is not None:
-        return _summary_from_matrix(K, np.asarray(labels), np.asarray(pg.twin_rows))
-    return _summary_from_native(pg, labels)
+    dense, observed, n_unlabelled = _densify_labels(np.asarray(labels))
+    sums = _native.generation_kinship_sums(pg._built, pg.depth, dense, int(observed.shape[0]))
+    return _finalize_summary(sums, dense, np.asarray(pg.twin_rows), observed, n_unlabelled)
 
 
 def _generation_kinship_summary(pg: PedigreeGraph) -> GenerationKinshipSummary:
@@ -278,9 +225,8 @@ def ne_coancestry(pg: PedigreeGraph) -> NeCoancestryResult:
     Same regression form as Ne_I but on the per-cohort mean kinship θ over
     within-cohort unordered pairs of distinct genomes (excluding the
     diagonal, and counting MZ co-twins once) that
-    :meth:`PedigreeGraph.mean_kinship_by_generation` reports.
-    The summary is streamed from the DP without materializing K, or walked
-    from a complete kinship matrix the graph already caches.
+    :meth:`PedigreeGraph.mean_kinship_by_generation` reports, which holds
+    no kinship and runs in memory linear in the rows.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_coancestry")
     return _coancestry_from(cohorts, _generation_kinship_summary(pg))

@@ -112,10 +112,15 @@ view counts build no pair list.
   current lineal counts use ``relationship_counts``.
 - F (inbreeding coefficient) scaling: the Meuwissen-Luo walk runs in the
   Rust core (``crates/core/src/kinship/inbreeding.rs``).
-- Effective size estimator scaling: see ``pedigree_graph.effective_size``;
-  ``ne_coancestry`` runs the kinship DP and is the expensive one.
+- Effective size estimator scaling: see ``pedigree_graph.effective_size``.
+  ``ne_coancestry`` and ``ne_group_coancestry`` read the generation kinship
+  summary, which holds no kinship rows: one backward sweep per cohort, memory
+  linear in the rows (issue #38).
 
 ## Last updated
+
+2026-10-02 — the generation kinship summary behind ``ne_coancestry`` and
+``ne_group_coancestry`` no longer runs the kinship DP (issue #38).
 
 2026-09-30 — ``relatives_per_person`` (0.11.1) added to the O(N) paths.
 
