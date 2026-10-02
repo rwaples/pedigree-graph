@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pedigree_graph import _native
+from pedigree_graph import _native, _progress
 from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._input import _INT64_MAX
 from pedigree_graph._relationship_pairs import _should_compact_view
@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._progress import ProgressArg
     from pedigree_graph._selection import RelationshipSelection
     from pedigree_graph._view import PedigreeView
 
@@ -171,6 +172,7 @@ def relationship_moments(
     same: Mapping[str, object] | None,
     symmetric: str,
     memory_budget_bytes: int,
+    progress: ProgressArg = None,
 ) -> RelationshipMoments:
     """Validate, pack, quantize, run the engine and label the result for *graph* or *view*.
 
@@ -178,6 +180,7 @@ def relationship_moments(
     skips the engine, after committing the thread budget and planning the
     same sizes and budget the pass would, so it is refused the same way.
     """
+    watch = _progress.resolve(progress, logger, "relationship_moments")
     if symmetric not in SYMMETRIC:
         raise ValueError(f"symmetric must be one of {SYMMETRIC}, got {symmetric!r}")
     if (
@@ -270,6 +273,8 @@ def relationship_moments(
             memory_budget_bytes=memory_budget_bytes,
             view_rows=view_rows,
             compact=compact,
+            progress=watch,
+            tick=_progress.TICK_S,
         )
         assert (native_cells, native_stride) == (cells, stride), "native layout disagrees with the packing"
         logger.info(

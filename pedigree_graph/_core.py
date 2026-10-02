@@ -50,6 +50,7 @@ if TYPE_CHECKING:
 
     from pedigree_graph._burden import RelationshipBurden
     from pedigree_graph._frames import FrameLike
+    from pedigree_graph._progress import ProgressArg
     from pedigree_graph._relatives_per_person import RelativesPerPerson
     from pedigree_graph._view import PedigreeView
     from pedigree_graph.moments import RelationshipMoments
@@ -319,6 +320,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
         execution: str = "speed",
+        progress: ProgressArg = None,
     ) -> RelationshipPairs:
         """Return every relationship pair of the selected categories, in graph rows.
 
@@ -342,7 +344,18 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 whose peak memory is about 2.3 times the result, or
                 ``"memory"`` for the lowest-peak one, the result plus engine
                 state, at roughly twice the wall time.  The blocks are
-                identical either way.
+                identical either way.  A ``"memory"`` call walks every row
+                twice, so its progress counts each row twice.
+            progress: ``None`` (default) logs a line at INFO through this
+                method's module logger every 30 s while the call runs, so a
+                shorter call logs nothing new.  ``False`` logs no progress
+                lines.  A callable receives a
+                :class:`~pedigree_graph.RelationshipProgress` about once a
+                second instead, and nothing is logged.  Ctrl-C, or an
+                exception the callable raises, cancels the call: that
+                exception is raised after the next one-second check, once
+                every worker has finished its current 64 rows or assembly
+                step.  Anything else raises ``TypeError``.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipPairs` over all
@@ -363,7 +376,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 result cannot be allocated.
         """
         return _relationship_pairs(
-            self, RelationshipSelection.parse(max_degree, categories), check_execution(execution)
+            self, RelationshipSelection.parse(max_degree, categories), check_execution(execution), progress
         )
 
     def relationship_moments(
@@ -378,6 +391,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         same: Mapping[str, object] | None = None,
         symmetric: str = "canonical",
         memory_budget_bytes: int = DEFAULT_MEMORY_BUDGET_BYTES,
+        progress: ProgressArg = None,
     ) -> RelationshipMoments:
         """Return pair counts and value moments per category and pair-label cell.
 
@@ -430,6 +444,16 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 budget, fewer when the budget requires.  The graph, the
                 input arrays and one engine workspace per lane (about 9
                 bytes per graph row each) are outside it.
+            progress: ``None`` (default) logs a line at INFO through this
+                method's module logger every 30 s while the call runs, so a
+                shorter call logs nothing new.  ``False`` logs no progress
+                lines.  A callable receives a
+                :class:`~pedigree_graph.RelationshipProgress` about once a
+                second instead, and nothing is logged.  Ctrl-C, or an
+                exception the callable raises, cancels the call: that
+                exception is raised after the next one-second check, once
+                every worker has finished its current 64 rows or assembly
+                step.  Anything else raises ``TypeError``.
 
         Returns:
             A :class:`~pedigree_graph.moments.RelationshipMoments` over the
@@ -464,6 +488,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             same=same,
             symmetric=symmetric,
             memory_budget_bytes=memory_budget_bytes,
+            progress=progress,
         )
 
     def relatives_per_person(
@@ -472,6 +497,7 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
         thresholds: Mapping[str, tuple[ArrayLike, ArrayLike | float]] | None = None,
+        progress: ProgressArg = None,
     ) -> RelativesPerPerson:
         """Return, per individual and selected category, the number of relatives and how many pass each threshold.
 
@@ -498,6 +524,16 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
                 real dtypes are converted once, and a float wider than
                 float64 is refused because it would round.  ``"relatives"`` names the
                 pair-count column and is reserved.
+            progress: ``None`` (default) logs a line at INFO through this
+                method's module logger every 30 s while the call runs, so a
+                shorter call logs nothing new.  ``False`` logs no progress
+                lines.  A callable receives a
+                :class:`~pedigree_graph.RelationshipProgress` about once a
+                second instead, and nothing is logged.  Ctrl-C, or an
+                exception the callable raises, cancels the call: that
+                exception is raised after the next one-second check, once
+                every worker has finished its current 64 rows or assembly
+                step.  Anything else raises ``TypeError``.
 
         Returns:
             A :class:`~pedigree_graph.RelativesPerPerson` whose read-only
@@ -518,13 +554,16 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             ResourceError: ``allocation_failed`` when the counts or the
                 engine cannot be allocated.
         """
-        return _relatives_per_person(self, None, RelationshipSelection.parse(max_degree, categories), thresholds)
+        return _relatives_per_person(
+            self, None, RelationshipSelection.parse(max_degree, categories), thresholds, progress
+        )
 
     def relationship_counts(
         self,
         *,
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
+        progress: ProgressArg = None,
     ) -> RelationshipCountResult:
         """Return the exact number of pairs in each selected category.
 
@@ -537,6 +576,20 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         budget.  Like the pairs they count, they derive from structural depth;
         supplied generation labels never enter them.
 
+        Args:
+            max_degree: As :meth:`relationship_pairs`.
+            categories: As :meth:`relationship_pairs`.
+            progress: ``None`` (default) logs a line at INFO through this
+                method's module logger every 30 s while the call runs, so a
+                shorter call logs nothing new.  ``False`` logs no progress
+                lines.  A callable receives a
+                :class:`~pedigree_graph.RelationshipProgress` about once a
+                second instead, and nothing is logged.  Ctrl-C, or an
+                exception the callable raises, cancels the call: that
+                exception is raised after the next one-second check, once
+                every worker has finished its current 64 rows or assembly
+                step.  Anything else raises ``TypeError``.
+
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipCountResult`
             over all 23 codes, ``None`` for unselected categories, every
@@ -546,16 +599,28 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             TypeError: As :meth:`relationship_pairs`.
             PedigreeValidationError: As :meth:`relationship_pairs`.
         """
-        return _relationship_counts(self, RelationshipSelection.parse(max_degree, categories))
+        return _relationship_counts(self, RelationshipSelection.parse(max_degree, categories), progress)
 
-    def relationship_burden(self) -> RelationshipBurden:
+    def relationship_burden(self, *, progress: ProgressArg = None) -> RelationshipBurden:
         """Summarise closest-category pairs without materialising pair lists.
 
         Counts cover all 23 categories. The read-only graph-row array has one
         column per degree 1 through 5; MZ pairs contribute only to category
         and same-depth counts. Peak output storage is O(N).
+
+        Args:
+            progress: ``None`` (default) logs a line at INFO through this
+                method's module logger every 30 s while the call runs, so a
+                shorter call logs nothing new.  ``False`` logs no progress
+                lines.  A callable receives a
+                :class:`~pedigree_graph.RelationshipProgress` about once a
+                second instead, and nothing is logged.  Ctrl-C, or an
+                exception the callable raises, cancels the call: that
+                exception is raised after the next one-second check, once
+                every worker has finished its current 64 rows or assembly
+                step.  Anything else raises ``TypeError``.
         """
-        return _relationship_burden(self)
+        return _relationship_burden(self, progress)
 
     def close_relative_counts(self) -> RelationshipCountResult:
         """Return exact MZ, MO, FO, FS, MHS and PHS pair counts.

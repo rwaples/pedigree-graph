@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pedigree_graph import _native
+from pedigree_graph import _native, _progress
 from pedigree_graph._input import _own_native
 from pedigree_graph._registry import RELATIONSHIPS
 from pedigree_graph._threads import thread_budget
@@ -31,6 +31,7 @@ from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPair
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._progress import NativeCallback, ProgressArg
     from pedigree_graph._selection import RelationshipSelection
     from pedigree_graph._view import CoordinateToken, PedigreeView
 
@@ -56,17 +57,23 @@ def check_execution(execution: str) -> str:
     return execution
 
 
-def relationship_pairs(graph: PedigreeGraph, selection: RelationshipSelection, execution: str) -> RelationshipPairs:
+def relationship_pairs(
+    graph: PedigreeGraph, selection: RelationshipSelection, execution: str, progress: ProgressArg = None
+) -> RelationshipPairs:
     """The :class:`RelationshipPairs` of *graph* for a parsed *selection*, in graph rows."""
-    return _build_result(_native_blocks(graph, selection, None, execution), selection, graph._coordinate_token)
+    watch = _progress.resolve(progress, logger, "relationship_pairs")
+    return _build_result(_native_blocks(graph, selection, None, execution, watch), selection, graph._coordinate_token)
 
 
-def view_relationship_pairs(view: PedigreeView, selection: RelationshipSelection, execution: str) -> RelationshipPairs:
+def view_relationship_pairs(
+    view: PedigreeView, selection: RelationshipSelection, execution: str, progress: ProgressArg = None
+) -> RelationshipPairs:
     """The :class:`RelationshipPairs` of *view* for a parsed *selection*, in view rows.
 
     A view of fewer than two rows has no pairs and skips the engine, after
     committing the thread budget like every other call.
     """
+    watch = _progress.resolve(progress, logger, "relationship_pairs")
     if len(view) < 2:
         thread_budget()
         return _build_result({}, selection, view._coordinate_token)
@@ -75,6 +82,7 @@ def view_relationship_pairs(view: PedigreeView, selection: RelationshipSelection
         selection,
         view._graph_to_view(),
         execution,
+        watch,
         compact=_should_compact_view(view._graph.n_individuals, len(view)),
     )
     return _build_result(blocks, selection, view._coordinate_token)
@@ -85,6 +93,7 @@ def _native_blocks(
     selection: RelationshipSelection,
     view_rows: np.ndarray | None,
     execution: str,
+    watch: NativeCallback | None,
     *,
     compact: bool = False,
 ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
@@ -117,6 +126,8 @@ def _native_blocks(
         execution=execution,
         view_rows=view_rows,
         compact=compact,
+        progress=watch,
+        tick=_progress.TICK_S,
     )
     logger.info(
         "relationship_pairs total: %d pairs in %.3fs",

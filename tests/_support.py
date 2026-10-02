@@ -25,8 +25,11 @@ if TYPE_CHECKING:
 # Fresh-interpreter runs: the native pool is built once per process.
 
 
-def _run_child(*parts: str, **env: str) -> str:
-    """Run the dedented *parts* as one script in a fresh interpreter, returning its stdout."""
+def _run_child(*parts: str, timeout: float | None = None, **env: str) -> str:
+    """Run the dedented *parts* as one script in a fresh interpreter, returning its stdout.
+
+    A child still running after *timeout* seconds is killed and fails the test.
+    """
     code = "\n".join(textwrap.dedent(part) for part in parts)
     result = subprocess.run(
         [sys.executable, "-c", code],
@@ -34,6 +37,7 @@ def _run_child(*parts: str, **env: str) -> str:
         text=True,
         env={**os.environ, "PEDIGREE_GRAPH_ALLOW_TEST_SEAM": "1", **env},
         check=False,
+        timeout=timeout,
     )
     assert result.returncode == 0, result.stderr
     return result.stdout

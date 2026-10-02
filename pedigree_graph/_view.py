@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from numpy.typing import ArrayLike
 
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._progress import ProgressArg
     from pedigree_graph._relatives_per_person import RelativesPerPerson
     from pedigree_graph.moments import RelationshipMoments
     from pedigree_graph.relationships import RelationshipCountResult, RelationshipPairBlock, RelationshipPairs
@@ -207,6 +208,7 @@ class PedigreeView:
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
         execution: str = "speed",
+        progress: ProgressArg = None,
     ) -> RelationshipPairs:
         """Return every relationship pair of the selected categories, in view rows.
 
@@ -229,6 +231,8 @@ class PedigreeView:
                 *max_degree*.
             execution: ``"speed"`` (default) or ``"memory"``, as for
                 :meth:`pedigree_graph.PedigreeGraph.relationship_pairs`.
+            progress: As for
+                :meth:`pedigree_graph.PedigreeGraph.relationship_pairs`.
 
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipPairs` over all
@@ -244,7 +248,7 @@ class PedigreeView:
                 result cannot be allocated.
         """
         return view_relationship_pairs(
-            self, RelationshipSelection.parse(max_degree, categories), check_execution(execution)
+            self, RelationshipSelection.parse(max_degree, categories), check_execution(execution), progress
         )
 
     def relationship_counts(
@@ -252,6 +256,7 @@ class PedigreeView:
         *,
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
+        progress: ProgressArg = None,
     ) -> RelationshipCountResult:
         """Return the exact number of view-space pairs in each selected category.
 
@@ -261,11 +266,17 @@ class PedigreeView:
         selected; no pair list is built, as for
         :meth:`pedigree_graph.PedigreeGraph.relationship_counts`.
 
+        Args:
+            max_degree: As :meth:`relationship_pairs`.
+            categories: As :meth:`relationship_pairs`.
+            progress: As for
+                :meth:`pedigree_graph.PedigreeGraph.relationship_counts`.
+
         Returns:
             A :class:`~pedigree_graph.relationships.RelationshipCountResult`
             over all 23 codes, ``None`` for unselected categories.
         """
-        return view_relationship_counts(self, RelationshipSelection.parse(max_degree, categories))
+        return view_relationship_counts(self, RelationshipSelection.parse(max_degree, categories), progress)
 
     def relationship_moments(
         self,
@@ -279,6 +290,7 @@ class PedigreeView:
         same: Mapping[str, object] | None = None,
         symmetric: str = "canonical",
         memory_budget_bytes: int = DEFAULT_MEMORY_BUDGET_BYTES,
+        progress: ProgressArg = None,
     ) -> RelationshipMoments:
         """Return pair counts and value moments over the pairs inside this view.
 
@@ -301,6 +313,7 @@ class PedigreeView:
             same=same,
             symmetric=symmetric,
             memory_budget_bytes=memory_budget_bytes,
+            progress=progress,
         )
 
     def relatives_per_person(
@@ -309,6 +322,7 @@ class PedigreeView:
         max_degree: int | None = None,
         categories: Iterable[str] | None = None,
         thresholds: Mapping[str, tuple[ArrayLike, ArrayLike | float]] | None = None,
+        progress: ProgressArg = None,
     ) -> RelativesPerPerson:
         """Return, per view row and selected category, the relatives inside this view and how many pass each threshold.
 
@@ -319,7 +333,9 @@ class PedigreeView:
         graph and credited when both members are selected.  A view of fewer
         than two rows has no pairs and skips the engine.
         """
-        return _relatives_per_person(self._graph, self, RelationshipSelection.parse(max_degree, categories), thresholds)
+        return _relatives_per_person(
+            self._graph, self, RelationshipSelection.parse(max_degree, categories), thresholds, progress
+        )
 
     @overload
     def pair_kinship(self, first: RelationshipPairs, /) -> Mapping[str, np.ndarray]: ...

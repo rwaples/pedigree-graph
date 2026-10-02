@@ -1,7 +1,13 @@
 """Type stub for the PyO3 extension module ``pedigree_graph._native`` (ADR 0007)."""
 
+from collections.abc import Callable
+from typing import Literal
+
 import numpy as np
 from numpy.typing import NDArray
+
+# `(phase, rows_done, rows_total)` once per tick; see `run_watched` in lib.rs.
+_ProgressCallback = Callable[[Literal["preparing", "walking", "finishing"], int, int | None], None]
 
 def core_version() -> str: ...
 def max_degree_max() -> int: ...
@@ -46,6 +52,8 @@ def relationship_counts(
     max_degree: int,
     threads: int,
     selected: NDArray[np.bool_] | None = None,
+    progress: _ProgressCallback | None = None,
+    tick: float = 1.0,
 ) -> dict[str, int]: ...
 def compact_view_counts(
     pedigree: BuiltPedigree,
@@ -54,6 +62,8 @@ def compact_view_counts(
     *,
     max_degree: int,
     threads: int,
+    progress: _ProgressCallback | None = None,
+    tick: float = 1.0,
 ) -> dict[str, int]: ...
 def relationship_pairs(
     pedigree: BuiltPedigree,
@@ -65,6 +75,8 @@ def relationship_pairs(
     execution: str,
     view_rows: NDArray[np.int32] | None = None,
     compact: bool = False,
+    progress: _ProgressCallback | None = None,
+    tick: float = 1.0,
 ) -> dict[str, tuple[NDArray[np.int32], NDArray[np.int32]]]: ...
 def relationship_moments(
     pedigree: BuiltPedigree,
@@ -84,6 +96,8 @@ def relationship_moments(
     memory_budget_bytes: int,
     view_rows: NDArray[np.int32] | None = None,
     compact: bool = False,
+    progress: _ProgressCallback | None = None,
+    tick: float = 1.0,
 ) -> tuple[int, NDArray[np.uint8], int, int, int, list[int], int]: ...
 def relatives_per_person(
     pedigree: BuiltPedigree,
@@ -95,6 +109,8 @@ def relatives_per_person(
     columns: list[tuple[NDArray[np.float64], NDArray[np.float64] | float]],
     view_rows: NDArray[np.int32] | None = None,
     compact: bool = False,
+    progress: _ProgressCallback | None = None,
+    tick: float = 1.0,
 ) -> tuple[NDArray[np.uint32], int, int, int, int, list[int]]: ...
 def moments_plan(
     *,
@@ -132,6 +148,8 @@ def relationship_burden(
     /,
     *,
     threads: int,
+    progress: _ProgressCallback | None = None,
+    tick: float = 1.0,
 ) -> tuple[dict[str, int], NDArray[np.uint32], NDArray[np.uint64]]: ...
 def pair_kinship(
     pedigree: BuiltPedigree,
@@ -186,6 +204,7 @@ def allocation_families() -> list[str]: ...
 
 # Test seam, not public API: refused unless the process was started with
 # PEDIGREE_GRAPH_ALLOW_TEST_SEAM=1.
+def _panic_in_watched_worker_for_test(*, threads: int, tick: float) -> None: ...
 def fail_next_allocation(family: str | None, min_elements: int = 0) -> None: ...
 
 class IdIndex:

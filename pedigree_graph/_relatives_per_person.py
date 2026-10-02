@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pedigree_graph import _native
+from pedigree_graph import _native, _progress
 from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._input import _own_native
 from pedigree_graph._relationship_moments import MAX_COLUMNS, _check_names
@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from numpy.typing import ArrayLike
 
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._progress import ProgressArg
     from pedigree_graph._selection import RelationshipSelection
     from pedigree_graph._view import PedigreeView
 
@@ -197,12 +198,14 @@ def relatives_per_person(
     view: PedigreeView | None,
     selection: RelationshipSelection,
     thresholds: Mapping[str, tuple[ArrayLike, ArrayLike | float]] | None,
+    progress: ProgressArg = None,
 ) -> RelativesPerPerson:
     """Validate the columns, run the engine and wrap the counts for *graph* or *view*.
 
     A receiver of fewer than two rows or an empty selection has no pairs
     and gets zero counts without running the engine.
     """
+    watch = _progress.resolve(progress, logger, "relatives_per_person")
     thresholds = {} if thresholds is None else thresholds
     _check_names("threshold column", thresholds)
     if RELATIVES in thresholds:
@@ -239,6 +242,8 @@ def relatives_per_person(
         columns=columns,
         view_rows=view_rows,
         compact=compact,
+        progress=watch,
+        tick=_progress.TICK_S,
     )
     assert (rows, n_categories, stride) == (n, len(codes), len(names)), "native layout disagrees with the request"
     logger.info(

@@ -36,6 +36,10 @@ Public API:
         view.relatives_per_person(...) returns: per row and category, the
         relative count and the count passing each threshold column, as a
         read-only uint32 array, with get / sum
+    RelationshipProgress — what a progress= callable of relationship_counts,
+        relationship_pairs, relationship_moments, relatives_per_person or
+        relationship_burden receives about once a second: phase, rows_done,
+        rows_total and elapsed (ADR 0017)
 
 Errors (ADR 0006 — each carries a stable ``.code`` and immutable ``.fields``):
     PedigreeValidationError, MissingMetadataError (both ValueError),
@@ -63,6 +67,7 @@ from pedigree_graph._errors import (
     PedigreeValidationError,
     ResourceError,
 )
+from pedigree_graph._progress import RelationshipProgress
 from pedigree_graph._relatives_per_person import RelativesPerPerson
 from pedigree_graph._threads import configure_threads
 from pedigree_graph._view import PedigreeView
@@ -89,6 +94,7 @@ __all__ = [
     "RelationshipMoments",
     "RelationshipPairBlock",
     "RelationshipPairs",
+    "RelationshipProgress",
     "RelativesPerPerson",
     "ResourceError",
     "configure_threads",

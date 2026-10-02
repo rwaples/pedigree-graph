@@ -73,6 +73,7 @@ ROOT_EXPORTS = (
     "RelationshipMoments",
     "RelationshipPairBlock",
     "RelationshipPairs",
+    "RelationshipProgress",
     "RelativesPerPerson",
     "ResourceError",
     "configure_threads",

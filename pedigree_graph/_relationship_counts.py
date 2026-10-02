@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from pedigree_graph import _native
+from pedigree_graph import _native, _progress
 from pedigree_graph._registry import RELATIONSHIPS
 from pedigree_graph._relationship_pairs import _should_compact_view
 from pedigree_graph._threads import thread_budget
@@ -28,28 +28,35 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._progress import NativeCallback, ProgressArg
     from pedigree_graph._selection import RelationshipSelection
     from pedigree_graph._view import PedigreeView
 
 
-def relationship_counts(graph: PedigreeGraph, selection: RelationshipSelection) -> RelationshipCountResult:
+def relationship_counts(
+    graph: PedigreeGraph, selection: RelationshipSelection, progress: ProgressArg = None
+) -> RelationshipCountResult:
     """Count the pairs of every requested category over the whole graph."""
-    return _count(graph, None, selection)
+    return _count(graph, None, selection, _progress.resolve(progress, logger, "relationship_counts"))
 
 
-def view_relationship_counts(view: PedigreeView, selection: RelationshipSelection) -> RelationshipCountResult:
+def view_relationship_counts(
+    view: PedigreeView, selection: RelationshipSelection, progress: ProgressArg = None
+) -> RelationshipCountResult:
     """Count the pairs of every requested category with both rows in *view*."""
+    watch = _progress.resolve(progress, logger, "relationship_counts")
     if _should_compact_view(view._graph.n_individuals, len(view)):
-        return _count(view._graph, None, selection, compact_view_rows=view._graph_to_view())
+        return _count(view._graph, None, selection, watch, compact_view_rows=view._graph_to_view())
     selected = np.zeros(view._graph.n_individuals, dtype=np.bool_)
     selected[view._graph_rows] = True
-    return _count(view._graph, selected, selection)
+    return _count(view._graph, selected, selection, watch)
 
 
 def _count(
     graph: PedigreeGraph,
     selected: np.ndarray | None,
     selection: RelationshipSelection,
+    watch: NativeCallback | None,
     *,
     compact_view_rows: np.ndarray | None = None,
 ) -> RelationshipCountResult:
@@ -66,9 +73,23 @@ def _count(
         logger.info("relationship_counts: max_degree=%d, threads=%d", top, threads)
         start = time.perf_counter()
         if compact_view_rows is None:
-            counted = _native.relationship_counts(graph._built, max_degree=top, threads=threads, selected=selected)
+            counted = _native.relationship_counts(
+                graph._built,
+                max_degree=top,
+                threads=threads,
+                selected=selected,
+                progress=watch,
+                tick=_progress.TICK_S,
+            )
         else:
-            counted = _native.compact_view_counts(graph._built, compact_view_rows, max_degree=top, threads=threads)
+            counted = _native.compact_view_counts(
+                graph._built,
+                compact_view_rows,
+                max_degree=top,
+                threads=threads,
+                progress=watch,
+                tick=_progress.TICK_S,
+            )
         logger.info("relationship_counts total: %.3fs", time.perf_counter() - start)
         values.update({code: counted[code] for code in requested})
     return RelationshipCountResult(values, requested, requested)

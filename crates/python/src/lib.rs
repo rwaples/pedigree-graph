@@ -19,7 +19,7 @@ use pedigree_graph_core::lineage::{self, ParentColumns};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
     self, Category, CategorySet, Execution, MomentsInput, MomentsPlan, MomentsShape, MomentsTable,
-    Pedigree, Product, Side, Statistic, Symmetric, Threshold, ThresholdColumn,
+    Pedigree, Product, Progress, Side, Snapshot, Statistic, Symmetric, Threshold, ThresholdColumn,
 };
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -28,6 +28,9 @@ use pyo3::types::{PyDict, PyTuple};
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::Thread;
+use std::time::{Duration, Instant};
 
 /// `(order, inverse)` intp arrays of a depth-major permutation.
 type Permutation<'py> = (Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>);
@@ -119,6 +122,94 @@ fn to_pyerr(py: Python<'_>, err: Error) -> PyErr {
         Ok(PyErr::from_value(instance))
     };
     raise().unwrap_or_else(|e| e)
+}
+
+/// Wakes the watching thread when the engine job ends, by return or by panic.
+struct Done<'a> {
+    finished: &'a AtomicBool,
+    caller: Thread,
+}
+
+impl Drop for Done<'_> {
+    fn drop(&mut self) {
+        self.finished.store(true, Ordering::Release);
+        self.caller.unpark();
+    }
+}
+
+/// Run `work` as one job in `pool` while this thread watches it (ADR 0017).
+///
+/// The GIL is released for the call.  Every `tick` the watcher attaches,
+/// checks for signals, and passes `(phase, rows_done, rows_total)` to
+/// `callback` if there is one.  The first exception from either cancels the
+/// call; once every worker has left its current 64 rows or step, that exception
+/// is raised in place of the result.  The core never calls the host: the
+/// job only updates the [`Progress`] the watcher reads.
+fn run_watched<T: Send>(
+    py: Python<'_>,
+    pool: &rayon::ThreadPool,
+    tick: f64,
+    callback: Option<Py<PyAny>>,
+    work: impl FnOnce(&Progress) -> Result<T, Error> + Send,
+) -> PyResult<T> {
+    let tick = Duration::try_from_secs_f64(tick)
+        .ok()
+        .filter(|t| !t.is_zero())
+        .ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "tick must be a positive number of seconds, got {tick}"
+            ))
+        })?;
+    let progress = Progress::default();
+    let finished = AtomicBool::new(false);
+    let mut slot = None;
+    let mut kept: Option<PyErr> = None;
+    py.detach(|| {
+        let caller = std::thread::current();
+        pool.in_place_scope(|scope| {
+            scope.spawn(|_| {
+                let _done = Done {
+                    finished: &finished,
+                    caller,
+                };
+                slot = Some(work(&progress));
+            });
+            let mut next = Instant::now() + tick;
+            while !finished.load(Ordering::Acquire) {
+                let now = Instant::now();
+                if now < next {
+                    std::thread::park_timeout(next - now);
+                    continue;
+                }
+                next = now + tick;
+                if kept.is_some() {
+                    continue;
+                }
+                let observed = Python::attach(|py| {
+                    py.check_signals()?;
+                    let Some(callback) = &callback else {
+                        return Ok(());
+                    };
+                    let (phase, done, total) = match progress.snapshot() {
+                        Snapshot::Preparing => ("preparing", 0, None),
+                        Snapshot::Walking { done, total } => ("walking", done, Some(total)),
+                        Snapshot::Finishing { total } => ("finishing", total, Some(total)),
+                    };
+                    callback.bind(py).call1((phase, done, total)).map(drop)
+                });
+                if let Err(err) = observed {
+                    progress.cancel();
+                    kept = Some(err);
+                }
+            }
+        });
+    });
+    if let Some(err) = kept {
+        return Err(err);
+    }
+    // The scope re-raises a panicking job, so a job that got here filled the slot.
+    slot.expect("the watched job ran")
+        .map_err(|e| to_pyerr(py, e))
 }
 
 /// True iff every represented parent row strictly precedes its child row.
@@ -325,13 +416,15 @@ fn checked_max_degree(py: Python<'_>, max_degree: u8) -> PyResult<relationships:
 /// `configure_pool`); the counts are the same for every value.  The GIL is
 /// released while counting.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, threads, selected=None))]
+#[pyo3(signature = (pedigree, *, max_degree, threads, selected=None, progress=None, tick=1.0))]
 fn relationship_counts<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     max_degree: u8,
     threads: usize,
     selected: Option<PyReadonlyArray1<'py, bool>>,
+    progress: Option<Py<PyAny>>,
+    tick: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
     let columns = EngineColumns::borrow(py, pedigree);
     let ped = columns.pedigree(py)?;
@@ -345,18 +438,9 @@ fn relationship_counts<'py>(
         None => None,
     };
     let pool = checked_pool(py, threads)?;
-    let counts = py
-        .detach(|| {
-            pool.install(|| {
-                relationships::count_pairs(
-                    &ped,
-                    max_degree,
-                    mask,
-                    &relationships::Progress::default(),
-                )
-            })
-        })
-        .map_err(|e| to_pyerr(py, e))?;
+    let counts = run_watched(py, pool, tick, progress, |progress| {
+        relationships::count_pairs(&ped, max_degree, mask, progress)
+    })?;
     let values = PyDict::new(py);
     for &cat in Category::ALL.iter() {
         values.set_item(cat.code(), counts.get(cat) as i64)?;
@@ -366,13 +450,15 @@ fn relationship_counts<'py>(
 
 /// Exact view counts after compacting to the view's represented ancestry.
 #[pyfunction]
-#[pyo3(signature = (pedigree, view_rows, *, max_degree, threads))]
+#[pyo3(signature = (pedigree, view_rows, *, max_degree, threads, progress=None, tick=1.0))]
 fn compact_view_counts<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     view_rows: PyReadonlyArray1<'py, i32>,
     max_degree: u8,
     threads: usize,
+    progress: Option<Py<PyAny>>,
+    tick: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
     let columns = EngineColumns::borrow(py, pedigree);
     let ped = columns.pedigree(py)?;
@@ -380,18 +466,9 @@ fn compact_view_counts<'py>(
     check_same_length("view_rows", view.len(), ped.len())?;
     let max_degree = checked_max_degree(py, max_degree)?;
     let pool = checked_pool(py, threads)?;
-    let counts = py
-        .detach(|| {
-            pool.install(|| {
-                relationships::count_view_pairs_compact(
-                    &ped,
-                    max_degree,
-                    view,
-                    &relationships::Progress::default(),
-                )
-            })
-        })
-        .map_err(|e| to_pyerr(py, e))?;
+    let counts = run_watched(py, pool, tick, progress, |progress| {
+        relationships::count_view_pairs_compact(&ped, max_degree, view, progress)
+    })?;
     let values = PyDict::new(py);
     for &cat in Category::ALL.iter() {
         values.set_item(cat.code(), counts.get(cat) as i64)?;
@@ -411,7 +488,7 @@ fn compact_view_counts<'py>(
 /// the core without a copy and retain nothing else.  The GIL is released
 /// while classifying and assembling.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, requested, threads, execution, view_rows=None, compact=false))]
+#[pyo3(signature = (pedigree, *, max_degree, requested, threads, execution, view_rows=None, compact=false, progress=None, tick=1.0))]
 #[allow(clippy::too_many_arguments)]
 fn relationship_pairs<'py>(
     py: Python<'py>,
@@ -422,6 +499,8 @@ fn relationship_pairs<'py>(
     execution: &str,
     view_rows: Option<PyReadonlyArray1<'py, i32>>,
     compact: bool,
+    progress: Option<Py<PyAny>>,
+    tick: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
     let columns = EngineColumns::borrow(py, pedigree);
     let ped = columns.pedigree(py)?;
@@ -437,31 +516,20 @@ fn relationship_pairs<'py>(
         return Err(PyValueError::new_err("compact requires view_rows"));
     }
     let pool = checked_pool(py, threads)?;
-    let blocks = py
-        .detach(|| {
-            pool.install(|| {
-                if compact {
-                    relationships::pair_blocks_compact(
-                        &ped,
-                        max_degree,
-                        categories,
-                        view.unwrap(),
-                        execution,
-                        &relationships::Progress::default(),
-                    )
-                } else {
-                    relationships::pair_blocks(
-                        &ped,
-                        max_degree,
-                        categories,
-                        view,
-                        execution,
-                        &relationships::Progress::default(),
-                    )
-                }
-            })
-        })
-        .map_err(|e| to_pyerr(py, e))?;
+    let blocks = run_watched(py, pool, tick, progress, |progress| {
+        if compact {
+            relationships::pair_blocks_compact(
+                &ped,
+                max_degree,
+                categories,
+                view.unwrap(),
+                execution,
+                progress,
+            )
+        } else {
+            relationships::pair_blocks(&ped, max_degree, categories, view, execution, progress)
+        }
+    })?;
     let values = PyDict::new(py);
     for (cat, block) in Category::ALL.iter().zip(blocks.0) {
         let first = block.first.into_pyarray(py);
@@ -558,7 +626,7 @@ fn moments_plan(
 /// a budget one lane cannot fit raises `ResourceError` before anything is
 /// allocated.  The GIL is released for the pass.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, requested, threads, labels_first, n_labels_first, labels_second, n_labels_second, values, products, same, symmetric, memory_budget_bytes, view_rows=None, compact=false))]
+#[pyo3(signature = (pedigree, *, max_degree, requested, threads, labels_first, n_labels_first, labels_second, n_labels_second, values, products, same, symmetric, memory_budget_bytes, view_rows=None, compact=false, progress=None, tick=1.0))]
 #[allow(clippy::too_many_arguments)]
 fn relationship_moments<'py>(
     py: Python<'py>,
@@ -577,6 +645,8 @@ fn relationship_moments<'py>(
     memory_budget_bytes: u64,
     view_rows: Option<PyReadonlyArray1<'py, i32>>,
     compact: bool,
+    progress: Option<Py<PyAny>>,
+    tick: f64,
 ) -> PyResult<MomentsArrays<'py>> {
     let columns = EngineColumns::borrow(py, pedigree);
     let ped = columns.pedigree(py)?;
@@ -608,24 +678,20 @@ fn relationship_moments<'py>(
     let threads = NonZeroUsize::new(threads)
         .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
     let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
-    let moments = py
-        .detach(|| {
-            pool.install(|| {
-                relationships::relationship_moments(
-                    &ped,
-                    max_degree,
-                    categories,
-                    view,
-                    compact,
-                    &input,
-                    symmetric,
-                    threads,
-                    memory_budget_bytes,
-                    &relationships::Progress::default(),
-                )
-            })
-        })
-        .map_err(|e| to_pyerr(py, e))?;
+    let moments = run_watched(py, pool, tick, progress, |progress| {
+        relationships::relationship_moments(
+            &ped,
+            max_degree,
+            categories,
+            view,
+            compact,
+            &input,
+            symmetric,
+            threads,
+            memory_budget_bytes,
+            progress,
+        )
+    })?;
     Ok((
         moments.width,
         moments.table.into_pyarray(py),
@@ -863,12 +929,14 @@ type BurdenArrays<'py> = (
 /// Counts and per-person degree burden from one relationship traversal.
 /// `depth` is structural depth in graph rows; no pair blocks are returned.
 #[pyfunction]
-#[pyo3(signature = (pedigree, depth, *, threads))]
+#[pyo3(signature = (pedigree, depth, *, threads, progress=None, tick=1.0))]
 fn relationship_burden<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
     threads: usize,
+    progress: Option<Py<PyAny>>,
+    tick: f64,
 ) -> PyResult<BurdenArrays<'py>> {
     let columns = EngineColumns::borrow(py, pedigree);
     let ped = columns.pedigree(py)?;
@@ -880,13 +948,9 @@ fn relationship_burden<'py>(
         ));
     }
     let pool = checked_pool(py, threads)?;
-    let burden = py
-        .detach(|| {
-            pool.install(|| {
-                relationships::relationship_burden(&ped, depth, &relationships::Progress::default())
-            })
-        })
-        .map_err(|e| to_pyerr(py, e))?;
+    let burden = run_watched(py, pool, tick, progress, |progress| {
+        relationships::relationship_burden(&ped, depth, progress)
+    })?;
     let categories = PyDict::new(py);
     for (cat, count) in Category::ALL.iter().zip(burden.categories) {
         categories.set_item(cat.code(), count)?;
@@ -920,7 +984,7 @@ enum ThresholdArg<'py> {
 /// both members and directional ones the junior only.  The inputs are
 /// borrowed, and the GIL is released for the pass.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, requested, threads, columns, view_rows=None, compact=false))]
+#[pyo3(signature = (pedigree, *, max_degree, requested, threads, columns, view_rows=None, compact=false, progress=None, tick=1.0))]
 #[allow(clippy::too_many_arguments)]
 fn relatives_per_person<'py>(
     py: Python<'py>,
@@ -931,6 +995,8 @@ fn relatives_per_person<'py>(
     columns: Vec<(PyReadonlyArray1<'py, f64>, ThresholdArg<'py>)>,
     view_rows: Option<PyReadonlyArray1<'py, i32>>,
     compact: bool,
+    progress: Option<Py<PyAny>>,
+    tick: f64,
 ) -> PyResult<RelativesArrays<'py>> {
     let engine = EngineColumns::borrow(py, pedigree);
     let ped = engine.pedigree(py)?;
@@ -953,22 +1019,11 @@ fn relatives_per_person<'py>(
     let threads = NonZeroUsize::new(threads)
         .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
     let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
-    let relatives = py
-        .detach(|| {
-            pool.install(|| {
-                relationships::relatives_per_person(
-                    &ped,
-                    max_degree,
-                    categories,
-                    view,
-                    compact,
-                    &borrowed,
-                    threads,
-                    &relationships::Progress::default(),
-                )
-            })
-        })
-        .map_err(|e| to_pyerr(py, e))?;
+    let relatives = run_watched(py, pool, tick, progress, |progress| {
+        relationships::relatives_per_person(
+            &ped, max_degree, categories, view, compact, &borrowed, threads, progress,
+        )
+    })?;
     Ok((
         relatives.counts.into_pyarray(py),
         relatives.rows,
@@ -1347,6 +1402,26 @@ fn _panic_for_test() {
     panic!("pedigree-graph test hook: deliberate panic");
 }
 
+/// Test hook: panic inside a parallel iterator of a watched job, on a pool
+/// worker, so the package tests can show the watcher wakes at once instead
+/// of after a `tick`, and the pool stays usable.  Compiled only with the
+/// `test-hooks` feature.
+#[cfg(feature = "test-hooks")]
+#[pyfunction]
+#[pyo3(signature = (*, threads, tick))]
+fn _panic_in_watched_worker_for_test(py: Python<'_>, threads: usize, tick: f64) -> PyResult<()> {
+    use rayon::prelude::*;
+    let pool = checked_pool(py, threads)?;
+    run_watched(py, pool, tick, None, |_| {
+        (0..64u32).into_par_iter().for_each(|i| {
+            if i == 63 {
+                panic!("pedigree-graph test hook: deliberate panic in a watched worker");
+            }
+        });
+        Ok(())
+    })
+}
+
 /// Sorted-id lookup over a graph's unique ids, for repeated id selections.
 #[pyclass(frozen, name = "IdIndex", module = "pedigree_graph._native")]
 struct PyIdIndex {
@@ -1423,6 +1498,8 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fail_next_allocation, m)?)?;
     #[cfg(feature = "test-hooks")]
     m.add_function(wrap_pyfunction!(_panic_for_test, m)?)?;
+    #[cfg(feature = "test-hooks")]
+    m.add_function(wrap_pyfunction!(_panic_in_watched_worker_for_test, m)?)?;
     m.add_class::<BuiltPedigree>()?;
     m.add_class::<PyIdIndex>()?;
     Ok(())
