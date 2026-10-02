@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.12.1
 
 - **Added: `progress=` on `relationship_counts`, `relationship_pairs`,
   `relationship_moments`, `relatives_per_person` and
