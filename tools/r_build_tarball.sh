@@ -32,6 +32,7 @@ workspace_key() {
 }
 VERSION="$(workspace_key version)"
 EDITION="$(workspace_key edition)"
+RUST_VERSION="$(workspace_key rust-version)"
 LICENSE="$(workspace_key license)"
 REPOSITORY="$(workspace_key repository)"
 
@@ -47,6 +48,7 @@ cp -R "$REPO/crates/core/src" "$CORE/src"
 rm -rf "$CORE/src/bin"
 sed -e "s|^version.workspace = true|version = \"$VERSION\"|" \
     -e "s|^edition.workspace = true|edition = \"$EDITION\"|" \
+    -e "s|^rust-version.workspace = true|rust-version = \"$RUST_VERSION\"|" \
     -e "s|^license.workspace = true|license = \"$LICENSE\"|" \
     -e "s|^repository.workspace = true|repository = \"$REPOSITORY\"|" \
     -e '/^\[\[bin\]\]/,/^$/d' \
