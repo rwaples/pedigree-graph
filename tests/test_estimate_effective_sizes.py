@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import warnings
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 
@@ -369,6 +370,113 @@ class TestDirectParity:
         value = estimate_effective_sizes(_empty_graph())[name]
         assert not isinstance(value, UnavailableEffectiveSize)
         assert value.ne is None
+
+
+def _uniform_families_graph():
+    """Two unrelated couples, each with one son and one daughter, who have no children.
+
+    Every parent has the same family size, so Ne_V's ΔF is 0 rather than
+    unestimable, and the outbred children's individual ΔF is exactly 0.
+    """
+    columns = {
+        "id": np.arange(8),
+        "mother": np.array([-1, -1, -1, -1, 1, 1, 3, 3]),
+        "father": np.array([-1, -1, -1, -1, 0, 0, 2, 2]),
+        "sex": np.array([1, 0, 1, 0, 1, 0, 1, 0]),
+        "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1]),
+    }
+    return PedigreeGraph.from_frame(columns)
+
+
+def _outcrossed_line_graph():
+    """A line that takes an unrelated founder mate each generation.
+
+    Every cohort is two unrelated outbred rows, so F, θ and group coancestry
+    are flat across the three post-baseline cohorts.
+    """
+    return PedigreeGraph.from_frame(
+        {
+            "id": np.arange(8),
+            "mother": np.array([-1, -1, 1, -1, 3, -1, 5, -1]),
+            "father": np.array([-1, -1, 0, -1, 2, -1, 4, -1]),
+            "sex": np.array([1, 0, 1, 0, 1, 0, 1, 0]),
+            "generation": np.array([0, 0, 1, 1, 2, 2, 3, 3]),
+        }
+    )
+
+
+_NO_ESTIMATE_CASES = {
+    "empty": (
+        _empty_graph,
+        {
+            "ne_inbreeding": "too_few_cohorts",
+            "ne_coancestry": "too_few_cohorts",
+            "ne_group_coancestry": "too_few_cohorts",
+            "ne_variance_family_size": "too_few_parents",
+            "ne_sex_ratio": "no_cohort_with_both_sexes",
+            "ne_individual_delta_f": "empty_reference",
+            "ne_long_term_contributions": "no_founders",
+            "ne_hill_overlapping": "too_few_parents",
+        },
+    ),
+    "outcrossed": (
+        _outcrossed_line_graph,
+        {
+            "ne_inbreeding": "no_positive_rate",
+            "ne_coancestry": "no_positive_rate",
+            "ne_group_coancestry": "no_positive_rate",
+        },
+    ),
+    "uniform_families": (
+        _uniform_families_graph,
+        {
+            "ne_variance_family_size": "no_family_size_variance",
+            "ne_individual_delta_f": "reference_not_inbred",
+            "ne_hill_overlapping": "no_family_size_variance",
+        },
+    ),
+    "chain_with_birth_years": (
+        lambda: _chain_graph(birth_year=CHAIN_BIRTH),
+        {"ne_variance_family_size": "too_few_parents", "ne_hill_overlapping": "no_eligible_cohorts"},
+    ),
+}
+
+
+class TestNoEstimateCode:
+    """An estimator that runs without an estimate says why, the same way on both paths (issue #42)."""
+
+    @pytest.mark.parametrize(
+        ("case", "name"), [(case, name) for case, (_, codes) in _NO_ESTIMATE_CASES.items() for name in codes]
+    )
+    def test_each_path_names_the_branch_that_returned_no_estimate(self, case, name):
+        build, codes = _NO_ESTIMATE_CASES[case]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            direct = _DIRECT[name](build())
+            orchestrated = estimate_effective_sizes(build(), [name])[name]
+        assert orchestrated == direct
+        assert direct.ne is None
+        assert direct.no_estimate_code == codes[name]
+        assert direct.to_dict()["no_estimate_code"] == codes[name]
+
+    @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
+    def test_the_cases_reach_every_declared_code(self, name):
+        result_type = type(_DIRECT[name](_empty_graph()))
+        reached = {codes[name] for _, codes in _NO_ESTIMATE_CASES.values() if name in codes}
+        assert reached == set(result_type._NO_ESTIMATE_CODES)
+
+    @pytest.mark.parametrize(
+        ("changes", "message"),
+        [
+            ({"no_estimate_code": None}, "set exactly when ne is None"),
+            ({"ne": 3.0}, "set exactly when ne is None"),
+            ({"no_estimate_code": "no_founders"}, "is not one of"),
+        ],
+    )
+    def test_a_record_cannot_disagree_with_its_code(self, changes, message):
+        record = es.ne_inbreeding(_empty_graph())
+        with pytest.raises(ValueError, match=message):
+            replace(record, **changes)
 
 
 _LABELS = ("_require_complete_generation_labels",)

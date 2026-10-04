@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, get_args
 
 import numpy as np
 
@@ -76,6 +76,8 @@ def _to_jsonable(value: Any) -> Any:
         return int(value)
     if isinstance(value, (float, np.floating)):
         return _optional_float(value)
+    if isinstance(value, str):
+        return value
     if isinstance(value, Mapping):
         return {k: _to_jsonable(v) for k, v in value.items()}
     asdict_fn = getattr(value, "_asdict", None)  # NamedTuple records, e.g. CohortWindow
@@ -142,6 +144,27 @@ def _same(a: object, b: object) -> bool:
     return bool(a == b)
 
 
+# Why an estimator that ran returned ``ne=None``.  Each code is set at the
+# branch that returns no estimate, so a caller reads the cause rather than
+# reconstructing it from the other fields (issue #42).
+RateNoEstimate = Literal["too_few_cohorts", "no_positive_rate"]
+"""Ne_I, Ne_C, Ne_GC: fewer than two post-baseline cohorts carry a finite
+``ln(1 - x)`` term, or the fitted slope is not below ``-1e-12``."""
+IndividualDeltaFNoEstimate = Literal["empty_reference", "reference_not_inbred"]
+"""Ne_iΔF: no eligible row in the reference subpopulation, or ``ΔF̄ ≤ 0`` over it."""
+VarianceNoEstimate = Literal["too_few_parents", "no_family_size_variance"]
+"""Ne_V, and Hill's sentinel branch that passes Ne_V through: no parent
+cohort has two of each sex with a positive mean family size, or ``ΔF ≤ 0``
+at every cohort that does."""
+SexRatioNoEstimate = Literal["no_cohort_with_both_sexes"]
+"""Ne_sr: no observed cohort has both sexes."""
+LTCNoEstimate = Literal["no_founders"]
+"""Ne_LTC: no represented founder or no observed cohort, i.e. an empty graph."""
+HillNoEstimate = Literal[VarianceNoEstimate, "no_eligible_cohorts"]
+"""Ne_H: Ne_V's code on the sentinel branch; on the birth-year branch, no
+cohort in the window has two of each sex and a positive Ne."""
+
+
 class _FrozenResult(_SerializableResult):
     """Base for the final records: own every array and check the axes.
 
@@ -149,12 +172,18 @@ class _FrozenResult(_SerializableResult):
     read-only array of its declared dtype, then checks that every series
     has one entry per label of the axis it declares, that label arrays are
     strictly ascending, and that ``transition_from`` / ``transition_to``
-    are exactly the adjacent pairs of ``generations``.  Two records are
-    equal when every field is, arrays element-wise with NaN equal to NaN.
+    are exactly the adjacent pairs of ``generations``.  It also checks that
+    ``no_estimate_code`` is set exactly when ``ne`` is ``None``, to one of
+    the record's ``_NO_ESTIMATE_CODES``.  Two records are equal when every
+    field is, arrays element-wise with NaN equal to NaN.
     """
 
     __slots__ = ()
     __hash__ = None  # type: ignore[assignment]
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]]
+    # Declared by every subclass as dataclass fields.
+    ne: float | None
+    no_estimate_code: str | None
 
     def __eq__(self, other: object) -> bool:
         if type(other) is not type(self):
@@ -173,6 +202,15 @@ class _FrozenResult(_SerializableResult):
                 raise TypeError(f"{type(self).__name__}.{f.name} must be an array")
             object.__setattr__(self, f.name, _owned_copy(value, meta["dtype"]))
         self._check_axes()
+        self._check_no_estimate()
+
+    def _check_no_estimate(self) -> None:
+        name = type(self).__name__
+        code = self.no_estimate_code
+        if (self.ne is None) != (code is not None):
+            raise ValueError(f"{name}.no_estimate_code must be set exactly when ne is None")
+        if code is not None and code not in self._NO_ESTIMATE_CODES:
+            raise ValueError(f"{name}.no_estimate_code {code!r} is not one of {self._NO_ESTIMATE_CODES}")
 
     def _check_axes(self) -> None:
         name = type(self).__name__
@@ -240,6 +278,8 @@ class NeInbreedingResult(_FrozenResult):
             (``transition_from[i] → transition_to[i]``), gap-corrected.
         slope: regression slope (log scale).
         n_generations_used: post-baseline cohorts in the regression.
+        no_estimate_code: why ``ne`` is ``None``, one of :data:`RateNoEstimate`;
+            ``None`` when there is an estimate.
     """
 
     ne: float | None
@@ -250,6 +290,9 @@ class NeInbreedingResult(_FrozenResult):
     ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "transition"))
     slope: float = float("nan")
     n_generations_used: int = 0
+    no_estimate_code: RateNoEstimate | None = None
+
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]] = get_args(RateNoEstimate)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -266,6 +309,8 @@ class NeCoancestryResult(_FrozenResult):
         ne_per_gen: Ne of each adjacent observed-cohort transition.
         slope: regression slope.
         n_generations_used: post-baseline cohorts in the regression.
+        no_estimate_code: why ``ne`` is ``None``, one of :data:`RateNoEstimate`;
+            ``None`` when there is an estimate.
     """
 
     ne: float | None
@@ -276,6 +321,9 @@ class NeCoancestryResult(_FrozenResult):
     ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "transition"))
     slope: float = float("nan")
     n_generations_used: int = 0
+    no_estimate_code: RateNoEstimate | None = None
+
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]] = get_args(RateNoEstimate)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -323,6 +371,8 @@ class NeGroupCoancestryResult(_FrozenResult):
             to weigh rather than a defect to correct.  How far the estimate
             moves as this ratio rises is measured once, in
             :func:`~pedigree_graph._ne_group_coancestry.ne_group_coancestry`.
+        no_estimate_code: why ``ne`` is ``None``, one of :data:`RateNoEstimate`;
+            ``None`` when there is an estimate.
     """
 
     ne: float | None
@@ -335,6 +385,9 @@ class NeGroupCoancestryResult(_FrozenResult):
     slope: float = float("nan")
     n_generations_used: int = 0
     census_ratio: float = float("nan")
+    no_estimate_code: RateNoEstimate | None = None
+
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]] = get_args(RateNoEstimate)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -353,7 +406,8 @@ class NeVarianceResult(_FrozenResult):
     last one; a cohort with no usable reproduction stays NaN.
     ``ne_per_transition`` keeps its historical name but describes that
     lifetime reproduction, not a unique transition.  Aggregate Ne is the
-    harmonic mean.
+    harmonic mean.  ``no_estimate_code`` says why ``ne`` is ``None``, one of
+    :data:`VarianceNoEstimate`, and is ``None`` when there is an estimate.
     """
 
     ne: float | None
@@ -365,6 +419,9 @@ class NeVarianceResult(_FrozenResult):
     v_ff: np.ndarray = field(metadata=_meta(np.float64, "parent"))
     cov_m: np.ndarray = field(metadata=_meta(np.float64, "parent"))
     cov_f: np.ndarray = field(metadata=_meta(np.float64, "parent"))
+    no_estimate_code: VarianceNoEstimate | None = None
+
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]] = get_args(VarianceNoEstimate)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -373,6 +430,8 @@ class NeSexRatioResult(_FrozenResult):
 
     ``Ne_g = 4·Nm_g·Nf_g / (Nm_g + Nf_g)`` per observed cohort; aggregate
     is the harmonic mean across cohorts with at least one of each sex.
+    ``no_estimate_code`` is ``"no_cohort_with_both_sexes"`` when no cohort
+    has, and ``None`` when there is an estimate.
     """
 
     ne: float | None
@@ -380,6 +439,9 @@ class NeSexRatioResult(_FrozenResult):
     ne_per_gen: np.ndarray = field(metadata=_meta(np.float64, "cohort"))
     n_male_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
     n_female_per_gen: np.ndarray = field(metadata=_meta(np.int64, "cohort"))
+    no_estimate_code: SexRatioNoEstimate | None = None
+
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]] = get_args(SexRatioNoEstimate)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -446,6 +508,8 @@ class NeIndividualDeltaFResult(_FrozenResult):
             so fewer rows than ``n_reference`` can stand behind it, and no
             count is reported for it.  ``None`` when no reference row
             qualifies, when ``ΔF̄′ ≤ 0``, or when the graph is empty.
+        no_estimate_code: why ``ne`` is ``None``, one of :data:`IndividualDeltaFNoEstimate`;
+            ``None`` when there is an estimate.
     """
 
     ne: float | None
@@ -457,6 +521,9 @@ class NeIndividualDeltaFResult(_FrozenResult):
     n_reference: int = 0
     reference_generation: int | None = None
     ne_unrelated_founders: float | None = None
+    no_estimate_code: IndividualDeltaFNoEstimate | None = None
+
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]] = get_args(IndividualDeltaFNoEstimate)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -490,6 +557,8 @@ class NeLTCResult(_FrozenResult):
             ``max_delta_final``; ``0`` in the degenerate case.
         final_generation: label of the last observed cohort; ``None`` in the
             degenerate case.
+        no_estimate_code: why ``ne`` is ``None``, one of :data:`LTCNoEstimate`;
+            ``None`` when there is an estimate.
     """
 
     ne: float | None
@@ -499,6 +568,9 @@ class NeLTCResult(_FrozenResult):
     asymptote_reached: bool
     n_cohorts: int
     final_generation: int | None
+    no_estimate_code: LTCNoEstimate | None = None
+
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]] = get_args(LTCNoEstimate)
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -532,6 +604,11 @@ class NeHillResult(_FrozenResult):
     Diagnostic fields ``T_m``, ``T_f``, ``N1_m``, ``N1_f``, ``Vk_m``,
     ``Vk_f`` are scenario-level means over eligible cohorts and do not
     re-enter the Ne computation.
+
+    ``no_estimate_code`` says why ``ne`` is ``None``, one of
+    :data:`HillNoEstimate`: the sentinel carries Ne_V's code, and the
+    birth-year-empty state carries ``"no_eligible_cohorts"``.  The populated
+    state always has an estimate, so its code is ``None``.
     """
 
     ne: float | None
@@ -578,6 +655,9 @@ class NeHillResult(_FrozenResult):
     # Per-individual age table — descriptive only, not used in Ne
     age_table: Mapping[str, np.ndarray] | None = None
     n_offspring_pairs: int = 0
+    no_estimate_code: HillNoEstimate | None = None
+
+    _NO_ESTIMATE_CODES: ClassVar[tuple[str, ...]] = get_args(HillNoEstimate)
 
     def __post_init__(self) -> None:
         super().__post_init__()

@@ -16,6 +16,7 @@
    848.3656557026912,
    810.1903995150991
   ],
+  "no_estimate_code": null,
   "slope": -0.0006173293938398115,
   "transition_from": [
    0,
@@ -49,6 +50,7 @@
    848.7915420760361,
    809.6889097147382
   ],
+  "no_estimate_code": null,
   "slope": -0.0006177118617572573,
   "transition_from": [
    0,
@@ -88,6 +90,7 @@
   "n_unknown_birth_year": 0,
   "ne": 734.0885380673026,
   "ne_per_cohort": null,
+  "no_estimate_code": null,
   "vk_scaled": false
  },
  "ne_inbreeding": {
@@ -107,6 +110,7 @@
    null,
    1333.3333333333333
   ],
+  "no_estimate_code": null,
   "slope": -0.00037507033008308426,
   "transition_from": [
    0,
@@ -141,6 +145,7 @@
    2518.12737546147
   ],
   "ne_unrelated_founders": 1333.3333333333333,
+  "no_estimate_code": null,
   "reference_generation": 2,
   "standard_error": 1885.4400408218494
  },
@@ -151,6 +156,7 @@
   "n_cohorts": 3,
   "n_effective_founders": 483.9392656221643,
   "ne": 967.8785312443287,
+  "no_estimate_code": null,
   "sum_c_squared": 0.0020663750000000005
  },
  "ne_sex_ratio": {
@@ -174,7 +180,8 @@
    998.704,
    999.804,
    999.324
-  ]
+  ],
+  "no_estimate_code": null
  },
  "ne_variance_family_size": {
   "cov_f": [
@@ -193,6 +200,7 @@
    730.809916526238,
    null
   ],
+  "no_estimate_code": null,
   "parent_generations": [
    0,
    1,

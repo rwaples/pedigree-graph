@@ -24,6 +24,7 @@ from pedigree_graph._ne_results import NeSexRatioResult, NeVarianceResult
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._ne_results import VarianceNoEstimate
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +271,7 @@ def _variance_from(cohorts: ObservedCohorts, table: FamilySizeTable) -> NeVarian
     v_ff = np.full(k, np.nan, dtype=np.float64)
     cov_m = np.full(k, np.nan, dtype=np.float64)
     cov_f = np.full(k, np.nan, dtype=np.float64)
+    any_estimable = False
 
     for b, label in enumerate(cohorts.generations):
         decomp = _sigma2_from_quadrants(table[int(label)])
@@ -278,6 +280,7 @@ def _variance_from(cohorts: ObservedCohorts, table: FamilySizeTable) -> NeVarian
         v_mm_p, v_mf_p, v_fm_p, v_ff_p, cov_m_p, cov_f_p, kbar_m, kbar_f, n_m, n_f = decomp
         if kbar_m <= 0 or kbar_f <= 0:
             continue
+        any_estimable = True
         v_mm[b] = v_mm_p
         v_mf[b] = v_mf_p
         v_fm[b] = v_fm_p
@@ -290,8 +293,12 @@ def _variance_from(cohorts: ObservedCohorts, table: FamilySizeTable) -> NeVarian
         if df > 0:
             ne_per_t[b] = 1.0 / (2.0 * df)
 
+    ne = _harmonic_mean(ne_per_t) if np.isfinite(ne_per_t).any() else None
+    no_estimate_code: VarianceNoEstimate | None = None
+    if ne is None:
+        no_estimate_code = "no_family_size_variance" if any_estimable else "too_few_parents"
     return NeVarianceResult(
-        ne=_harmonic_mean(ne_per_t) if np.isfinite(ne_per_t).any() else None,
+        ne=ne,
         parent_generations=cohorts.generations,
         ne_per_transition=ne_per_t,
         v_mm=v_mm,
@@ -300,6 +307,7 @@ def _variance_from(cohorts: ObservedCohorts, table: FamilySizeTable) -> NeVarian
         v_ff=v_ff,
         cov_m=cov_m,
         cov_f=cov_f,
+        no_estimate_code=no_estimate_code,
     )
 
 
@@ -338,7 +346,7 @@ def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
     that order: absent or partly unknown sex raises ``missing_sex``.
     Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1.  The
     estimator still returns ``ne=None`` (consistent with a legitimate
-    single-sex pedigree), so the warning is the only diagnostic.
+    single-sex pedigree), with ``no_estimate_code="too_few_parents"``.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_variance_family_size")
     _require_complete_sex(pg, "ne_variance_family_size")
@@ -357,12 +365,14 @@ def _sex_ratio_from(cohorts: ObservedCohorts, sex: np.ndarray) -> NeSexRatioResu
         if n_male[b] > 0 and n_female[b] > 0:
             ne_per_gen[b] = 4.0 * n_male[b] * n_female[b] / (n_male[b] + n_female[b])
 
+    ne = _harmonic_mean(ne_per_gen) if np.isfinite(ne_per_gen).any() else None
     return NeSexRatioResult(
-        ne=_harmonic_mean(ne_per_gen) if np.isfinite(ne_per_gen).any() else None,
+        ne=ne,
         generations=cohorts.generations,
         ne_per_gen=ne_per_gen,
         n_male_per_gen=n_male,
         n_female_per_gen=n_female,
+        no_estimate_code="no_cohort_with_both_sexes" if ne is None else None,
     )
 
 
@@ -374,7 +384,8 @@ def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
 
     Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1.  The
     estimator still returns ``ne=None`` in that case (consistent with a
-    legitimate single-sex pedigree), so the warning is the only diagnostic.
+    legitimate single-sex pedigree), with
+    ``no_estimate_code="no_cohort_with_both_sexes"``.
     """
     cohorts = ObservedCohorts.for_graph(pg, "ne_sex_ratio")
     _require_complete_sex(pg, "ne_sex_ratio")

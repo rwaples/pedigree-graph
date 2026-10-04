@@ -53,6 +53,7 @@ from pedigree_graph.summaries import GenerationKinshipSummary
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._ne_results import IndividualDeltaFNoEstimate
 
 
 logger = logging.getLogger(__name__)
@@ -169,16 +170,13 @@ def _cohort_means(values: np.ndarray, cohorts: ObservedCohorts) -> np.ndarray:
 
 def _inbreeding_from(cohorts: ObservedCohorts, F: np.ndarray) -> NeInbreedingResult:
     mean_f = _cohort_means(F, cohorts)
-    ne_scalar, slope, n_used = _scalar_ne_from_log_regression(mean_f, cohorts.generations)
     return NeInbreedingResult(
-        ne=ne_scalar,
+        **_scalar_ne_from_log_regression(mean_f, cohorts.generations)._asdict(),
         generations=cohorts.generations,
         mean_f_per_gen=mean_f,
         transition_from=cohorts.transition_from(),
         transition_to=cohorts.transition_to(),
         ne_per_gen=_transition_ne(mean_f, cohorts.generations),
-        slope=slope,
-        n_generations_used=n_used,
     )
 
 
@@ -208,16 +206,13 @@ def _coancestry_from(cohorts: ObservedCohorts, summary: GenerationKinshipSummary
     mean_theta[np.searchsorted(cohorts.generations, summary_generations)] = np.asarray(
         summary.mean_kinship, dtype=np.float64
     )
-    ne_scalar, slope, n_used = _scalar_ne_from_log_regression(mean_theta, cohorts.generations)
     return NeCoancestryResult(
-        ne=ne_scalar,
+        **_scalar_ne_from_log_regression(mean_theta, cohorts.generations)._asdict(),
         generations=cohorts.generations,
         mean_theta_per_gen=mean_theta,
         transition_from=cohorts.transition_from(),
         transition_to=cohorts.transition_to(),
         ne_per_gen=_transition_ne(mean_theta, cohorts.generations),
-        slope=slope,
-        n_generations_used=n_used,
     )
 
 
@@ -288,6 +283,9 @@ def _individual_delta_f_from(
     n_reference = int(eligible.shape[0])
     reference_df = delta_f[eligible]
     ne = _ne_from_delta_f(reference_df)
+    no_estimate_code: IndividualDeltaFNoEstimate | None = None
+    if ne is None:
+        no_estimate_code = "reference_not_inbred" if n_reference else "empty_reference"
     standard_error: float | None = None
     if ne is not None and n_reference > 1:
         standard_error = 2.0 / math.sqrt(n_reference) * ne**2 * float(reference_df.std(ddof=1))
@@ -308,6 +306,7 @@ def _individual_delta_f_from(
         n_reference=n_reference,
         reference_generation=int(cohorts.generations[buckets[0]]) if shared else None,
         ne_unrelated_founders=ne_unrelated_founders,
+        no_estimate_code=no_estimate_code,
     )
 
 

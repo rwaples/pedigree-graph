@@ -146,18 +146,16 @@ def _group_coancestry_from(cohorts: ObservedCohorts, gc: GroupCoancestryByCohort
     if not np.array_equal(gc.generations, cohorts.generations):
         raise ValueError("group coancestry does not describe the estimator's observed cohorts")
     f_bar = np.asarray(gc.mean_group_coancestry, dtype=np.float64)
-    ne_scalar, slope, n_used = _scalar_ne_from_log_regression(f_bar, cohorts.generations)
+    fit = _scalar_ne_from_log_regression(f_bar, cohorts.generations)
     fitted_census = np.asarray(gc.n_genomes, dtype=np.float64)[1:][_log_fit_mask(f_bar[1:])]
     return NeGroupCoancestryResult(
-        ne=ne_scalar,
+        **fit._asdict(),
         generations=cohorts.generations,
         mean_group_coancestry_per_gen=f_bar,
         n_genomes_per_gen=gc.n_genomes,
         transition_from=cohorts.transition_from(),
         transition_to=cohorts.transition_to(),
         ne_per_gen=_transition_ne(f_bar, cohorts.generations),
-        slope=slope,
-        n_generations_used=n_used,
         census_ratio=float(fitted_census.max() / fitted_census.min()) if fitted_census.size else float("nan"),
     )
 

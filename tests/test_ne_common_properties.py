@@ -71,7 +71,7 @@ def test_scalar_ne_recovers_planted_value(ne_true, g_max):
     # Ne = -1/(2 slope) must recover Ne exactly (collinear -> perfect OLS).
     t = np.arange(g_max + 1, dtype=np.float64)
     series = 1.0 - np.exp(-t / (2.0 * ne_true))  # series[0] == 0 (founder, dropped)
-    ne_rec, slope, n_used = _scalar_ne_from_log_regression(series, np.arange(len(series)))
+    ne_rec, slope, n_used, _ = _scalar_ne_from_log_regression(series, np.arange(len(series)))
     assert ne_rec is not None
     assert ne_rec == pytest.approx(ne_true, rel=1e-6)
     assert slope == pytest.approx(-1.0 / (2.0 * ne_true), rel=1e-6)

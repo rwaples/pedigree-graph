@@ -11,7 +11,7 @@ allocation the founder-based estimators share.
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
@@ -20,6 +20,7 @@ from pedigree_graph._ne_metadata import _require_complete_generation_labels as _
 
 if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
+    from pedigree_graph._ne_results import RateNoEstimate
 
 # Slopes this close to zero are least-squares noise on a flat series (about
 # 1e-16 on a constant ln(1 - x)), not a rate; a true Ne of 5e11 has slope -1e-12.
@@ -158,7 +159,16 @@ def _regress_log_one_minus(values: np.ndarray, t: np.ndarray) -> tuple[float, fl
     return float(slope), float(intercept)
 
 
-def _scalar_ne_from_log_regression(series: np.ndarray, generations: np.ndarray) -> tuple[float | None, float, int]:
+class LogRegressionNe(NamedTuple):
+    """The scalar fields a rate estimator's record takes from the regression."""
+
+    ne: float | None
+    slope: float
+    n_generations_used: int
+    no_estimate_code: RateNoEstimate | None
+
+
+def _scalar_ne_from_log_regression(series: np.ndarray, generations: np.ndarray) -> LogRegressionNe:
     """Aggregate Ne from the OLS slope of ``ln(1 − series)`` on the label offset.
 
     The three rate-based estimators reduce a per-cohort mean series — F̄
@@ -175,16 +185,22 @@ def _scalar_ne_from_log_regression(series: np.ndarray, generations: np.ndarray) 
         generations: observed labels, ascending.
 
     Returns:
-        ``(ne, slope, n_generations_used)`` — ``ne`` is ``None`` when the
-        slope is non-finite or non-negative; ``n_generations_used`` counts
-        the post-baseline cohorts contributing a finite ``ln(1 − series)``
-        term to the fit.
+        A :class:`LogRegressionNe`.  ``n_generations_used`` counts the
+        post-baseline cohorts contributing a finite ``ln(1 − series)`` term
+        to the fit.  ``ne`` is ``None`` with ``no_estimate_code``
+        ``"too_few_cohorts"`` when fewer than two do (the slope is then
+        NaN), and ``"no_positive_rate"`` when the slope is not below
+        ``-1e-12``.
     """
     post_baseline = series[1:]
     t = (generations[1:] - generations[:1]).astype(np.float64) if series.shape[0] else np.empty(0, dtype=np.float64)
     slope, _ = _regress_log_one_minus(post_baseline, t)
-    ne = -1.0 / (2.0 * slope) if np.isfinite(slope) and slope < -_SLOPE_NOISE else None
-    return ne, slope, int(_log_fit_mask(post_baseline).sum())
+    n_used = int(_log_fit_mask(post_baseline).sum())
+    if n_used < 2:
+        return LogRegressionNe(None, slope, n_used, "too_few_cohorts")
+    if not slope < -_SLOPE_NOISE:
+        return LogRegressionNe(None, slope, n_used, "no_positive_rate")
+    return LogRegressionNe(-1.0 / (2.0 * slope), slope, n_used, None)
 
 
 def _checked_founder_matrix(k: int, n_founders: int, operation: str, dtype: type, fill: float | int) -> np.ndarray:

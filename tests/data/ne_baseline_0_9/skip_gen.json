@@ -19,6 +19,7 @@
    null,
    null
   ],
+  "no_estimate_code": null,
   "slope": -0.07992435047094802,
   "transition_from": [
    0,
@@ -58,6 +59,7 @@
    0.9655172413793103,
    null
   ],
+  "no_estimate_code": null,
   "slope": -0.09699829418722895,
   "transition_from": [
    0,
@@ -99,6 +101,7 @@
   "n_unknown_birth_year": 0,
   "ne": 18.0,
   "ne_per_cohort": null,
+  "no_estimate_code": null,
   "vk_scaled": false
  },
  "ne_inbreeding": {
@@ -121,6 +124,7 @@
    2.0,
    null
   ],
+  "no_estimate_code": "no_positive_rate",
   "slope": -5.824142007916289e-18,
   "transition_from": [
    0,
@@ -161,6 +165,7 @@
    null
   ],
   "ne_unrelated_founders": null,
+  "no_estimate_code": "reference_not_inbred",
   "reference_generation": 3,
   "standard_error": null
  },
@@ -171,6 +176,7 @@
   "n_cohorts": 4,
   "n_effective_founders": 3.5555555555555554,
   "ne": 7.111111111111111,
+  "no_estimate_code": null,
   "sum_c_squared": 0.28125
  },
  "ne_sex_ratio": {
@@ -198,7 +204,8 @@
    2.6666666666666665,
    null,
    2.0
-  ]
+  ],
+  "no_estimate_code": null
  },
  "ne_variance_family_size": {
   "cov_f": [
@@ -220,6 +227,7 @@
    null,
    null
   ],
+  "no_estimate_code": null,
   "parent_generations": [
    0,
    1,

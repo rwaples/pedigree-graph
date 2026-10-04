@@ -28,6 +28,23 @@ built prerequisite memo, serially in canonical order, and returns an
 :class:`EffectiveSizeResults` with all eight keys; an unselected or refused
 estimator maps to an :class:`UnavailableEffectiveSize`.
 
+An estimator that runs but has no estimate returns its record with
+``ne=None`` and a ``no_estimate_code`` naming the branch that returned it;
+the code is ``None`` exactly when ``ne`` is set.
+
+* ``ne_inbreeding``, ``ne_coancestry``, ``ne_group_coancestry``:
+  ``too_few_cohorts`` (fewer than two post-baseline cohorts with a finite
+  ``ln(1 − x)`` term), ``no_positive_rate`` (slope not below ``-1e-12``).
+* ``ne_individual_delta_f``: ``empty_reference`` (no eligible reference
+  row), ``reference_not_inbred`` (``ΔF̄ ≤ 0``).
+* ``ne_variance_family_size``: ``too_few_parents`` (no parent cohort with
+  two of each sex and a positive mean family size),
+  ``no_family_size_variance`` (``ΔF ≤ 0`` wherever estimable).
+* ``ne_sex_ratio``: ``no_cohort_with_both_sexes``.
+* ``ne_long_term_contributions``: ``no_founders`` (an empty graph).
+* ``ne_hill_overlapping``: Ne_V's code when it collapses to Ne_V;
+  ``no_eligible_cohorts`` on the birth-year branch.
+
 Metadata dependency matrix.  Every guard raises
 :class:`~pedigree_graph.MissingMetadataError` naming the estimator in
 ``operation``; guards run in the order listed, before any work, and an

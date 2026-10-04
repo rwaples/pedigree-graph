@@ -76,7 +76,13 @@ def _hill_from_variance(variance: NeVarianceResult, vk_scale: bool) -> NeHillRes
     ``vk_scaled`` still records what was asked, so the result describes the
     request whatever branch answered it.
     """
-    return NeHillResult(ne=variance.ne, generation_interval=1.0, collapses_to_ne_v=True, vk_scaled=vk_scale)
+    return NeHillResult(
+        ne=variance.ne,
+        generation_interval=1.0,
+        collapses_to_ne_v=True,
+        vk_scaled=vk_scale,
+        no_estimate_code=variance.no_estimate_code,
+    )
 
 
 def _hill_collapsed(pg: PedigreeGraph, vk_scale: bool) -> NeHillResult:
@@ -137,7 +143,13 @@ def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillR
             variances).
     """
     if pg.n_individuals == 0:
-        return NeHillResult(ne=None, generation_interval=1.0, collapses_to_ne_v=True, vk_scaled=vk_scale)
+        return NeHillResult(
+            ne=None,
+            generation_interval=1.0,
+            collapses_to_ne_v=True,
+            vk_scaled=vk_scale,
+            no_estimate_code="too_few_parents",
+        )
     if pg.birth_year is None:
         return _hill_collapsed(pg, vk_scale)
     _require_complete_sex(pg, "ne_hill_overlapping")
@@ -227,10 +239,14 @@ def _hill_from(
             n_unknown_birth_year=n_unknown,
             age_table=age_table,
             n_offspring_pairs=n_pairs,
+            no_estimate_code="no_eligible_cohorts",
         )
 
+    # Every kept cohort has a positive, finite Ne: both sexes share T and a
+    # positive denominator, so ne_m_c and ne_f_c share a sign, and a cohort
+    # whose sum is not positive was skipped above.
     ne_arr = np.array(ne_per_c, dtype=np.float64)
-    ne_h = _harmonic_mean(ne_arr) if np.isfinite(ne_arr).any() else None
+    ne_h = _harmonic_mean(ne_arr)
     ne_m_arr = np.array(Ne_m_per_c, dtype=np.float64)
     ne_f_arr = np.array(Ne_f_per_c, dtype=np.float64)
     ne_m_scalar = _harmonic_mean(ne_m_arr) if np.isfinite(ne_m_arr).any() else None

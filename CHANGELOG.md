@@ -6,6 +6,25 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `no_estimate_code` on every Ne result record** (issue #42). An
+  estimator that runs but returns `ne=None` now says why, set at the branch
+  that returned it: `too_few_cohorts` or `no_positive_rate` (`ne_inbreeding`,
+  `ne_coancestry`, `ne_group_coancestry`); `empty_reference` or
+  `reference_not_inbred` (`ne_individual_delta_f`); `too_few_parents` or
+  `no_family_size_variance` (`ne_variance_family_size`);
+  `no_cohort_with_both_sexes` (`ne_sex_ratio`); `no_founders`
+  (`ne_long_term_contributions`); and, for `ne_hill_overlapping`, Ne_V's own
+  code when it collapses to Ne_V or `no_eligible_cohorts` on the birth-year
+  branch. The field is `None` exactly when `ne` is set, the constructor
+  refuses any other combination or a code outside the record's own set, and
+  `to_dict()` carries it as a string. It is the last field and defaults to
+  `None`, so existing keyword construction of a record with an estimate is
+  unchanged. Two `ne=None` fallbacks that no input reaches are gone: Hill's
+  birth-year branch with no finite per-cohort Ne (each kept cohort's Ne is
+  positive and finite) and Ne_LTC with `Σc² = 0` (closed parentage makes the
+  contributions sum to 1). No estimate changes; the 0.9 golden gains only the
+  new key.
+
 - **Changed: `inbreeding()` now also memoises `distinct_ancestor_counts()`**
   (issue #40). The Meuwissen-Luo walk already visits each row's whole
   ancestral closure, so it counts the distinct ancestors on the way, MZ

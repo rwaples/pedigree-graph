@@ -436,6 +436,7 @@ def test_record_does_not_alias_its_constructor_inputs():
         transition_from=generations[:-1],
         transition_to=generations[1:],
         ne_per_gen=np.array([1.0, 2.0]),
+        no_estimate_code="no_positive_rate",
     )
     generations[0] = 99
     mean_f[0] = 99.0
@@ -477,7 +478,9 @@ def test_hill_result_rejects_an_invalid_sentinel_state(empty_graph, changes):
         replace(result, **changes)
 
 
-@pytest.mark.parametrize("changes", [{"ne": 10.0}, {"cohort_years": np.array([], dtype=np.int32)}])
+@pytest.mark.parametrize(
+    "changes", [{"ne": 10.0, "no_estimate_code": None}, {"cohort_years": np.array([], dtype=np.int32)}]
+)
 def test_hill_result_rejects_an_invalid_birth_year_empty_state(changes):
     result = effective_size.ne_hill_overlapping(_birth_year_pedigree_without_an_eligible_cohort())
     with pytest.raises(ValueError, match="birth-year-empty state"):

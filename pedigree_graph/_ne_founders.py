@@ -130,14 +130,17 @@ def _ltc_from(cohorts: ObservedCohorts, means: FounderContributionMeans) -> NeLT
             asymptote_reached=False,
             n_cohorts=0,
             final_generation=None,
+            no_estimate_code="no_founders",
         )
 
     last = cohorts.k - 1
     sum_c_sq = float((m_g[last] ** 2).sum())
     max_delta_final = float(np.max(np.abs(m_g[last] - m_g[last - 1]))) if last else float("nan")
-    n_ef = 1.0 / sum_c_sq if sum_c_sq > 0 else None
+    # Closed parentage makes each row's contributions sum to 1, so the
+    # cohort mean's do too and Σc² >= 1/n_founders > 0.
+    n_ef = 1.0 / sum_c_sq
     return NeLTCResult(
-        ne=None if n_ef is None else 2.0 * n_ef,
+        ne=2.0 * n_ef,
         n_effective_founders=n_ef,
         sum_c_squared=sum_c_sq,
         max_delta_final=max_delta_final,
