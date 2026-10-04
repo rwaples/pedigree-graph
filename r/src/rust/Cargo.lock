@@ -118,7 +118,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pedigree-graph-core"
-version = "0.12.1"
+version = "0.12.2"
 dependencies = [
  "num-bigint",
  "num-integer",
@@ -128,7 +128,7 @@ dependencies = [
 
 [[package]]
 name = "pedigree-graph-r"
-version = "0.12.1"
+version = "0.12.2"
 dependencies = [
  "extendr-api",
  "num-bigint",

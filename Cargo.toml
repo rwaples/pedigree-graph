@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/core", "crates/python"]
 
 [workspace.package]
-version = "0.12.1"
+version = "0.12.2"
 edition = "2021"
 # The floor pixi.toml and the R binding crate already state; clippy reads it,
 # so it never suggests an API newer than R users' rustc.

@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.12.2
 
 - **Added: `no_estimate_code` on every Ne result record** (issue #42). An
   estimator that runs but returns `ne=None` now says why, set at the branch
