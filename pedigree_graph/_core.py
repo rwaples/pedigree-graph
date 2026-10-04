@@ -720,10 +720,15 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
 
         The effective-size estimators read F through here; their own entry
         points commit the budget.  :meth:`inbreeding` is the public entry
-        point that commits.
+        point that commits.  The walk counts every row's distinct ancestors
+        on the way, so the :meth:`distinct_ancestor_counts` memo is filled
+        too, and a later call to it runs no second sweep.
         """
         if self._inbreeding is None:
-            self._inbreeding = _own_native(_native.inbreeding(self._built, self.depth), np.float64)
+            f, ancestors = _native.inbreeding(self._built, self.depth)
+            self._inbreeding = _own_native(f, np.float64)
+            if self._distinct_ancestor_counts is None:
+                self._distinct_ancestor_counts = _own_native(ancestors, np.int32)
         return self._inbreeding
 
     def distinct_ancestor_counts(self) -> np.ndarray:
@@ -735,6 +740,12 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         generation labels never enter it.  Computed once and memoised; the call
         commits the package thread budget
         (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation.
+
+        After :meth:`inbreeding` the counts are already memoised, a by-product
+        of its walk.  Otherwise this sweep keeps the ancestor set of every row
+        that still has a child to count, so its memory grows with the
+        ancestral closure; on a deep pedigree where both are wanted, call
+        :meth:`inbreeding` first.
 
         Returns:
             A read-only int32 array of length ``n_individuals``, in graph rows.

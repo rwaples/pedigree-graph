@@ -82,6 +82,14 @@ the 536k-row ``baseline100K``, including closed 60-generation and
 2,000-wide pedigrees. The Numba runtime's fixed RSS is gone with it. Record:
 ``docs/pedigree-graph-0.8-migration/gate/15a/NOTES.md``.
 
+The inbreeding walk counts the same ancestors in O(rows) memory (issue #40),
+so after ``PedigreeGraph.inbreeding`` the counts are memoised and this sweep
+never runs. A standalone call still runs it, because the sweep is about ten
+times faster than the walk. Issue #40 measured 0.33 s against 3.7 s at 8
+generations on 1M rows. The sweep's memory grows with depth: 4.06 GB at 16
+generations, and more than 12 GiB at 20, where the walk peaked at 236 MB. On a deep pedigree, call
+``inbreeding`` first.
+
 ## Half-founders and missing parents
 
 Both engines accept half-founders (one parent known, one missing).

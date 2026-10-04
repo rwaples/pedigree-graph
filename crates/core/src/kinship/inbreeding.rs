@@ -15,6 +15,12 @@
 //! through the touched list, newest first.  Neither the touch order nor the
 //! order of the adds depends on row labels, so the values are the ones the
 //! 0.9.3 Numba walk produced in its topological coordinates.
+//!
+//! The touched list is `i`'s closed ancestor set of genome nodes, so the walk
+//! also counts `i`'s distinct strict ancestors: one per touched node but
+//! `i`, and one more for each node both of whose co-twin rows are ancestors.
+//! Co-twins name the same parents, so the ancestor rows are the graph-row
+//! parents of the touched nodes.
 
 use super::depth_order::DepthOrder;
 use super::pairwise::KinshipPedigree;
@@ -38,16 +44,34 @@ const NIL: u32 = u32::MAX;
 /// above both parents', or not its MZ co-twin's, and
 /// [`Error::AllocationFailed`] for any buffer.
 pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
+    Ok(inbreeding_and_ancestor_counts(ped)?.0)
+}
+
+/// `F` for every graph row, as float64, and the distinct strict ancestors of
+/// every graph row, as int32, from one walk.  The counts equal
+/// [`crate::lineage::distinct_ancestor_counts`]; the walk holds O(rows)
+/// working memory where that sweep holds every live row's ancestor set.
+///
+/// # Errors
+///
+/// As [`inbreeding()`].
+pub fn inbreeding_and_ancestor_counts(
+    ped: KinshipPedigree<'_>,
+) -> Result<(Vec<f64>, Vec<i32>), Error> {
     let n = ped.len();
     let genome = GenomePedigree::build(&ped, WALK)?;
     let (sweep, mother, father) = (&genome.sweep, &genome.mother, &genome.father);
     let depth = ped.depth();
     let twin = ped.twin();
+    let (row_mother, row_father) = (ped.mother(), ped.father());
 
     let mut f = alloc::filled(0.0f64, n, WALK, "float64")?;
     let mut d_var = alloc::filled(0.0f64, n, WALK, "float64")?;
+    let mut ancestors = alloc::filled(0i32, n, WALK, "int32")?;
     let mut t = alloc::filled(0.0f64, n, WALK, "float64")?;
     let mut in_frontier = alloc::filled(false, n, WALK, "bool")?;
+    // Which co-twin rows the current walk has reached as a graph-row parent.
+    let mut reached = alloc::filled(false, if genome.has_twins { n } else { 0 }, WALK, "bool")?;
     let mut head = alloc::filled(NIL, sweep.max_depth() + 1, WALK, "uint32")?;
     let capacity = initial_capacity(n, sweep.max_depth());
     let mut touched: Vec<u32> = alloc::with_capacity(capacity, WALK, "uint32")?;
@@ -59,12 +83,18 @@ pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
         if c != i {
             f[i] = f[c];
             d_var[i] = d_var[c];
+            ancestors[i] = ancestors[c];
             continue;
         }
         let (s, d) = (mother[i], father[i]);
         d_var[i] = mendelian_variance(s, d, &f);
-        if s < 0 || d < 0 {
-            continue;
+        match (s >= 0, d >= 0) {
+            (false, false) => continue,
+            (true, false) | (false, true) => {
+                ancestors[i] = ancestors[s.max(d) as usize] + 1;
+                continue;
+            }
+            (true, true) => {}
         }
 
         t[i] = 1.0;
@@ -73,12 +103,21 @@ pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
         alloc::push(&mut next, head[di], WALK, "uint32")?;
         head[di] = 0;
         alloc::push(&mut touched, row, WALK, "uint32")?;
+        let mut both_twins = 0usize;
 
         for k in (0..=di).rev() {
             let mut pos = head[k];
             while pos != NIL {
                 let a = touched[pos as usize] as usize;
                 let t_a = t[a];
+                if genome.has_twins {
+                    for r in [row_mother[a], row_father[a]] {
+                        if r >= 0 && twin[r as usize] >= 0 && !reached[r as usize] {
+                            reached[r as usize] = true;
+                            both_twins += usize::from(reached[twin[r as usize] as usize]);
+                        }
+                    }
+                }
                 for p in [mother[a], father[a]] {
                     if p < 0 {
                         continue;
@@ -105,15 +144,21 @@ pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
             sum += tj * tj * d_var[j as usize];
         }
         f[i] = sum - 1.0;
+        ancestors[i] = (touched.len() - 1 + both_twins) as i32;
 
         for &j in &touched {
-            t[j as usize] = 0.0;
-            in_frontier[j as usize] = false;
+            let j = j as usize;
+            t[j] = 0.0;
+            in_frontier[j] = false;
+            if genome.has_twins && twin[j] >= 0 {
+                reached[j] = false;
+                reached[twin[j] as usize] = false;
+            }
         }
         touched.clear();
         next.clear();
     }
-    Ok(f)
+    Ok((f, ancestors))
 }
 
 /// The Mendelian sampling variance of a genome node whose parent nodes are
@@ -133,6 +178,7 @@ pub(super) struct GenomePedigree<'a> {
     /// Each row's parents as genome nodes.
     pub(super) mother: Cow<'a, [i32]>,
     pub(super) father: Cow<'a, [i32]>,
+    has_twins: bool,
 }
 
 impl<'a> GenomePedigree<'a> {
@@ -148,6 +194,7 @@ impl<'a> GenomePedigree<'a> {
             sweep,
             mother,
             father,
+            has_twins,
         })
     }
 
@@ -243,6 +290,7 @@ fn initial_capacity(n: usize, max_depth: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::lineage::ParentColumns;
     use crate::topology::structural_depth;
 
     struct Cols {
@@ -299,6 +347,39 @@ mod tests {
         // same genome as a grandparent, phi(2, 5) = 1/4 * phi(3, 3) = 1/8.
         assert_eq!(f[6], 0.125);
         assert_eq!(f[2], f[3]);
+    }
+
+    fn ancestor_counts(c: &Cols) -> Vec<i32> {
+        inbreeding_and_ancestor_counts(c.ped()).unwrap().1
+    }
+
+    #[test]
+    fn a_descendant_of_both_co_twins_counts_both_rows() {
+        // 2, 3 MZ of (0, 1); 4 = (2, -1), 5 = (3, -1), 6 = (4, 5).  Genome
+        // node 2 stands for both twins, and both are 6's ancestors.
+        let c = Cols::new(
+            &[(-1, -1), (-1, -1), (0, 1), (0, 1), (2, -1), (3, -1), (4, 5)],
+            &[(2, 3)],
+        );
+        assert_eq!(ancestor_counts(&c), vec![0, 0, 2, 2, 3, 3, 6]);
+    }
+
+    #[test]
+    fn walk_counts_match_the_ancestor_set_sweep() {
+        for seed in [3, 11, 29] {
+            let c = crate::relationships::testing::random_pedigree(800, seed);
+            let depth = structural_depth(&c.mother, &c.father);
+            assert!(c.twin.iter().any(|&t| t >= 0));
+            let no_twins = vec![-1; c.twin.len()];
+            let cols = ParentColumns::try_new(&c.mother, &c.father, Some(&depth)).unwrap();
+            let want = crate::lineage::distinct_ancestor_counts(cols).unwrap();
+            for twin in [&c.twin, &no_twins] {
+                let ped = KinshipPedigree::try_new(&c.mother, &c.father, twin, &depth).unwrap();
+                let (f, got) = inbreeding_and_ancestor_counts(ped).unwrap();
+                assert_eq!(got, want, "seed {seed}");
+                assert_eq!(f, inbreeding(ped).unwrap());
+            }
+        }
     }
 
     #[test]

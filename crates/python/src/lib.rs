@@ -35,6 +35,9 @@ use std::time::{Duration, Instant};
 /// `(order, inverse)` intp arrays of a depth-major permutation.
 type Permutation<'py> = (Bound<'py, PyArray1<i64>>, Bound<'py, PyArray1<i64>>);
 
+/// `F` and the distinct ancestor counts, one of each per graph row.
+type InbreedingArrays<'py> = (Bound<'py, PyArray1<f64>>, Bound<'py, PyArray1<i32>>);
+
 /// The Cargo workspace version, which is also the Python distribution version.
 #[pyfunction]
 fn core_version() -> &'static str {
@@ -1217,21 +1220,22 @@ fn generation_kinship_sums<'py>(
     Ok(sums.into_pyarray(py))
 }
 
-/// Inbreeding `F` per graph row, float64: the Meuwissen-Luo walk over the
-/// genome-node pedigree (ADR 0008), serial, with the GIL released.
+/// Inbreeding `F` per graph row, float64, and distinct strict ancestors per
+/// graph row, int32: one Meuwissen-Luo walk over the genome-node pedigree
+/// (ADR 0008), serial, with the GIL released.
 #[pyfunction]
 #[pyo3(signature = (pedigree, depth, /))]
 fn inbreeding<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
-) -> PyResult<Bound<'py, PyArray1<f64>>> {
+) -> PyResult<InbreedingArrays<'py>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
-    let values = py
-        .detach(|| kinship::inbreeding(ped))
+    let (f, ancestors) = py
+        .detach(|| kinship::inbreeding_and_ancestor_counts(ped))
         .map_err(|e| to_pyerr(py, e))?;
-    Ok(values.into_pyarray(py))
+    Ok((f.into_pyarray(py), ancestors.into_pyarray(py)))
 }
 
 /// The parent columns of a graph's [`BuiltPedigree`] and, when the host has

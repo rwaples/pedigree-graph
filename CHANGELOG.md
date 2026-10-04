@@ -6,15 +6,25 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: `inbreeding()` now also memoises `distinct_ancestor_counts()`**
+  (issue #40). The Meuwissen-Luo walk already visits each row's whole
+  ancestral closure, so it counts the distinct ancestors on the way, MZ
+  co-twins included, at O(rows) memory. After `inbreeding()`, a call to
+  `distinct_ancestor_counts()` returns the memo without the ancestor-set
+  sweep, which on 1M rows held 4.06 GB at 16 generations and more than
+  12 GiB at 20. A standalone `distinct_ancestor_counts()` still runs the
+  sweep, which is faster when it fits in memory. The counts are equal either
+  way.
 - **Changed: `mean_kinship_by_generation`, `ne_coancestry` and
   `ne_group_coancestry` reuse the graph's memoised `F` instead of running
   their own inbreeding walk** (issue #41). The kinship sums rebuild the
   Mendelian variances from `F` with the walk's formula, so every value is
   bit-identical. `estimate_effective_sizes` with all eight estimators now
   runs the walk once.
-- **Changed (private): `_native.generation_kinship_sums` takes `F` after
-  `depth`.** The core's `generation_kinship_sums` takes `inbreeding: &[f64]`
-  the same way.
+- **Changed (private): `_native.inbreeding` returns `(F, ancestor_counts)`,
+  and `_native.generation_kinship_sums` takes `F` after `depth`.** The core's
+  `generation_kinship_sums` takes `inbreeding: &[f64]` the same way, and
+  `inbreeding_and_ancestor_counts` is new beside `inbreeding`.
 
 ## v0.12.1
 
