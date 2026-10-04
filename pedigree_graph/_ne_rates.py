@@ -103,7 +103,8 @@ def _kinship_summary_for_labels(pg: PedigreeGraph, labels: np.ndarray) -> Genera
     join none, whatever the label values are.  The core reads no kinship
     rows: per bucket it sweeps the genome-node pedigree once, backwards, in
     float64, so memory stays linear in the rows however related they are.
-    Both the memoised graph-label summary and the masked-label summary the
+    The sweep's ``D`` comes from the graph's memoised *F*, so the sums run no
+    inbreeding walk beyond the one that fills it.  Both the memoised graph-label summary and the masked-label summary the
     group-coancestry prerequisite needs go through here.
 
     Args:
@@ -116,7 +117,7 @@ def _kinship_summary_for_labels(pg: PedigreeGraph, labels: np.ndarray) -> Genera
         those labels.
     """
     dense, observed, n_unlabelled = _densify_labels(np.asarray(labels))
-    sums = _native.generation_kinship_sums(pg._built, pg.depth, dense, int(observed.shape[0]))
+    sums = _native.generation_kinship_sums(pg._built, pg.depth, pg._inbreeding_values(), dense, int(observed.shape[0]))
     return _finalize_summary(sums, dense, np.asarray(pg.twin_rows), observed, n_unlabelled)
 
 

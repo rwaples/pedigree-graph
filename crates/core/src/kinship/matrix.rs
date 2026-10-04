@@ -593,7 +593,7 @@ pub fn approximate_kinship_csc(ped: KinshipPedigree<'_>, threshold: f64) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kinship::{generation_kinship_sums, pair_kinship};
+    use crate::kinship::{generation_kinship_sums, inbreeding, pair_kinship};
     use crate::topology::structural_depth;
 
     struct Cols {
@@ -777,7 +777,9 @@ mod tests {
                     }
                 }
             }
-            let got = generation_kinship_sums(c.ped(), &labels, buckets).unwrap();
+            let got =
+                generation_kinship_sums(c.ped(), &inbreeding(c.ped()).unwrap(), &labels, buckets)
+                    .unwrap();
             for (g, w) in got.iter().zip(&want) {
                 assert!((g - w).abs() <= 1e-12, "{got:?} vs {want:?}");
             }
@@ -798,7 +800,7 @@ mod tests {
         let m = dense(&kinship_csc(c.ped()).unwrap(), 5);
         assert_eq!(m[0][4], 0.125, "the pair is held on row 4's side");
         let labels = vec![0, 0, 0, 0, 0];
-        let sums = generation_kinship_sums(c.ped(), &labels, 1).unwrap();
+        let sums = generation_kinship_sums(c.ped(), &[0.0; 5], &labels, 1).unwrap();
         let want: f64 = (0..5)
             .flat_map(|i| (i + 1..5).map(move |j| (i, j)))
             .map(|(i, j)| f64::from(m[i][j]))
@@ -873,7 +875,7 @@ mod tests {
             dense(&approximate_kinship_csc(raised, 0.1).unwrap(), 3),
             want
         );
-        let sums = generation_kinship_sums(raised, &[0, 0, 0], 1).unwrap();
+        let sums = generation_kinship_sums(raised, &[0.0; 3], &[0, 0, 0], 1).unwrap();
         assert_eq!(sums, vec![0.5]);
     }
 
@@ -883,7 +885,10 @@ mod tests {
         let csc = kinship_csc(c.ped()).unwrap();
         assert_eq!(csc.indptr, vec![0]);
         assert!(csc.indices.is_empty());
-        assert_eq!(generation_kinship_sums(c.ped(), &[], 1).unwrap(), vec![0.0]);
+        assert_eq!(
+            generation_kinship_sums(c.ped(), &[], &[], 1).unwrap(),
+            vec![0.0]
+        );
     }
 
     const MATRIX_FAMILIES: [Family; 3] = [

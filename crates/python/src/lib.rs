@@ -1193,23 +1193,26 @@ fn approximate_kinship_csc<'py>(
 }
 
 /// Per bucket, the float64 kinship summed over unordered same-bucket pairs
-/// of distinct rows that are not MZ co-twins.  `labels` is one int32 bucket
-/// per graph row, in `0..n_buckets` or `n_buckets` for none.  One backward
-/// sweep per bucket; no kinship is stored.
+/// of distinct rows that are not MZ co-twins.  `inbreeding` is the graph's
+/// float64 `F` from [`inbreeding`]; `labels` is one int32 bucket per graph
+/// row, in `0..n_buckets` or `n_buckets` for none.  One backward sweep per
+/// bucket; no kinship is stored and no walk is run.
 #[pyfunction]
-#[pyo3(signature = (pedigree, depth, labels, n_buckets, /))]
+#[pyo3(signature = (pedigree, depth, inbreeding, labels, n_buckets, /))]
 fn generation_kinship_sums<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
+    inbreeding: PyReadonlyArray1<'py, f64>,
     labels: PyReadonlyArray1<'py, i32>,
     n_buckets: usize,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
+    let inbreeding = inbreeding.as_slice()?;
     let labels = labels.as_slice()?;
     let sums = py
-        .detach(|| kinship::generation_kinship_sums(ped, labels, n_buckets))
+        .detach(|| kinship::generation_kinship_sums(ped, inbreeding, labels, n_buckets))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(sums.into_pyarray(py))
 }

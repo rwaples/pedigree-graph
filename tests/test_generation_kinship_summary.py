@@ -12,7 +12,7 @@ import pytest
 from _support import _build_closed_line, _matrix_walk_summary
 from conftest import FIXTURES, parity_columns
 
-from pedigree_graph import MissingMetadataError, PedigreeGraph
+from pedigree_graph import MissingMetadataError, PedigreeGraph, _native
 from pedigree_graph._ne_common import _genome_node_labels
 from pedigree_graph.effective_size import ne_coancestry
 from pedigree_graph.summaries import GenerationKinshipSummary
@@ -53,6 +53,21 @@ def test_absent_labels_fall_back_to_structural_depth():
     pg = _graph()
     assert pg.generation_labels is None
     _assert_summary(pg.mean_kinship_by_generation(), [0, 1, 2], _DEPTH_MEANS, _DEPTH_PAIRS, 0)
+
+
+def test_the_summary_and_inbreeding_share_one_walk(monkeypatch):
+    walks = []
+    walk = _native.inbreeding
+
+    def counted(*args):
+        walks.append(1)
+        return walk(*args)
+
+    monkeypatch.setattr(_native, "inbreeding", counted)
+    pg = _graph()
+    pg.mean_kinship_by_generation()
+    pg.inbreeding()
+    assert len(walks) == 1
 
 
 def test_partial_labels_exclude_and_count_the_unlabelled_rows():

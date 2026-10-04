@@ -38,44 +38,11 @@ const NIL: u32 = u32::MAX;
 /// above both parents', or not its MZ co-twin's, and
 /// [`Error::AllocationFailed`] for any buffer.
 pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
-    Ok(genome_walk(ped)?.f)
-}
-
-/// What the walk leaves behind: the genome-node pedigree it swept, and `F`
-/// and `D` for every graph row.
-pub(super) struct GenomeWalk<'a> {
-    pub(super) sweep: DepthOrder,
-    /// Each row's parents as genome nodes.
-    pub(super) mother: Cow<'a, [i32]>,
-    pub(super) father: Cow<'a, [i32]>,
-    pub(super) f: Vec<f64>,
-    /// The Mendelian sampling variance of each row, on the `A = 2φ` scale.
-    pub(super) d_var: Vec<f64>,
-}
-
-/// A row's genome node: the lower graph row of an MZ pair, else the row.
-pub(super) fn genome_node(twin: &[i32], row: usize) -> usize {
-    let t = twin[row];
-    if t >= 0 && (t as usize) < row {
-        t as usize
-    } else {
-        row
-    }
-}
-
-/// The Meuwissen-Luo walk itself, behind [`inbreeding()`].
-///
-/// # Errors
-///
-/// As [`inbreeding()`].
-pub(super) fn genome_walk(ped: KinshipPedigree<'_>) -> Result<GenomeWalk<'_>, Error> {
     let n = ped.len();
-    check_twin_depths(ped.twin(), ped.depth())?;
-    let sweep = DepthOrder::build(ped.mother(), ped.father(), ped.depth(), WALK)?;
+    let genome = GenomePedigree::build(&ped, WALK)?;
+    let (sweep, mother, father) = (&genome.sweep, &genome.mother, &genome.father);
     let depth = ped.depth();
     let twin = ped.twin();
-    let node = |row: usize| genome_node(twin, row);
-    let (mother, father) = genome_parents(&ped, node)?;
 
     let mut f = alloc::filled(0.0f64, n, WALK, "float64")?;
     let mut d_var = alloc::filled(0.0f64, n, WALK, "float64")?;
@@ -88,29 +55,16 @@ pub(super) fn genome_walk(ped: KinshipPedigree<'_>) -> Result<GenomeWalk<'_>, Er
 
     for &row in &sweep.order {
         let i = row as usize;
-        let c = node(i);
+        let c = genome_node(twin, i);
         if c != i {
             f[i] = f[c];
             d_var[i] = d_var[c];
             continue;
         }
         let (s, d) = (mother[i], father[i]);
-        match (s >= 0, d >= 0) {
-            (false, false) => {
-                d_var[i] = 1.0;
-                continue;
-            }
-            (false, true) => {
-                d_var[i] = 0.75 - 0.25 * f[d as usize];
-                continue;
-            }
-            (true, false) => {
-                d_var[i] = 0.75 - 0.25 * f[s as usize];
-                continue;
-            }
-            (true, true) => {
-                d_var[i] = 0.5 - 0.25 * (f[s as usize] + f[d as usize]);
-            }
+        d_var[i] = mendelian_variance(s, d, &f);
+        if s < 0 || d < 0 {
+            continue;
         }
 
         t[i] = 1.0;
@@ -159,13 +113,71 @@ pub(super) fn genome_walk(ped: KinshipPedigree<'_>) -> Result<GenomeWalk<'_>, Er
         touched.clear();
         next.clear();
     }
-    Ok(GenomeWalk {
-        sweep,
-        mother,
-        father,
-        f,
-        d_var,
-    })
+    Ok(f)
+}
+
+/// The Mendelian sampling variance of a genome node whose parent nodes are
+/// `s` and `d`, on the `A = 2φ` scale, from the parents' `F`.
+fn mendelian_variance(s: i32, d: i32, f: &[f64]) -> f64 {
+    match (s >= 0, d >= 0) {
+        (false, false) => 1.0,
+        (false, true) => 0.75 - 0.25 * f[d as usize],
+        (true, false) => 0.75 - 0.25 * f[s as usize],
+        (true, true) => 0.5 - 0.25 * (f[s as usize] + f[d as usize]),
+    }
+}
+
+/// The genome-node pedigree the walk and the kinship sums sweep.
+pub(super) struct GenomePedigree<'a> {
+    pub(super) sweep: DepthOrder,
+    /// Each row's parents as genome nodes.
+    pub(super) mother: Cow<'a, [i32]>,
+    pub(super) father: Cow<'a, [i32]>,
+}
+
+impl<'a> GenomePedigree<'a> {
+    /// # Errors
+    ///
+    /// As [`inbreeding()`], with every buffer reserved under `family`.
+    pub(super) fn build(ped: &KinshipPedigree<'a>, family: Family) -> Result<Self, Error> {
+        check_twin_depths(ped.twin(), ped.depth())?;
+        let sweep = DepthOrder::build(ped.mother(), ped.father(), ped.depth(), family)?;
+        let has_twins = ped.twin().iter().any(|&t| t >= 0);
+        let (mother, father) = genome_parents(ped, has_twins, family)?;
+        Ok(GenomePedigree {
+            sweep,
+            mother,
+            father,
+        })
+    }
+
+    /// The Mendelian sampling variance `D` of every graph row from `F`, the
+    /// value the walk computed for it.  A non-canonical twin has its node's
+    /// parents and so its node's `D`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] under `family`.
+    pub(super) fn mendelian_variances(&self, f: &[f64], family: Family) -> Result<Vec<f64>, Error> {
+        alloc::collect(
+            self.mother
+                .iter()
+                .zip(self.father.iter())
+                .map(|(&s, &d)| mendelian_variance(s, d, f)),
+            family,
+            "float64",
+        )
+    }
+}
+
+/// A row's genome node: the lower graph row of an MZ pair, else the row.
+pub(super) fn genome_node(twin: &[i32], row: usize) -> usize {
+    let t = twin[row];
+    if t >= 0 && (t as usize) < row {
+        t as usize
+    } else {
+        row
+    }
 }
 
 /// Co-twins are one node, swept at one depth.  Structural depth always puts
@@ -191,16 +203,23 @@ fn check_twin_depths(twin: &[i32], depth: &[i32]) -> Result<(), Error> {
 /// the pedigree has no twins.
 fn genome_parents<'a>(
     ped: &KinshipPedigree<'a>,
-    node: impl Fn(usize) -> usize,
+    has_twins: bool,
+    family: Family,
 ) -> Result<Parents<'a>, Error> {
-    if ped.twin().iter().all(|&t| t < 0) {
+    if !has_twins {
         return Ok((Cow::Borrowed(ped.mother()), Cow::Borrowed(ped.father())));
     }
+    let twin = ped.twin();
     let canonical = |rows: &[i32]| {
         alloc::collect(
-            rows.iter()
-                .map(|&p| if p < 0 { -1 } else { node(p as usize) as i32 }),
-            WALK,
+            rows.iter().map(|&p| {
+                if p < 0 {
+                    -1
+                } else {
+                    genome_node(twin, p as usize) as i32
+                }
+            }),
+            family,
             "int32",
         )
     };

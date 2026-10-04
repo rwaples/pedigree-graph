@@ -4,6 +4,18 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Changed: `mean_kinship_by_generation`, `ne_coancestry` and
+  `ne_group_coancestry` reuse the graph's memoised `F` instead of running
+  their own inbreeding walk** (issue #41). The kinship sums rebuild the
+  Mendelian variances from `F` with the walk's formula, so every value is
+  bit-identical. `estimate_effective_sizes` with all eight estimators now
+  runs the walk once.
+- **Changed (private): `_native.generation_kinship_sums` takes `F` after
+  `depth`.** The core's `generation_kinship_sums` takes `inbreeding: &[f64]`
+  the same way.
+
 ## v0.12.1
 
 - **Added: `progress=` on `relationship_counts`, `relationship_pairs`,

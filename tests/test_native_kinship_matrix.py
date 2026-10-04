@@ -95,7 +95,7 @@ def test_generation_sums_match_the_oracle(name, seed):
     for labels in (np.asarray(graph.depth, dtype=np.int32), shuffled):
         dense, observed, _ = _densify_labels(labels)
         k = int(observed.shape[0])
-        got = _native.generation_kinship_sums(graph._built, graph.depth, dense, k)
+        got = _native.generation_kinship_sums(graph._built, graph.depth, graph.inbreeding(), dense, k)
         want = _oracle_sums(graph, dense, k + 1)[:k]
         assert got.dtype == np.float64
         if name in FLOAT32_INEXACT:
@@ -137,7 +137,7 @@ def test_a_parentless_row_above_depth_zero_keeps_its_diagonal():
     assert _bytes(_native.approximate_kinship_csc(graph._built, depth, THRESHOLD)) == _oracle_csc(Raised, THRESHOLD)
     dense, observed, _ = _densify_labels(np.asarray(graph.depth, dtype=np.int32))
     k = int(observed.shape[0])
-    got = _native.generation_kinship_sums(graph._built, depth, dense, k)
+    got = _native.generation_kinship_sums(graph._built, depth, graph.inbreeding(), dense, k)
     assert got.tobytes() == _oracle_sums(Raised, dense, k + 1)[:k].tobytes()
 
 
@@ -157,7 +157,7 @@ def test_a_retired_row_cannot_be_resurrected():
     assert _bytes(_native.approximate_kinship_csc(graph._built, graph.depth, 0.0)) == _oracle_csc(graph, 0.0)
     assert graph.kinship_matrix()[0, 4] == 0.125
     dense = np.zeros(5, dtype=np.int32)
-    got = _native.generation_kinship_sums(graph._built, graph.depth, dense, 1)
+    got = _native.generation_kinship_sums(graph._built, graph.depth, graph.inbreeding(), dense, 1)
     assert got.tolist() == [4 * 0.25 + 2 * 0.125]
 
 
@@ -179,7 +179,7 @@ class TestBoundary:
         indptr, indices, data = _native.kinship_csc(graph._built, graph.depth)
         assert indptr.tolist() == [0]
         assert indices.shape == data.shape == (0,)
-        sums = _native.generation_kinship_sums(graph._built, graph.depth, np.zeros(0, np.int32), 1)
+        sums = _native.generation_kinship_sums(graph._built, graph.depth, np.zeros(0), np.zeros(0, np.int32), 1)
         assert sums.tolist() == [0.0]
 
     def test_a_non_structural_depth_is_rejected(self):
@@ -199,18 +199,23 @@ class TestBoundary:
     def test_bad_labels_are_rejected(self):
         graph = parity_graph("nuclear_full_sibs")
         n = graph.n_individuals
+        F = graph.inbreeding()
         with pytest.raises(PedigreeValidationError) as info:
-            _native.generation_kinship_sums(graph._built, graph.depth, np.full(n, 3, np.int32), 2)
+            _native.generation_kinship_sums(graph._built, graph.depth, F, np.full(n, 3, np.int32), 2)
         assert info.value.code == "value_out_of_range"
         assert info.value.fields["field"] == "labels"
         with pytest.raises(PedigreeValidationError) as info:
-            _native.generation_kinship_sums(graph._built, graph.depth, np.full(n, -1, np.int32), 2)
+            _native.generation_kinship_sums(graph._built, graph.depth, F, np.full(n, -1, np.int32), 2)
         assert info.value.fields["field"] == "labels"
+        with pytest.raises(PedigreeValidationError) as info:
+            _native.generation_kinship_sums(graph._built, graph.depth, F[:-1], np.zeros(n, np.int32), 1)
+        assert info.value.code == "length_mismatch"
+        assert info.value.fields["field"] == "inbreeding"
 
     def test_a_row_labelled_n_buckets_joins_no_bucket(self):
         graph = parity_graph("nuclear_full_sibs")
         n = graph.n_individuals
-        sums = _native.generation_kinship_sums(graph._built, graph.depth, np.zeros(n, np.int32), 0)
+        sums = _native.generation_kinship_sums(graph._built, graph.depth, graph.inbreeding(), np.zeros(n, np.int32), 0)
         assert sums.shape == (0,)
 
     def test_the_stub_names_the_three_entries(self):
@@ -235,7 +240,7 @@ SEAM_CASES = [
         for family in ("kinship_rows", "kinship_csc", "kinship_scratch")
         for product in ("complete", "approximate")
     ),
-    *((family, "sums") for family in ("inbreeding_walk", "kinship_sums")),
+    ("kinship_sums", "sums"),
 ]
 
 
@@ -249,7 +254,7 @@ def test_a_refused_allocation_raises_a_resource_error(family, product):
         calls = {{
             "complete": lambda: _native.kinship_csc(graph._built, graph.depth),
             "approximate": lambda: _native.approximate_kinship_csc(graph._built, graph.depth, 0.01),
-            "sums": lambda: _native.generation_kinship_sums(graph._built, graph.depth, labels, 1),
+            "sums": lambda: _native.generation_kinship_sums(graph._built, graph.depth, np.zeros(n), labels, 1),
         }}
         call = calls[product]
         _native.fail_next_allocation(family, 1)
@@ -265,6 +270,19 @@ def test_a_refused_allocation_raises_a_resource_error(family, product):
     """
     lines = _run_child(CHILD_PRELUDE, body).strip().splitlines()
     assert lines == [f"allocation_failed {family} True", "recovered"]
+
+
+def test_the_sums_run_no_inbreeding_walk():
+    """The sums read F from their caller, so a refused walk allocation never reaches them."""
+    body = """
+        F = graph.inbreeding()
+        labels = np.zeros(n, dtype=np.int32)
+        _native.fail_next_allocation("inbreeding_walk", 1)
+        sums = _native.generation_kinship_sums(graph._built, graph.depth, F, labels, 1)
+        _native.fail_next_allocation(None)
+        print(sums.shape)
+    """
+    assert _run_child(CHILD_PRELUDE, body).strip() == "(1,)"
 
 
 def test_allocation_families_list_the_matrix_families():

@@ -9,7 +9,7 @@
 //! expression the 0.9.3 NumPy and Numba code used, in the same order.
 
 use super::depth_order::{DepthOrder, ParentsFirst};
-use super::inbreeding::{genome_node, genome_walk};
+use super::inbreeding::{genome_node, GenomePedigree};
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -169,11 +169,13 @@ pub fn founder_contribution_means(
 /// distinct rows that are not MZ co-twins, as float64.
 ///
 /// `labels` is each graph row's bucket in `0..n_buckets`, or `n_buckets`
-/// for a row in none.
+/// for a row in none.  `inbreeding` is every graph row's `F` as
+/// [`inbreeding()`](super::inbreeding()) returns it for `ped`; the sums
+/// rebuild `D` from it rather than walk again.
 ///
 /// No kinship is stored.  Over the genome-node pedigree `A = 2φ` factors as
-/// `T D Tᵀ`, with `D` the Mendelian sampling variances the inbreeding walk
-/// leaves, so a bucket whose genome counts are `c` has `cᵀ A c = Σ D_i y_i²`
+/// `T D Tᵀ`, with `D` the Mendelian sampling variances of the inbreeding
+/// walk, so a bucket whose genome counts are `c` has `cᵀ A c = Σ D_i y_i²`
 /// for `y = Tᵀ c`.  `y` is one backward sweep: from the deepest member's
 /// depth down to 0 every genome node adds `D y²` and sends `y / 2` to each
 /// parent node.  Taking away the diagonal `Σ c_x² (1 + F_x)` leaves the
@@ -189,17 +191,19 @@ pub fn founder_contribution_means(
 ///
 /// # Errors
 ///
-/// [`Error::LengthMismatch`] when `labels` is not one per row,
+/// [`Error::LengthMismatch`] when `inbreeding` or `labels` is not one per row,
 /// [`Error::ValueOutOfRange`] on `labels`, on `n_buckets` past int32 or on
-/// `depth` as [`inbreeding()`] reports it, and [`Error::AllocationFailed`]
+/// `depth` as [`inbreeding()`](super::inbreeding()) reports it, and [`Error::AllocationFailed`]
 /// for any buffer.
 pub fn generation_kinship_sums(
     ped: KinshipPedigree<'_>,
+    inbreeding: &[f64],
     labels: &[i32],
     n_buckets: usize,
 ) -> Result<Vec<f64>, Error> {
     const SUMS: Family = Family::KinshipSums;
     let n = ped.len();
+    check_column_length("inbreeding", inbreeding.len(), n)?;
     check_column_length("labels", labels.len(), n)?;
     if n_buckets > i32::MAX as usize {
         return Err(Error::ValueOutOfRange {
@@ -219,11 +223,12 @@ pub fn generation_kinship_sums(
             maximum: n_buckets as i64,
         });
     }
-    let walk = genome_walk(ped)?;
+    let genome = GenomePedigree::build(&ped, SUMS)?;
+    let d_var = genome.mendelian_variances(inbreeding, SUMS)?;
     let (twin, depth) = (ped.twin(), ped.depth());
 
     // Rows grouped by bucket, ascending within each, so a bucket seeds from
-    // its own rows; the walk has put every co-twin at its node's depth.
+    // its own rows; every co-twin sits at its node's depth.
     let mut starts = alloc::filled(0usize, n_buckets + 2, SUMS, "uint64")?;
     let mut deepest = alloc::filled(0usize, n_buckets + 1, SUMS, "uint64")?;
     for (&b, &d) in labels.iter().zip(depth) {
@@ -251,19 +256,19 @@ pub fn generation_kinship_sums(
         for &row in rows {
             let x = genome_node(twin, row as usize);
             // (c + 1)² − c², so the total is Σ c_x² (1 + F_x).
-            diagonal += (2.0 * y[x] + 1.0) * (1.0 + walk.f[x]);
+            diagonal += (2.0 * y[x] + 1.0) * (1.0 + inbreeding[x]);
             y[x] += 1.0;
         }
         let mut quadratic = 0.0f64;
         for d in (0..=deepest[b]).rev() {
-            for &row in walk.sweep.rows_at(d) {
+            for &row in genome.sweep.rows_at(d) {
                 let i = row as usize;
                 let y_i = y[i];
                 if y_i == 0.0 {
                     continue;
                 }
-                quadratic += walk.d_var[i] * y_i * y_i;
-                for p in [walk.mother[i], walk.father[i]] {
+                quadratic += d_var[i] * y_i * y_i;
+                for p in [genome.mother[i], genome.father[i]] {
                     if p >= 0 {
                         y[p as usize] += 0.5 * y_i;
                     }
@@ -385,7 +390,8 @@ mod tests {
         let depth = structural_depth(&c.mother, &c.father);
         let ped = KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &depth).unwrap();
         assert!(c.twin.iter().any(|&t| t >= 0));
-        assert!(inbreeding(ped).unwrap().iter().any(|&f| f > 0.0));
+        let f = inbreeding(ped).unwrap();
+        assert!(f.iter().any(|&f| f > 0.0));
         // Buckets by depth, every third row in none.
         let n_buckets = *depth.iter().max().unwrap() as usize + 1;
         let labels: Vec<i32> = depth
@@ -393,7 +399,7 @@ mod tests {
             .enumerate()
             .map(|(i, &d)| if i % 3 == 0 { n_buckets as i32 } else { d })
             .collect();
-        let got = generation_kinship_sums(ped, &labels, n_buckets).unwrap();
+        let got = generation_kinship_sums(ped, &f, &labels, n_buckets).unwrap();
         let want = matrix_sums(ped, &labels, n_buckets);
         for (g, w) in got.iter().zip(&want) {
             assert!((g - w).abs() <= 1e-6 * w.max(1.0), "{got:?} vs {want:?}");
@@ -409,7 +415,8 @@ mod tests {
         let depth = structural_depth(&m, &f);
         let ped = KinshipPedigree::try_new(&m, &f, &twin, &depth).unwrap();
         let labels = [0; 6];
-        let got = generation_kinship_sums(ped, &labels, 1).unwrap();
+        let f = inbreeding(ped).unwrap();
+        let got = generation_kinship_sums(ped, &f, &labels, 1).unwrap();
         assert_eq!(got, matrix_sums(ped, &labels, 1));
     }
 
@@ -434,7 +441,7 @@ mod tests {
         };
         assert!(rejected(inbreeding(ped).unwrap_err()));
         assert!(rejected(
-            generation_kinship_sums(ped, &[0, 0, 1, 1], 2).unwrap_err()
+            generation_kinship_sums(ped, &[0.0; 4], &[0, 0, 1, 1], 2).unwrap_err()
         ));
     }
 
@@ -442,27 +449,28 @@ mod tests {
     fn kinship_sums_take_no_bucket_and_check_their_labels() {
         let (m, f) = ([-1, -1, 0], [-1, -1, 1]);
         with_ped(&m, &f, |p| {
-            assert_eq!(
-                generation_kinship_sums(p, &[0, 0, 0], 0).unwrap(),
-                Vec::<f64>::new()
-            );
-            assert_eq!(
-                generation_kinship_sums(p, &[0, 0, 1], 1).unwrap(),
-                vec![0.0]
-            );
-            assert_eq!(
-                generation_kinship_sums(p, &[0, 1, 0], 1).unwrap(),
-                vec![0.25]
-            );
+            let sums = |labels: &[i32], n_buckets| {
+                generation_kinship_sums(p, &[0.0; 3], labels, n_buckets)
+            };
+            assert_eq!(sums(&[0, 0, 0], 0).unwrap(), Vec::<f64>::new());
+            assert_eq!(sums(&[0, 0, 1], 1).unwrap(), vec![0.0]);
+            assert_eq!(sums(&[0, 1, 0], 1).unwrap(), vec![0.25]);
             assert!(matches!(
-                generation_kinship_sums(p, &[0, 0], 1),
+                sums(&[0, 0], 1),
                 Err(Error::LengthMismatch {
                     field: "labels",
                     ..
                 })
             ));
             assert!(matches!(
-                generation_kinship_sums(p, &[0, 0, 2], 1),
+                generation_kinship_sums(p, &[0.0; 2], &[0, 0, 0], 1),
+                Err(Error::LengthMismatch {
+                    field: "inbreeding",
+                    ..
+                })
+            ));
+            assert!(matches!(
+                sums(&[0, 0, 2], 1),
                 Err(Error::ValueOutOfRange {
                     field: "labels",
                     position: 2,
@@ -470,7 +478,7 @@ mod tests {
                 })
             ));
             assert!(matches!(
-                generation_kinship_sums(p, &[0, -1, 0], 1),
+                sums(&[0, -1, 0], 1),
                 Err(Error::ValueOutOfRange {
                     field: "labels",
                     position: 1,

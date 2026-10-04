@@ -183,6 +183,7 @@ def approximate_kinship_csc(
 def generation_kinship_sums(
     pedigree: BuiltPedigree,
     depth: NDArray[np.int32],
+    inbreeding: NDArray[np.float64],
     labels: NDArray[np.int32],
     n_buckets: int,
     /,
