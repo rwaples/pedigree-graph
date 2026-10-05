@@ -1,0 +1,39 @@
+{
+  "unit": "fitACE_iter_reml",
+  "stage": "0.12.2",
+  "routing": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-10-05T01:44:11",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.6,
+      "max_rss_mib": 102.4,
+      "tree_peak_mib": 108.1,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/fitACE_iter_reml/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider fitACE_iter_reml/tests",
+      "exit": 0,
+      "wall_s": 44.5,
+      "max_rss_mib": 361.1,
+      "tree_peak_mib": 1234.0,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/fitACE_iter_reml/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "........................................................................ [ 63%]",
+        "...........................ssss...........                               [100%]",
+        "110 passed, 4 skipped in 44.06s"
+      ]
+    }
+  ],
+  "ok": true
+}

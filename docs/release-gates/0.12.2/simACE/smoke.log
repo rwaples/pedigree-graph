@@ -1,0 +1,24 @@
+[small_test/rep1] simulate started
+[small_test/rep1] simulate finished in 0.7s, max RSS 208 MB, tree peak 101 MB
+[small_test/rep1] cohort started
+[small_test/rep1] cohort finished in 0.8s, max RSS 224 MB, tree peak 110 MB
+[small_test/rep1] analyze started
+[small_test/rep1] analyze finished in 1.9s, max RSS 277 MB, tree peak 146 MB
+[small_test/rep2] simulate started
+[small_test/rep2] simulate finished in 0.7s, max RSS 208 MB, tree peak 101 MB
+[small_test/rep2] cohort started
+[small_test/rep2] cohort finished in 0.9s, max RSS 224 MB, tree peak 110 MB
+[small_test/rep2] analyze started
+[small_test/rep2] analyze finished in 1.8s, max RSS 277 MB, tree peak 145 MB
+[small_test/rep3] simulate started
+[small_test/rep3] simulate finished in 0.7s, max RSS 208 MB, tree peak 102 MB
+[small_test/rep3] cohort started
+[small_test/rep3] cohort finished in 0.9s, max RSS 223 MB, tree peak 109 MB
+[small_test/rep3] analyze started
+[small_test/rep3] analyze finished in 1.9s, max RSS 278 MB, tree peak 146 MB
+[small_test] summary: 3 computed
+[small_test] plot started
+[small_test] plot finished in 12.0s
+[small_test] atlas started
+[small_test] atlas finished in 1.1s
+[small_test] plots: current

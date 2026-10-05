@@ -1,0 +1,67 @@
+{
+  "unit": "fitACE",
+  "stage": "0.12.2",
+  "routing": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-10-05T01:43:45",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.5,
+      "max_rss_mib": 103.2,
+      "tree_peak_mib": 109.2,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/fitACE/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 103.6,
+      "tree_peak_mib": 83.0,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/fitACE/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 104.3,
+      "tree_peak_mib": 82.3,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/fitACE/format.log",
+      "tail": [
+        "244 files already formatted"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider tests",
+      "exit": 0,
+      "wall_s": 17.8,
+      "max_rss_mib": 427.3,
+      "tree_peak_mib": 1674.7,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/fitACE/pytest.log",
+      "tail": [
+        "bringing up nodes...",
+        "bringing up nodes...",
+        "",
+        "........................................................................ [ 18%]",
+        "........................................................................ [ 36%]",
+        "........................................................................ [ 54%]",
+        "........................................................................ [ 73%]",
+        "........................................................................ [ 91%]",
+        ".................................                                        [100%]",
+        "393 passed in 16.63s"
+      ]
+    }
+  ],
+  "ok": true
+}

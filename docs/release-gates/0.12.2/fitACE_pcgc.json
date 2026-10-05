@@ -1,0 +1,45 @@
+{
+  "unit": "fitACE_pcgc",
+  "stage": "0.12.2",
+  "routing": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site",
+  "cwd": "fitACE",
+  "started": "2026-10-05T01:44:04",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.5,
+      "max_rss_mib": 102.9,
+      "tree_peak_mib": 108.6,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/fitACE_pcgc/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.2/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "pytest",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/fitACE/pixi.toml --frozen pytest -q -p no:cacheprovider fitACE_pcgc/tests",
+      "exit": 0,
+      "wall_s": 6.7,
+      "max_rss_mib": 358.2,
+      "tree_peak_mib": 1267.3,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/fitACE_pcgc/pytest.log",
+      "tail": [
+        "    r_ref = fit_pcgc(**kw, backend=\"reference\")",
+        "",
+        "tests/test_cpp_parity.py::TestCppParityHermite::test_ace_tiny",
+        "  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:198: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.",
+        "    r_nb = fit_pcgc(**kw, backend=\"numba\")",
+        "",
+        "tests/test_cpp_parity.py::TestCppParityHermite::test_ace_tiny",
+        "  /data/Documents/simACE/fitACE/fitACE_pcgc/tests/test_cpp_parity.py:199: DeprecationWarning: fit_pcgc: hermite_order= is deprecated in Phase 4; use moment='golan' / 'hermite2' / 'bivnor' / 'auto' instead.  The old name is preserved through 2026.07.",
+        "    r_cpp = fit_pcgc(**kw, backend=\"cpp\", threads=1)",
+        "",
+        "-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html",
+        "220 passed, 4 skipped, 53 warnings in 5.42s"
+      ]
+    }
+  ],
+  "ok": true
+}

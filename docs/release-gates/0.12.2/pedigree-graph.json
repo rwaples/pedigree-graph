@@ -1,0 +1,92 @@
+{
+  "unit": "pedigree-graph",
+  "stage": "0.12.2",
+  "routing": "own-manifest",
+  "cwd": "external/pedigree-graph",
+  "started": "2026-10-05T01:39:28",
+  "steps": [
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 41.6,
+      "tree_peak_mib": 22.1,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/pedigree-graph/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 41.1,
+      "tree_peak_mib": 22.4,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/pedigree-graph/format.log",
+      "tail": [
+        "256 files already formatted"
+      ]
+    },
+    {
+      "step": "ty",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen ty check",
+      "exit": 0,
+      "wall_s": 0.6,
+      "max_rss_mib": 115.5,
+      "tree_peak_mib": 109.9,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/pedigree-graph/ty.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "test-all",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen test-all",
+      "exit": 0,
+      "wall_s": 98.7,
+      "max_rss_mib": 2427.3,
+      "tree_peak_mib": 4116.6,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/pedigree-graph/test-all.log",
+      "tail": [
+        "........................................................................ [ 80%]",
+        "........................................................................ [ 82%]",
+        "........................................................................ [ 84%]",
+        "........................................................................ [ 86%]",
+        "........................................................................ [ 88%]",
+        "........................................................................ [ 90%]",
+        "........................................................................ [ 92%]",
+        "........................................................................ [ 94%]",
+        "........................................................................ [ 96%]",
+        "........................................................................ [ 98%]",
+        "................................................                         [100%]",
+        "======================= 3504 passed in 83.22s (0:01:23) ========================"
+      ]
+    },
+    {
+      "step": "test-rust",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pedigree-graph/pixi.toml --frozen test-rust",
+      "exit": 0,
+      "wall_s": 52.0,
+      "max_rss_mib": 8202.6,
+      "tree_peak_mib": 8373.3,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.2/pedigree-graph/test-rust.log",
+      "tail": [
+        "     Running unittests src/lib.rs (target/release/deps/pedigree_graph_native-c31ad0b7eb19ee1e)",
+        "",
+        "running 0 tests",
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "",
+        "   Doc-tests pedigree_graph_core",
+        "",
+        "running 0 tests",
+        "",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        ""
+      ]
+    }
+  ],
+  "ok": true
+}
