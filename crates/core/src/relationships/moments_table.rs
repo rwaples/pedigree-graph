@@ -18,7 +18,7 @@
 //! decodes a whole table: each accumulator is decoded when it is read, so
 //! the scratch beyond the input and the output is a few big integers.
 
-use super::moments::{Product, Side};
+use super::moments::{CellLayout, Product, Side, Slot};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use num_bigint::{BigInt, BigUint, Sign};
@@ -502,7 +502,7 @@ impl Statistic {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MomentsTable<'a> {
     shape: Vec<usize>,
-    n_columns: usize,
+    layout: CellLayout,
     products: Vec<Product>,
     exponents: Vec<i64>,
     width: usize,
@@ -590,7 +590,13 @@ impl<'a> MomentsTable<'a> {
                 "a product names column {column} of {n_columns}"
             )));
         }
-        let stride = 1 + 4 * n_columns + products.len();
+        let layout = CellLayout::new(n_columns, products.len()).ok_or_else(|| {
+            invalid(format!(
+                "{n_columns} columns and {} products overflow a cell",
+                products.len()
+            ))
+        })?;
+        let stride = layout.stride();
         let expected = shape
             .iter()
             .try_fold(stride, |acc, &s| acc.checked_mul(s))
@@ -604,7 +610,7 @@ impl<'a> MomentsTable<'a> {
         }
         let table = MomentsTable {
             shape,
-            n_columns,
+            layout,
             products,
             exponents,
             width,
@@ -659,7 +665,7 @@ impl<'a> MomentsTable<'a> {
 
     /// The value columns.
     pub fn n_columns(&self) -> usize {
-        self.n_columns
+        self.layout.n_columns()
     }
 
     /// The products, as `(side, column)` operand pairs.
@@ -689,7 +695,7 @@ impl<'a> MomentsTable<'a> {
 
     /// Accumulators per cell.
     pub fn stride(&self) -> usize {
-        1 + 4 * self.n_columns + self.products.len()
+        self.layout.stride()
     }
 
     /// Cells: the product of the axis sizes.
@@ -778,7 +784,7 @@ impl<'a> MomentsTable<'a> {
         let len = cells * self.stride() * width;
         Ok(MomentsTable {
             shape,
-            n_columns: self.n_columns,
+            layout: self.layout,
             products: self.products.clone(),
             exponents,
             width,
@@ -884,13 +890,18 @@ impl<'a> MomentsTable<'a> {
             .zip(&self.exponents)
             .map(|(t, e)| (t - e) as u64)
             .collect();
-        let mut out = vec![0u64];
-        out.extend(&s);
-        out.extend(&s);
-        out.extend(s.iter().map(|x| 2 * x));
-        out.extend(s.iter().map(|x| 2 * x));
-        out.extend(self.products.iter().map(|p| s[p.a.1] + s[p.b.1]));
-        out
+        self.layout
+            .slots()
+            .map(|slot| match slot {
+                Slot::Count => 0,
+                Slot::Sum(c) => s[c],
+                Slot::Square(c) => 2 * s[c],
+                Slot::Cross(i) => {
+                    let p = self.products[i];
+                    s[p.a.1] + s[p.b.1]
+                }
+            })
+            .collect()
     }
 
     /// Add two tables of one layout cell by cell.  Columns whose exponents
@@ -905,7 +916,7 @@ impl<'a> MomentsTable<'a> {
     /// pass `2^63 − 1`; [`Error::AllocationFailed`] for the output.
     pub fn merge(&self, other: &MomentsTable<'_>) -> Result<MomentsTable<'static>, Error> {
         if self.shape != other.shape
-            || self.n_columns != other.n_columns
+            || self.layout != other.layout
             || self.products != other.products
         {
             return Err(invalid(
@@ -954,12 +965,10 @@ impl<'a> MomentsTable<'a> {
     }
 
     fn column_slots(&self, side: Side, column: usize) -> (usize, usize) {
-        let k = self.n_columns;
-        let offset = match side {
-            Side::First => 0,
-            Side::Second => k,
-        };
-        (1 + offset + column, 1 + 2 * k + offset + column)
+        (
+            self.layout.sum(side, column),
+            self.layout.square(side, column),
+        )
     }
 
     fn product_exponent(&self, index: usize) -> i64 {
@@ -972,7 +981,7 @@ impl<'a> MomentsTable<'a> {
         let product = self.products[index];
         let (sum_a, _) = self.column_slots(product.a.0, product.a.1);
         let (sum_b, _) = self.column_slots(product.b.0, product.b.1);
-        (1 + 4 * self.n_columns + index, sum_a, sum_b)
+        (self.layout.cross(index), sum_a, sum_b)
     }
 
     /// One float per cell of `statistic` for column (or product) `index`.
@@ -993,7 +1002,7 @@ impl<'a> MomentsTable<'a> {
         let limit = if statistic.per_product() {
             self.products.len()
         } else {
-            self.n_columns
+            self.layout.n_columns()
         };
         if index >= limit {
             return Err(invalid(format!(
@@ -1029,7 +1038,7 @@ impl<'a> MomentsTable<'a> {
                 ratio_i128(read(self.column_slots(side, index).1)?, 1, 2 * e(index))
             }
             Statistic::Cross => ratio_i128(
-                read(1 + 4 * self.n_columns + index)?,
+                read(self.layout.cross(index))?,
                 1,
                 self.product_exponent(index),
             ),
@@ -1083,7 +1092,7 @@ impl<'a> MomentsTable<'a> {
                 ratio(&read(self.column_slots(side, index).1), &one, 2 * e(index))
             }
             Statistic::Cross => ratio(
-                &read(1 + 4 * self.n_columns + index),
+                &read(self.layout.cross(index)),
                 &one,
                 self.product_exponent(index),
             ),

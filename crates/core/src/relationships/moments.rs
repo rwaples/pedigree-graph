@@ -326,6 +326,115 @@ pub struct MomentsShape {
     pub n_same: usize,
 }
 
+/// Where each accumulator of one moments cell sits: the pair count, the
+/// sums of the first member's `n_columns` columns, of the second's, their
+/// sums of squares in the same order, then the cross sum of each product.
+/// Only [`CellLayout::new`] builds one, so its stride never wrapped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct CellLayout {
+    n_columns: usize,
+    n_products: usize,
+    stride: usize,
+}
+
+/// What one accumulator of a cell holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Slot {
+    Count,
+    /// A sum of column `c`, of either member.
+    Sum(usize),
+    /// A sum of squares of column `c`, of either member.
+    Square(usize),
+    /// The cross sum of product `i`.
+    Cross(usize),
+}
+
+impl CellLayout {
+    /// The layout of `n_columns` columns and `n_products` products, `None`
+    /// when its stride `1 + 4 n_columns + n_products` is not a `usize`.
+    pub(super) fn new(n_columns: usize, n_products: usize) -> Option<CellLayout> {
+        let stride = n_columns
+            .checked_mul(4)?
+            .checked_add(n_products)?
+            .checked_add(1)?;
+        Some(CellLayout {
+            n_columns,
+            n_products,
+            stride,
+        })
+    }
+
+    /// Accumulators per cell.
+    pub(super) fn stride(self) -> usize {
+        self.stride
+    }
+
+    pub(super) fn n_columns(self) -> usize {
+        self.n_columns
+    }
+
+    /// The slot of the sum of `side`'s column `c`.
+    pub(super) fn sum(self, side: Side, c: usize) -> usize {
+        1 + self.side_offset(side) + c
+    }
+
+    /// The slot of the sum of squares of `side`'s column `c`.
+    pub(super) fn square(self, side: Side, c: usize) -> usize {
+        1 + 2 * self.n_columns + self.side_offset(side) + c
+    }
+
+    /// The slot of product `i`'s cross sum.
+    pub(super) fn cross(self, i: usize) -> usize {
+        1 + 4 * self.n_columns + i
+    }
+
+    fn side_offset(self, side: Side) -> usize {
+        match side {
+            Side::First => 0,
+            Side::Second => self.n_columns,
+        }
+    }
+
+    /// What each slot of a cell holds, in slot order.
+    pub(super) fn slots(self) -> impl Iterator<Item = Slot> {
+        let k = self.n_columns;
+        std::iter::once(Slot::Count)
+            .chain((0..2 * k).map(move |i| Slot::Sum(i % k)))
+            .chain((0..2 * k).map(move |i| Slot::Square(i % k)))
+            .chain((0..self.n_products).map(Slot::Cross))
+    }
+
+    /// One cell's accumulators as the count, the first and second member's
+    /// sums, their sums of squares, and the cross sums.
+    #[inline]
+    pub(super) fn split(self, acc: &mut [i128]) -> CellParts<'_> {
+        let k = self.n_columns;
+        let (count, rest) = acc.split_at_mut(1);
+        let (sum_first, rest) = rest.split_at_mut(k);
+        let (sum_second, rest) = rest.split_at_mut(k);
+        let (square_first, rest) = rest.split_at_mut(k);
+        let (square_second, cross) = rest.split_at_mut(k);
+        CellParts {
+            count: &mut count[0],
+            sum_first,
+            sum_second,
+            square_first,
+            square_second,
+            cross,
+        }
+    }
+}
+
+/// One cell's accumulators, split by [`CellLayout::split`].
+pub(super) struct CellParts<'a> {
+    pub(super) count: &'a mut i128,
+    pub(super) sum_first: &'a mut [i128],
+    pub(super) sum_second: &'a mut [i128],
+    pub(super) square_first: &'a mut [i128],
+    pub(super) square_second: &'a mut [i128],
+    pub(super) cross: &'a mut [i128],
+}
+
 /// The sizes and lane count of one call, fixed before any accumulator exists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MomentsPlan {
@@ -333,8 +442,8 @@ pub struct MomentsPlan {
     accumulators: usize,
     /// Cells per category: `n_labels_first × n_labels_second × 2^n_same`.
     cells: usize,
-    /// `i128` accumulators per cell: count, four sums per column, one per product.
-    stride: usize,
+    /// Where each `i128` accumulator of a cell sits.
+    layout: CellLayout,
     /// Lanes the pass runs on.
     pub lanes: NonZeroUsize,
     /// The accumulator peak the pass is planned to reach.
@@ -369,8 +478,9 @@ impl MomentsPlan {
         threads: NonZeroUsize,
         budget_bytes: u64,
     ) -> Result<MomentsPlan, Error> {
-        let stride = 1 + 4 * shape.n_columns + shape.n_products;
         let unrepresentable = || over_budget(u64::MAX, budget_bytes);
+        let layout =
+            CellLayout::new(shape.n_columns, shape.n_products).ok_or_else(unrepresentable)?;
         let same_cells = u32::try_from(shape.n_same)
             .ok()
             .and_then(|s| 1u64.checked_shl(s))
@@ -381,7 +491,7 @@ impl MomentsPlan {
             .ok_or_else(unrepresentable)?;
         let accumulators = cells
             .checked_mul(shape.n_categories as u64)
-            .and_then(|c| c.checked_mul(stride as u64))
+            .and_then(|c| c.checked_mul(layout.stride() as u64))
             .ok_or_else(unrepresentable)?;
         let lane_bytes = accumulators.checked_mul(16).ok_or_else(unrepresentable)?;
         let host_bytes = host_bytes(accumulators).ok_or_else(unrepresentable)?;
@@ -401,7 +511,7 @@ impl MomentsPlan {
         Ok(MomentsPlan {
             accumulators,
             cells,
-            stride,
+            layout,
             lanes,
             estimated_peak_bytes: lane_bytes * lanes.get() as u64 + host_bytes,
         })
@@ -409,7 +519,7 @@ impl MomentsPlan {
 
     /// `i128` accumulators per cell.
     pub fn stride(&self) -> usize {
-        self.stride
+        self.layout.stride()
     }
 
     /// Cells per category.
@@ -453,7 +563,7 @@ impl<'a> CellReducer<'a> {
     /// [`Error::AllocationFailed`] for the output.
     pub fn finish(&self, lane: &[i128]) -> Result<(usize, Vec<u8>), Error> {
         if lane
-            .chunks_exact(self.plan.stride)
+            .chunks_exact(self.plan.stride())
             .any(|acc| acc[0] > MAX_CELL_PAIRS)
         {
             return Err(Error::ArithmeticOverflow {
@@ -484,27 +594,24 @@ impl Reducer for CellReducer<'_> {
             let x = input.same[a * s + j];
             cell = (cell << 1) | usize::from(x >= 0 && x == input.same[b * s + j]);
         }
-        let base = (self.slot[cat.index()] * self.plan.cells + cell) * self.plan.stride;
-        let acc = &mut lane[base..base + self.plan.stride];
-        acc[0] += 1;
+        let layout = self.plan.layout;
+        let base = (self.slot[cat.index()] * self.plan.cells + cell) * layout.stride();
+        let acc = layout.split(&mut lane[base..base + layout.stride()]);
+        *acc.count += 1;
         let va = &input.values[a * k..(a + 1) * k];
         let vb = &input.values[b * k..(b + 1) * k];
-        let (sum_a, rest) = acc[1..].split_at_mut(k);
-        let (sum_b, rest) = rest.split_at_mut(k);
-        let (sq_a, rest) = rest.split_at_mut(k);
-        let (sq_b, cross) = rest.split_at_mut(k);
         for c in 0..k {
             let (x, y) = (i128::from(va[c]), i128::from(vb[c]));
-            sum_a[c] += x;
-            sum_b[c] += y;
-            sq_a[c] += x * x;
-            sq_b[c] += y * y;
+            acc.sum_first[c] += x;
+            acc.sum_second[c] += y;
+            acc.square_first[c] += x * x;
+            acc.square_second[c] += y * y;
         }
         let pick = |(side, col): (Side, usize)| match side {
             Side::First => va[col],
             Side::Second => vb[col],
         };
-        for (product, out) in input.products.iter().zip(cross) {
+        for (product, out) in input.products.iter().zip(acc.cross) {
             *out += i128::from(pick(product.a)) * i128::from(pick(product.b));
         }
     }
@@ -624,7 +731,7 @@ pub fn relationship_moments(
     Ok(Moments {
         width,
         table,
-        stride: plan.stride,
+        stride: plan.stride(),
         cells: plan.cells,
         lanes: plan.lanes.get(),
         lane_pairs: reduced.lane_pairs,
@@ -873,6 +980,61 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// `1 + 4 n_columns + n_products` once wrapped in release builds:
+    /// `usize::MAX / 4 + 1` columns gave a stride of one.
+    #[test]
+    fn a_stride_past_usize_is_refused_not_wrapped() {
+        let n_columns = usize::MAX / 4 + 1;
+        assert_eq!(CellLayout::new(n_columns, 0), None);
+        assert_eq!(CellLayout::new(0, usize::MAX), None);
+        let shape = MomentsShape {
+            n_categories: 1,
+            n_labels_first: 1,
+            n_labels_second: 1,
+            n_columns,
+            n_products: 0,
+            n_same: 0,
+        };
+        assert!(matches!(
+            MomentsPlan::new(shape, NonZeroUsize::MIN, u64::MAX).unwrap_err(),
+            Error::MemoryBudgetExceeded {
+                estimated_bytes: u64::MAX,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn a_cell_layout_names_its_slots_in_order() {
+        let layout = CellLayout::new(2, 3).unwrap();
+        let slots: Vec<Slot> = layout.slots().collect();
+        assert_eq!(slots.len(), layout.stride());
+        assert_eq!(slots[0], Slot::Count);
+        for (side, c) in [
+            (Side::First, 0),
+            (Side::First, 1),
+            (Side::Second, 0),
+            (Side::Second, 1),
+        ] {
+            assert_eq!(slots[layout.sum(side, c)], Slot::Sum(c));
+            assert_eq!(slots[layout.square(side, c)], Slot::Square(c));
+        }
+        for i in 0..3 {
+            assert_eq!(slots[layout.cross(i)], Slot::Cross(i));
+        }
+        let mut acc: Vec<i128> = (0..11).collect();
+        let parts = layout.split(&mut acc);
+        assert_eq!(*parts.count, 0);
+        assert_eq!(
+            (&*parts.sum_first, &*parts.sum_second, &*parts.square_first),
+            (&[1, 2][..], &[3, 4][..], &[5, 6][..])
+        );
+        assert_eq!(
+            (&*parts.square_second, &*parts.cross),
+            (&[7, 8][..], &[9, 10][..])
+        );
     }
 
     /// `(1 × 1) << n_same` once wrapped to zero cells and the reducer indexed
