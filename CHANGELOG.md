@@ -4,6 +4,20 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Added (R): `relatives_per_person()`** (ADR 0014). Python's
+  `PedigreeGraph.relatives_per_person` for an R graph: per row and selected
+  category, the row's relatives and how many pass each threshold column
+  `name = list(relative, threshold)` (`relative[relative's row] <=
+  threshold[row]`; `NA` never counts; `threshold` per row or one number).
+  The result is an integer array `[row, category, column]` with the
+  requested codes and `"relatives"` then the column names as dimnames, so
+  `r[, "FS", "relatives"]` is one category and `rowSums()` folds several.
+  Logical, character and classed columns (factor, `Date`, `POSIXct`,
+  `difftime`, `integer64`) are refused. It takes `progress` like the other
+  relationship calls. Goldens and `tools/r_parity.py` hold it to Python.
+
 ## v0.12.2
 
 - **Added: `no_estimate_code` on every Ne result record** (issue #42). An

@@ -6,7 +6,9 @@ pedigrees through both hosts and compares every product byte for byte:
 degree-``d`` relationship pairs (registry index, 1-based rows), inbreeding,
 pairwise kinship of the pairs up to degree 3, the stored upper triangle of
 the kinship matrix, in ``(column, row)`` order, the degree-``d`` pair counts
-(``-1`` where not requested), the relationship burden, and the moments of
+(``-1`` where not requested), the relationship burden, the degree-``d``
+relatives per person under the golden threshold columns
+(``tools/r_golden.py::_relatives_spec``), and the moments of
 the golden spec (``tools/r_golden.py::_moments_spec``): every statistic of
 every cell in R's ``as.data.frame`` column order, and every exact
 accumulator in decimal.  R writes raw
@@ -139,6 +141,11 @@ def _python_products(frame: pl.DataFrame, max_degree: int, matrix: bool, pairwis
     out["burden_rows.bin"] = np.ascontiguousarray(burden.per_person.T).astype("<i4").tobytes()
     out["burden_categories.bin"] = np.array([burden.category_counts[c] for c in codes], dtype="<f8").tobytes()
     out["burden_depth.bin"] = burden.same_depth_pairs.astype("<f8").tobytes()
+    relatives = graph.relatives_per_person(
+        max_degree=max_degree, thresholds=_golden()._relatives_spec(graph.n_individuals)
+    )
+    # R's column-major [row, category, column] array.
+    out["relatives.bin"] = np.ascontiguousarray(relatives.counts.transpose(2, 1, 0)).astype("<i4").tobytes()
     out.update(_moment_products(graph, frame["mother"].to_numpy()))
     if matrix:
         upper = sp.triu(graph.kinship_matrix(), format="coo")

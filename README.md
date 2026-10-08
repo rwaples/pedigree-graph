@@ -76,10 +76,10 @@ m <- relationship_moments(pg, categories = c("MO", "FO", "FS"),
 as.data.frame(m, stats = c("n", "pearson"))        # bit-identical to Python
 ```
 
-It covers construction, relationship pairs, counts, burden and moments,
-pairwise kinship, the complete kinship matrix and inbreeding; views,
-lineage, per-person relative counts and effective size are Python-only for
-now. For development, the `r` pixi environment carries R:
+It covers construction, relationship pairs, counts, burden, per-person
+relative counts and moments, pairwise kinship, the complete kinship matrix
+and inbreeding; views, lineage and effective size are Python-only for now.
+For development, the `r` pixi environment carries R:
 `pixi run -e r r-test` installs `r/` in place and runs its tests,
 `pixi run -e r r-doc` regenerates `r/man/`, and
 `pixi run -e r tools/r_build_tarball.sh` builds the source tarball.

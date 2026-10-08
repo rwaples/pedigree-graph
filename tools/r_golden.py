@@ -28,6 +28,9 @@ pedigree at scale, the generator writes, under
 * ``burden.tsv``: each row's relatives at degrees 1 to 5
   (``relationship_burden``), and ``burden_depth.tsv``, its related pairs
   per structural depth.
+* ``relatives.tsv``: ``relatives_per_person`` at degree 5 under one fixed
+  pair of threshold columns (:func:`_relatives_spec`), one line per row and
+  category where the row has relatives: the pair count and each column's.
 
 and ``categories.tsv``, the Python registry, so the R registry (read from the
 core) is held to it.
@@ -152,7 +155,32 @@ def _golden(fixture: Path, out: Path) -> None:
     )
     same_depth = burden.same_depth_pairs.astype(np.int64)
     _write(pl.DataFrame({"depth": np.arange(len(same_depth)), "pairs": same_depth}), out / "burden_depth.tsv")
+    _relatives(graph, out)
     _moments(graph, columns["mother"], out)
+
+
+def _relatives_spec(n: int) -> dict[str, tuple[np.ndarray, np.ndarray | float]]:
+    """The threshold columns both hosts pass: a per-row threshold, and a scalar one.
+
+    ``rowwise`` has NaN relatives every third row and ties between relative
+    and threshold; ``scalar`` ties at its threshold.  Integer arithmetic only,
+    so R builds the same doubles; ``test-golden.R`` and ``tools/r_parity.R``
+    repeat it.
+    """
+    rows = np.arange(1, n + 1, dtype=np.float64)
+    return {
+        "rowwise": (np.where(rows % 3 == 0, np.nan, rows * 37 % 11), rows * 5 % 11),
+        "scalar": (rows % 4, 2.0),
+    }
+
+
+def _relatives(graph: PedigreeGraph, out: Path) -> None:
+    r = graph.relatives_per_person(max_degree=5, thresholds=_relatives_spec(graph.n_individuals))
+    row, slot = np.nonzero(r.counts[:, :, 0])
+    frame = {"row": row.astype(np.int64) + 1, "code": [r.categories[s] for s in slot]}
+    for k, column in enumerate(r.columns):
+        frame[column] = r.counts[row, slot, k].astype(np.int64)
+    _write(pl.DataFrame(frame, schema_overrides={"code": pl.String}), out / "relatives.tsv")
 
 
 MOMENT_CATEGORIES = ("MZ", "FS", "MO", "FO", "MHS", "PHS", "GP", "Av", "1C")

@@ -10,6 +10,7 @@ mod input;
 mod job;
 mod kernels;
 mod moments;
+mod relatives;
 mod test_hooks;
 mod threads;
 
@@ -113,6 +114,24 @@ fn relationship_moments_start(
         &same,
         symmetric,
         memory_budget_bytes,
+    ))
+}
+
+/// Start a per-person relatives call; see `relatives::start_relatives`.
+#[extendr]
+fn relatives_per_person_start(
+    native: Robj,
+    seal: Robj,
+    max_degree: Robj,
+    categories: Robj,
+    thresholds: Robj,
+) -> Robj {
+    finish(relatives::start_relatives(
+        &native,
+        &seal,
+        &max_degree,
+        &categories,
+        &thresholds,
     ))
 }
 
@@ -266,6 +285,7 @@ extendr_module! {
     fn relationship_counts_start;
     fn relationship_burden_start;
     fn relationship_moments_start;
+    fn relatives_per_person_start;
     fn job_wait;
     fn job_collect;
     fn job_cancel;

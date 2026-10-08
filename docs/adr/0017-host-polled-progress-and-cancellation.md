@@ -141,8 +141,8 @@ once. `in_place_scope` then re-raises the panic, and pyo3 turns it into
 
 ### Binding: R (issue #39)
 
-`relationship_pairs()`, `relationship_counts()`, `relationship_burden()`
-and `relationship_moments()` take
+`relationship_pairs()`, `relationship_counts()`, `relationship_burden()`,
+`relatives_per_person()` and `relationship_moments()` take
 `progress = getOption("pedigreegraph.progress", TRUE)`. `TRUE` writes a
 `message()` at 30 s and every 30 s after, in the Python wording above, which
 `suppressMessages()` silences. `FALSE` writes nothing. A function receives

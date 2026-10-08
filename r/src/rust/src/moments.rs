@@ -24,7 +24,7 @@ use std::num::NonZeroUsize;
 use std::str::FromStr;
 
 /// The named columns of a `first`, `second`, `values` or `same` list.
-fn named_columns(kind: &str, list: &Robj) -> HostResult<Vec<(String, Robj)>> {
+pub(crate) fn named_columns(kind: &str, list: &Robj) -> HostResult<Vec<(String, Robj)>> {
     if list.is_null() {
         return Ok(Vec::new());
     }
@@ -53,7 +53,7 @@ fn named_columns(kind: &str, list: &Robj) -> HostResult<Vec<(String, Robj)>> {
     Ok(names.into_iter().zip(list.values()).collect())
 }
 
-fn check_length(field: &str, column: &Robj, n: usize) -> HostResult<()> {
+pub(crate) fn check_length(field: &str, column: &Robj, n: usize) -> HostResult<()> {
     if column.len() != n {
         return Err(HostError::validation(
             "length_mismatch",

@@ -1,0 +1,11 @@
+row	code	relatives	rowwise	scalar
+5	MO	1	0	1
+5	FO	1	0	1
+5	MHS	1	0	1
+5	PHS	1	0	0
+6	MO	1	1	1
+6	FO	1	0	0
+6	MHS	1	0	1
+7	MO	1	0	1
+7	FO	1	0	1
+7	PHS	1	0	1

@@ -14,6 +14,9 @@
   .Call(wrap__relationship_counts_start, native, seal, max_degree, categories)
 }
 .native_start_burden <- function(native, seal) .Call(wrap__relationship_burden_start, native, seal)
+.native_start_relatives <- function(native, seal, max_degree, categories, thresholds) {
+  .Call(wrap__relatives_per_person_start, native, seal, max_degree, categories, thresholds)
+}
 .native_pair_kinship <- function(native, seal, first, second) .Call(wrap__pair_kinship, native, seal, first, second)
 .native_inbreeding <- function(native, seal) .Call(wrap__inbreeding, native, seal)
 .native_kinship_matrix <- function(native, seal, max_nnz) .Call(wrap__kinship_matrix, native, seal, max_nnz)

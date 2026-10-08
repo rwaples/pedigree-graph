@@ -134,6 +134,60 @@ relationship_burden <- function(pg, progress = getOption("pedigreegraph.progress
   found
 }
 
+#' Relatives per person
+#'
+#' Every individual's relatives in each selected category, and how many of
+#' them pass each threshold column, from one pass that never builds the
+#' pairs.
+#'
+#' Pairs are classified as by [relationship_pairs()].  A symmetric category
+#' credits both members of each pair; an asymmetric one credits only its
+#' first role, so `MO` and `FO` count a row's parents, `Av` its aunts and
+#' uncles and `GP` its grandparents, never its children or grandchildren.
+#'
+#' Threshold column `name = list(relative, threshold)` counts a relative
+#' when `relative[relative's row] <= threshold[row]`, compared as doubles,
+#' so `NA` or `NaN` on either side never counts.  For example
+#' `list(ifelse(affected, onset, NA), cutoff)` counts the relatives affected
+#' by each row's own cutoff age.
+#'
+#' @inheritParams relationship_pairs
+#' @param thresholds A named list of at most 32 threshold columns, each
+#'   `list(relative, threshold)` (or with those names, in either order):
+#'   `relative` one number per input row, `threshold` one per input row or
+#'   one number for every row.  Plain double or integer vectors; `NA`,
+#'   `NaN` and `Inf` are allowed.  Classed vectors (factor, `Date`,
+#'   `POSIXct`, `difftime`, `integer64`) are refused: convert them with
+#'   [as.double()].  The name `"relatives"` is reserved.
+#' @return An integer array with `dim = c(rows, categories, 1 + columns)`:
+#'   rows in input order, the requested category codes in registry order,
+#'   and the columns `"relatives"` (the row's relatives in that category)
+#'   then each threshold column.  `r[, "FS", "relatives"]` is one category;
+#'   `rowSums(r[, c("MHS", "PHS"), "relatives", drop = FALSE])` folds
+#'   several.  The array is `4 * rows * categories * (1 + columns)` bytes,
+#'   and the call holds a second copy while it builds it.
+#' @examples
+#' pg <- pedigree_graph(data.frame(
+#'   id = 1:6, mother = c(NA, NA, 1, 1, NA, 3), father = c(NA, NA, 2, 2, NA, 5)
+#' ))
+#' onset <- c(50, NA, 30, NA, NA, NA)
+#' r <- relatives_per_person(pg, categories = c("MO", "FO", "FS", "GP"),
+#'                           thresholds = list(affected = list(onset, Inf)))
+#' r[, , "relatives"]
+#' r[, , "affected"]
+#' @export
+relatives_per_person <- function(pg, max_degree = NULL, categories = NULL, thresholds = list(),
+                                 progress = getOption("pedigreegraph.progress", TRUE)) {
+  native <- .pg_native(pg)
+  if (!is.null(max_degree) && !is.numeric(max_degree)) max_degree <- NaN
+  report <- .pg_progress(progress, "relatives_per_person")
+  handle <- .pg_call(.native_start_relatives(native, pg$seal, max_degree, categories, thresholds))
+  found <- .pg_watch(handle, report)
+  counts <- found$counts
+  dimnames(counts) <- list(NULL, found$categories, c("relatives", names(thresholds)))
+  counts
+}
+
 #' Pairwise kinship
 #'
 #' The pedigree-expected kinship of each pair `(first[k], second[k])`.

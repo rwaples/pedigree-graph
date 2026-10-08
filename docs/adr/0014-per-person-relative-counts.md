@@ -140,6 +140,9 @@ empty selection, returns zeros without running the engine.
 * One allocation family (`relative_counts`) joins the tables, and
   `relationships/relatives.rs` joins the parallel-module map with its
   thread-budget test.
-* The R package does not expose `relatives_per_person` (issue #30).
+* The R package exposes `relatives_per_person()` for graphs (R has no
+  views). Its result is an integer array `[row, category, column]`, copied
+  out of the core's row-major counts, so the call briefly holds the result
+  twice.
 * Wall time and peak RSS on `pedsum_2M` and `pedsum_20M` go in
   `benchmarks/bench_relatives_per_person.md`.

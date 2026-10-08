@@ -1,0 +1,17 @@
+row	code	relatives	rowwise	scalar
+4	MO	1	1	1
+4	FO	1	1	1
+4	MHS	1	1	1
+5	MO	1	0	1
+5	FO	1	0	0
+5	MHS	1	0	1
+8	MO	1	1	1
+8	FO	1	0	1
+8	GP	2	1	2
+8	HAv	1	0	1
+8	H1C	1	0	1
+9	MO	1	0	0
+9	FO	1	0	1
+9	GP	2	0	1
+9	HAv	1	0	1
+9	H1C	1	0	1

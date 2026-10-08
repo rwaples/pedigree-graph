@@ -1,0 +1,10 @@
+row	code	relatives	rowwise	scalar
+1	MZ	1	0	1
+2	MZ	1	1	1
+5	MO	1	0	0
+5	FO	1	0	1
+6	MO	1	1	1
+6	FO	1	1	1
+7	MO	1	0	1
+7	FO	1	0	1
+7	GP	4	0	3

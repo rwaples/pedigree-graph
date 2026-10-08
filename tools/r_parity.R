@@ -31,6 +31,15 @@ put(as.vector(burden$per_person), "burden_rows.bin", 4L)
 put(burden$category_counts, "burden_categories.bin", 8L)
 put(burden$same_depth_pairs, "burden_depth.bin", 8L)
 
+# tools/r_golden.py::_relatives_spec, as test-golden.R builds it.
+rows <- as.double(seq_len(pg$n))
+thresholds <- list(
+  rowwise = list(ifelse(rows %% 3 == 0, NaN, (rows * 37) %% 11), (rows * 5) %% 11),
+  scalar = list(rows %% 4, 2)
+)
+relatives <- timed("relatives", relatives_per_person(pg, max_degree = max_degree, thresholds = thresholds))
+put(as.vector(relatives), "relatives.bin", 4L)
+
 # tools/r_golden.py::_moments_spec, as test-golden.R builds it.
 ped <- read.delim(args[1])
 n <- nrow(ped)

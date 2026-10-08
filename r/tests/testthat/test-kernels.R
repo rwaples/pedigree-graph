@@ -147,6 +147,7 @@ test_that("every kernel refuses a modified graph", {
   expect_pg_error(kinship_matrix(pg), "usage", "graph_modified")
   expect_pg_error(relationship_counts(pg, max_degree = 2), "usage", "graph_modified")
   expect_pg_error(relationship_burden(pg), "usage", "graph_modified")
+  expect_pg_error(relatives_per_person(pg, max_degree = 2), "usage", "graph_modified")
   expect_pg_error(relationship_pairs(unclass(pg), max_degree = 2), "usage")
 })
 
@@ -174,6 +175,9 @@ test_that("graphs with fewer than two individuals count zero pairs and no relati
     burden <- relationship_burden(pg)
     expect_identical(dim(burden$per_person), c(n, 5L))
     expect_true(all(burden$category_counts == 0))
+    r <- relatives_per_person(pg, max_degree = 2, thresholds = list(a = list(rep(0, n), 1)))
+    expect_identical(dim(r), c(n, 8L, 2L))
+    expect_true(all(r == 0L))
   }
 })
 
@@ -188,6 +192,75 @@ test_that("burden counts each row's relatives by degree, in input order", {
   expect_identical(unname(burden$per_person[6, "degree_2"]), 3L)
   # Depths 0 (1, 2, 5), 1 (3, 4) and 2 (6): only the full sibs 3 and 4 share one.
   expect_identical(burden$same_depth_pairs, c(0, 1, 0))
+})
+
+test_that("relatives per person credit a symmetric pair twice and a directional one's first role", {
+  pg <- pedigree_graph(three_gen())
+  r <- relatives_per_person(pg, categories = c("GP", "FS", "MO", "FO"))
+  expect_type(r, "integer")
+  expect_identical(dimnames(r), list(NULL, c("MO", "FO", "FS", "GP"), "relatives"))
+  # 6's parents are 3 and 5, its grandparents 1 and 2; 3 and 4 are full sibs.
+  expect_identical(r[, "MO", "relatives"], c(0L, 0L, 1L, 1L, 0L, 1L))
+  expect_identical(r[, "FS", "relatives"], c(0L, 0L, 1L, 1L, 0L, 0L))
+  expect_identical(r[, "GP", "relatives"], c(0L, 0L, 0L, 0L, 0L, 2L))
+  # Every pair is credited once per orientation it reaches the reducer in.
+  pairs <- relationship_pairs(pg, categories = c("GP", "FS", "MO", "FO"))
+  expect_identical(colSums(r[, , "relatives"]), c(MO = 3, FO = 3, FS = 2, GP = 2))
+  expect_identical(as.vector(table(pairs$code)[c("MO", "FO", "FS", "GP")]), c(3L, 3L, 1L, 2L))
+  every <- relatives_per_person(pg, max_degree = 5)
+  expect_identical(dimnames(every)[[2]], relationship_categories()$code)
+  expect_pg_error(relatives_per_person(pg), "usage")
+  expect_pg_error(relatives_per_person(pg, max_degree = 6), "validation", "max_degree_out_of_range")
+  expect_pg_error(relatives_per_person(pg, categories = "ZZ"), "validation", "unknown_relationship_category")
+})
+
+test_that("a threshold column counts relative <= threshold, never NA", {
+  pg <- pedigree_graph(three_gen())
+  onset <- c(50, NA, 30, NaN, 10L, 20)
+  cutoff <- c(0, 0, 40, 60, 0, 30)
+  r <- relatives_per_person(pg, categories = c("MO", "FO", "FS", "GP"), thresholds = list(
+    any = list(onset, Inf), aligned = list(threshold = cutoff, relative = onset),
+    integer = list(c(1L, 2L, 3L, NA, 5L, 6L), 3L), none = list(onset, NA_real_)
+  ))
+  expect_identical(dimnames(r)[[3]], c("relatives", "any", "aligned", "integer", "none"))
+  # 6: mother 3 (30 <= 30), father 5 (10 <= 30), grandparents 1 (50) and 2 (NA).
+  expect_identical(r[6, , "any"], c(MO = 1L, FO = 1L, FS = 0L, GP = 1L))
+  expect_identical(r[6, , "aligned"], c(MO = 1L, FO = 1L, FS = 0L, GP = 0L))
+  # 3 and 4 are full sibs: 4's onset is NaN, 3's is 30 <= 60.
+  expect_identical(r[3:4, "FS", "aligned"], c(0L, 1L))
+  expect_identical(r[3:4, "MO", "integer"], c(1L, 1L))
+  expect_identical(r[3:4, "FO", "integer"], c(1L, 1L))
+  expect_true(all(r[, , "none"] == 0L))
+})
+
+test_that("threshold columns are checked before the call", {
+  pg <- pedigree_graph(three_gen())
+  x <- as.double(1:6)
+  run <- function(thresholds) relatives_per_person(pg, max_degree = 1, thresholds = thresholds)
+  expect_identical(dim(run(NULL)), c(6L, 4L, 1L))
+  expect_pg_error(run(list(relatives = list(x, 1))), "usage")
+  expect_pg_error(run(list(list(x, 1))), "usage")
+  expect_pg_error(run(list(a = list(x, 1), a = list(x, 2))), "usage")
+  expect_pg_error(run(list(a = x)), "usage")
+  expect_pg_error(run(list(a = list(x))), "usage")
+  expect_pg_error(run(list(a = list(rel = x, threshold = 1))), "usage")
+  expect_pg_error(run(list(a = list(x > 3, 1))), "usage")
+  expect_pg_error(run(list(a = list(x, NA))), "usage")
+  expect_pg_error(run(list(a = list(factor(x), 1))), "usage")
+  expect_pg_error(run(list(a = list(as.character(x), 1))), "usage")
+  expect_pg_error(run(list(a = list(as_int64(1:6), 1))), "usage")
+  expect_pg_error(run(list(a = list(as.Date(x), 1))), "usage")
+  expect_pg_error(run(list(a = list(x, as.difftime(1, units = "days")))), "usage")
+  # The type is checked before the length.
+  expect_pg_error(run(list(a = list(letters, 1))), "usage")
+  expect_pg_error(run(list(a = list(NULL, 1))), "usage")
+  err <- expect_pg_error(run(list(a = list(x[1:5], 1))), "validation", "length_mismatch")
+  expect_identical(err$fields$field, "thresholds['a'].relative")
+  err <- expect_pg_error(run(list(a = list(x, c(1, 2)))), "validation", "length_mismatch")
+  expect_identical(err$fields$field, "thresholds['a'].threshold")
+  many <- stats::setNames(rep(list(list(x, 1)), 33), paste0("c", 1:33))
+  expect_pg_error(run(many), "usage")
+  expect_identical(dim(run(many[1:32])), c(6L, 4L, 33L))
 })
 
 test_that("a pair total past 2^53 is refused, not rounded", {

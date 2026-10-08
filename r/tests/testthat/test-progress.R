@@ -20,11 +20,13 @@ long_graph <- function(per_generation, generations, seed = 39L) {
   pedigree_graph(data.frame(id = seq_len(n), mother = mother, father = father))
 }
 
-all_four <- function(pg, progress) {
+every_call <- function(pg, progress) {
   list(
     pairs = relationship_pairs(pg, max_degree = 3, progress = progress),
     counts = relationship_counts(pg, max_degree = 5, progress = progress),
     burden = relationship_burden(pg, progress = progress),
+    relatives = relatives_per_person(pg, max_degree = 5, progress = progress,
+                                     thresholds = list(x = list(seq_len(pg$n) %% 7, 3))),
     moments = relationship_moments(
       pg, max_degree = 2, first = list(p = seq_len(pg$n) %% 2L),
       values = list(x = seq_len(pg$n) %% 7 / 7), progress = progress
@@ -45,7 +47,7 @@ as_code <- function(...) {
 }
 
 child_code <- c(
-  as_code(long_graph = long_graph, all_four = all_four),
+  as_code(long_graph = long_graph, every_call = every_call),
   "assignInNamespace('.pg_tick', function() 0.05, 'pedigreegraph')",
   "kill_soon <- function(after) system(sprintf(\"sh -c 'sleep %s; kill -INT %d'\", after, Sys.getpid()), wait = FALSE)",
   "clock <- function() proc.time()[['elapsed']]"
@@ -66,22 +68,22 @@ phase_rank <- c(preparing = 1L, walking = 2L, finishing = 3L)
 
 test_that("results are identical under every progress argument", {
   pg <- long_graph(150, 4)
-  quiet <- all_four(pg, FALSE)
-  expect_identical(all_four(pg, TRUE), quiet)
-  expect_identical(all_four(pg, function(p) NULL), quiet)
+  quiet <- every_call(pg, FALSE)
+  expect_identical(every_call(pg, TRUE), quiet)
+  expect_identical(every_call(pg, function(p) NULL), quiet)
   expect_identical(relationship_counts(pg, categories = character(), progress = FALSE),
                    relationship_counts(pg, categories = character(), progress = TRUE))
 })
 
 test_that("results at a budget of 4 threads equal the session's", {
   pg <- long_graph(150, 4)
-  here <- without_lanes(all_four(pg, FALSE))
+  here <- without_lanes(every_call(pg, FALSE))
   saved <- tempfile(fileext = ".rds")
   on.exit(unlink(saved))
   out <- run_rscript(c(
     child_code,
     "configure_threads(4)",
-    sprintf("saveRDS(all_four(long_graph(150, 4), TRUE), %s)", deparse(saved))
+    sprintf("saveRDS(every_call(long_graph(150, 4), TRUE), %s)", deparse(saved))
   ))
   expect_null(attr(out, "status"))
   expect_identical(without_lanes(readRDS(saved)), here)
@@ -130,6 +132,7 @@ test_that("real calls report ordered, well-typed progress", {
     function(progress) relationship_pairs(pg, max_degree = 4, execution = "memory", ids = FALSE,
                                           progress = progress),
     function(progress) relationship_burden(pg, progress = progress),
+    function(progress) relatives_per_person(pg, max_degree = 5, progress = progress),
     function(progress) relationship_moments(pg, max_degree = 5, progress = progress)
   )
   for (call in calls) {

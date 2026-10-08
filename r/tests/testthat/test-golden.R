@@ -3,6 +3,15 @@ golden_dir <- test_path("golden")
 hex <- function(x) as.numeric(x)
 read_golden <- function(..., classes) read.delim(file.path(golden_dir, ...), colClasses = classes)
 
+# The threshold columns of tools/r_golden.py::_relatives_spec.
+relatives_spec <- function(n) {
+  rows <- as.double(seq_len(n))
+  list(
+    rowwise = list(ifelse(rows %% 3 == 0, NaN, (rows * 37) %% 11), (rows * 5) %% 11),
+    scalar = list(rows %% 4, 2)
+  )
+}
+
 test_that("the registry matches the Python registry", {
   want <- read.delim(file.path(golden_dir, "categories.tsv"),
                      colClasses = c(nominal_kinship = "character"))
@@ -61,6 +70,21 @@ for (fixture in fixtures) {
     expect_identical(burden$category_counts, stats::setNames(want$count, want$code))
     want <- read_golden(fixture, "burden_depth.tsv", classes = c("integer", "numeric"))
     expect_identical(burden$same_depth_pairs, want$pairs)
+  })
+
+  test_that(paste("relatives per person match Python on", fixture), {
+    ped <- read.delim(file.path(golden_dir, fixture, "pedigree.tsv"))
+    r <- relatives_per_person(pedigree_graph(ped), max_degree = 5, thresholds = relatives_spec(nrow(ped)))
+    expect_identical(dimnames(r)[[2]], relationship_categories()$code)
+    want <- read_golden(fixture, "relatives.tsv", classes = c("integer", "character", rep("integer", 3)))
+    at <- which(matrix(r[, , "relatives"], nrow = dim(r)[1]) > 0, arr.ind = TRUE)
+    at <- at[order(at[, 1], at[, 2]), , drop = FALSE]
+    expect_identical(unname(at[, 1]), want$row)
+    expect_identical(dimnames(r)[[2]][at[, 2]], want$code)
+    for (column in c("relatives", "rowwise", "scalar")) {
+      k <- rep(match(column, dimnames(r)[[3]]), nrow(at))
+      expect_identical(r[cbind(at, k)], want[[column]], label = column)
+    }
   })
 }
 
