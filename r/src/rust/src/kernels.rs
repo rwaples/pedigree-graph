@@ -14,7 +14,7 @@ use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
     count_pairs, pair_blocks, relationship_burden as burden_of, Burden, Category, CategorySet,
-    Counts, Execution, MaxDegree, PairBlock, Pedigree, Progress, N_CATEGORIES,
+    Counts, Execution, MaxDegree, PairBlock, Pedigree, Progress, Receiver, N_CATEGORIES,
 };
 use std::num::NonZeroUsize;
 
@@ -273,7 +273,7 @@ pub fn start_pairs(
             &rows.pedigree()?,
             max_degree,
             requested,
-            None,
+            Receiver::Graph,
             execution,
             progress,
         )?

@@ -23,7 +23,7 @@
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
 use super::progress::{Checkpoint, Progress};
-use super::{task_ranges, walk_task, MaxDegree, Pedigree};
+use super::{on_receiver, task_ranges, walk_task, MaxDegree, Pedigree, Receiver};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
@@ -181,10 +181,10 @@ impl Query<'_> {
 ///
 /// `requested` names the blocks to fill; every category up to `max_degree`
 /// is still classified, because a closest-category block depends on the
-/// closer ones.  `view` is the int32 view row of every graph row, `-1` for a
-/// row outside the view; with it the blocks are in view rows, filtered to
-/// pairs with both rows selected, and sorted by the view-space canonical
-/// key.  Without it they are in graph rows and canonical-key order.
+/// closer ones.  On a [`Receiver::View`] the blocks are in view rows,
+/// filtered to pairs with both rows selected, and sorted by the view-space
+/// canonical key; on the graph they are in graph rows and canonical-key
+/// order.
 ///
 /// # Errors
 ///
@@ -192,7 +192,7 @@ impl Query<'_> {
 /// size: the engine, a workspace, a row set, a task chunk or table, a final
 /// block, or the view-sort scratch.
 ///
-/// [`Error::InvalidViewMap`] when `view` is not a partial permutation: an
+/// [`Error::InvalidViewMap`] when the view map is not a partial permutation: an
 /// entry outside `-1 .. n`, or two graph rows mapped to one view row.  The
 /// view-space sort relies on the keys being distinct, so a repeated view row
 /// would make the order depend on the thread count.
@@ -202,9 +202,31 @@ impl Query<'_> {
 ///
 /// # Panics
 ///
-/// If `view` does not have one entry per graph row; the host binding checks
-/// that before calling.
+/// If the view map does not have one entry per graph row; the host binding
+/// checks that before calling.
 pub fn pair_blocks(
+    ped: &Pedigree,
+    max_degree: MaxDegree,
+    requested: CategorySet,
+    receiver: Receiver<'_>,
+    execution: Execution,
+    progress: &Progress,
+) -> Result<PairBlocks, Error> {
+    if let Receiver::View { rows, .. } = receiver {
+        assert_eq!(
+            rows.len(),
+            ped.len(),
+            "view map must have one entry per graph row"
+        );
+        check_view_map(rows)?;
+    }
+    on_receiver(ped, receiver, progress, |ped, view| {
+        emit(ped, max_degree, requested, view, execution, progress)
+    })
+}
+
+/// [`pair_blocks`] on the pedigree the engine walks, `view` already checked.
+fn emit(
     ped: &Pedigree,
     max_degree: MaxDegree,
     requested: CategorySet,
@@ -214,10 +236,6 @@ pub fn pair_blocks(
 ) -> Result<PairBlocks, Error> {
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
-    if let Some(map) = view {
-        assert_eq!(map.len(), n, "view map must have one entry per graph row");
-        check_view_map(map)?;
-    }
     let query = Query {
         engine,
         requested,
@@ -430,7 +448,7 @@ mod tests {
                     &ped,
                     MaxDegree::MAX,
                     CategorySet::up_to_degree(5),
-                    view,
+                    Receiver::from(view),
                     e,
                     &Progress::default(),
                 )
@@ -662,7 +680,7 @@ mod tests {
             &ped,
             MaxDegree::MAX,
             only,
-            None,
+            Receiver::Graph,
             Execution::Speed,
             &Progress::default(),
         )
@@ -703,7 +721,7 @@ mod tests {
                                 &ped,
                                 MaxDegree::MAX,
                                 CategorySet::up_to_degree(5),
-                                v,
+                                Receiver::from(v),
                                 execution,
                                 &Progress::default(),
                             )
@@ -742,7 +760,7 @@ mod tests {
                 &ped,
                 MaxDegree::MAX,
                 cats,
-                Some(map.as_slice()),
+                Receiver::from(Some(map.as_slice())),
                 Execution::Speed,
                 &Progress::default(),
             )
@@ -878,7 +896,7 @@ mod tests {
                     &ped,
                     MaxDegree::MAX,
                     all_cats,
-                    v,
+                    Receiver::from(v),
                     execution,
                     &Progress::default(),
                 )
@@ -900,7 +918,7 @@ mod tests {
             &ped,
             MaxDegree::MAX,
             all_cats,
-            None,
+            Receiver::Graph,
             Execution::Speed,
             &Progress::default()
         )

@@ -316,27 +316,58 @@ pub fn count_view_pairs_compact(
     )
 }
 
-/// Emit view pairs using the same engine on an ancestry-compact pedigree.
-pub fn pair_blocks_compact(
+/// The graph or view a query runs on; it fixes the result's coordinate
+/// space.  A view query comes back in view rows whether or not it runs on
+/// the view's ancestry-compact pedigree, which changes nothing but resource
+/// use.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Receiver<'a> {
+    Graph,
+    /// `rows` maps each graph row to its view row, `-1` when unselected.
+    View {
+        rows: &'a [i32],
+        compact: bool,
+    },
+}
+
+impl<'a> From<Option<&'a [i32]>> for Receiver<'a> {
+    /// The graph, or the view `rows` maps out, run on the full pedigree.
+    fn from(rows: Option<&'a [i32]>) -> Receiver<'a> {
+        match rows {
+            Some(rows) => Receiver::View {
+                rows,
+                compact: false,
+            },
+            None => Receiver::Graph,
+        }
+    }
+}
+
+/// Run `query` on the pedigree and view map the engine walks for
+/// `receiver`: `ped` itself, or for a compact view the view's
+/// ancestry-compact pedigree and its view rows.  The caller has checked the
+/// view map.
+fn on_receiver<T>(
     ped: &Pedigree,
-    max_degree: MaxDegree,
-    requested: CategorySet,
-    view: &[i32],
-    execution: Execution,
+    receiver: Receiver<'_>,
     progress: &Progress,
-) -> Result<PairBlocks, Error> {
-    assert_eq!(ped.len(), view.len());
-    pairs::check_view_map(view)?;
-    let compact = CompactView::build(ped, view)?;
-    progress.checkpoint(Checkpoint::Compacted)?;
-    pair_blocks(
-        &compact.columns.try_borrow()?,
-        max_degree,
-        requested,
-        Some(&compact.view_rows),
-        execution,
-        progress,
-    )
+    query: impl FnOnce(&Pedigree, Option<&[i32]>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    match receiver {
+        Receiver::Graph => query(ped, None),
+        Receiver::View {
+            rows,
+            compact: false,
+        } => query(ped, Some(rows)),
+        Receiver::View {
+            rows,
+            compact: true,
+        } => {
+            let compact = CompactView::build(ped, rows)?;
+            progress.checkpoint(Checkpoint::Compacted)?;
+            query(&compact.columns.try_borrow()?, Some(&compact.view_rows))
+        }
+    }
 }
 
 /// Run `row` over `range`: each row is checked against `progress` first,

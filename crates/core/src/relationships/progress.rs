@@ -278,9 +278,9 @@ mod tests {
     /// has one, with the checkpoints it must reach in order.
     fn paths<'a>(ped: &'a Pedigree<'a>, view: &'a [i32], zeros: &'a [i32]) -> Vec<Path<'a>> {
         use super::super::{
-            count_view_pairs_compact, pair_blocks, pair_blocks_compact, relationship_burden,
-            relationship_moments, relatives_per_person, CategorySet, CompactView, Execution,
-            MomentsInput, Symmetric,
+            count_view_pairs_compact, pair_blocks, relationship_burden, relationship_moments,
+            relatives_per_person, CategorySet, CompactView, Execution, MomentsInput, Receiver,
+            Symmetric,
         };
         use std::num::NonZeroUsize;
         use Checkpoint::*;
@@ -312,13 +312,21 @@ mod tests {
                     ped,
                     degree,
                     all,
-                    None,
+                    Receiver::Graph,
                     Execution::Speed,
                     &Progress::default(),
                 ),
-                Some(v) => {
-                    pair_blocks_compact(ped, degree, all, v, Execution::Speed, &Progress::default())
-                }
+                Some(v) => pair_blocks(
+                    ped,
+                    degree,
+                    all,
+                    Receiver::View {
+                        rows: v,
+                        compact: true,
+                    },
+                    Execution::Speed,
+                    &Progress::default(),
+                ),
             }
             .unwrap();
             Category::ALL
@@ -352,7 +360,7 @@ mod tests {
             Path {
                 name: "pair_blocks speed",
                 run: Box::new(move |p| {
-                    pair_blocks(ped, degree, all, None, Execution::Speed, p).map(drop)
+                    pair_blocks(ped, degree, all, Receiver::Graph, Execution::Speed, p).map(drop)
                 }),
                 expected: cat(&[&[Walk, Finish], &copies(None)]),
                 total: N,
@@ -360,15 +368,26 @@ mod tests {
             Path {
                 name: "pair_blocks memory",
                 run: Box::new(move |p| {
-                    pair_blocks(ped, degree, all, None, Execution::Memory, p).map(drop)
+                    pair_blocks(ped, degree, all, Receiver::Graph, Execution::Memory, p).map(drop)
                 }),
                 expected: cat(&[&[Walk, BetweenPasses], &per_cat(CategoryAlloc), &[Finish]]),
                 total: 2 * N,
             },
             Path {
-                name: "pair_blocks_compact speed",
+                name: "pair_blocks compact view speed",
                 run: Box::new(move |p| {
-                    pair_blocks_compact(ped, degree, all, view, Execution::Speed, p).map(drop)
+                    pair_blocks(
+                        ped,
+                        degree,
+                        all,
+                        Receiver::View {
+                            rows: view,
+                            compact: true,
+                        },
+                        Execution::Speed,
+                        p,
+                    )
+                    .map(drop)
                 }),
                 expected: cat(&[
                     &[Compacted, Walk, Finish],
@@ -378,9 +397,20 @@ mod tests {
                 total: compact_n,
             },
             Path {
-                name: "pair_blocks_compact memory",
+                name: "pair_blocks compact view memory",
                 run: Box::new(move |p| {
-                    pair_blocks_compact(ped, degree, all, view, Execution::Memory, p).map(drop)
+                    pair_blocks(
+                        ped,
+                        degree,
+                        all,
+                        Receiver::View {
+                            rows: view,
+                            compact: true,
+                        },
+                        Execution::Memory,
+                        p,
+                    )
+                    .map(drop)
                 }),
                 expected: cat(&[
                     &[Compacted, Walk, BetweenPasses],
@@ -398,8 +428,7 @@ mod tests {
                         ped,
                         degree,
                         all,
-                        None,
-                        false,
+                        Receiver::Graph,
                         &input,
                         Symmetric::Canonical,
                         lanes,
@@ -419,8 +448,10 @@ mod tests {
                         ped,
                         degree,
                         all,
-                        Some(view),
-                        true,
+                        Receiver::View {
+                            rows: view,
+                            compact: true,
+                        },
                         &input,
                         Symmetric::Canonical,
                         lanes,
@@ -435,7 +466,7 @@ mod tests {
             Path {
                 name: "relatives_per_person",
                 run: Box::new(move |p| {
-                    relatives_per_person(ped, degree, all, None, false, &[], lanes, p).map(drop)
+                    relatives_per_person(ped, degree, all, Receiver::Graph, &[], lanes, p).map(drop)
                 }),
                 expected: cat(&[&[Walk, Finish], &merges]),
                 total: N,
@@ -443,8 +474,19 @@ mod tests {
             Path {
                 name: "relatives_per_person compact",
                 run: Box::new(move |p| {
-                    relatives_per_person(ped, degree, all, Some(view), true, &[], lanes, p)
-                        .map(drop)
+                    relatives_per_person(
+                        ped,
+                        degree,
+                        all,
+                        Receiver::View {
+                            rows: view,
+                            compact: true,
+                        },
+                        &[],
+                        lanes,
+                        p,
+                    )
+                    .map(drop)
                 }),
                 expected: cat(&[&[Compacted, Walk, Finish], &merges]),
                 total: compact_n,

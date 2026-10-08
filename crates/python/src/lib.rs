@@ -19,8 +19,8 @@ use pedigree_graph_core::lineage::{self, ParentColumns};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
     self, Category, CategorySet, Execution, MomentsInput, MomentsPlan, MomentsShape, MomentsTable,
-    Operand, Pedigree, Product, Progress, Side, Snapshot, Statistic, Symmetric, Threshold,
-    ThresholdColumn,
+    Operand, Pedigree, Product, Progress, Receiver, Side, Snapshot, Statistic, Symmetric,
+    Threshold, ThresholdColumn,
 };
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -515,24 +515,10 @@ fn relationship_pairs<'py>(
             "execution must be \"speed\" or \"memory\", got {execution:?}"
         ))
     })?;
-    let view = view_map(&view_rows, ped.len())?;
-    if compact && view.is_none() {
-        return Err(PyValueError::new_err("compact requires view_rows"));
-    }
+    let receiver = receiver(&view_rows, ped.len(), compact)?;
     let pool = checked_pool(py, threads)?;
     let blocks = run_watched(py, pool, tick, progress, |progress| {
-        if compact {
-            relationships::pair_blocks_compact(
-                &ped,
-                max_degree,
-                categories,
-                view.unwrap(),
-                execution,
-                progress,
-            )
-        } else {
-            relationships::pair_blocks(&ped, max_degree, categories, view, execution, progress)
-        }
+        relationships::pair_blocks(&ped, max_degree, categories, receiver, execution, progress)
     })?;
     let values = PyDict::new(py);
     for (cat, block) in Category::ALL.iter().zip(blocks.0) {
@@ -554,18 +540,22 @@ fn requested_categories(requested: &[String]) -> PyResult<CategorySet> {
     Ok(categories)
 }
 
-/// The view map of a query, checked to have one entry per graph row.
-fn view_map<'a>(
+/// The receiver of a query: the graph, or the view `view_rows` maps out,
+/// its map checked to have one entry per graph row, run on its compact
+/// pedigree with `compact`.
+fn receiver<'a>(
     view_rows: &'a Option<PyReadonlyArray1<'_, i32>>,
     n: usize,
-) -> PyResult<Option<&'a [i32]>> {
+    compact: bool,
+) -> PyResult<Receiver<'a>> {
     match view_rows {
         Some(array) => {
-            let map = array.as_slice()?;
-            check_same_length("view_rows", map.len(), n)?;
-            Ok(Some(map))
+            let rows = array.as_slice()?;
+            check_same_length("view_rows", rows.len(), n)?;
+            Ok(Receiver::View { rows, compact })
         }
-        None => Ok(None),
+        None if compact => Err(PyValueError::new_err("compact requires view_rows")),
+        None => Ok(Receiver::Graph),
     }
 }
 
@@ -661,10 +651,7 @@ fn relationship_moments<'py>(
             "symmetric must be \"canonical\" or \"both\", got {symmetric:?}"
         ))
     })?;
-    let view = view_map(&view_rows, ped.len())?;
-    if compact && view.is_none() {
-        return Err(PyValueError::new_err("compact requires view_rows"));
-    }
+    let receiver = receiver(&view_rows, ped.len(), compact)?;
     let n_columns = values.shape()[1];
     let n_same = same.shape()[1];
     let resolved = resolve_products(products)?;
@@ -687,8 +674,7 @@ fn relationship_moments<'py>(
             &ped,
             max_degree,
             categories,
-            view,
-            compact,
+            receiver,
             &input,
             symmetric,
             threads,
@@ -1012,10 +998,7 @@ fn relatives_per_person<'py>(
     let ped = engine.pedigree(py)?;
     let max_degree = checked_max_degree(py, max_degree)?;
     let categories = requested_categories(&requested)?;
-    let view = view_map(&view_rows, ped.len())?;
-    if compact && view.is_none() {
-        return Err(PyValueError::new_err("compact requires view_rows"));
-    }
+    let receiver = receiver(&view_rows, ped.len(), compact)?;
     let mut borrowed = Vec::with_capacity(columns.len());
     for (relative, threshold) in &columns {
         borrowed.push(ThresholdColumn {
@@ -1031,7 +1014,7 @@ fn relatives_per_person<'py>(
     let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
     let relatives = run_watched(py, pool, tick, progress, |progress| {
         relationships::relatives_per_person(
-            &ped, max_degree, categories, view, compact, &borrowed, threads, progress,
+            &ped, max_degree, categories, receiver, &borrowed, threads, progress,
         )
     })?;
     Ok((

@@ -12,7 +12,8 @@ use crate::moments::{check_length, named_columns};
 use crate::threads;
 use extendr_api::prelude::*;
 use pedigree_graph_core::relationships::{
-    relatives_per_person as relatives_of, Progress, Threshold, ThresholdColumn, MAX_VALUE_COLUMNS,
+    relatives_per_person as relatives_of, Progress, Receiver, Threshold, ThresholdColumn,
+    MAX_VALUE_COLUMNS,
 };
 use std::num::NonZeroUsize;
 
@@ -143,8 +144,7 @@ pub fn start_relatives(
                 &rows.pedigree()?,
                 max_degree,
                 requested,
-                None,
-                false,
+                Receiver::Graph,
                 &borrowed,
                 threads,
                 progress,

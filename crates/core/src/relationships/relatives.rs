@@ -13,8 +13,8 @@
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::moments::{receiver_len, reduce_pairs, Reducer, Symmetric};
-use super::progress::{Checkpoint, Progress};
-use super::{check_column_length, CompactView, MaxDegree, Pedigree};
+use super::progress::Progress;
+use super::{check_column_length, on_receiver, MaxDegree, Pedigree, Receiver};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use std::num::NonZeroUsize;
@@ -105,13 +105,12 @@ const OPERATION: &str = "relative_counts";
 /// Every requested category's relatives of every receiver row, using the
 /// current Rayon pool.
 ///
-/// `view` and `compact` are as for [`super::relationship_moments`]; the
-/// receiver's rows are graph rows without a view and view rows with one,
-/// and every column is in receiver rows.  The pass runs on `threads` lanes.
+/// `receiver` is as for [`super::pair_blocks`], and every column is in its
+/// rows.  The pass runs on `threads` lanes.
 ///
 /// # Errors
 ///
-/// [`Error::InvalidViewMap`] when `view` is not a partial permutation;
+/// [`Error::InvalidViewMap`] when the view map is not a partial permutation;
 /// [`Error::LengthMismatch`] when a column's `relative`, or its
 /// `threshold` rows, do not have one entry per receiver row;
 /// [`Error::ArithmeticOverflow`] when the counter array's length is not
@@ -120,19 +119,17 @@ const OPERATION: &str = "relative_counts";
 ///
 /// # Panics
 ///
-/// If `view` does not have one entry per graph row.
-#[allow(clippy::too_many_arguments)]
+/// If the view map does not have one entry per graph row.
 pub fn relatives_per_person(
     ped: &Pedigree,
     max_degree: MaxDegree,
     requested: CategorySet,
-    view: Option<&[i32]>,
-    compact: bool,
+    receiver: Receiver<'_>,
     columns: &[ThresholdColumn<'_>],
     threads: NonZeroUsize,
     progress: &Progress,
 ) -> Result<RelativesPerPerson, Error> {
-    let rows = receiver_len(ped, view)?;
+    let rows = receiver_len(ped, receiver)?;
     for column in columns {
         check_column_length("relative", column.relative.len(), rows)?;
         if let Threshold::Rows(threshold) = column.threshold {
@@ -160,22 +157,8 @@ pub fn relatives_per_person(
         n_categories,
         slot,
     };
-    let reduced = match (view, compact) {
-        (Some(map), true) => {
-            let compact = CompactView::build(ped, map)?;
-            progress.checkpoint(Checkpoint::Compacted)?;
-            reduce_pairs(
-                &compact.columns.try_borrow()?,
-                max_degree,
-                requested,
-                Some(&compact.view_rows),
-                Symmetric::Both,
-                threads,
-                &reducer,
-                progress,
-            )?
-        }
-        _ => reduce_pairs(
+    let reduced = on_receiver(ped, receiver, progress, |ped, view| {
+        reduce_pairs(
             ped,
             max_degree,
             requested,
@@ -184,8 +167,8 @@ pub fn relatives_per_person(
             threads,
             &reducer,
             progress,
-        )?,
-    };
+        )
+    })?;
     Ok(RelativesPerPerson {
         counts: into_counts(counts),
         rows,
@@ -284,7 +267,7 @@ mod tests {
             &ped,
             MaxDegree::MAX,
             requested,
-            view,
+            Receiver::from(view),
             Execution::Speed,
             &Progress::default(),
         )
@@ -335,8 +318,7 @@ mod tests {
                 &ped,
                 MaxDegree::MAX,
                 requested,
-                view,
-                compact,
+                view.map_or(Receiver::Graph, |rows| Receiver::View { rows, compact }),
                 columns,
                 NonZeroUsize::new(threads).unwrap(),
                 &Progress::default(),
@@ -478,8 +460,7 @@ mod tests {
                 &ped,
                 MaxDegree::MAX,
                 requested,
-                view,
-                false,
+                Receiver::from(view),
                 columns,
                 one,
                 &Progress::default(),

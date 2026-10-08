@@ -13,7 +13,7 @@
 //! for an element-for-element comparison by the qualification driver.
 
 use pedigree_graph_core::relationships::{
-    pair_blocks, Category, CategorySet, Execution, MaxDegree, PedigreeColumns, Progress,
+    pair_blocks, Category, CategorySet, Execution, MaxDegree, PedigreeColumns, Progress, Receiver,
 };
 use std::path::Path;
 use std::time::Instant;
@@ -102,7 +102,7 @@ fn main() {
                 &ped.try_borrow().expect("pedigree columns"),
                 max_degree,
                 requested,
-                view.as_deref(),
+                Receiver::from(view.as_deref()),
                 execution,
                 &Progress::default(),
             )

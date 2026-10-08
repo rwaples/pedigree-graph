@@ -55,8 +55,9 @@ reaches only the main thread, which is blocked in the native call.
 rows done, rows total and a cancel flag. Every entry point takes a trailing
 `&Progress`: `count_pairs`, `count_view_pairs_compact`,
 `relationship_burden`, `reduce_pairs` (and so `relationship_moments` and
-`relatives_per_person`), `pair_blocks` and `pair_blocks_compact`. The R
-host polls the same `Progress` through a job handle (see "Binding: R").
+`relatives_per_person`), and `pair_blocks`, whose compact view runs are a
+`Receiver` choice rather than a second entry point. The R host polls the
+same `Progress` through a job handle (see "Binding: R").
 
 **Phases (D9).** A call starts in *preparing*: view compaction and engine
 setup, before the total is known. `walk(n)` publishes the number of row

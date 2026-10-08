@@ -17,8 +17,8 @@ use num_bigint::BigInt;
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::relationships::{
     encode_big, pack_labels, quantize_column, relationship_moments as moments_of, Moments,
-    MomentsInput, MomentsPlan, MomentsTable, Operand, PackedLabels, Product, Progress, Side,
-    Statistic, Symmetric, MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
+    MomentsInput, MomentsPlan, MomentsTable, Operand, PackedLabels, Product, Progress, Receiver,
+    Side, Statistic, Symmetric, MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
 };
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
@@ -387,8 +387,7 @@ pub fn start_moments(
                 &rows.pedigree()?,
                 max_degree,
                 requested,
-                None,
-                false,
+                Receiver::Graph,
                 &input,
                 symmetric,
                 threads,

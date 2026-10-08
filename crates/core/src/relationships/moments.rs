@@ -26,7 +26,9 @@ use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
 use super::pairs::check_view_map;
 use super::progress::{Checkpoint, Progress};
-use super::{check_column_length, task_ranges, walk_rows, CompactView, MaxDegree, Pedigree};
+use super::{
+    check_column_length, on_receiver, task_ranges, walk_rows, MaxDegree, Pedigree, Receiver,
+};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
@@ -670,17 +672,17 @@ pub struct Moments {
     pub estimated_peak_bytes: u64,
 }
 
-/// The receiver's row count: graph rows without a view, view rows with one.
+/// The receiver's row count: graph rows, or view rows.
 ///
 /// # Errors
 ///
-/// [`Error::InvalidViewMap`] when `view` is not a partial permutation.
+/// [`Error::InvalidViewMap`] when the view map is not a partial permutation.
 ///
 /// # Panics
 ///
-/// If `view` does not have one entry per graph row.
-pub(super) fn receiver_len(ped: &Pedigree, view: Option<&[i32]>) -> Result<usize, Error> {
-    let Some(map) = view else {
+/// If the view map does not have one entry per graph row.
+pub(super) fn receiver_len(ped: &Pedigree, receiver: Receiver<'_>) -> Result<usize, Error> {
+    let Receiver::View { rows: map, .. } = receiver else {
         return Ok(ped.len());
     };
     assert_eq!(
@@ -700,59 +702,41 @@ pub(super) fn receiver_len(ped: &Pedigree, view: Option<&[i32]>) -> Result<usize
 /// The relationship moments of every requested category, using the current
 /// Rayon pool.
 ///
-/// `view` is as for [`super::pair_blocks`]; with `compact` the engine runs
-/// on the view's ancestry-compact pedigree, which changes nothing but
-/// resource use.  `input` is in receiver rows: graph rows without a view,
-/// view rows with one.  `threads` caps the lane count; the budget caps it
-/// further.
+/// `receiver` is as for [`super::pair_blocks`]; `input` is in its rows.
+/// `threads` caps the lane count; the budget caps it further.
 ///
 /// # Errors
 ///
 /// [`Error::MemoryBudgetExceeded`] before any accumulator is allocated when
 /// one lane does not fit `budget_bytes`; the input errors of
-/// [`MomentsInput::check`]; [`Error::InvalidViewMap`] when `view` is not a
-/// partial permutation; [`Error::ArithmeticOverflow`] when a cell exceeds
+/// [`MomentsInput::check`]; [`Error::InvalidViewMap`] when the view map is
+/// not a partial permutation; [`Error::ArithmeticOverflow`] when a cell exceeds
 /// [`MAX_CELL_PAIRS`] pairs; [`Error::Cancelled`] once `progress` is
 /// cancelled.
 ///
 /// # Panics
 ///
-/// If `view` does not have one entry per graph row.
+/// If the view map does not have one entry per graph row.
 #[allow(clippy::too_many_arguments)]
 pub fn relationship_moments(
     ped: &Pedigree,
     max_degree: MaxDegree,
     requested: CategorySet,
-    view: Option<&[i32]>,
-    compact: bool,
+    receiver: Receiver<'_>,
     input: &MomentsInput<'_>,
     symmetric: Symmetric,
     threads: NonZeroUsize,
     budget_bytes: u64,
     progress: &Progress,
 ) -> Result<Moments, Error> {
-    input.check(receiver_len(ped, view)?)?;
+    input.check(receiver_len(ped, receiver)?)?;
     let plan = MomentsPlan::new(input.shape(requested), threads, budget_bytes)?;
     let reducer = CellReducer::new(*input, requested, plan);
-    let reduced = match (view, compact) {
-        (Some(map), true) => {
-            let compact = CompactView::build(ped, map)?;
-            progress.checkpoint(Checkpoint::Compacted)?;
-            reduce_pairs(
-                &compact.columns.try_borrow()?,
-                max_degree,
-                requested,
-                Some(&compact.view_rows),
-                symmetric,
-                plan.lanes,
-                &reducer,
-                progress,
-            )?
-        }
-        _ => reduce_pairs(
+    let reduced = on_receiver(ped, receiver, progress, |ped, view| {
+        reduce_pairs(
             ped, max_degree, requested, view, symmetric, plan.lanes, &reducer, progress,
-        )?,
-    };
+        )
+    })?;
     let (width, table) = reducer.finish(&reduced.lane)?;
     drop(reduced.lane);
     Ok(Moments {
@@ -785,7 +769,7 @@ mod tests {
             &ped,
             MaxDegree::MAX,
             requested,
-            view,
+            Receiver::from(view),
             Execution::Speed,
             &Progress::default(),
         )
@@ -960,8 +944,7 @@ mod tests {
                                 &ped,
                                 MaxDegree::MAX,
                                 requested,
-                                v,
-                                compact,
+                                v.map_or(Receiver::Graph, |rows| Receiver::View { rows, compact }),
                                 &input,
                                 symmetric,
                                 NonZeroUsize::new(threads).unwrap(),
@@ -1284,7 +1267,7 @@ mod tests {
             &ped,
             MaxDegree::MAX,
             requested,
-            None,
+            Receiver::Graph,
             Execution::Speed,
             &Progress::default(),
         )
