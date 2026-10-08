@@ -130,16 +130,6 @@ impl PairMemo {
     pub fn entries(&self) -> usize {
         self.entries
     }
-
-    /// Bytes the tables hold right now.
-    pub fn bytes(&self) -> usize {
-        self.rows.len() * std::mem::size_of::<RowMemo>()
-            + self
-                .rows
-                .iter()
-                .map(|row| row.slots.len() * std::mem::size_of::<Slot>())
-                .sum::<usize>()
-    }
 }
 
 #[cfg(test)]
@@ -162,6 +152,5 @@ mod tests {
             assert_eq!(memo.get(lo, 999), None);
         }
         assert_eq!(memo.entries(), 50 * 51 / 2);
-        assert!(memo.bytes() > 0);
     }
 }

@@ -145,7 +145,7 @@ pub fn reduce_pairs<R: Reducer>(
     if let Some(map) = view {
         assert_eq!(map.len(), n, "view map must have one entry per graph row");
     }
-    let pool = WorkspacePool::new(n, true);
+    let pool = WorkspacePool::for_pairs(n);
     let ranges = task_ranges(n);
     let cursor = AtomicUsize::new(0);
     let failed = AtomicBool::new(false);

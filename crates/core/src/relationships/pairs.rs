@@ -235,7 +235,7 @@ pub fn pair_blocks(
         engine,
         requested,
         view,
-        pool: WorkspacePool::new(n, true),
+        pool: WorkspacePool::for_pairs(n),
         progress,
     };
     let ranges = task_ranges(n);

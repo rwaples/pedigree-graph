@@ -111,16 +111,6 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// A workspace for counting; orientation is never recorded.
-    pub fn new(n: usize) -> Result<Workspace, Error> {
-        Workspace::build(n, false)
-    }
-
-    /// A workspace for pair emission, which also records orientation.
-    pub fn for_pairs(n: usize) -> Result<Workspace, Error> {
-        Workspace::build(n, true)
-    }
-
     fn build(n: usize, orient: bool) -> Result<Workspace, Error> {
         Ok(Workspace {
             acc: Accumulator::new(n)?,
@@ -150,7 +140,17 @@ pub struct WorkspacePool {
 }
 
 impl WorkspacePool {
-    pub fn new(n: usize, orient: bool) -> WorkspacePool {
+    /// A pool for counting; its workspaces never record orientation.
+    pub fn for_counts(n: usize) -> WorkspacePool {
+        WorkspacePool::build(n, false)
+    }
+
+    /// A pool for pair emission, whose workspaces also record orientation.
+    pub fn for_pairs(n: usize) -> WorkspacePool {
+        WorkspacePool::build(n, true)
+    }
+
+    fn build(n: usize, orient: bool) -> WorkspacePool {
         WorkspacePool {
             n,
             orient,
@@ -265,7 +265,10 @@ impl<'p> Engine<'p> {
         ws: &mut Workspace,
         mut sink: impl FnMut(Category, u32, u32) -> Result<(), Error>,
     ) -> Result<(), Error> {
-        assert!(ws.orient, "pair emission needs Workspace::for_pairs");
+        assert!(
+            ws.orient,
+            "pair emission needs a workspace from WorkspacePool::for_pairs"
+        );
         self.classify_row(row, ws)?;
         self.fold_row(ws);
         let r = row as u32;

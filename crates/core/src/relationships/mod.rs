@@ -273,7 +273,7 @@ pub fn count_pairs(
 ) -> Result<Counts, Error> {
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
-    let pool = WorkspacePool::new(n, false);
+    let pool = WorkspacePool::for_counts(n);
     progress.walk(n)?;
     let counts = task_ranges(n)
         .into_par_iter()

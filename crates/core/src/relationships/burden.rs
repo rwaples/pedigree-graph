@@ -40,7 +40,7 @@ pub fn relationship_burden(
     let categories: [AtomicU64; N_CATEGORIES] = std::array::from_fn(|_| AtomicU64::new(0));
 
     let engine = Engine::new(ped, MaxDegree::MAX)?;
-    let pool = WorkspacePool::new(n, true);
+    let pool = WorkspacePool::for_pairs(n);
     let requested = CategorySet::up_to_degree(MaxDegree::MAX.get());
     progress.walk(n)?;
     task_ranges(n)
