@@ -19,30 +19,8 @@
 use crate::alloc::{self, Family};
 use crate::error::Error;
 
-/// Sorted per-row column and value storage with retirement.
-pub trait RowStore: Sized {
-    /// Empty live rows for `n` individuals.
-    fn new(n: usize) -> Result<Self, Error>;
-
-    /// Append `(col, val)` to `row`; a write to a retired row dissolves.
-    fn push(&mut self, row: usize, col: u32, val: f32) -> Result<(), Error>;
-
-    /// The row's columns, empty once retired.
-    fn cols(&self, row: usize) -> &[u32];
-
-    /// The row's values, aligned with [`RowStore::cols`].
-    fn vals(&self, row: usize) -> &[f32];
-
-    /// Both halves of a row, for the MZ overwrite and its insertion.
-    fn row_mut(&mut self, row: usize) -> (&mut [u32], &mut [f32]);
-
-    /// Free the row and drop every later write to it.
-    fn retire(&mut self, row: usize);
-
-    fn is_retired(&self, row: usize) -> bool;
-}
-
-/// One owned vector pair per row.
+/// Sorted per-row column and value storage with retirement: one owned
+/// vector pair per row.
 pub struct Owned {
     rows: Vec<Row>,
 }
@@ -54,15 +32,17 @@ struct Row {
     retired: bool,
 }
 
-impl RowStore for Owned {
-    fn new(n: usize) -> Result<Self, Error> {
+impl Owned {
+    /// Empty live rows for `n` individuals.
+    pub fn new(n: usize) -> Result<Self, Error> {
         Ok(Owned {
             rows: alloc::filled(Row::default(), n, Family::KinshipScratch, "object")?,
         })
     }
 
+    /// Append `(col, val)` to `row`; a write to a retired row dissolves.
     #[inline]
-    fn push(&mut self, row: usize, col: u32, val: f32) -> Result<(), Error> {
+    pub fn push(&mut self, row: usize, col: u32, val: f32) -> Result<(), Error> {
         let row = &mut self.rows[row];
         if row.retired {
             return Ok(());
@@ -71,29 +51,33 @@ impl RowStore for Owned {
         alloc::push(&mut row.vals, val, Family::KinshipRows, "float32")
     }
 
+    /// The row's columns, empty once retired.
     #[inline]
-    fn cols(&self, row: usize) -> &[u32] {
+    pub fn cols(&self, row: usize) -> &[u32] {
         &self.rows[row].cols
     }
 
+    /// The row's values, aligned with [`Owned::cols`].
     #[inline]
-    fn vals(&self, row: usize) -> &[f32] {
+    pub fn vals(&self, row: usize) -> &[f32] {
         &self.rows[row].vals
     }
 
-    fn row_mut(&mut self, row: usize) -> (&mut [u32], &mut [f32]) {
+    /// Both halves of a row, for the MZ overwrite and its insertion.
+    pub fn row_mut(&mut self, row: usize) -> (&mut [u32], &mut [f32]) {
         let row = &mut self.rows[row];
         (&mut row.cols, &mut row.vals)
     }
 
-    fn retire(&mut self, row: usize) {
+    /// Free the row and drop every later write to it.
+    pub fn retire(&mut self, row: usize) {
         let row = &mut self.rows[row];
         row.cols = Vec::new();
         row.vals = Vec::new();
         row.retired = true;
     }
 
-    fn is_retired(&self, row: usize) -> bool {
+    pub fn is_retired(&self, row: usize) -> bool {
         self.rows[row].retired
     }
 }
@@ -102,8 +86,9 @@ impl RowStore for Owned {
 mod tests {
     use super::*;
 
-    fn exercise<S: RowStore>() {
-        let mut store = S::new(4).unwrap();
+    #[test]
+    fn owned_rows_append_overwrite_and_retire() {
+        let mut store = Owned::new(4).unwrap();
         for col in 0..40u32 {
             store.push(1, col, col as f32).unwrap();
         }
@@ -129,10 +114,5 @@ mod tests {
             store.cols(1).is_empty(),
             "a write to a retired row dissolves"
         );
-    }
-
-    #[test]
-    fn owned_rows_append_overwrite_and_retire() {
-        exercise::<Owned>();
     }
 }

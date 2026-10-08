@@ -27,7 +27,7 @@
 
 use super::depth_order::DepthOrder;
 use super::pairwise::KinshipPedigree;
-use super::rows::{Owned, RowStore};
+use super::rows::Owned;
 use crate::alloc::{self, Family};
 use crate::error::Error;
 
@@ -151,9 +151,9 @@ enum Sink {
     },
 }
 
-struct Dp<'t, S: RowStore> {
+struct Dp<'t> {
     topo: &'t Topo,
-    store: S,
+    store: Owned,
     threshold: f64,
     /// `(starts, rows)` of rows to retire at the end of each depth, when
     /// retiring.
@@ -162,11 +162,11 @@ struct Dp<'t, S: RowStore> {
     scratch: Vec<(u32, f32)>,
 }
 
-impl<'t, S: RowStore> Dp<'t, S> {
+impl<'t> Dp<'t> {
     fn new(topo: &'t Topo, threshold: f64, retire: bool, sink: Sink) -> Result<Self, Error> {
         Ok(Dp {
             topo,
-            store: S::new(topo.n)?,
+            store: Owned::new(topo.n)?,
             threshold,
             retirement: if retire {
                 Some(topo.retirement()?)
@@ -432,20 +432,16 @@ fn assemble<'a>(
     })
 }
 
-fn complete_with<S: RowStore>(
-    topo: &Topo,
-    triangle: Triangle,
-    max_nnz: usize,
-) -> Result<Csc, Error> {
-    let mut dp = Dp::<S>::new(topo, 0.0, false, Sink::Rows)?;
+fn complete_with(topo: &Topo, triangle: Triangle, max_nnz: usize) -> Result<Csc, Error> {
+    let mut dp = Dp::new(topo, 0.0, false, Sink::Rows)?;
     dp.run()?;
     let store = dp.store;
     assemble(topo, |r| (store.cols(r), store.vals(r)), triangle, max_nnz)
 }
 
-fn approximate_with<S: RowStore>(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
+fn approximate_with(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
     let n = topo.n;
-    let mut pass1 = Dp::<S>::new(
+    let mut pass1 = Dp::new(
         topo,
         threshold,
         true,
@@ -466,7 +462,7 @@ fn approximate_with<S: RowStore>(topo: &Topo, threshold: f64) -> Result<Csc, Err
     drop(pass1.store);
 
     let upper = cols.len();
-    let mut pass2 = Dp::<S>::new(
+    let mut pass2 = Dp::new(
         topo,
         0.0,
         true,
@@ -551,7 +547,7 @@ fn approximate_with<S: RowStore>(topo: &Topo, threshold: f64) -> Result<Csc, Err
 /// exceeds int32, and [`Error::AllocationFailed`] for any buffer.
 pub fn kinship_csc(ped: KinshipPedigree<'_>) -> Result<Csc, Error> {
     let topo = Topo::build(&ped)?;
-    complete_with::<Owned>(&topo, Triangle::Full, MAX_CSC_NNZ)
+    complete_with(&topo, Triangle::Full, MAX_CSC_NNZ)
 }
 
 /// The upper triangle of [`kinship_csc`]: the entries with row `<=` column
@@ -568,7 +564,7 @@ pub fn kinship_csc(ped: KinshipPedigree<'_>) -> Result<Csc, Error> {
 /// upper entries.
 pub fn kinship_csc_upper(ped: KinshipPedigree<'_>, max_nnz: usize) -> Result<Csc, Error> {
     let topo = Topo::build(&ped)?;
-    complete_with::<Owned>(&topo, Triangle::Upper, max_nnz)
+    complete_with(&topo, Triangle::Upper, max_nnz)
 }
 
 /// Exact values on the propagation-pruned support: the structure a DP that
@@ -587,7 +583,7 @@ pub fn approximate_kinship_csc(ped: KinshipPedigree<'_>, threshold: f64) -> Resu
         });
     }
     let topo = Topo::build(&ped)?;
-    approximate_with::<Owned>(&topo, threshold)
+    approximate_with(&topo, threshold)
 }
 
 #[cfg(test)]
@@ -793,7 +789,7 @@ mod tests {
         // row 2 and writes (0, 4) symmetrically after row 0 has retired.
         let c = cols(&[(-1, -1), (-1, -1), (0, 1), (-1, -1), (2, 3)], &[]);
         let topo = Topo::build(&c.ped()).unwrap();
-        let mut dp = Dp::<Owned>::new(&topo, 0.0, true, Sink::Rows).unwrap();
+        let mut dp = Dp::new(&topo, 0.0, true, Sink::Rows).unwrap();
         dp.run().unwrap();
         assert!(dp.store.is_retired(0));
         assert!(dp.store.cols(0).is_empty());
