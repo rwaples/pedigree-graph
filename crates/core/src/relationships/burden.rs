@@ -1,16 +1,20 @@
 //! Per-person relationship burden without materialising pair blocks.
 
 use super::{
-    task_ranges, Category, CategorySet, Engine, MaxDegree, Pedigree, Progress, WorkspacePool,
-    N_CATEGORIES,
+    task_ranges, walk_task, Category, CategorySet, Engine, MaxDegree, Pedigree, Progress,
+    WorkspacePool, N_CATEGORIES,
 };
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
+/// Per-person count columns, one per degree `1..=MaxDegree::MAX`.
+pub const DEGREES: usize = MaxDegree::MAX.get() as usize;
+
 /// Counts in registry order, per-person counts for degrees 1..5 in row-major
-/// order, and related-pair counts where both endpoints have the same depth.
+/// order ([`DEGREES`] per row), and related-pair counts where both endpoints
+/// have the same depth.
 pub struct Burden {
     pub categories: [u64; N_CATEGORIES],
     pub per_person: Vec<u32>,
@@ -33,8 +37,8 @@ pub fn relationship_burden(
     assert_eq!(ped.len(), depth.len());
     let n = ped.len();
     let n_depths = depth.iter().copied().max().map_or(0, |d| d as usize + 1);
-    let mut cells = alloc::with_capacity(n * 5, Family::RowSet)?;
-    cells.extend((0..n * 5).map(|_| AtomicU32::new(0)));
+    let mut cells = alloc::with_capacity(n * DEGREES, Family::RowSet)?;
+    cells.extend((0..n * DEGREES).map(|_| AtomicU32::new(0)));
     let mut same_depth = alloc::with_capacity(n_depths, Family::RowSet)?;
     same_depth.extend((0..n_depths).map(|_| AtomicU64::new(0)));
     let categories: [AtomicU64; N_CATEGORIES] = std::array::from_fn(|_| AtomicU64::new(0));
@@ -43,38 +47,30 @@ pub fn relationship_burden(
     let pool = WorkspacePool::for_pairs(n);
     let requested = CategorySet::up_to_degree(MaxDegree::MAX.get());
     progress.walk(n)?;
-    task_ranges(n)
-        .into_par_iter()
-        .try_for_each(|(start, end)| {
-            let mut ws = pool.take()?;
-            let mut result = Ok(());
-            for row in start..end {
-                result = progress.check_row(row);
-                if result.is_err() {
-                    break;
-                }
-                result = engine.emit_row(row, &requested, None, &mut ws, |cat: Category, a, b| {
+    task_ranges(n).into_par_iter().try_for_each(|range| {
+        walk_task(
+            &pool,
+            progress,
+            range,
+            |_| false,
+            |row, ws| {
+                engine.emit_row(row, &requested, None, ws, |cat: Category, a, b| {
                     categories[cat.index()].fetch_add(1, Ordering::Relaxed);
                     let degree = cat.degree();
                     if degree > 0 {
                         let column = (degree - 1) as usize;
-                        cells[a as usize * 5 + column].fetch_add(1, Ordering::Relaxed);
-                        cells[b as usize * 5 + column].fetch_add(1, Ordering::Relaxed);
+                        cells[a as usize * DEGREES + column].fetch_add(1, Ordering::Relaxed);
+                        cells[b as usize * DEGREES + column].fetch_add(1, Ordering::Relaxed);
                     }
                     let da = depth[a as usize];
                     if da == depth[b as usize] {
                         same_depth[da as usize].fetch_add(1, Ordering::Relaxed);
                     }
                     Ok(())
-                });
-                if result.is_err() {
-                    break;
-                }
-            }
-            pool.give(ws);
-            progress.advance(end - start);
-            result
-        })?;
+                })
+            },
+        )
+    })?;
     progress.finish()?;
 
     Ok(Burden {

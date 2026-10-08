@@ -23,7 +23,7 @@
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
 use super::progress::{Checkpoint, Progress};
-use super::{task_ranges, MaxDegree, Pedigree};
+use super::{task_ranges, walk_task, MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
@@ -147,29 +147,16 @@ impl Query<'_> {
         range: (usize, usize),
         mut sink: impl FnMut(Category, u32, u32) -> Result<(), Error>,
     ) -> Result<(), Error> {
-        let mut ws = self.pool.take()?;
-        // The workspace goes back even when a row fails, so that the sibling
-        // tasks Rayon has already dispatched reuse it instead of allocating
-        // another one under the memory pressure that failed this row.
-        let mut result = Ok(());
-        for row in range.0..range.1 {
-            result = self.progress.check_row(row);
-            if result.is_err() {
-                break;
-            }
-            if self.view.is_some_and(|map| map[row] < 0) {
-                continue;
-            }
-            result = self
-                .engine
-                .emit_row(row, &self.requested, self.view, &mut ws, &mut sink);
-            if result.is_err() {
-                break;
-            }
-        }
-        self.pool.give(ws);
-        self.progress.advance(range.1 - range.0);
-        result
+        walk_task(
+            &self.pool,
+            self.progress,
+            range,
+            |row| self.view.is_some_and(|map| map[row] < 0),
+            |row, ws| {
+                self.engine
+                    .emit_row(row, &self.requested, self.view, ws, &mut sink)
+            },
+        )
     }
 
     /// The pairs of one task, one chunk per category.

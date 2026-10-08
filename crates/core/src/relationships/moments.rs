@@ -26,7 +26,7 @@ use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
 use super::pairs::check_view_map;
 use super::progress::{Checkpoint, Progress};
-use super::{check_column_length, task_ranges, CompactView, MaxDegree, Pedigree};
+use super::{check_column_length, task_ranges, walk_rows, CompactView, MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
@@ -168,30 +168,26 @@ pub fn reduce_pairs<R: Reducer>(
                 let Some(&(start, end)) = ranges.get(cursor.fetch_add(1, Ordering::Relaxed)) else {
                     break;
                 };
-                for row in start..end {
-                    result = progress.check_row(row);
-                    if result.is_err() {
-                        failed.store(true, Ordering::Relaxed);
-                        break;
-                    }
-                    if view.is_some_and(|map| map[row] < 0) {
-                        continue;
-                    }
-                    result = engine.emit_row(row, &requested, view, &mut ws, |cat, a, b| {
-                        reducer.reduce(&mut lane, cat, a, b);
-                        pairs += 1;
-                        if both && cat.symmetric() {
-                            reducer.reduce(&mut lane, cat, b, a);
+                result = walk_rows(
+                    (start, end),
+                    progress,
+                    |row| view.is_some_and(|map| map[row] < 0),
+                    |row| {
+                        engine.emit_row(row, &requested, view, &mut ws, |cat, a, b| {
+                            reducer.reduce(&mut lane, cat, a, b);
                             pairs += 1;
-                        }
-                        Ok(())
-                    });
-                    if result.is_err() {
-                        failed.store(true, Ordering::Relaxed);
-                        break;
-                    }
-                }
+                            if both && cat.symmetric() {
+                                reducer.reduce(&mut lane, cat, b, a);
+                                pairs += 1;
+                            }
+                            Ok(())
+                        })
+                    },
+                );
                 progress.advance(end - start);
+                if result.is_err() {
+                    failed.store(true, Ordering::Relaxed);
+                }
             }
             pool.give(ws);
             result.map(|()| (lane, pairs))

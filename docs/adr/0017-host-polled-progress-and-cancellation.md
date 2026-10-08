@@ -88,7 +88,8 @@ carries no counts, *walking* carries `done.min(total)`, *finishing* only
 the total. The cancel flag is `Relaxed` both ways; it carries no data.
 
 **Checkpoints.** The engine checks the cancel flag every 64 rows
-(`CHECK_EVERY`) in all four row loops, and at these named checkpoints:
+(`CHECK_EVERY`) in `walk_rows`, which every row loop (counts, pairs,
+burden, moments) goes through, and at these named checkpoints:
 
 * `Compacted`, after the compact pedigree of a view is built;
 * `Walk` and `Finish`, at the phase changes;

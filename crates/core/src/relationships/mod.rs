@@ -277,29 +277,16 @@ pub fn count_pairs(
     progress.walk(n)?;
     let counts = task_ranges(n)
         .into_par_iter()
-        .map(|(start, end)| {
-            let mut ws = pool.take()?;
-            // Given back even when a row fails, so the tasks already
-            // dispatched reuse it rather than allocate under the pressure
-            // that failed this one.
+        .map(|range| {
             let mut counts = Counts::default();
-            let mut result = Ok(());
-            for row in start..end {
-                result = progress.check_row(row);
-                if result.is_err() {
-                    break;
-                }
-                if selected.is_some_and(|s| !s[row]) {
-                    continue;
-                }
-                result = engine.count_row(row, selected, &mut ws, &mut counts);
-                if result.is_err() {
-                    break;
-                }
-            }
-            pool.give(ws);
-            progress.advance(end - start);
-            result.map(|()| counts)
+            walk_task(
+                &pool,
+                progress,
+                range,
+                |row| selected.is_some_and(|s| !s[row]),
+                |row, ws| engine.count_row(row, selected, ws, &mut counts),
+            )?;
+            Ok(counts)
         })
         .try_reduce(Counts::default, |a, b| Ok(a.merge(b)))?;
     progress.finish()?;
@@ -350,6 +337,44 @@ pub fn pair_blocks_compact(
         execution,
         progress,
     )
+}
+
+/// Run `row` over `range`: each row is checked against `progress` first,
+/// then skipped when `skip` names it; the first error ends the walk.  Every
+/// row loop of the engine goes through here (ADR 0017, "Checkpoints").
+fn walk_rows(
+    range: (usize, usize),
+    progress: &Progress,
+    skip: impl Fn(usize) -> bool,
+    mut row: impl FnMut(usize) -> Result<(), Error>,
+) -> Result<(), Error> {
+    for r in range.0..range.1 {
+        progress.check_row(r)?;
+        if skip(r) {
+            continue;
+        }
+        row(r)?;
+    }
+    Ok(())
+}
+
+/// [`walk_rows`] over one task's range on a workspace from `pool`, which
+/// goes back even when a row fails, so the tasks Rayon has already
+/// dispatched reuse it instead of allocating another under the memory
+/// pressure that failed this one.  The whole range counts toward
+/// `progress` either way.
+fn walk_task(
+    pool: &WorkspacePool,
+    progress: &Progress,
+    range: (usize, usize),
+    skip: impl Fn(usize) -> bool,
+    mut row: impl FnMut(usize, &mut Workspace) -> Result<(), Error>,
+) -> Result<(), Error> {
+    let mut ws = pool.take()?;
+    let result = walk_rows(range, progress, skip, |r| row(r, &mut ws));
+    pool.give(ws);
+    progress.advance(range.1 - range.0);
+    result
 }
 
 /// Consecutive row ranges of [`ROWS_PER_TASK`] rows covering `0..n`.
