@@ -20,7 +20,8 @@
 #'   `first`.
 #' @param values A named list of numeric columns, finite, one value per
 #'   input row.  Each value is held to 43 significant bits of its column's
-#'   largest magnitude.
+#'   largest magnitude.  Classed vectors (factor, `Date`, `POSIXct`,
+#'   `difftime`, `integer64`) are refused: convert them with [as.double()].
 #' @param products The cross products to accumulate, a list of length-2
 #'   character vectors such as `c("first.x", "second.x")`; `NULL` (default)
 #'   is `first.<c>` by `second.<c>` for every value column.

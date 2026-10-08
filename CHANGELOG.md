@@ -24,6 +24,12 @@ live on the corresponding GitHub release pages.
   that registers the cancel before the start. Before, a Ctrl-C or time limit
   that landed between the start and the first wait left the job running
   until garbage collection, and the next call queued behind it.
+- **Fixed (R): `relationship_moments()` refuses classed `values` columns.**
+  It refused only factors, so an `integer64` column was read as its raw bits
+  and a `Date`, `POSIXct` or `difftime` column as its epoch offsets. Every
+  classed vector is now a usage error naming the class, as for
+  `relatives_per_person()` thresholds and Python's datetime64 and
+  timedelta64; convert with `as.double()`.
 
 ## v0.12.2
 

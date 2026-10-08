@@ -8,6 +8,7 @@
 //! vector that core borrows.
 
 use crate::errors::{HostError, HostResult};
+use crate::input::doubles;
 use crate::job;
 use crate::kernels::{exact_double, package_pool, selection, walk_of, Native};
 use crate::threads;
@@ -140,25 +141,8 @@ fn factor_codes(field: &str, column: &Robj, n: usize, na: Option<i64>) -> HostRe
 /// A numeric value column as float64; `NA` becomes NaN, which core refuses.
 fn value_column(field: &str, column: &Robj, n: usize) -> HostResult<Vec<f64>> {
     check_length(field, column, n)?;
-    if column.inherits("factor") {
-        return Err(HostError::usage(format!(
-            "{field} must be numeric, not a factor"
-        )));
-    }
-    if let Some(values) = column.as_real_slice() {
-        return Ok(values.to_vec());
-    }
-    if let Some(values) = column.as_integer_slice() {
-        return Ok(values
-            .iter()
-            .map(|&v| {
-                if v == i32::MIN {
-                    f64::NAN
-                } else {
-                    f64::from(v)
-                }
-            })
-            .collect());
+    if let Some(values) = doubles(field, column)? {
+        return Ok(values);
     }
     if let Some(values) = column.as_logical_slice() {
         return Ok(values

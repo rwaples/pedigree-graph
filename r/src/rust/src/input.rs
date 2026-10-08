@@ -5,7 +5,7 @@
 //! lossless integer form is `invalid_integer_value`.  `bit64::integer64` is a
 //! double vector whose bits are an `i64`; it is read without depending on
 //! bit64.  An all-`NA` logical column is all nulls.  Positions in errors
-//! are 1-based.
+//! are 1-based.  Value columns go to float64 through [`doubles`].
 
 use crate::errors::{HostError, HostResult};
 use extendr_api::prelude::*;
@@ -184,4 +184,32 @@ pub fn coerce_ids(column: &Robj) -> HostResult<Coerced> {
         return Err(invalid("id", position, na));
     }
     Ok(coerced)
+}
+
+/// A double or integer vector as float64, `NA` as NaN; `None` for any other
+/// unclassed type.  A classed vector is refused: a factor's codes,
+/// integer64's bits and a `Date`'s, `POSIXct`'s or `difftime`'s offsets are
+/// not the values they print as, and Python refuses datetime64 and
+/// timedelta64.
+pub fn doubles(field: &str, column: &Robj) -> HostResult<Option<Vec<f64>>> {
+    if let Some(class) = column.class().and_then(|mut c| c.next()) {
+        return Err(HostError::usage(format!(
+            "{field} must be a numeric vector, not class {class}; convert it with as.double()"
+        )));
+    }
+    if let Some(values) = column.as_real_slice() {
+        return Ok(Some(values.to_vec()));
+    }
+    Ok(column.as_integer_slice().map(|values| {
+        values
+            .iter()
+            .map(|&v| {
+                if v == i32::MIN {
+                    f64::NAN
+                } else {
+                    f64::from(v)
+                }
+            })
+            .collect()
+    }))
 }

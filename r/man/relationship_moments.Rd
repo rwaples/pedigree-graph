@@ -37,7 +37,8 @@ occur (a factor's unused levels are dropped).}
 
 \item{values}{A named list of numeric columns, finite, one value per
 input row.  Each value is held to 43 significant bits of its column's
-largest magnitude.}
+largest magnitude.  Classed vectors (factor, `Date`, `POSIXct`,
+`difftime`, `integer64`) are refused: convert them with [as.double()].}
 
 \item{products}{The cross products to accumulate, a list of length-2
 character vectors such as `c("first.x", "second.x")`; `NULL` (default)

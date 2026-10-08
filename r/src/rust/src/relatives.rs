@@ -5,6 +5,7 @@
 //! R integer array `[row, category, column]`.
 
 use crate::errors::{HostError, HostResult};
+use crate::input::doubles;
 use crate::job;
 use crate::kernels::{package_pool, selection, walk_of, Native};
 use crate::moments::{check_length, named_columns};
@@ -37,25 +38,8 @@ fn real_column(field: &str, column: &Robj) -> HostResult<Vec<f64>> {
             "{field} must be a numeric vector, not {what}"
         )))
     };
-    // A factor's codes, integer64's bits and a Date's or POSIXct's epoch
-    // offsets are not the values they print as; Python refuses datetime64.
-    if let Some(class) = column.class().and_then(|mut c| c.next()) {
-        return refused(&format!("class {class}; convert it with as.double()"));
-    }
-    if let Some(values) = column.as_real_slice() {
-        return Ok(values.to_vec());
-    }
-    if let Some(values) = column.as_integer_slice() {
-        return Ok(values
-            .iter()
-            .map(|&v| {
-                if v == i32::MIN {
-                    f64::NAN
-                } else {
-                    f64::from(v)
-                }
-            })
-            .collect());
+    if let Some(values) = doubles(field, column)? {
+        return Ok(values);
     }
     // Python refuses bool too; `NA` alone is logical, so name NA_real_.
     if column.is_logical() {

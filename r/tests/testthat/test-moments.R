@@ -57,6 +57,17 @@ test_that("values must be finite, counted from row 1", {
   expect_pg_error(relationship_moments(pg, max_degree = 1, symmetric = "neither"), "usage")
 })
 
+test_that("a classed values column is refused, not read as its codes, bits or offsets", {
+  pg <- pedigree_graph(three_gen())
+  run <- function(column) relationship_moments(pg, max_degree = 1, values = list(x = column))
+  expect_error(run(as_int64(1:6)), "values\\['x'\\] must be a numeric vector, not class integer64",
+               class = "pedigree_graph_usage_error")
+  expect_pg_error(run(factor(1:6)), "usage")
+  expect_pg_error(run(as.Date(x)), "usage")
+  expect_pg_error(run(as.difftime(x, units = "days")), "usage")
+  expect_no_error(run(as.double(as.Date(x))))
+})
+
 test_that("select takes labels on a factor axis and values elsewhere, in the order given", {
   pg <- pedigree_graph(three_gen())
   f <- factor(c("u", "v", "u", "v", "u", "v"))
