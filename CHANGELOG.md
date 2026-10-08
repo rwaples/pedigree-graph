@@ -17,6 +17,13 @@ live on the corresponding GitHub release pages.
   Logical, character and classed columns (factor, `Date`, `POSIXct`,
   `difftime`, `integer64`) are refused. It takes `progress` like the other
   relationship calls. Goldens and `tools/r_parity.py` hold it to Python.
+- **Fixed (R): an interrupt right after a relationship call starts no longer
+  leaves its job running.** `relationship_pairs()`, `relationship_counts()`,
+  `relationship_burden()`, `relatives_per_person()` and
+  `relationship_moments()` start and watch their job through one helper
+  that registers the cancel before the start. Before, a Ctrl-C or time limit
+  that landed between the start and the first wait left the job running
+  until garbage collection, and the next call queued behind it.
 
 ## v0.12.2
 

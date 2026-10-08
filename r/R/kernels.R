@@ -51,9 +51,9 @@ relationship_pairs <- function(pg, max_degree = NULL, categories = NULL,
     .pg_usage("`ids` must be TRUE or FALSE")
   }
   if (!is.null(max_degree) && !is.numeric(max_degree)) max_degree <- NaN
-  report <- .pg_progress(progress, "relationship_pairs")
-  handle <- .pg_call(.native_start_pairs(native, pg$seal, max_degree, categories, execution, ids))
-  found <- .pg_watch(handle, report)
+  found <- .pg_run(progress, "relationship_pairs", function() {
+    .native_start_pairs(native, pg$seal, max_degree, categories, execution, ids)
+  })
   codes <- .pg_codes()
   columns <- found[setdiff(names(found), "requested")]
   columns$code <- structure(columns$code, levels = codes, class = "factor")
@@ -89,9 +89,9 @@ relationship_counts <- function(pg, max_degree = NULL, categories = NULL,
                                 progress = getOption("pedigreegraph.progress", TRUE)) {
   native <- .pg_native(pg)
   if (!is.null(max_degree) && !is.numeric(max_degree)) max_degree <- NaN
-  report <- .pg_progress(progress, "relationship_counts")
-  handle <- .pg_call(.native_start_counts(native, pg$seal, max_degree, categories))
-  found <- .pg_watch(handle, report)
+  found <- .pg_run(progress, "relationship_counts", function() {
+    .native_start_counts(native, pg$seal, max_degree, categories)
+  })
   codes <- .pg_codes()
   structure(
     stats::setNames(found$counts, codes),
@@ -126,9 +126,7 @@ relationship_counts <- function(pg, max_degree = NULL, categories = NULL,
 #' @export
 relationship_burden <- function(pg, progress = getOption("pedigreegraph.progress", TRUE)) {
   native <- .pg_native(pg)
-  report <- .pg_progress(progress, "relationship_burden")
-  handle <- .pg_call(.native_start_burden(native, pg$seal))
-  found <- .pg_watch(handle, report)
+  found <- .pg_run(progress, "relationship_burden", function() .native_start_burden(native, pg$seal))
   dimnames(found$per_person) <- list(NULL, paste0("degree_", 1:5))
   names(found$category_counts) <- .pg_codes()
   found
@@ -180,9 +178,9 @@ relatives_per_person <- function(pg, max_degree = NULL, categories = NULL, thres
                                  progress = getOption("pedigreegraph.progress", TRUE)) {
   native <- .pg_native(pg)
   if (!is.null(max_degree) && !is.numeric(max_degree)) max_degree <- NaN
-  report <- .pg_progress(progress, "relatives_per_person")
-  handle <- .pg_call(.native_start_relatives(native, pg$seal, max_degree, categories, thresholds))
-  found <- .pg_watch(handle, report)
+  found <- .pg_run(progress, "relatives_per_person", function() {
+    .native_start_relatives(native, pg$seal, max_degree, categories, thresholds)
+  })
   counts <- found$counts
   dimnames(counts) <- list(NULL, found$categories, c("relatives", names(thresholds)))
   counts

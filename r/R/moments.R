@@ -59,12 +59,12 @@ relationship_moments <- function(pg, max_degree = NULL, categories = NULL,
   }
   first <- .pg_factor_list("first", first)
   if (!is.null(second)) second <- .pg_factor_list("second", second)
-  report <- .pg_progress(progress, "relationship_moments")
-  handle <- .pg_call(.native_start_moments(
-    native, pg$seal, max_degree, categories, first, second, values, products, same,
-    symmetric, as.double(memory_budget_bytes)
-  ))
-  found <- .pg_watch(handle, report)
+  found <- .pg_run(progress, "relationship_moments", function() {
+    .native_start_moments(
+      native, pg$seal, max_degree, categories, first, second, values, products, same,
+      symmetric, as.double(memory_budget_bytes)
+    )
+  })
   axes <- unname(c(
     list(list(name = "category", levels = found$categories)),
     .pg_factor_axes("first", first, found$first_levels),

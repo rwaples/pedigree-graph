@@ -327,6 +327,14 @@ test_that("garbage collecting an uncollected handle cancels its job", {
   expect_true(.Call(cancelled))
 })
 
+test_that("a call is cancelled when anything after its start fails", {
+  start <- hook("cancellable_job_for_test")
+  cancelled <- hook("was_cancelled_for_test")
+  local_mocked_bindings(.pg_watch = function(...) stop("after the start"), .package = "pedigreegraph")
+  expect_error(.pg_run(FALSE, "test", function() .Call(start)), "after the start")
+  expect_true(.Call(cancelled))
+})
+
 test_that("cancel is a no-op twice and after collect; a second collect is refused", {
   scripted <- hook("scripted_job_for_test")
   local_mocked_bindings(.pg_tick = function() 0.02, .package = "pedigreegraph")

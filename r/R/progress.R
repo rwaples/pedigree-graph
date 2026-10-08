@@ -3,8 +3,8 @@
 # A start routine spawns the engine call on the package pool and returns a
 # handle; .pg_watch() then waits on it a tick at a time from R, so progress
 # lines and callbacks run as ordinary R code under the caller's handlers,
-# and Ctrl-C, time limits and callback errors unwind the loop, whose on.exit
-# cancels the call.
+# and Ctrl-C, time limits and callback errors unwind the loop.  .pg_run()
+# ties the two together and cancels the call on exit.
 
 # Seconds between two looks at a running call; tests make it small.
 .pg_tick <- function() 1
@@ -58,9 +58,20 @@
   sprintf("%dh%02dm%02ds", as.integer(s %/% 3600), as.integer(s %% 3600 %/% 60), as.integer(s %% 60))
 }
 
+# Start a call with `start()`, a start routine's value, and return its
+# result.  The cancel is registered before the start, so an interrupt or
+# time limit that lands before the first wait still stops the job rather
+# than leaving it to the garbage collector.
+.pg_run <- function(progress, label, start, call = sys.call(-1L)) {
+  report <- .pg_progress(progress, label, call = call)
+  handle <- NULL
+  on.exit(if (typeof(handle) == "externalptr") .native_cancel(handle))
+  handle <- start()
+  .pg_watch(.pg_call(handle, call = call), report, call = call)
+}
+
 # Wait for a started call, reporting each tick, and return its result.
 .pg_watch <- function(handle, report, call = sys.call(-1L)) {
-  on.exit(.native_cancel(handle))
   repeat {
     state <- .pg_call(.native_wait(handle, .pg_tick()), call = call)
     # Services pending events: R raises a pending Ctrl-C or time limit here,
