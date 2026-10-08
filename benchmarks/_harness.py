@@ -886,8 +886,10 @@ def package_facts() -> dict[str, str]:
     ``git describe`` and the native library's hash say which build each row
     measured.  The hash is the identity: two arms with one ``native_sha256``
     timed the same machine code whatever their paths say.  ``package_git`` is
-    empty for an installed wheel, and it describes the source tree, which a
-    stale extension need not match.
+    empty unless the extension sits in a pedigree-graph source checkout (an
+    installed wheel's site-packages would otherwise describe whatever
+    repository encloses the environment), and it describes the source tree,
+    which a stale extension need not match.
     """
     import importlib.metadata
 
@@ -895,12 +897,14 @@ def package_facts() -> dict[str, str]:
     from pedigree_graph import _native
 
     native = Path(_native.__file__)
+    source = native.parent.parent
     describe = subprocess.run(
-        ["git", "-C", str(native.parent), "describe", "--tags", "--always", "--dirty", "--abbrev=12"],
+        ["git", "-C", str(source), "describe", "--tags", "--always", "--dirty", "--abbrev=12"],
         capture_output=True,
         text=True,
         check=False,
     )
+    in_checkout = (source / "crates" / "core" / "Cargo.toml").is_file()
     return {
         "python": sys.executable,
         "package_file": pedigree_graph.__file__,
@@ -908,7 +912,7 @@ def package_facts() -> dict[str, str]:
         "core_version": _native.core_version(),
         "native_file": str(native),
         "native_sha256": hashlib.sha256(native.read_bytes()).hexdigest()[:16],
-        "package_git": describe.stdout.strip() if describe.returncode == 0 else "",
+        "package_git": describe.stdout.strip() if in_checkout and describe.returncode == 0 else "",
     }
 
 
@@ -1134,17 +1138,21 @@ class Report:
         return {arm: list(builds) for arm, builds in out.items()}
 
     def build_conflicts(self, gate: Gate | None) -> list[str]:
-        """Arms that imported more than one build, and gated arms that imported their baseline's build.
+        """Arms that imported more than one native library, and build-gate arms that imported their baseline's.
 
         Either means the sweep did not measure what its arm names claim: a
         rebuild mid-sweep, or a baseline interpreter that resolves to the
-        candidate's checkout.
+        candidate's checkout.  Only the library hash counts: a source tree
+        turning dirty mid-sweep leaves the machine code alone.  The shared
+        library check applies to a build gate (:func:`build_pair`) only; an
+        A/B gate of two algorithms in one build shares its library by design.
         """
-        builds = self.builds()
-        problems = [f"{arm} imported {len(seen)} different builds" for arm, seen in builds.items() if len(seen) > 1]
-        for arm, seen in builds.items():
-            name = gate.baseline_of(arm) if gate is not None else None
-            shared = {build[0] for build in seen} & {build[0] for build in builds.get(name or "", [])} - {"?"}
+        native = {arm: {build[0] for build in seen} - {"?"} for arm, seen in self.builds().items()}
+        problems = [f"{arm} imported {len(seen)} different builds" for arm, seen in native.items() if len(seen) > 1]
+        build_gate = gate is not None and gate.same_checksum
+        for arm, seen in native.items():
+            name = gate.baseline_of(arm) if build_gate and gate is not None else None
+            shared = seen & native.get(name or "", set())
             if shared:
                 problems.append(f"{arm} and its baseline {name} imported the same native library {sorted(shared)}")
         return problems

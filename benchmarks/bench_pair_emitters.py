@@ -175,6 +175,8 @@ def main() -> None:
     builds = {arm: binary_identity(binary) for arm, binary in binaries.items()}
     same_build = len({build["binary_sha256"] for build in builds.values()}) < len(builds)
     repeat = args.repeat or (BUILD_GATE_REPEATS if args.baseline_binary is not None else 3)
+    if args.baseline_binary is not None and repeat < BUILD_GATE_REPEATS:
+        raise SystemExit(f"a build gate needs --repeat >= {BUILD_GATE_REPEATS}, got {repeat}")
 
     work = args.work_dir or Path(tempfile.mkdtemp(prefix="pair-executions-"))
     work.mkdir(parents=True, exist_ok=True)
@@ -229,6 +231,9 @@ def main() -> None:
     blocked = [row for row in rows if row["verdict"] == Verdict.BLOCK]
     for row in blocked:
         print(f"BLOCK: {_cell(row)} candidate regressed beyond the gate with disjoint ranges")
+    for row in rows:
+        if row["verdict"] == Verdict.INCONCLUSIVE:
+            print(f"inconclusive: {_cell(row)} (overlapping ranges past the gate)")
     if same_build:
         print(f"WRONG BUILD: base and candidate are the same binary: {builds}")
     raise SystemExit(1 if blocked or same_build else 0)

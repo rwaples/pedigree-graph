@@ -16,6 +16,7 @@ from _harness import (  # noqa: E402
     Cell,
     CellResult,
     Fixture,
+    Gate,
     Measurement,
     Outcome,
     Report,
@@ -137,6 +138,18 @@ def test_a_rebuild_mid_sweep_is_reported():
     base = [_record(Cell("f", "one@base"), 1.0, native="x"), _record(Cell("f", "one@base"), 1.0, native="y")]
     report = _report(base, [])
     assert report.build_conflicts(None) == ["one@base imported 2 different builds"]
+
+
+def test_a_source_tree_turning_dirty_mid_sweep_is_not_a_rebuild():
+    first = _record(Cell("f", "one@base"), 1.0)
+    dirty = replace(first, facts={**first.facts, "package_git": "v1-dirty"})
+    assert _report([first, dirty], []).build_conflicts(None) == []
+
+
+def test_an_ab_gate_of_two_arms_in_one_build_is_not_a_wrong_build():
+    gate = Gate(baseline="one@base", gated=frozenset({"one"}))
+    report = _report([_record(Cell("f", "one@base"), 1.0)], [_record(Cell("f", "one"), 1.0)])
+    assert report.build_conflicts(gate) == []
 
 
 def test_a_stored_two_build_report_renders_against_the_paired_suite():
