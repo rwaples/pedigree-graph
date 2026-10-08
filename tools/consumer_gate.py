@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 """Run pedigree-graph's release gate across the family and record evidence.
 
-All thirteen family check units of simACE's ``tools/family_repos.py`` are
+All fourteen family check units of simACE's ``tools/family_repos.py`` are
 covered, which ``tests/test_consumer_gate_covers_family.py`` enforces.  Each
 unit runs from its own pixi manifest; the ``--routing`` argument, not the
 consumer locks, decides which pedigree-graph build the consumers import, and
 every routed unit starts by asserting where ``pedigree_graph.__file__`` lives.
+pg-phenotype also compiles pedigree-graph's Rust core, pinned by git rev; its
+``tools/test_against_pg.sh`` redirects that pin to the candidate source (the
+clean worktree under ``--wheel-ref``, else this checkout), and under
+``--routing locked`` its suites run against the pin instead.
 
 Before a release, build the candidate and route the consumers through it::
 
@@ -70,6 +74,9 @@ class Step:
     argv: tuple[str, ...]
     slow: bool = False
     """Run only with ``--slow``."""
+    locked: bool | None = None
+    """``True``: run only under ``--routing locked``; ``False``: only under any
+    other routing; ``None``: under every routing."""
 
 
 @dataclass(frozen=True)
@@ -100,9 +107,14 @@ def _fitace(label: str, subdir: str) -> Unit:
 
 
 def units() -> tuple[Unit, ...]:
-    """The gate's units in run order (pedigree-graph first, consumers after)."""
+    """The gate's units in run order (pedigree-graph first, consumers after).
+
+    ``{tmp}`` in a step is the run's scratch directory and ``{pg}`` the
+    candidate pedigree-graph source.
+    """
     fitace = ROOT / "fitACE"
     pedsum = ROOT / "external" / "pedsum"
+    pg_phenotype = ROOT / "external" / "pg-phenotype"
     smoke_ped = ROOT / SMOKE / "rep1" / "pedigree.parquet"
     return (
         Unit(
@@ -224,6 +236,20 @@ def units() -> tuple[Unit, ...]:
                 ),
             ),
         ),
+        Unit(
+            "pg-phenotype",
+            pg_phenotype,
+            pg_phenotype / "pixi.toml",
+            (
+                Step("ruff", ("ruff", "check")),
+                Step("format", ("ruff", "format", "--check")),
+                # Rust and Python suites with pedigree-graph-core patched to the
+                # candidate; the script restores the locks and the pinned build.
+                Step("test-against-pg", ("test-against-pg", "{pg}"), locked=False),
+                Step("test-rust", ("test-rust",), locked=True),
+                Step("test-all", ("test-all",), locked=True),
+            ),
+        ),
     )
 
 
@@ -274,9 +300,11 @@ def _scope_works() -> bool:
     return probe.returncode == 0
 
 
-def run_step(unit: Unit, step: Step, env: dict[str, str], frozen: bool, log_dir: Path, tmp: Path, scoped: bool) -> dict:
+def run_step(
+    unit: Unit, step: Step, env: dict[str, str], frozen: bool, log_dir: Path, tmp: Path, pg: Path, scoped: bool
+) -> dict:
     """Run one step under ``/usr/bin/time`` and, if *scoped*, a systemd scope; log it and return its evidence record."""
-    argv = tuple(a.replace("{tmp}", str(tmp)) for a in step.argv)
+    argv = tuple(a.replace("{tmp}", str(tmp)).replace("{pg}", str(pg)) for a in step.argv)
     pixi = ["pixi", "run", "--manifest-path", str(unit.manifest)]
     if frozen:
         pixi.append("--frozen")
@@ -311,12 +339,13 @@ def run_step(unit: Unit, step: Step, env: dict[str, str], frozen: bool, log_dir:
     }
 
 
-def run_unit(unit: Unit, routing: str, stage: str, slow: bool, tmp: Path, scoped: bool) -> dict:
+def run_unit(unit: Unit, routing: str, stage: str, slow: bool, tmp: Path, pg: Path, scoped: bool) -> dict:
     """Run a unit's routing check and steps; write and return its JSON record."""
     env, prefix = routing_env(routing) if unit.routed else ({}, "")
-    frozen = routing != "locked"
+    locked = routing == "locked"
+    frozen = not locked
     steps = [routing_check(prefix)] if unit.routed else []
-    steps += [s for s in unit.steps if slow or not s.slow]
+    steps += [s for s in unit.steps if (slow or not s.slow) and s.locked in (None, locked)]
     log_dir = EVIDENCE / stage / unit.label
     log_dir.mkdir(parents=True, exist_ok=True)
     record = {
@@ -329,7 +358,7 @@ def run_unit(unit: Unit, routing: str, stage: str, slow: bool, tmp: Path, scoped
     }
     for step in steps:
         print(f"[{unit.label}] {step.name} ...", end="", flush=True)
-        result = run_step(unit, step, env, frozen, log_dir, tmp, scoped)
+        result = run_step(unit, step, env, frozen, log_dir, tmp, pg, scoped)
         record["steps"].append(result)
         print(
             f" exit={result['exit']} wall={result['wall_s']}s rss={result['max_rss_mib']}MiB"
@@ -536,7 +565,8 @@ def main(argv: list[str] | None = None) -> int:
         for u in units():
             print(f"{u.label} ({u.cwd.relative_to(ROOT) or '.'})")
             for st in u.steps:
-                print(f"    {st.name}{' [slow]' if st.slow else ''}: {shlex.join(st.argv)}")
+                only = {None: "", True: " [locked only]", False: " [not locked]"}[st.locked]
+                print(f"    {st.name}{' [slow]' if st.slow else ''}{only}: {shlex.join(st.argv)}")
         return 0
     if args.command == "summary":
         return summary(args.stage)
@@ -548,14 +578,18 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"unknown units: {sorted(unknown)}")
         selected = tuple(u for u in selected if u.label in args.unit)
     routing = args.routing
+    # The source a Rust consumer compiles against: the wheel's own tree under
+    # --wheel-ref, else this checkout.
+    pg = PG_SOURCE
     if args.wheel_ref:
         work = (args.work or PG_SOURCE / "target" / "consumer-gate" / args.stage).resolve()
         routing = str(build_stage(args.wheel_ref, work, args.stage))
+        pg = work / "clean"
     scoped = _scope_works()
     if not scoped:
         print("systemd-run --user --scope is unavailable; tree_peak_mib will be null", file=sys.stderr)
     with tempfile.TemporaryDirectory(prefix="consumer-gate-") as tmp:
-        records = [run_unit(unit, routing, args.stage, args.slow, Path(tmp), scoped) for unit in selected]
+        records = [run_unit(unit, routing, args.stage, args.slow, Path(tmp), pg, scoped) for unit in selected]
     failed = [r["unit"] for r in records if not r["ok"]]
     print("failed units:", failed or "none")
     return 1 if failed else 0
