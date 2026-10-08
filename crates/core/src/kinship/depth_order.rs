@@ -66,19 +66,7 @@ impl DepthOrder {
     ) -> Result<DepthOrder, Error> {
         check_structural(mother, father, depth)?;
         let max_depth = depth.iter().copied().max().unwrap_or(0) as usize;
-        let mut starts = alloc::filled(0usize, max_depth + 2, family)?;
-        for &d in depth {
-            starts[d as usize + 1] += 1;
-        }
-        for d in 1..starts.len() {
-            starts[d] += starts[d - 1];
-        }
-        let mut order = alloc::filled(0u32, depth.len(), family)?;
-        let mut cursor = alloc::cloned(&starts, family)?;
-        for (row, &d) in depth.iter().enumerate() {
-            order[cursor[d as usize]] = row as u32;
-            cursor[d as usize] += 1;
-        }
+        let Buckets { order, starts } = Buckets::by(depth, max_depth + 1, family)?;
         Ok(DepthOrder { order, starts })
     }
 
@@ -89,6 +77,45 @@ impl DepthOrder {
     /// The graph rows at depth `d`, ascending.
     pub(crate) fn rows_at(&self, d: usize) -> &[u32] {
         &self.order[self.starts[d]..self.starts[d + 1]]
+    }
+}
+
+/// Rows grouped by an integer key, a stable counting sort: the rows with key
+/// `k` are [`Buckets::bucket`]`(k)`, ascending.
+pub(crate) struct Buckets {
+    /// Row at each key-major position.
+    pub(crate) order: Vec<u32>,
+    /// Rows with key `k` are `order[starts[k]..starts[k + 1]]`.
+    pub(crate) starts: Vec<usize>,
+}
+
+impl Buckets {
+    /// Sort the rows `0..keys.len()` by `keys`, every key in `0..n_buckets`,
+    /// reserving through `family`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] for either array or the cursor.
+    pub(crate) fn by(keys: &[i32], n_buckets: usize, family: Family) -> Result<Buckets, Error> {
+        let mut starts = alloc::filled(0usize, n_buckets + 1, family)?;
+        for &k in keys {
+            starts[k as usize + 1] += 1;
+        }
+        for k in 1..starts.len() {
+            starts[k] += starts[k - 1];
+        }
+        let mut order = alloc::filled(0u32, keys.len(), family)?;
+        let mut cursor = alloc::cloned(&starts, family)?;
+        for (row, &k) in keys.iter().enumerate() {
+            order[cursor[k as usize]] = row as u32;
+            cursor[k as usize] += 1;
+        }
+        Ok(Buckets { order, starts })
+    }
+
+    /// The rows with key `k`, ascending.
+    pub(crate) fn bucket(&self, k: usize) -> &[u32] {
+        &self.order[self.starts[k]..self.starts[k + 1]]
     }
 }
 

@@ -8,7 +8,7 @@
 //! depth.  EqG and the founder means evaluate each value by the float64
 //! expression the 0.9.3 NumPy and Numba code used, in the same order.
 
-use super::depth_order::{DepthOrder, ParentsFirst};
+use super::depth_order::{Buckets, DepthOrder, ParentsFirst};
 use super::inbreeding::{genome_node, GenomePedigree};
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
@@ -229,26 +229,16 @@ pub fn generation_kinship_sums(
 
     // Rows grouped by bucket, ascending within each, so a bucket seeds from
     // its own rows; every co-twin sits at its node's depth.
-    let mut starts = alloc::filled(0usize, n_buckets + 2, SUMS)?;
+    let members = Buckets::by(labels, n_buckets + 1, SUMS)?;
     let mut deepest = alloc::filled(0usize, n_buckets + 1, SUMS)?;
     for (&b, &d) in labels.iter().zip(depth) {
-        starts[b as usize + 1] += 1;
         deepest[b as usize] = deepest[b as usize].max(d as usize);
-    }
-    for b in 1..starts.len() {
-        starts[b] += starts[b - 1];
-    }
-    let mut members = alloc::filled(0u32, n, SUMS)?;
-    let mut cursor = alloc::cloned(&starts, SUMS)?;
-    for (row, &b) in labels.iter().enumerate() {
-        members[cursor[b as usize]] = row as u32;
-        cursor[b as usize] += 1;
     }
     let mut sums = alloc::filled(0.0f64, n_buckets, SUMS)?;
     let mut y = alloc::filled(0.0f64, n, SUMS)?;
 
     for (b, sum) in sums.iter_mut().enumerate() {
-        let rows = &members[starts[b]..starts[b + 1]];
+        let rows = members.bucket(b);
         if rows.is_empty() {
             continue;
         }

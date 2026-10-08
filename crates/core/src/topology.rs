@@ -131,20 +131,13 @@ pub fn structural_depth(mother: &[i32], father: &[i32]) -> Vec<i32> {
 /// cannot be reserved; the host maps it to `ResourceError` like every other
 /// refused reservation rather than aborting.
 pub fn depth_major_order(depth: &[i32]) -> Result<Order, Error> {
-    depth_major_order_in(depth, Family::ViewSortScratch)
-}
-
-/// [`depth_major_order`] with its three arrays reserved through `family`,
-/// so a kernel that permutes a large pedigree reports the refusal under
-/// its own family.
-pub fn depth_major_order_in(depth: &[i32], family: Family) -> Result<Order, Error> {
     if depth.windows(2).all(|w| w[0] <= w[1]) {
         return Ok(Order::Identity);
     }
     let n = depth.len();
     let max_depth = depth.iter().copied().max().unwrap_or(0) as usize;
 
-    let mut starts = alloc::filled(0usize, max_depth + 2, family)?;
+    let mut starts = alloc::filled(0usize, max_depth + 2, Family::ViewSortScratch)?;
     for &d in depth {
         starts[d as usize + 1] += 1;
     }
@@ -152,8 +145,8 @@ pub fn depth_major_order_in(depth: &[i32], family: Family) -> Result<Order, Erro
         starts[bucket] += starts[bucket - 1];
     }
 
-    let mut order = alloc::filled(0i64, n, family)?;
-    let mut inverse = alloc::filled(0i64, n, family)?;
+    let mut order = alloc::filled(0i64, n, Family::ViewSortScratch)?;
+    let mut inverse = alloc::filled(0i64, n, Family::ViewSortScratch)?;
     for (row, &d) in depth.iter().enumerate() {
         let position = starts[d as usize];
         starts[d as usize] += 1;

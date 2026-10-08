@@ -25,7 +25,7 @@
 //! translates stored columns through the permutation, so every output
 //! column's rows come out ascending without a sort.
 
-use super::depth_order::DepthOrder;
+use super::depth_order::{Buckets, DepthOrder};
 use super::pairwise::KinshipPedigree;
 use super::rows::Owned;
 use crate::alloc::{self, Family};
@@ -53,7 +53,7 @@ struct Topo {
     mother: Vec<i32>,
     father: Vec<i32>,
     twin: Vec<i32>,
-    /// Rows at depth `d` are `starts[d]..starts[d + 1]`.
+    /// Positions at depth `d` are `starts[d]..starts[d + 1]`.
     starts: Vec<usize>,
 }
 
@@ -97,17 +97,19 @@ impl Topo {
         self.starts.len() - 2
     }
 
-    fn rows_at(&self, d: usize) -> std::ops::Range<usize> {
+    /// The depth-major positions at depth `d`.  These index `mother`,
+    /// `father`, `twin` and the DP's rows; `order` maps them to graph rows.
+    fn positions_at(&self, d: usize) -> std::ops::Range<usize> {
         self.starts[d]..self.starts[d + 1]
     }
 
-    /// Rows bucketed by the depth of their last direct child, the depth
-    /// after which no merge walk reads them.
-    fn retirement(&self) -> Result<(Vec<usize>, Vec<u32>), Error> {
+    /// Positions bucketed by the depth of their last direct child, the
+    /// depth after which no merge walk reads them.
+    fn retirement(&self) -> Result<Buckets, Error> {
         let n = self.n;
         let mut last = alloc::filled(0i32, n, SCRATCH)?;
         for d in 0..=self.max_depth() {
-            for j in self.rows_at(d) {
+            for j in self.positions_at(d) {
                 last[j] = d as i32;
             }
         }
@@ -119,20 +121,7 @@ impl Topo {
                 }
             }
         }
-        let mut starts = alloc::filled(0usize, self.max_depth() + 2, SCRATCH)?;
-        for &d in &last {
-            starts[d as usize + 1] += 1;
-        }
-        for d in 1..starts.len() {
-            starts[d] += starts[d - 1];
-        }
-        let mut cursor = starts.clone();
-        let mut rows = alloc::filled(0u32, n, SCRATCH)?;
-        for (j, &d) in last.iter().enumerate() {
-            rows[cursor[d as usize]] = j as u32;
-            cursor[d as usize] += 1;
-        }
-        Ok((starts, rows))
+        Buckets::by(&last, self.max_depth() + 1, SCRATCH)
     }
 }
 
@@ -154,9 +143,8 @@ struct Dp<'t> {
     topo: &'t Topo,
     store: Owned,
     threshold: f64,
-    /// `(starts, rows)` of rows to retire at the end of each depth, when
-    /// retiring.
-    retirement: Option<(Vec<usize>, Vec<u32>)>,
+    /// The positions to retire at the end of each depth, when retiring.
+    retirement: Option<Buckets>,
     sink: Sink,
     scratch: Vec<(u32, f32)>,
 }
@@ -180,7 +168,7 @@ impl<'t> Dp<'t> {
     fn run(&mut self) -> Result<(), Error> {
         let topo = self.topo;
         for d in 0..=topo.max_depth() {
-            for j in topo.rows_at(d) {
+            for j in topo.positions_at(d) {
                 self.process_row(j)?;
             }
             self.mz_pass(d)?;
@@ -261,7 +249,7 @@ impl<'t> Dp<'t> {
     /// `d`, overwriting the sib value the merge walk emitted for the pair.
     fn mz_pass(&mut self, d: usize) -> Result<(), Error> {
         let topo = self.topo;
-        for j in topo.rows_at(d) {
+        for j in topo.positions_at(d) {
             let tw = topo.twin[j];
             if tw < 0 || tw as usize == j {
                 continue;
@@ -303,7 +291,7 @@ impl<'t> Dp<'t> {
         match &mut self.sink {
             Sink::Rows => {}
             Sink::Harvest { indptr, cols } => {
-                for j in topo.rows_at(d) {
+                for j in topo.positions_at(d) {
                     let row = self.store.cols(j);
                     let upper = row.partition_point(|&k| k <= j as u32);
                     alloc::extend(cols, row[..upper].iter().copied(), Family::KinshipRows)?;
@@ -311,7 +299,7 @@ impl<'t> Dp<'t> {
                 }
             }
             Sink::Capture { indptr, cols, vals } => {
-                for j in topo.rows_at(d) {
+                for j in topo.positions_at(d) {
                     let (rc, rv) = (self.store.cols(j), self.store.vals(j));
                     let (mut p, mut q) = (indptr[j], 0usize);
                     let end = indptr[j + 1];
@@ -330,9 +318,9 @@ impl<'t> Dp<'t> {
                 }
             }
         }
-        if let Some((starts, rows)) = &self.retirement {
-            for &row in &rows[starts[d]..starts[d + 1]] {
-                self.store.retire(row as usize);
+        if let Some(retirement) = &self.retirement {
+            for &j in retirement.bucket(d) {
+                self.store.retire(j as usize);
             }
         }
         Ok(())
@@ -750,6 +738,33 @@ mod tests {
         assert_eq!(m[9][8], m[9][9]);
         let pruned = dense(&approximate_kinship_csc(c.ped(), 0.4).unwrap(), 11);
         assert_eq!(pruned[8][9], m[8][8], "the MZ edge survives any threshold");
+    }
+
+    /// Depths `[1, 0, 0]`: depth 0 is positions `0..2` but rows `[1, 2]`, so
+    /// reading a position as a row would put the child among its parents.
+    #[test]
+    fn a_child_before_its_parents_matches_parents_first_order() {
+        let reordered = cols(&[(1, 2), (-1, -1), (-1, -1)], &[]);
+        let parents_first = cols(&[(-1, -1), (-1, -1), (0, 1)], &[]);
+        // Row r of `reordered` is row `perm[r]` of `parents_first`.
+        let perm = [2usize, 0, 1];
+        let a = dense(&kinship_csc(reordered.ped()).unwrap(), 3);
+        let b = dense(&kinship_csc(parents_first.ped()).unwrap(), 3);
+        for (i, &pi) in perm.iter().enumerate() {
+            for (j, &pj) in perm.iter().enumerate() {
+                assert_eq!(a[i][j], b[pi][pj]);
+            }
+        }
+        let sums = |c: &Cols, labels: &[i32]| {
+            generation_kinship_sums(c.ped(), &inbreeding(c.ped()).unwrap(), labels, 2).unwrap()
+        };
+        let labels = [0, 0, 1];
+        let mut moved = [0; 3];
+        for (r, &p) in perm.iter().enumerate() {
+            moved[p] = labels[r];
+        }
+        assert_eq!(sums(&reordered, &labels), vec![0.25, 0.0]);
+        assert_eq!(sums(&parents_first, &moved), vec![0.25, 0.0]);
     }
 
     #[test]
