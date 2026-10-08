@@ -121,6 +121,18 @@ test_that("a result survives saveRDS and readRDS", {
   expect_identical(as.data.frame(readRDS(path)), as.data.frame(m))
 })
 
+test_that("a product side code other than 0 or 1 is a malformed object, not the second member", {
+  pg <- pedigree_graph(three_gen())
+  m <- relationship_moments(pg, max_degree = 2, values = list(x = x))
+  expect_identical(m$operands, c(0L, 0L, 1L, 0L))
+  for (code in c(2L, 256L, -1L)) {
+    bad <- m
+    bad$operands[3] <- code
+    err <- expect_pg_error(as.data.frame(bad), "usage")
+    expect_match(conditionMessage(err), "malformed relationship_moments object")
+  }
+})
+
 test_that("constant large values: sums and means succeed, squares raise, centered moments are zero", {
   pg <- pedigree_graph(three_gen())
   m <- relationship_moments(pg, categories = c("MO", "FS"), values = list(big = rep(1e200, 6)))

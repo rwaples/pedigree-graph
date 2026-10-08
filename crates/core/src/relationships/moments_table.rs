@@ -18,7 +18,7 @@
 //! decodes a whole table: each accumulator is decoded when it is read, so
 //! the scratch beyond the input and the output is a few big integers.
 
-use super::moments::{CellLayout, Product, Side, Slot};
+use super::moments::{CellLayout, Operand, Product, Side, Slot};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use num_bigint::{BigInt, BigUint, Sign};
@@ -583,7 +583,7 @@ impl<'a> MomentsTable<'a> {
         }
         if let Some(column) = products
             .iter()
-            .flat_map(|p| [p.a.1, p.b.1])
+            .flat_map(|p| [p.a.column, p.b.column])
             .find(|&c| c >= n_columns)
         {
             return Err(invalid(format!(
@@ -668,7 +668,7 @@ impl<'a> MomentsTable<'a> {
         self.layout.n_columns()
     }
 
-    /// The products, as `(side, column)` operand pairs.
+    /// The products, as operand pairs.
     pub fn products(&self) -> &[Product] {
         &self.products
     }
@@ -898,7 +898,7 @@ impl<'a> MomentsTable<'a> {
                 Slot::Square(c) => 2 * s[c],
                 Slot::Cross(i) => {
                     let p = self.products[i];
-                    s[p.a.1] + s[p.b.1]
+                    s[p.a.column] + s[p.b.column]
                 }
             })
             .collect()
@@ -973,14 +973,14 @@ impl<'a> MomentsTable<'a> {
 
     fn product_exponent(&self, index: usize) -> i64 {
         let product = self.products[index];
-        self.exponents[product.a.1] + self.exponents[product.b.1]
+        self.exponents[product.a.column] + self.exponents[product.b.column]
     }
 
     /// The slots a product reads: its cross sum and each operand's sum.
     fn product_slots(&self, index: usize) -> (usize, usize, usize) {
         let product = self.products[index];
-        let (sum_a, _) = self.column_slots(product.a.0, product.a.1);
-        let (sum_b, _) = self.column_slots(product.b.0, product.b.1);
+        let (sum_a, _) = self.column_slots(product.a.side, product.a.column);
+        let (sum_b, _) = self.column_slots(product.b.side, product.b.column);
         (self.layout.cross(index), sum_a, sum_b)
     }
 
@@ -1059,8 +1059,8 @@ impl<'a> MomentsTable<'a> {
             }
             Statistic::Pearson => {
                 let product = self.products[index];
-                let own = |(side, column)| {
-                    let (sum, sumsq) = self.column_slots(side, column);
+                let own = |operand: Operand| {
+                    let (sum, sumsq) = self.column_slots(operand.side, operand.column);
                     let sum = read(sum)?;
                     centered_i128(n, read(sumsq)?, sum, sum)
                 };
@@ -1119,8 +1119,8 @@ impl<'a> MomentsTable<'a> {
             }
             Statistic::Pearson => {
                 let product = self.products[index];
-                let own = |(side, column)| {
-                    let (sum, sumsq) = self.column_slots(side, column);
+                let own = |operand: Operand| {
+                    let (sum, sumsq) = self.column_slots(operand.side, operand.column);
                     let sum = read(sum);
                     centered(&n, &read(sumsq), &sum, &sum)
                 };
@@ -1408,12 +1408,24 @@ mod tests {
 
     const PRODUCTS: [Product; 2] = [
         Product {
-            a: (Side::First, 0),
-            b: (Side::Second, 0),
+            a: Operand {
+                side: Side::First,
+                column: 0,
+            },
+            b: Operand {
+                side: Side::Second,
+                column: 0,
+            },
         },
         Product {
-            a: (Side::First, 1),
-            b: (Side::First, 0),
+            a: Operand {
+                side: Side::First,
+                column: 1,
+            },
+            b: Operand {
+                side: Side::First,
+                column: 0,
+            },
         },
     ];
 

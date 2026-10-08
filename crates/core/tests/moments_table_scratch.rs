@@ -4,7 +4,7 @@
 //! is this binary's global allocator, so the test sees every byte core
 //! asks for.
 
-use pedigree_graph_core::relationships::{MomentsTable, Product, Side, Statistic};
+use pedigree_graph_core::relationships::{MomentsTable, Operand, Product, Side, Statistic};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -54,12 +54,24 @@ const SCRATCH: usize = 64 << 10;
 
 const PRODUCTS: [Product; 2] = [
     Product {
-        a: (Side::First, 0),
-        b: (Side::Second, 0),
+        a: Operand {
+            side: Side::First,
+            column: 0,
+        },
+        b: Operand {
+            side: Side::Second,
+            column: 0,
+        },
     },
     Product {
-        a: (Side::First, 1),
-        b: (Side::Second, 1),
+        a: Operand {
+            side: Side::First,
+            column: 1,
+        },
+        b: Operand {
+            side: Side::Second,
+            column: 1,
+        },
     },
 ];
 

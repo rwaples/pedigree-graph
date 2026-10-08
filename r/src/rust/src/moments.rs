@@ -17,8 +17,8 @@ use num_bigint::BigInt;
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::relationships::{
     encode_big, pack_labels, quantize_column, relationship_moments as moments_of, Moments,
-    MomentsInput, MomentsPlan, MomentsTable, PackedLabels, Product, Progress, Side, Statistic,
-    Symmetric, MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
+    MomentsInput, MomentsPlan, MomentsTable, Operand, PackedLabels, Product, Progress, Side,
+    Statistic, Symmetric, MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
 };
 use std::borrow::Cow;
 use std::num::NonZeroUsize;
@@ -161,7 +161,7 @@ fn value_column(field: &str, column: &Robj, n: usize) -> HostResult<Vec<f64>> {
     )))
 }
 
-fn operand(name: &str, columns: &[String]) -> HostResult<(Side, usize)> {
+fn operand(name: &str, columns: &[String]) -> HostResult<Operand> {
     let (side, column) = name.split_once('.').unwrap_or(("", name));
     let side = match side {
         "first" => Some(Side::First),
@@ -169,7 +169,7 @@ fn operand(name: &str, columns: &[String]) -> HostResult<(Side, usize)> {
         _ => None,
     };
     match (side, columns.iter().position(|c| c == column)) {
-        (Some(side), Some(at)) => Ok((side, at)),
+        (Some(side), Some(column)) => Ok(Operand { side, column }),
         _ => Err(HostError::usage(format!(
             "product operand '{name}' must be 'first.<column>' or 'second.<column>' over the values ({})",
             columns.join(", ")
@@ -355,7 +355,7 @@ pub fn start_moments(
     let operands: Vec<i32> = resolved
         .iter()
         .flat_map(|p| [p.a, p.b])
-        .flat_map(|(side, column)| [i32::from(side == Side::Second), column as i32])
+        .flat_map(|o| [i32::from(o.side.code()), o.column as i32])
         .collect();
     let PackedLabels {
         labels: first_labels,
@@ -496,14 +496,23 @@ fn with_table<T>(m: &Robj, f: impl FnOnce(&MomentsTable<'_>) -> HostResult<T>) -
             "a malformed relationship_moments object".to_string(),
         ));
     }
-    let side = |code: i32| if code == 0 { Side::First } else { Side::Second };
+    let operand = |side: i32, column: i32| {
+        let side = u8::try_from(side).ok().and_then(Side::from_code);
+        side.map(|side| Operand {
+            side,
+            column: column as usize,
+        })
+        .ok_or_else(|| HostError::usage("a malformed relationship_moments object".to_string()))
+    };
     let products = operands
         .chunks_exact(4)
-        .map(|o| Product {
-            a: (side(o[0]), o[1] as usize),
-            b: (side(o[2]), o[3] as usize),
+        .map(|o| {
+            Ok(Product {
+                a: operand(o[0], o[1])?,
+                b: operand(o[2], o[3])?,
+            })
         })
-        .collect();
+        .collect::<HostResult<Vec<_>>>()?;
     let table = MomentsTable::from_bytes(
         shape.iter().map(|&s| s as usize).collect(),
         n_columns[0] as usize,

@@ -22,7 +22,7 @@ pub use compact::CompactView;
 pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};
 pub use moments::{
     host_bytes, reduce_pairs, relationship_moments, CellReducer, Moments, MomentsInput,
-    MomentsPlan, MomentsShape, Product, Reduced, Reducer, Side, Symmetric,
+    MomentsPlan, MomentsShape, Operand, Product, Reduced, Reducer, Side, Symmetric,
     HOST_BYTES_PER_ACCUMULATOR, MAX_CELL_PAIRS, MAX_QUANTIZED,
 };
 pub use moments_table::{

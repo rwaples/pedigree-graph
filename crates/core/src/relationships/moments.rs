@@ -215,11 +215,38 @@ pub enum Side {
     Second,
 }
 
-/// One cross product: `(side, column) × (side, column)`.
+impl Side {
+    /// The side's code in a host encoding of products: `0` for the first
+    /// member, `1` for the second.
+    pub fn code(self) -> u8 {
+        match self {
+            Side::First => 0,
+            Side::Second => 1,
+        }
+    }
+
+    /// The side a host code names, `None` for any code but `0` and `1`.
+    pub fn from_code(code: u8) -> Option<Side> {
+        match code {
+            0 => Some(Side::First),
+            1 => Some(Side::Second),
+            _ => None,
+        }
+    }
+}
+
+/// One operand of a cross product: a value column of one member.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Operand {
+    pub side: Side,
+    pub column: usize,
+}
+
+/// One cross product: `a × b`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Product {
-    pub a: (Side, usize),
-    pub b: (Side, usize),
+    pub a: Operand,
+    pub b: Operand,
 }
 
 /// The per-individual inputs of one moments call, in receiver rows.
@@ -282,7 +309,7 @@ impl MomentsInput<'_> {
             });
         }
         for (position, product) in self.products.iter().enumerate() {
-            for column in [product.a.1, product.b.1] {
+            for column in [product.a.column, product.b.column] {
                 if column >= self.n_columns {
                     return Err(Error::ValueOutOfRange {
                         field: "products",
@@ -607,9 +634,9 @@ impl Reducer for CellReducer<'_> {
             acc.square_first[c] += x * x;
             acc.square_second[c] += y * y;
         }
-        let pick = |(side, col): (Side, usize)| match side {
-            Side::First => va[col],
-            Side::Second => vb[col],
+        let pick = |operand: Operand| match operand.side {
+            Side::First => va[operand.column],
+            Side::Second => vb[operand.column],
         };
         for (product, out) in input.products.iter().zip(acc.cross) {
             *out += i128::from(pick(product.a)) * i128::from(pick(product.b));
@@ -812,16 +839,34 @@ mod tests {
 
     const PRODUCTS: [Product; 3] = [
         Product {
-            a: (Side::First, 0),
-            b: (Side::Second, 0),
+            a: Operand {
+                side: Side::First,
+                column: 0,
+            },
+            b: Operand {
+                side: Side::Second,
+                column: 0,
+            },
         },
         Product {
-            a: (Side::First, 0),
-            b: (Side::First, 1),
+            a: Operand {
+                side: Side::First,
+                column: 0,
+            },
+            b: Operand {
+                side: Side::First,
+                column: 1,
+            },
         },
         Product {
-            a: (Side::Second, 1),
-            b: (Side::Second, 1),
+            a: Operand {
+                side: Side::Second,
+                column: 1,
+            },
+            b: Operand {
+                side: Side::Second,
+                column: 1,
+            },
         },
     ];
 
@@ -1159,12 +1204,24 @@ mod tests {
         let bad_product = MomentsInput {
             products: &[
                 Product {
-                    a: (Side::First, 0),
-                    b: (Side::Second, 1),
+                    a: Operand {
+                        side: Side::First,
+                        column: 0,
+                    },
+                    b: Operand {
+                        side: Side::Second,
+                        column: 1,
+                    },
                 },
                 Product {
-                    a: (Side::First, 2),
-                    b: (Side::Second, 0),
+                    a: Operand {
+                        side: Side::First,
+                        column: 2,
+                    },
+                    b: Operand {
+                        side: Side::Second,
+                        column: 0,
+                    },
                 },
             ],
             ..base

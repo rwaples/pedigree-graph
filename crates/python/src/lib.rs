@@ -19,7 +19,8 @@ use pedigree_graph_core::lineage::{self, ParentColumns};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
     self, Category, CategorySet, Execution, MomentsInput, MomentsPlan, MomentsShape, MomentsTable,
-    Pedigree, Product, Progress, Side, Snapshot, Statistic, Symmetric, Threshold, ThresholdColumn,
+    Operand, Pedigree, Product, Progress, Side, Snapshot, Statistic, Symmetric, Threshold,
+    ThresholdColumn,
 };
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -711,19 +712,25 @@ fn relationship_moments<'py>(
 type ProductArg = (u8, usize, u8, usize);
 
 fn resolve_products(products: Vec<ProductArg>) -> PyResult<Vec<Product>> {
-    let side = |code: u8| match code {
-        0 => Ok(Side::First),
-        1 => Ok(Side::Second),
-        _ => Err(PyValueError::new_err(format!(
-            "product sides are 0 (first) or 1 (second), got {code}"
-        ))),
+    let side = |code: u8| {
+        Side::from_code(code).ok_or_else(|| {
+            PyValueError::new_err(format!(
+                "product sides are 0 (first) or 1 (second), got {code}"
+            ))
+        })
     };
     products
         .into_iter()
         .map(|(side_a, a, side_b, b)| {
             Ok(Product {
-                a: (side(side_a)?, a),
-                b: (side(side_b)?, b),
+                a: Operand {
+                    side: side(side_a)?,
+                    column: a,
+                },
+                b: Operand {
+                    side: side(side_b)?,
+                    column: b,
+                },
             })
         })
         .collect()

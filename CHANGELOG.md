@@ -30,6 +30,11 @@ live on the corresponding GitHub release pages.
   classed vector is now a usage error naming the class, as for
   `relatives_per_person()` thresholds and Python's datetime64 and
   timedelta64; convert with `as.double()`.
+- **Fixed (R): a `relationship_moments` object whose product side code is
+  not 0 or 1 is refused as malformed.** The decoder read every nonzero code
+  as the second member, so a hand-edited or corrupted `operands` of `2` (or
+  `256`) computed the wrong cross moment instead of failing. Python and R
+  now share the core's one side code.
 - **Fixed: an `allocation_failed` error's `dtype` names the element the
   engine was reserving.** The core passed each reservation's dtype as a
   string beside its element type, and 28 of the 121 drifted; it now reads it
