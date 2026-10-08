@@ -24,6 +24,11 @@ three builds returning the same bytes.
     python benchmarks/bench_kinship_matrix.py --render benchmarks/reports/kinship_matrix.json
 
 The slice 14 record is ``docs/pedigree-graph-0.8-migration/gate/14a/NOTES.md``.
+
+``--baseline-python`` replaces the wheel arm with another checkout's build
+(``_harness.build_pair``); ``--only mkg-30k/source mkg-536k/source`` gates
+the generation sums, which reach the native code through
+``pedigree_graph/_ne_rates.py``.
 """
 
 from __future__ import annotations

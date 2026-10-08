@@ -31,6 +31,34 @@ python benchmarks/bench_estimate_counts.py --repeat 5 --out benchmarks/reports/c
   as ADR 0007 states it: at least three repetitions and disjoint ranges.
   Anything less is `INCONCLUSIVE`, not a pass and not a block.
 
+## Gating one build against another
+
+`--baseline-python <python>` turns any suite into a gate of this checkout's
+build against the build another interpreter imports, usually a second
+worktree's `.pixi/envs/default/bin/python` (`_harness.build_pair`). Every arm
+that runs in this env gains a `@base` twin with the same fixtures, setup,
+thread environment and timed region; arms pinned to another interpreter (a
+released wheel) are dropped. The twins interleave, need five repetitions to
+pass or block, and must print one checksum. `--only` names candidate cells
+and their twins come along:
+
+```bash
+export SIMACE_RESULTS=/data/Documents/simACE/results   # study and pedsum fixtures, from a worktree
+python benchmarks/bench_kinship_matrix.py --baseline-python <pg-base>/.pixi/envs/default/bin/python \
+    --only mkg-30k/source mkg-536k/source --out benchmarks/reports/mkg-gate.json
+```
+
+Every run records the build it imported (`package_facts`: the interpreter,
+`_native.__file__`, its SHA-256, the source tree's `git describe`), and the
+rendered note lists them per arm. A gated arm that imported its baseline's
+native library, or an arm that saw two builds, is a **wrong build** and exits 1,
+as do a block and a checksum mismatch.
+
+`bench_pair_emitters.py` times a Rust binary rather than a suite, so it takes
+`--baseline-binary <other checkout>/target/release/pgr-bench-pairs` (and
+`--binary` for the candidate, default this checkout's) and gates through the
+same `_harness.compare` rule.
+
 ## Two memory scopes, on purpose
 
 `PeakRss` measures one region inside a process, which is how cost is attributed

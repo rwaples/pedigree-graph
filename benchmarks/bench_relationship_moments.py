@@ -30,13 +30,13 @@ result changes the checksum.  The
 fixtures are the ``bench_pedsum`` pedigrees generated in the simACE umbrella
 (``results/bench_pedsum/pedsum_{2M,20M}/rep1/pedigree.full.parquet``,
 or under ``$SIMACE_RESULTS``) and are unavailable elsewhere.  ``pedsum_20M`` is declared but not measured by
-default: pass ``--only pedsum_20M/...`` cells to run it.
+default: pass ``--only pedsum_20M/...`` cells to run it.  ``random_1k`` with
+synthetic columns is for a quick end-to-end run of the script.
 """
 
 from __future__ import annotations
 
 import hashlib
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -45,15 +45,25 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _harness import UMBRELLA, Arm, Fixture, Measurement, Prepared, RunOrder, Suite, checksum_array, checksum_ints, main
+from _harness import (
+    RESULTS,
+    Arm,
+    Fixture,
+    Measurement,
+    Prepared,
+    RunOrder,
+    Suite,
+    checksum_array,
+    checksum_ints,
+    main,
+    parity_fixture,
+)
 
 CATEGORIES = ("MZ", "FS", "MO", "FO", "MHS", "PHS", "1C")
 PEDSUM = {
     "pedsum_2M": ("bench_pedsum/pedsum_2M/rep1/pedigree.full.parquet", "`pedsum_2M/rep1` (2,000,000 rows)"),
     "pedsum_20M": ("bench_pedsum/pedsum_20M/rep1/pedigree.full.parquet", "`pedsum_20M/rep1` (20,000,000 rows)"),
 }
-RESULTS = Path(os.environ.get("SIMACE_RESULTS", UMBRELLA / "results"))
-"""The simACE ``results/`` directory; ``SIMACE_RESULTS`` points a worktree at the main checkout's outputs."""
 
 
 _COLUMNS: dict[int, dict[str, np.ndarray]] = {}
@@ -273,7 +283,11 @@ def _counts(graph: Any, columns: dict[str, np.ndarray]) -> Measurement:
 SUITE = Suite(
     name="relationship_moments",
     note=Path(__file__).with_suffix(".md"),
-    fixtures=(pedsum_fixture("pedsum_2M"), pedsum_fixture("pedsum_20M")),
+    fixtures=(
+        pedsum_fixture("pedsum_2M"),
+        pedsum_fixture("pedsum_20M"),
+        parity_fixture("random_1k", label="`random_1k` parity pedigree, synthetic columns"),
+    ),
     arms=(
         Arm("moments_1t", _moments, label="`relationship_moments`, 1 thread", setup=_columns),
         Arm("pairs_numpy_1t", _pairs_numpy, label="`relationship_pairs` + `np.bincount`, 1 thread", setup=_columns),

@@ -29,9 +29,12 @@ Collapsing them would silently change what that gate means.
 from __future__ import annotations
 
 __all__ = [
+    "BASE_SUFFIX",
+    "BUILD_GATE_REPEATS",
     "GATE",
     "MIN_CONFIDENT_REPEATS",
     "PINNED_ENV",
+    "RESULTS",
     "STUDY_PEDIGREES",
     "UMBRELLA",
     "WF_FIXTURES",
@@ -50,13 +53,18 @@ __all__ = [
     "Suite",
     "TreePeak",
     "Verdict",
+    "as_measured",
+    "build_pair",
+    "candidate_of",
     "checksum_array",
     "checksum_ints",
     "checksum_matrix_upper",
     "checksum_values",
+    "compare",
     "file_fixture",
     "main",
     "package_facts",
+    "paired_cells",
     "parity_fixture",
     "render_markdown",
     "study_fixture",
@@ -76,7 +84,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -85,7 +93,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final, NoReturn
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 
     import scipy.sparse as sp
 
@@ -140,8 +148,9 @@ class RunOrder(StrEnum):
     """Cell-major or repetition-major scheduling."""
 
     INTERLEAVED = "interleaved"
-    """One repetition of every cell, then the next round.  ADR 0007 requires
-    this for A/B comparisons: drift in host state hits both arms equally."""
+    """One repetition of every cell, then the next round, the order reversed on
+    every other round.  ADR 0007 requires this for A/B comparisons: drift in
+    host state hits both arms equally, and so does running first or second."""
 
     GROUPED = "grouped"
     """Every repetition of one cell, then the next cell.  A 112-minute cell
@@ -163,6 +172,8 @@ class Verdict(StrEnum):
     PASS = "pass"
     BLOCK = "block"
     INCONCLUSIVE = "inconclusive"
+    MISMATCH = "mismatch"
+    """The arm and its baseline returned different checksums under a gate that requires them equal."""
 
 
 _STATUS = Path("/proc/self/status")
@@ -395,13 +406,80 @@ class Gate:
     """The comparison policy.  One field separates an A/B gate from a sweep.
 
     ``gated`` empty means ratios are computed and shown but nothing blocks.
-    ``baseline=None`` means no ratio column at all.
+    ``baseline=None`` means no ratio column at all.  ``baselines`` gives a
+    gated arm its own baseline instead, which is how :func:`build_pair`
+    gates every arm against the same arm in the baseline build.
     """
 
     baseline: str | None
     gated: frozenset[str] = frozenset()
     metrics: tuple[str, ...] = ("wall_s", "peak_rss_mib")
     accepted: Mapping[str, str] = field(default_factory=dict)
+    baselines: Mapping[str, str] = field(default_factory=dict)
+    same_checksum: bool = False
+    """A gated arm whose checksum differs from its baseline's is :attr:`Verdict.MISMATCH`."""
+    min_repeats: int = MIN_CONFIDENT_REPEATS
+
+    def baseline_of(self, arm: str) -> str | None:
+        """The arm *arm* is gated against, or ``None`` when it is not gated."""
+        if arm not in self.gated:
+            return None
+        return self.baselines.get(arm, self.baseline)
+
+
+BASE_SUFFIX: Final[str] = "@base"
+"""Names an arm's twin in the baseline build: ``moments_1t@base`` against ``moments_1t``."""
+
+BUILD_GATE_REPEATS: Final[int] = 5
+"""Repetitions a build gate needs before it can pass or block; fewer is :attr:`Verdict.INCONCLUSIVE`."""
+
+
+def candidate_of(arm: str) -> str:
+    """The candidate arm *arm* measures: itself, or the arm a ``@base`` twin copies."""
+    return arm.removesuffix(BASE_SUFFIX)
+
+
+def build_pair(suite: Suite, baseline_python: Path) -> Suite:
+    """*suite* as a gate of this checkout's build against the build *baseline_python* imports.
+
+    Every arm that runs in this process's interpreter becomes a candidate and
+    gains a ``@base`` twin: the same operation, setup, fixtures and thread
+    environment, run under *baseline_python*.  Arms already pinned to another
+    interpreter (a released wheel) measure neither build and are dropped, and
+    so is the suite's own gate.  The twins interleave, need
+    :data:`BUILD_GATE_REPEATS` repetitions, and must return the candidate's
+    checksum.
+    """
+    candidates = [arm for arm in suite.arms if arm.interpreter is None]
+    arms: list[Arm] = []
+    for arm in candidates:
+        arms.append(replace(arm, name=arm.name + BASE_SUFFIX, label=f"{arm.label} [base]", interpreter=baseline_python))
+        arms.append(replace(arm, label=f"{arm.label} [candidate]"))
+    names = {arm.name for arm in candidates}
+    cells = paired_cells(cell for cell in suite.resolved_cells() if cell.arm in names)
+    return replace(
+        suite,
+        arms=tuple(arms),
+        cells=tuple(str(cell) for cell in cells),
+        gate=Gate(
+            baseline=None,
+            gated=frozenset(names),
+            baselines={name: name + BASE_SUFFIX for name in names},
+            same_checksum=True,
+            min_repeats=BUILD_GATE_REPEATS,
+        ),
+        order=RunOrder.INTERLEAVED,
+    )
+
+
+def paired_cells(cells: Iterable[Cell]) -> list[Cell]:
+    """Each cell's base twin followed by its candidate, once each, in order."""
+    out: dict[Cell, None] = {}
+    for cell in cells:
+        arm = candidate_of(cell.arm)
+        out[Cell(cell.fixture, arm + BASE_SUFFIX)] = None
+        out[Cell(cell.fixture, arm)] = None
+    return list(out)
 
 
 @dataclass(frozen=True)
@@ -718,19 +796,22 @@ def file_fixture(name: str, path: Path, *, label: str) -> Fixture:
     return Fixture(name=name, label=label, build=build, provenance=provenance, available=path.exists)
 
 
+RESULTS: Final[Path] = Path(os.environ.get("SIMACE_RESULTS", UMBRELLA / "results"))
+"""The simACE ``results/`` directory; ``SIMACE_RESULTS`` points a family worktree at the main checkout's outputs."""
+
 STUDY_PEDIGREES: Final[dict[str, tuple[str, str]]] = {
-    "dev_mean_n10k": ("results/dev/dev_mean_n10k/rep1/pedigree.parquet", "`dev_mean_n10k/rep1` (20,400 rows)"),
-    "dev_cont_n10k": ("results/dev/dev_cont_n10k/rep1/pedigree.parquet", "`dev_cont_n10k/rep1` (20,400 rows)"),
-    "baseline10K": ("results/base/baseline10K/rep1/pedigree.parquet", "`baseline10K/rep1` (53,466 rows)"),
-    "baseline100K": ("results/base/baseline100K/rep1/pedigree.parquet", "`baseline100K/rep1` (536,036 rows)"),
+    "dev_mean_n10k": ("dev/dev_mean_n10k/rep1/pedigree.parquet", "`dev_mean_n10k/rep1` (20,400 rows)"),
+    "dev_cont_n10k": ("dev/dev_cont_n10k/rep1/pedigree.parquet", "`dev_cont_n10k/rep1` (20,400 rows)"),
+    "baseline10K": ("base/baseline10K/rep1/pedigree.parquet", "`baseline10K/rep1` (53,466 rows)"),
+    "baseline100K": ("base/baseline100K/rep1/pedigree.parquet", "`baseline100K/rep1` (536,036 rows)"),
 }
-"""simACE results pedigrees, as paths relative to :data:`UMBRELLA`, with their labels."""
+"""simACE results pedigrees, as paths relative to :data:`RESULTS`, with their labels."""
 
 
 def study_fixture(name: str) -> Fixture:
     """A simACE results pedigree from :data:`STUDY_PEDIGREES`, unavailable when not generated here."""
     relative, label = STUDY_PEDIGREES[name]
-    return file_fixture(name, UMBRELLA / relative, label=label)
+    return file_fixture(name, RESULTS / relative, label=label)
 
 
 WF_FIXTURES: Final[dict[str, dict[str, int]]] = {
@@ -793,22 +874,41 @@ def _warm_up_graph() -> Any:
 # ---------------------------------------------------------------------------
 
 
+BUILD_FACTS: Final[tuple[str, ...]] = ("native_sha256", "package_git", "core_version", "native_file")
+"""The :func:`package_facts` that identify a build, in the order the report prints them; the first is the identity."""
+
+
 def package_facts() -> dict[str, str]:
     """Which ``pedigree_graph`` this process imported, so a record cannot be misread.
 
     A sweep whose arms run under different interpreters produces rows that
-    look alike; the import path, distribution version and core version say
-    which build each row measured.
+    look alike; the interpreter, import paths, versions, the source tree's
+    ``git describe`` and the native library's hash say which build each row
+    measured.  The hash is the identity: two arms with one ``native_sha256``
+    timed the same machine code whatever their paths say.  ``package_git`` is
+    empty for an installed wheel, and it describes the source tree, which a
+    stale extension need not match.
     """
     import importlib.metadata
 
     import pedigree_graph
     from pedigree_graph import _native
 
+    native = Path(_native.__file__)
+    describe = subprocess.run(
+        ["git", "-C", str(native.parent), "describe", "--tags", "--always", "--dirty", "--abbrev=12"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     return {
+        "python": sys.executable,
         "package_file": pedigree_graph.__file__,
         "package_version": importlib.metadata.version("pedigree-graph"),
         "core_version": _native.core_version(),
+        "native_file": str(native),
+        "native_sha256": hashlib.sha256(native.read_bytes()).hexdigest()[:16],
+        "package_git": describe.stdout.strip() if describe.returncode == 0 else "",
     }
 
 
@@ -872,7 +972,9 @@ def _scope_prefix() -> tuple[str, ...]:
     return prefix if usable else ()
 
 
-def _spawn(script: Path, cell: Cell, timeout_s: float, arm: Arm | None = None) -> _ChildOutcome:
+def _spawn(
+    script: Path, cell: Cell, timeout_s: float, arm: Arm | None = None, child_args: Sequence[str] = ()
+) -> _ChildOutcome:
     """One fresh pinned child, returning both its record and its whole-process peak.
 
     ``Popen`` plus ``os.wait4`` rather than ``subprocess.run``: ``run`` reaps the
@@ -893,7 +995,7 @@ def _spawn(script: Path, cell: Cell, timeout_s: float, arm: Arm | None = None) -
     prefix = _scope_prefix()
     if prefix:
         env[SCOPE_ENV] = "1"
-    command = [*prefix, interpreter, str(script), "--cell", str(cell)]
+    command = [*prefix, interpreter, str(script), "--cell", str(cell), *child_args]
     with tempfile.TemporaryFile("w+") as out, tempfile.TemporaryFile("w+") as err:
         proc = subprocess.Popen(command, env=env, stdout=out, stderr=err)
         deadline = time.monotonic() + timeout_s
@@ -924,7 +1026,7 @@ def _spawn(script: Path, cell: Cell, timeout_s: float, arm: Arm | None = None) -
 def _schedule(cells: Sequence[Cell], repeat: int, order: RunOrder) -> Iterator[tuple[Cell, int]]:
     if order is RunOrder.INTERLEAVED:
         for index in range(repeat):
-            for cell in cells:
+            for cell in cells if index % 2 == 0 else reversed(cells):
                 yield cell, index
     else:
         for cell in cells:
@@ -932,26 +1034,30 @@ def _schedule(cells: Sequence[Cell], repeat: int, order: RunOrder) -> Iterator[t
                 yield cell, index
 
 
-def _verdict(subject: CellResult, baseline: CellResult, metric: str, gated: bool) -> Verdict:
-    """ADR 0007's confidence rule, which no code implemented before.
+def compare(subject: Sequence[float], baseline: Sequence[float], min_repeats: int = MIN_CONFIDENT_REPEATS) -> Verdict:
+    """ADR 0007's confidence rule over one metric's repetitions, which no code implemented before.
 
     ``INCONCLUSIVE`` when either side has too few repetitions or the observed
     ranges overlap.  ``BLOCK`` only when the median ratio exceeds the gate *and*
     the ranges are disjoint, so a cell measured twice cannot pass or fail a 5%
-    gate on noise.
+    gate on noise.  A driver that is not a :class:`Suite` (the pair-emitter
+    binaries) gates through this too.
     """
-    if subject.outcome is not Outcome.COMPLETED or baseline.outcome is not Outcome.COMPLETED:
+    if min(len(subject), len(baseline)) < min_repeats:
         return Verdict.INCONCLUSIVE
-    if min(len(subject.runs), len(baseline.runs)) < MIN_CONFIDENT_REPEATS:
-        return Verdict.INCONCLUSIVE
-    ratio = subject.median(metric) / baseline.median(metric) if baseline.median(metric) else float("inf")
+    centre = statistics.median(baseline)
+    ratio = statistics.median(subject) / centre if centre else float("inf")
     if ratio <= GATE:
         return Verdict.PASS
-    if not gated:
-        return Verdict.PASS
-    lo_subject, _ = subject.span(metric)
-    _, hi_baseline = baseline.span(metric)
-    return Verdict.BLOCK if lo_subject > hi_baseline else Verdict.INCONCLUSIVE
+    return Verdict.BLOCK if min(subject) > max(baseline) else Verdict.INCONCLUSIVE
+
+
+def _verdict(subject: CellResult, baseline: CellResult, metric: str, min_repeats: int) -> Verdict:
+    if subject.outcome is not Outcome.COMPLETED or baseline.outcome is not Outcome.COMPLETED:
+        return Verdict.INCONCLUSIVE
+    return compare(
+        [getattr(run, metric) for run in subject.runs], [getattr(run, metric) for run in baseline.runs], min_repeats
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -993,28 +1099,55 @@ class Report:
         gets its ratio shown, but carrying a verdict it can never act on would
         be noise.
         """
-        if gate is None or gate.baseline is None:
+        if gate is None:
             return {}
         results = {result.cell: result for result in self.cells}
         out: dict[Cell, Verdict] = {}
         for result in self.cells:
-            if result.cell.arm == gate.baseline:
+            name = gate.baseline_of(result.cell.arm)
+            if name is None or str(result.cell) in gate.accepted:
                 continue
-            if result.cell.arm not in gate.gated or str(result.cell) in gate.accepted:
-                continue
-            baseline = results.get(Cell(result.cell.fixture, gate.baseline))
+            baseline = results.get(Cell(result.cell.fixture, name))
             if baseline is None:
                 continue
-            gated = True
+            completed = result.outcome is Outcome.COMPLETED and baseline.outcome is Outcome.COMPLETED
+            if gate.same_checksum and completed and (result.checksum is None or result.checksum != baseline.checksum):
+                out[result.cell] = Verdict.MISMATCH
+                continue
             worst = Verdict.PASS
             for metric in gate.metrics:
-                verdict = _verdict(result, baseline, metric, gated)
+                verdict = _verdict(result, baseline, metric, gate.min_repeats)
                 if verdict is Verdict.BLOCK:
                     worst = Verdict.BLOCK
                 elif verdict is Verdict.INCONCLUSIVE and worst is Verdict.PASS:
                     worst = Verdict.INCONCLUSIVE
             out[result.cell] = worst
         return out
+
+    def builds(self) -> dict[str, list[tuple[str, ...]]]:
+        """Per arm, every distinct build its runs imported, as :data:`BUILD_FACTS` values."""
+        out: dict[str, dict[tuple[str, ...], None]] = {}
+        for result in self.cells:
+            for run in result.runs:
+                build = tuple(str(run.facts.get(key, "?")) for key in BUILD_FACTS)
+                out.setdefault(result.cell.arm, {})[build] = None
+        return {arm: list(builds) for arm, builds in out.items()}
+
+    def build_conflicts(self, gate: Gate | None) -> list[str]:
+        """Arms that imported more than one build, and gated arms that imported their baseline's build.
+
+        Either means the sweep did not measure what its arm names claim: a
+        rebuild mid-sweep, or a baseline interpreter that resolves to the
+        candidate's checkout.
+        """
+        builds = self.builds()
+        problems = [f"{arm} imported {len(seen)} different builds" for arm, seen in builds.items() if len(seen) > 1]
+        for arm, seen in builds.items():
+            name = gate.baseline_of(arm) if gate is not None else None
+            shared = {build[0] for build in seen} & {build[0] for build in builds.get(name or "", [])} - {"?"}
+            if shared:
+                problems.append(f"{arm} and its baseline {name} imported the same native library {sorted(shared)}")
+        return problems
 
 
 def _read_report(path: Path) -> Report:
@@ -1110,6 +1243,12 @@ def render_markdown(suite: Suite, report: Report) -> str:
         other = report.environments[key]
         rows = sorted(str(r.cell) for r in report.cells if any(run.environment == key for run in r.runs))
         lines.append(f"- {', '.join(rows)} ran at commit `{other.git_commit[:10]}`, suite `{other.suite_sha256}`")
+    for arm, builds in report.builds().items():
+        for native_sha, git_ref, core, native_file in builds:
+            lines.append(
+                f"- `{arm}` imported native `{native_sha}` (core {core}, `{git_ref or 'no git'}`) from `{native_file}`"
+            )
+    lines.extend(f"- **wrong build**: {problem}" for problem in report.build_conflicts(suite.gate))
 
     verdicts = report.verdicts(suite.gate)
     table = [
@@ -1134,6 +1273,8 @@ def render_markdown(suite: Suite, report: Report) -> str:
         flag = ""
         if verdicts.get(result.cell) is Verdict.BLOCK:
             flag = " **BLOCK**"
+        elif verdicts.get(result.cell) is Verdict.MISMATCH:
+            flag = " **CHECKSUM MISMATCH**"
         elif verdicts.get(result.cell) is Verdict.INCONCLUSIVE:
             flag = " (inconclusive)"
         tree = f"{result.median('tree_peak_mib'):,.0f} MiB" if result.measured("tree_peak_mib") else "n/a"
@@ -1151,7 +1292,13 @@ def render_markdown(suite: Suite, report: Report) -> str:
 
 
 def _drive(
-    suite: Suite, script: Path, cells: Sequence[Cell], repeat: int, timeout_s: float, out: Path | None
+    suite: Suite,
+    script: Path,
+    cells: Sequence[Cell],
+    repeat: int,
+    timeout_s: float,
+    out: Path | None,
+    child_args: Sequence[str] = (),
 ) -> Report:
     environment = Environment.capture(script)
     fingerprint = environment.fingerprint
@@ -1168,7 +1315,7 @@ def _drive(
         if outcomes.get(cell) is Outcome.TIMED_OUT:
             continue
         print(f"  {cell}  rep {index + 1}/{repeat} ... ", end="", flush=True)
-        outcome = _spawn(script, cell, timeout_s, suite.arm(cell.arm))
+        outcome = _spawn(script, cell, timeout_s, suite.arm(cell.arm), child_args)
         if outcome.timed_out:
             outcomes[cell] = Outcome.TIMED_OUT
             print(f"TIMEOUT after {timeout_s:.0f}s")
@@ -1235,23 +1382,51 @@ def _write(
     os.replace(staged, out)
 
 
+def as_measured(suite: Suite, report: Report) -> Suite:
+    """*suite* in the shape *report* was measured in: its :func:`build_pair` form when the report has ``@base`` arms.
+
+    Rendering reads only names and labels, so the interpreter is the one the
+    report's base runs recorded.
+    """
+    if any(arm.name.endswith(BASE_SUFFIX) for arm in suite.arms):
+        return suite
+    for result in report.cells:
+        for run in result.runs:
+            if result.cell.arm.endswith(BASE_SUFFIX):
+                return build_pair(suite, Path(run.facts.get("python", "")))
+    return suite
+
+
 def main(suite: Suite) -> NoReturn:
     """The only entry point.  Parent and child roles, selected by ``--cell``.
 
-    Exits 1 on any :attr:`Verdict.BLOCK`, or additionally on any
+    ``--baseline-python`` turns the suite into its :func:`build_pair` gate and
+    hands the flag to every child, so a child resolves ``@base`` arms too.
+    Exits 1 on any :attr:`Verdict.BLOCK` or :attr:`Verdict.MISMATCH`, on an
+    arm that imported the wrong build, or additionally on any
     :attr:`Verdict.INCONCLUSIVE` under ``--strict``.
     """
     script = Path(sys.argv[0]).resolve()
     parser = argparse.ArgumentParser(description=suite.name)
     parser.add_argument("--cell", help="Child role: measure one cell and print JSON.")
-    parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--repeat", type=int, help=f"default 3, or {BUILD_GATE_REPEATS} with --baseline-python")
     parser.add_argument("--timeout", type=float, default=suite.timeout_s)
-    parser.add_argument("--only", nargs="*")
+    parser.add_argument("--only", nargs="*", help="cells to run; with --baseline-python each also runs its @base twin")
     parser.add_argument("--out", type=Path)
     parser.add_argument("--render", type=Path, help="Render a stored report to markdown.")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--strict", action="store_true")
+    parser.add_argument(
+        "--baseline-python",
+        type=Path,
+        help="Gate every arm against the same arm run by this interpreter (another checkout's pixi env).",
+    )
     args = parser.parse_args()
+    child_args: tuple[str, ...] = ()
+    if args.baseline_python is not None:
+        suite = build_pair(suite, args.baseline_python)
+        child_args = ("--baseline-python", str(args.baseline_python))
+    repeat = args.repeat or (BUILD_GATE_REPEATS if args.baseline_python is not None else 3)
 
     if args.list:
         for cell in suite.resolved_cells():
@@ -1259,7 +1434,8 @@ def main(suite: Suite) -> NoReturn:
         raise SystemExit(0)
 
     if args.render is not None:
-        print(render_markdown(suite, verify_report(args.render)))
+        report = verify_report(args.render)
+        print(render_markdown(as_measured(suite, report), report))
         raise SystemExit(0)
 
     if args.cell:
@@ -1270,21 +1446,31 @@ def main(suite: Suite) -> NoReturn:
 
     declared = suite.resolved_cells()
     cells = [Cell.parse(name) for name in args.only] if args.only else list(declared)
+    if args.baseline_python is not None:
+        cells = paired_cells(cells)
     # --only may pick any fixture x arm, including ones the default sweep leaves out.
     known = [Cell(f.name, a.name) for f in suite.fixtures for a in suite.arms]
     unknown = [str(cell) for cell in cells if cell not in known]
     if unknown:
         raise SystemExit(f"unknown cells: {unknown}")
 
-    report = _drive(suite, script, cells, args.repeat, args.timeout, args.out)
+    report = _drive(suite, script, cells, repeat, args.timeout, args.out, child_args)
     print()
     print(render_markdown(suite, report))
 
-    verdicts = report.verdicts(suite.gate)
+    gate = suite.gate
+    verdicts = report.verdicts(gate)
     blocked = [cell for cell, verdict in verdicts.items() if verdict is Verdict.BLOCK]
+    mismatched = [cell for cell, verdict in verdicts.items() if verdict is Verdict.MISMATCH]
     unsure = [cell for cell, verdict in verdicts.items() if verdict is Verdict.INCONCLUSIVE]
+    wrong_build = report.build_conflicts(gate)
     for cell in blocked:
         print(f"BLOCK: {cell} regressed beyond {GATE:.2f}x with disjoint ranges")
+    for cell in mismatched:
+        print(f"CHECKSUM MISMATCH: {cell} returned a different result from its baseline")
+    for problem in wrong_build:
+        print(f"WRONG BUILD: {problem}")
+    min_repeats = gate.min_repeats if gate is not None else MIN_CONFIDENT_REPEATS
     for cell in unsure:
-        print(f"inconclusive: {cell} (needs >= {MIN_CONFIDENT_REPEATS} reps and disjoint ranges to decide)")
-    raise SystemExit(1 if blocked or (args.strict and unsure) else 0)
+        print(f"inconclusive: {cell} (needs >= {min_repeats} reps and disjoint ranges to decide)")
+    raise SystemExit(1 if blocked or mismatched or wrong_build or (args.strict and unsure) else 0)

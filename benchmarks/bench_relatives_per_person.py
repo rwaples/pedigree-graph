@@ -30,7 +30,6 @@ pedigree, for a quick end-to-end run of the script.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,13 +40,15 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _harness import (
-    UMBRELLA,
+    RESULTS,
     Arm,
     Measurement,
     Outcome,
     Prepared,
     RunOrder,
     Suite,
+    as_measured,
+    candidate_of,
     checksum_array,
     file_fixture,
     main,
@@ -63,8 +64,6 @@ PEDSUM = {
     "pedsum_2M": ("bench_pedsum/pedsum_2M/rep1/pedigree.full.parquet", "`pedsum_2M/rep1` (2,000,000 rows)"),
     "pedsum_20M": ("bench_pedsum/pedsum_20M/rep1/pedigree.full.parquet", "`pedsum_20M/rep1` (20,000,000 rows)"),
 }
-RESULTS = Path(os.environ.get("SIMACE_RESULTS", UMBRELLA / "results"))
-"""The simACE ``results/`` directory; ``SIMACE_RESULTS`` points a worktree at the main checkout's outputs."""
 
 KINDS: tuple[tuple[str, tuple[str, ...], bool], ...] = (
     ("PO", ("MO", "FO"), True),
@@ -259,7 +258,7 @@ def checksum_mismatches(report: Report) -> list[str]:
     groups: dict[tuple[str, str], dict[str, int | None]] = {}
     for result in report.cells:
         if result.outcome is Outcome.COMPLETED:
-            key = (result.cell.fixture, CONFIGURATION[result.cell.arm])
+            key = (result.cell.fixture, CONFIGURATION[candidate_of(result.cell.arm)])
             groups.setdefault(key, {})[result.cell.arm] = result.checksum
     return [
         f"{fixture} {configuration}: " + ", ".join(f"{arm}={checksum}" for arm, checksum in sorted(checksums.items()))
@@ -276,7 +275,7 @@ def _main() -> NoReturn:
     known, _ = parser.parse_known_args()
     if known.render is not None:
         report = verify_report(known.render)
-        print(render_markdown(SUITE, report))
+        print(render_markdown(as_measured(SUITE, report), report))
     else:
         try:
             main(SUITE)

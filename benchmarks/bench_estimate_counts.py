@@ -6,14 +6,15 @@ this is not the former 23-code estimator workload.
 
     python benchmarks/bench_estimate_counts.py --repeat 5 --out benchmarks/reports/counts.json
 
-There is no gate.  The ``count_pairs_streaming`` arm this was compared against
-was deleted with the 0.7.1 adapters, so what remains is one arm recording a
-baseline rather than an A/B; the streaming figures survive in
-``benchmarks/relationship_counts_rust.md``.
+Run alone there is no gate.  The ``count_pairs_streaming`` arm this was
+compared against was deleted with the 0.7.1 adapters, so what remains is one
+arm recording a baseline; the streaming figures survive in
+``benchmarks/relationship_counts_rust.md``.  ``--baseline-python`` gates this
+build against another checkout's (``_harness.build_pair``).
 
 Ordering is ``GROUPED`` rather than interleaved.  With one arm there is nothing
 to interleave against, so finishing a cell before starting the next keeps an
-interrupted sweep useful.
+interrupted sweep useful; the two-build gate interleaves.
 """
 
 from __future__ import annotations
