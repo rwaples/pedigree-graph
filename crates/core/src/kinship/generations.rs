@@ -38,7 +38,7 @@ fn generations_in(
     rows: impl Iterator<Item = u32>,
 ) -> Result<Vec<f64>, Error> {
     let (mother, father) = (ped.mother(), ped.father());
-    let mut eqg = alloc::filled(0.0f64, ped.len(), Family::LineageOutput, "float64")?;
+    let mut eqg = alloc::filled(0.0f64, ped.len(), Family::LineageOutput)?;
     for row in rows {
         let i = row as usize;
         let mut v = 0.0f64;
@@ -122,14 +122,14 @@ pub fn founder_contribution_means(
     let sweep = DepthOrder::build(ped.mother(), ped.father(), ped.depth(), MEANS)?;
     let (mother, father, depth) = (ped.mother(), ped.father(), ped.depth());
 
-    let mut size = alloc::filled(0usize, n_cohorts + 1, MEANS, "uint64")?;
-    let mut deepest = alloc::filled(0usize, n_cohorts + 1, MEANS, "uint64")?;
+    let mut size = alloc::filled(0usize, n_cohorts + 1, MEANS)?;
+    let mut deepest = alloc::filled(0usize, n_cohorts + 1, MEANS)?;
     for (&b, &d) in cohort.iter().zip(depth) {
         size[b as usize] += 1;
         deepest[b as usize] = deepest[b as usize].max(d as usize);
     }
-    let mut means = alloc::filled(0.0f64, len, MEANS, "float64")?;
-    let mut u = alloc::filled(0.0f64, n, MEANS, "float64")?;
+    let mut means = alloc::filled(0.0f64, len, MEANS)?;
+    let mut u = alloc::filled(0.0f64, n, MEANS)?;
 
     for (b, row_means) in means.chunks_exact_mut(n_genomes.max(1)).enumerate() {
         if size[b] == 0 {
@@ -229,8 +229,8 @@ pub fn generation_kinship_sums(
 
     // Rows grouped by bucket, ascending within each, so a bucket seeds from
     // its own rows; every co-twin sits at its node's depth.
-    let mut starts = alloc::filled(0usize, n_buckets + 2, SUMS, "uint64")?;
-    let mut deepest = alloc::filled(0usize, n_buckets + 1, SUMS, "uint64")?;
+    let mut starts = alloc::filled(0usize, n_buckets + 2, SUMS)?;
+    let mut deepest = alloc::filled(0usize, n_buckets + 1, SUMS)?;
     for (&b, &d) in labels.iter().zip(depth) {
         starts[b as usize + 1] += 1;
         deepest[b as usize] = deepest[b as usize].max(d as usize);
@@ -238,14 +238,14 @@ pub fn generation_kinship_sums(
     for b in 1..starts.len() {
         starts[b] += starts[b - 1];
     }
-    let mut members = alloc::filled(0u32, n, SUMS, "uint32")?;
-    let mut cursor = alloc::cloned(&starts, SUMS, "uint64")?;
+    let mut members = alloc::filled(0u32, n, SUMS)?;
+    let mut cursor = alloc::cloned(&starts, SUMS)?;
     for (row, &b) in labels.iter().enumerate() {
         members[cursor[b as usize]] = row as u32;
         cursor[b as usize] += 1;
     }
-    let mut sums = alloc::filled(0.0f64, n_buckets, SUMS, "float64")?;
-    let mut y = alloc::filled(0.0f64, n, SUMS, "float64")?;
+    let mut sums = alloc::filled(0.0f64, n_buckets, SUMS)?;
+    let mut y = alloc::filled(0.0f64, n, SUMS)?;
 
     for (b, sum) in sums.iter_mut().enumerate() {
         let rows = &members[starts[b]..starts[b + 1]];

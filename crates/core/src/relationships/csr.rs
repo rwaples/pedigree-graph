@@ -17,9 +17,9 @@ impl Csr {
     /// Build from `(row, col)` edges; repeated edges add their multiplicity.
     pub fn from_edges(n: usize, mut edges: Vec<(u32, u32)>) -> Result<Csr, Error> {
         edges.sort_unstable();
-        let mut indptr = alloc::filled(0usize, n + 1, Family::Csr, "intp")?;
-        let mut indices = alloc::with_capacity(edges.len(), Family::Csr, "int32")?;
-        let mut data = alloc::with_capacity(edges.len(), Family::Csr, "uint8")?;
+        let mut indptr = alloc::filled(0usize, n + 1, Family::Csr)?;
+        let mut indices = alloc::with_capacity(edges.len(), Family::Csr)?;
+        let mut data = alloc::with_capacity(edges.len(), Family::Csr)?;
         let mut k = 0;
         while k < edges.len() {
             let (r, c) = edges[k];
@@ -51,16 +51,16 @@ impl Csr {
 
     pub fn transpose(&self) -> Result<Csr, Error> {
         let n = self.n;
-        let mut indptr = alloc::filled(0usize, n + 1, Family::Csr, "intp")?;
+        let mut indptr = alloc::filled(0usize, n + 1, Family::Csr)?;
         for &j in &self.indices {
             indptr[j as usize + 1] += 1;
         }
         for i in 0..n {
             indptr[i + 1] += indptr[i];
         }
-        let mut next = alloc::cloned(&indptr, Family::Csr, "intp")?;
-        let mut indices = alloc::filled(0u32, self.indices.len(), Family::Csr, "int32")?;
-        let mut data = alloc::filled(Mult::ZERO, self.indices.len(), Family::Csr, "uint8")?;
+        let mut next = alloc::cloned(&indptr, Family::Csr)?;
+        let mut indices = alloc::filled(0u32, self.indices.len(), Family::Csr)?;
+        let mut data = alloc::filled(Mult::ZERO, self.indices.len(), Family::Csr)?;
         for i in 0..n {
             let (cols, vals) = self.row(i);
             for (&j, &v) in cols.iter().zip(vals) {

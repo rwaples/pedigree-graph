@@ -21,12 +21,9 @@ impl CompactView {
     /// caller's public view boundary.
     pub fn build(ped: &Pedigree<'_>, view: &[i32]) -> Result<Self, Error> {
         let n = ped.len();
-        let mut retained = alloc::filled(false, n, Family::RowSet, "bool")?;
-        let mut stack = alloc::with_capacity(
-            view.iter().filter(|&&v| v >= 0).count(),
-            Family::RowSet,
-            "int32",
-        )?;
+        let mut retained = alloc::filled(false, n, Family::RowSet)?;
+        let mut stack =
+            alloc::with_capacity(view.iter().filter(|&&v| v >= 0).count(), Family::RowSet)?;
         for (row, &v) in view.iter().enumerate() {
             if v >= 0 {
                 retained[row] = true;
@@ -41,14 +38,14 @@ impl CompactView {
             ] {
                 if parent >= 0 && !retained[parent as usize] {
                     retained[parent as usize] = true;
-                    alloc::reserve(&mut stack, 1, Family::RowSet, "int32")?;
+                    alloc::reserve(&mut stack, 1, Family::RowSet)?;
                     stack.push(parent);
                 }
             }
         }
 
         let kept = retained.iter().filter(|&&b| b).count();
-        let mut graph_to_compact = alloc::filled(-1i32, n, Family::RowSet, "int32")?;
+        let mut graph_to_compact = alloc::filled(-1i32, n, Family::RowSet)?;
         let mut compact_row = 0i32;
         for (row, &keep) in retained.iter().enumerate() {
             if keep {
@@ -64,13 +61,13 @@ impl CompactView {
             }
         };
         let mut columns = PedigreeColumns {
-            mother: alloc::with_capacity(kept, Family::RowSet, "int32")?,
-            father: alloc::with_capacity(kept, Family::RowSet, "int32")?,
-            twin: alloc::with_capacity(kept, Family::RowSet, "int32")?,
-            orig_mother: alloc::with_capacity(kept, Family::RowSet, "int64")?,
-            orig_father: alloc::with_capacity(kept, Family::RowSet, "int64")?,
+            mother: alloc::with_capacity(kept, Family::RowSet)?,
+            father: alloc::with_capacity(kept, Family::RowSet)?,
+            twin: alloc::with_capacity(kept, Family::RowSet)?,
+            orig_mother: alloc::with_capacity(kept, Family::RowSet)?,
+            orig_father: alloc::with_capacity(kept, Family::RowSet)?,
         };
-        let mut view_rows = alloc::with_capacity(kept, Family::RowSet, "int32")?;
+        let mut view_rows = alloc::with_capacity(kept, Family::RowSet)?;
         for (row, &keep) in retained.iter().enumerate() {
             if !keep {
                 continue;

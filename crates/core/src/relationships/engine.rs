@@ -192,7 +192,6 @@ impl<'p> Engine<'p> {
                     .map(move |p| (i as u32, p as u32))
             }),
             Family::ParentEdges,
-            "int32",
         )?;
         let up = Csr::from_edges(n, edges)?;
         let down = up.transpose()?;
@@ -331,7 +330,6 @@ impl<'p> Engine<'p> {
             &mut ws.up[1],
             parents.iter().copied().zip(mults.iter().copied()),
             Family::RowSet,
-            "int32",
         )?;
         ws.acc
             .hop_support(&self.down, &[row as u32], &mut ws.down[1])?;
@@ -426,7 +424,7 @@ impl<'p> Engine<'p> {
             // Refilled in place so the buffer carries over between rows.
             let arm = &mut ws.first_arm[cat.index()];
             arm.clear();
-            alloc::reserve(arm, result.len(), Family::RowSet, "int32")?;
+            alloc::reserve(arm, result.len(), Family::RowSet)?;
             arm.extend_from_slice(result);
         }
         kind.sibs(&self.sibs, row, tmp2, sib)?;
@@ -536,7 +534,7 @@ impl<'p> Engine<'p> {
         tmp: &mut Weighted,
     ) -> Result<(), Error> {
         out.clear();
-        alloc::reserve(out, src.len(), Family::RowSet, "int32")?;
+        alloc::reserve(out, src.len(), Family::RowSet)?;
         out.extend_from_slice(src);
         for _ in 0..k {
             acc.hop(&self.down, out, tmp)?;
@@ -583,7 +581,7 @@ fn lineal(ws: &mut Workspace, cat: Category, k: usize) -> Result<(), Error> {
             // The up arm alone: towards an ancestor the row is the descendant.
             let arm = &mut ws.first_arm[cat.index()];
             arm.clear();
-            alloc::reserve(arm, set.len(), Family::RowSet, "int32")?;
+            alloc::reserve(arm, set.len(), Family::RowSet)?;
             arm.extend_from_slice(&set);
         }
         sets::union_into(&mut set, &ws.down[k])
@@ -614,7 +612,6 @@ fn parent_role(row: usize, parent: &[i32], down1: &[u32], set: &mut Vec<u32>) ->
             .copied()
             .filter(|&j| parent[j as usize] == row as i32),
         Family::RowSet,
-        "int32",
     )?;
     if parent[row] >= 0 {
         sets::union_into(set, &[parent[row] as u32])?;

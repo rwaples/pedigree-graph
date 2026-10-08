@@ -3,14 +3,14 @@
 //!
 //! A refused reservation surfaces as [`Error::AllocationFailed`] naming the
 //! [`Family`] that asked, the resulting element count, and the element
-//! dtype in NumPy spelling, instead of aborting the process.  Because a real
+//! type's [`Dtype`], instead of aborting the process.  Because a real
 //! allocator refusal cannot be provoked in a test without harming the host,
 //! [`fail_next`] plants one failure for a named family; the next reservation
 //! of that family then fails as the allocator would have.  The check is one
 //! relaxed atomic load on the hot paths.
 
 use crate::error::Error;
-use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 /// The allocation families of the relationship engine, each a distinct
 /// place a large buffer is sized by the input.
@@ -155,6 +155,54 @@ impl Family {
     }
 }
 
+/// An element type's dtype in NumPy spelling, which a refused reservation
+/// reports.  It names the logical element, so an atomic counter reports the
+/// integer it counts and the pairwise-kinship output its float.  NumPy has
+/// no scalar dtype for a composite element (a tuple, array, box, `Result`
+/// or struct), which reports `"object"`.
+pub(crate) trait Dtype {
+    const NAME: &'static str;
+}
+
+macro_rules! dtype {
+    ($($t:ty => $name:literal),* $(,)?) => {
+        $(impl Dtype for $t {
+            const NAME: &'static str = $name;
+        })*
+    };
+}
+
+dtype! {
+    bool => "bool",
+    u8 => "uint8",
+    i32 => "int32",
+    u32 => "uint32",
+    i64 => "int64",
+    u64 => "uint64",
+    usize => "uint64",
+    i128 => "int128",
+    f32 => "float32",
+    f64 => "float64",
+    AtomicU32 => "uint32",
+    AtomicU64 => "uint64",
+}
+
+impl<A, B> Dtype for (A, B) {
+    const NAME: &'static str = "object";
+}
+
+impl<T, const N: usize> Dtype for [T; N] {
+    const NAME: &'static str = "object";
+}
+
+impl<T: ?Sized> Dtype for Box<T> {
+    const NAME: &'static str = "object";
+}
+
+impl<T, E> Dtype for Result<T, E> {
+    const NAME: &'static str = "object";
+}
+
 /// `0` for none, else `Family::code`.
 static FAIL_NEXT: AtomicU8 = AtomicU8::new(0);
 
@@ -194,121 +242,103 @@ fn planted(family: Family, requested_elements: usize) -> bool {
             .is_ok()
 }
 
-fn failed(family: Family, dtype: &'static str, requested_elements: usize) -> Error {
+fn failed<T: Dtype>(family: Family, requested_elements: usize) -> Error {
     Error::AllocationFailed {
         operation: family.name(),
         requested_elements,
-        dtype,
+        dtype: T::NAME,
     }
 }
 
 /// Reserve room for `additional` more elements, growing geometrically.
 #[inline]
-pub(crate) fn reserve<T>(
+pub(crate) fn reserve<T: Dtype>(
     vec: &mut Vec<T>,
     additional: usize,
     family: Family,
-    dtype: &'static str,
 ) -> Result<(), Error> {
     let total = vec.len().saturating_add(additional);
     if planted(family, total) || vec.try_reserve(additional).is_err() {
-        return Err(failed(family, dtype, total));
+        return Err(failed::<T>(family, total));
     }
     Ok(())
 }
 
 /// Reserve room for exactly `additional` more elements.
 #[inline]
-pub(crate) fn reserve_exact<T>(
+pub(crate) fn reserve_exact<T: Dtype>(
     vec: &mut Vec<T>,
     additional: usize,
     family: Family,
-    dtype: &'static str,
 ) -> Result<(), Error> {
     let total = vec.len().saturating_add(additional);
     if planted(family, total) || vec.try_reserve_exact(additional).is_err() {
-        return Err(failed(family, dtype, total));
+        return Err(failed::<T>(family, total));
     }
     Ok(())
 }
 
 /// An empty vector with room for `capacity` elements.
-pub(crate) fn with_capacity<T>(
-    capacity: usize,
-    family: Family,
-    dtype: &'static str,
-) -> Result<Vec<T>, Error> {
+pub(crate) fn with_capacity<T: Dtype>(capacity: usize, family: Family) -> Result<Vec<T>, Error> {
     let mut vec = Vec::new();
-    reserve_exact(&mut vec, capacity, family, dtype)?;
+    reserve_exact(&mut vec, capacity, family)?;
     Ok(vec)
 }
 
 /// `len` copies of `value`.
-pub(crate) fn filled<T: Clone>(
+pub(crate) fn filled<T: Clone + Dtype>(
     value: T,
     len: usize,
     family: Family,
-    dtype: &'static str,
 ) -> Result<Vec<T>, Error> {
-    let mut vec = with_capacity(len, family, dtype)?;
+    let mut vec = with_capacity(len, family)?;
     vec.resize(len, value);
     Ok(vec)
 }
 
 /// Push one element, reserving geometrically when full.
 #[inline]
-pub(crate) fn push<T>(
-    vec: &mut Vec<T>,
-    value: T,
-    family: Family,
-    dtype: &'static str,
-) -> Result<(), Error> {
+pub(crate) fn push<T: Dtype>(vec: &mut Vec<T>, value: T, family: Family) -> Result<(), Error> {
     if vec.len() == vec.capacity() {
-        reserve(vec, 1, family, dtype)?;
+        reserve(vec, 1, family)?;
     }
     vec.push(value);
     Ok(())
 }
 
 /// Append every element of `iter`, reserving its lower size bound first.
-pub(crate) fn extend<T>(
+pub(crate) fn extend<T: Dtype>(
     vec: &mut Vec<T>,
     iter: impl IntoIterator<Item = T>,
     family: Family,
-    dtype: &'static str,
 ) -> Result<(), Error> {
     let iter = iter.into_iter();
     let (lower, upper) = iter.size_hint();
-    reserve(vec, lower, family, dtype)?;
+    reserve(vec, lower, family)?;
     if upper == Some(lower) {
         // Exact size: the room is reserved, so the bulk path cannot grow.
         vec.extend(iter);
         return Ok(());
     }
     for value in iter {
-        push(vec, value, family, dtype)?;
+        push(vec, value, family)?;
     }
     Ok(())
 }
 
 /// Collect `iter` into a new vector.
-pub(crate) fn collect<T>(
+pub(crate) fn collect<T: Dtype>(
     iter: impl IntoIterator<Item = T>,
     family: Family,
-    dtype: &'static str,
 ) -> Result<Vec<T>, Error> {
     let mut vec = Vec::new();
-    extend(&mut vec, iter, family, dtype)?;
+    extend(&mut vec, iter, family)?;
     Ok(vec)
 }
 
 /// A copy of `slice`.
-pub(crate) fn cloned<T: Copy>(
-    slice: &[T],
-    family: Family,
-    dtype: &'static str,
-) -> Result<Vec<T>, Error> {
-    let mut vec = with_capacity(slice.len(), family, dtype)?;
+pub(crate) fn cloned<T: Copy + Dtype>(slice: &[T], family: Family) -> Result<Vec<T>, Error> {
+    let mut vec = with_capacity(slice.len(), family)?;
     vec.extend_from_slice(slice);
     Ok(vec)
 }

@@ -32,11 +32,15 @@ struct Row {
     retired: bool,
 }
 
+impl alloc::Dtype for Row {
+    const NAME: &'static str = "object";
+}
+
 impl Owned {
     /// Empty live rows for `n` individuals.
     pub fn new(n: usize) -> Result<Self, Error> {
         Ok(Owned {
-            rows: alloc::filled(Row::default(), n, Family::KinshipScratch, "object")?,
+            rows: alloc::filled(Row::default(), n, Family::KinshipScratch)?,
         })
     }
 
@@ -47,8 +51,8 @@ impl Owned {
         if row.retired {
             return Ok(());
         }
-        alloc::push(&mut row.cols, col, Family::KinshipRows, "uint32")?;
-        alloc::push(&mut row.vals, val, Family::KinshipRows, "float32")
+        alloc::push(&mut row.cols, col, Family::KinshipRows)?;
+        alloc::push(&mut row.vals, val, Family::KinshipRows)
     }
 
     /// The row's columns, empty once retired.

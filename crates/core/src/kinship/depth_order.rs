@@ -66,15 +66,15 @@ impl DepthOrder {
     ) -> Result<DepthOrder, Error> {
         check_structural(mother, father, depth)?;
         let max_depth = depth.iter().copied().max().unwrap_or(0) as usize;
-        let mut starts = alloc::filled(0usize, max_depth + 2, family, "uint64")?;
+        let mut starts = alloc::filled(0usize, max_depth + 2, family)?;
         for &d in depth {
             starts[d as usize + 1] += 1;
         }
         for d in 1..starts.len() {
             starts[d] += starts[d - 1];
         }
-        let mut order = alloc::filled(0u32, depth.len(), family, "uint32")?;
-        let mut cursor = alloc::cloned(&starts, family, "uint64")?;
+        let mut order = alloc::filled(0u32, depth.len(), family)?;
+        let mut cursor = alloc::cloned(&starts, family)?;
         for (row, &d) in depth.iter().enumerate() {
             order[cursor[d as usize]] = row as u32;
             cursor[d as usize] += 1;

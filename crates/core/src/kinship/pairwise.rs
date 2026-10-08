@@ -168,7 +168,7 @@ impl<'a> Walker<'a> {
 
     #[inline]
     fn push(&mut self, item: u64) -> Result<(), Error> {
-        alloc::push(&mut self.stack, item, Family::KinshipStack, "uint64")
+        alloc::push(&mut self.stack, item, Family::KinshipStack)
     }
 
     /// The rule of a canonical key.  The peeled endpoint is the deeper one,
@@ -254,28 +254,37 @@ impl<'a> Walker<'a> {
     }
 }
 
+/// An `f32` stored atomically as its bits.
+#[repr(transparent)]
+struct AtomicF32(AtomicU32);
+
+impl alloc::Dtype for AtomicF32 {
+    const NAME: &'static str = "float32";
+}
+
 /// A float32 output the workers of one call write at disjoint positions.
-struct SharedOutput(Vec<AtomicU32>);
+struct SharedOutput(Vec<AtomicF32>);
 
 impl SharedOutput {
     fn new(len: usize) -> Result<Self, Error> {
-        let mut bits = alloc::with_capacity(len, Family::KinshipOutput, "float32")?;
-        bits.resize_with(len, || AtomicU32::new(0));
-        Ok(SharedOutput(bits))
+        let mut values = alloc::with_capacity(len, Family::KinshipOutput)?;
+        values.resize_with(len, || AtomicF32(AtomicU32::new(0)));
+        Ok(SharedOutput(values))
     }
 
     #[inline]
     fn set(&self, position: usize, value: f32) {
-        self.0[position].store(value.to_bits(), Ordering::Relaxed);
+        self.0[position].0.store(value.to_bits(), Ordering::Relaxed);
     }
 
-    /// The values, in the same allocation: `AtomicU32` and `f32` share size
-    /// and alignment, so the standard library collects in place
-    /// (`shared_output_converts_in_place` holds it to that).
+    /// The values, in the same allocation: `AtomicF32` is transparent over
+    /// `AtomicU32`, which shares size and alignment with `f32`, so the
+    /// standard library collects in place (`shared_output_converts_in_place`
+    /// holds it to that).
     fn into_values(self) -> Vec<f32> {
         self.0
             .into_iter()
-            .map(|bits| f32::from_bits(bits.into_inner()))
+            .map(|value| f32::from_bits(value.0.into_inner()))
             .collect()
     }
 }

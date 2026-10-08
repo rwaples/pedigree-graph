@@ -473,7 +473,7 @@ impl Reducer for CellReducer<'_> {
     type Lane = Vec<i128>;
 
     fn lane(&self) -> Result<Vec<i128>, Error> {
-        alloc::filled(0i128, self.plan.accumulators, Family::MomentLanes, "int128")
+        alloc::filled(0i128, self.plan.accumulators, Family::MomentLanes)
     }
 
     #[inline]

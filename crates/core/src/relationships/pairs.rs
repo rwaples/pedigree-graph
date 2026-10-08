@@ -48,13 +48,13 @@ impl PairBlock {
 
     /// Append one pair to a task chunk.
     fn push(&mut self, a: u32, b: u32) -> Result<(), Error> {
-        alloc::push(&mut self.first, a as i32, Family::TaskChunk, "int32")?;
-        alloc::push(&mut self.second, b as i32, Family::TaskChunk, "int32")
+        alloc::push(&mut self.first, a as i32, Family::TaskChunk)?;
+        alloc::push(&mut self.second, b as i32, Family::TaskChunk)
     }
 
     fn reserve_exact(&mut self, additional: usize) -> Result<(), Error> {
-        alloc::reserve_exact(&mut self.first, additional, Family::PairBlock, "int32")?;
-        alloc::reserve_exact(&mut self.second, additional, Family::PairBlock, "int32")
+        alloc::reserve_exact(&mut self.first, additional, Family::PairBlock)?;
+        alloc::reserve_exact(&mut self.second, additional, Family::PairBlock)
     }
 
     fn extend_from(&mut self, other: &PairBlock) {
@@ -272,7 +272,7 @@ fn task_table<T: Send>(
     ranges: &[(usize, usize)],
     task: impl Fn((usize, usize)) -> Result<T, Error> + Sync,
 ) -> Result<Vec<T>, Error> {
-    let mut table = alloc::with_capacity(ranges.len(), Family::TaskTable, "object")?;
+    let mut table = alloc::with_capacity(ranges.len(), Family::TaskTable)?;
     ranges
         .par_iter()
         .map(|&r| task(r))
@@ -378,7 +378,7 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
 /// One pass, one byte per graph row.  Entries are `-1` for an unselected row,
 /// else the row's view index, each used once.
 pub(super) fn check_view_map(map: &[i32]) -> Result<(), Error> {
-    let mut seen = alloc::filled(false, map.len(), Family::ViewSortScratch, "bool")?;
+    let mut seen = alloc::filled(false, map.len(), Family::ViewSortScratch)?;
     for (position, &value) in map.iter().enumerate() {
         if value < 0 {
             continue;
@@ -410,7 +410,7 @@ fn sort_by_view_key(block: &mut PairBlock, n: u64) -> Result<(), Error> {
     if len < 2 {
         return Ok(());
     }
-    let mut packed: Vec<u64> = alloc::with_capacity(len, Family::ViewSortScratch, "uint64")?;
+    let mut packed: Vec<u64> = alloc::with_capacity(len, Family::ViewSortScratch)?;
     packed.extend(block.first.iter().zip(&block.second).map(|(&a, &b)| {
         let (lo, hi) = (a.min(b) as u64, a.max(b) as u64);
         ((lo * n + hi) << 1) | u64::from(a > b)

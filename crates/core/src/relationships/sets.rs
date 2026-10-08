@@ -18,7 +18,7 @@ pub fn union_into(set: &mut Vec<u32>, other: &[u32]) -> Result<(), Error> {
         return Ok(());
     }
     if set.is_empty() {
-        alloc::reserve(set, other.len(), Family::RowSet, "int32")?;
+        alloc::reserve(set, other.len(), Family::RowSet)?;
         set.extend_from_slice(other);
         return Ok(());
     }
@@ -41,7 +41,7 @@ pub fn union_into(set: &mut Vec<u32>, other: &[u32]) -> Result<(), Error> {
     }
 
     let old_len = set.len();
-    alloc::reserve(set, added, Family::RowSet, "int32")?;
+    alloc::reserve(set, added, Family::RowSet)?;
     set.resize(old_len + added, 0);
     // Backwards: the write head stays ahead of the read head by the number
     // of `other` members still to place, so nothing is overwritten unread.
@@ -108,9 +108,9 @@ impl Accumulator {
     pub fn new(n: usize) -> Result<Accumulator, Error> {
         Ok(Accumulator {
             stamp: 0,
-            marker: alloc::filled(0u32, n, Family::Accumulator, "int32")?,
-            value: alloc::filled(Mult::ZERO, n, Family::Accumulator, "uint8")?,
-            touched: alloc::with_capacity(n, Family::Accumulator, "int32")?,
+            marker: alloc::filled(0u32, n, Family::Accumulator)?,
+            value: alloc::filled(Mult::ZERO, n, Family::Accumulator)?,
+            touched: alloc::with_capacity(n, Family::Accumulator)?,
         })
     }
 
@@ -140,7 +140,7 @@ impl Accumulator {
     fn drain(&mut self, out: &mut Weighted) -> Result<(), Error> {
         self.touched.sort_unstable();
         out.clear();
-        alloc::reserve(out, self.touched.len(), Family::RowSet, "int32")?;
+        alloc::reserve(out, self.touched.len(), Family::RowSet)?;
         out.extend(self.touched.iter().map(|&j| (j, self.value[j as usize])));
         Ok(())
     }
@@ -167,7 +167,7 @@ impl Accumulator {
         }
         self.touched.sort_unstable();
         out.clear();
-        alloc::reserve(out, self.touched.len(), Family::RowSet, "int32")?;
+        alloc::reserve(out, self.touched.len(), Family::RowSet)?;
         out.extend_from_slice(&self.touched);
         Ok(())
     }
@@ -206,7 +206,7 @@ impl Accumulator {
 /// The rows of a weighted set, into a buffer the caller reuses.
 pub fn support_into(w: &Weighted, out: &mut Vec<u32>) -> Result<(), Error> {
     out.clear();
-    alloc::reserve(out, w.len(), Family::RowSet, "int32")?;
+    alloc::reserve(out, w.len(), Family::RowSet)?;
     out.extend(w.iter().map(|&(j, _)| j));
     Ok(())
 }
@@ -219,7 +219,7 @@ pub fn select_into(
     out: &mut Vec<u32>,
 ) -> Result<(), Error> {
     out.clear();
-    alloc::reserve(out, w.len(), Family::RowSet, "int32")?;
+    alloc::reserve(out, w.len(), Family::RowSet)?;
     out.extend(w.iter().filter(|&&(_, m)| keep(m)).map(|&(j, _)| j));
     Ok(())
 }

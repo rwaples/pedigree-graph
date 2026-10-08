@@ -35,6 +35,10 @@ struct Slot {
     value: f32,
 }
 
+impl alloc::Dtype for Slot {
+    const NAME: &'static str = "object";
+}
+
 const EMPTY: u32 = u32::MAX;
 const FIRST_CAPACITY: usize = 4;
 
@@ -43,6 +47,10 @@ const FIRST_CAPACITY: usize = 4;
 struct RowMemo {
     slots: Vec<Slot>,
     entries: u32,
+}
+
+impl alloc::Dtype for RowMemo {
+    const NAME: &'static str = "object";
 }
 
 impl RowMemo {
@@ -74,7 +82,7 @@ impl RowMemo {
             hi: EMPTY,
             value: 0.0,
         };
-        let mut slots = alloc::filled(empty, capacity, Family::KinshipMemo, "uint64")?;
+        let mut slots = alloc::filled(empty, capacity, Family::KinshipMemo)?;
         for slot in &self.slots {
             if slot.hi != EMPTY {
                 let i = RowMemo::slot(&slots, slot.hi);
@@ -107,7 +115,7 @@ impl PairMemo {
     /// An empty memo for a pedigree of `n_rows` rows.
     pub fn new(n_rows: usize) -> Result<Self, Error> {
         Ok(PairMemo {
-            rows: alloc::filled(RowMemo::default(), n_rows, Family::KinshipMemo, "object")?,
+            rows: alloc::filled(RowMemo::default(), n_rows, Family::KinshipMemo)?,
             entries: 0,
         })
     }

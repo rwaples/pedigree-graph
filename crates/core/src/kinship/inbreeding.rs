@@ -65,17 +65,17 @@ pub fn inbreeding_and_ancestor_counts(
     let twin = ped.twin();
     let (row_mother, row_father) = (ped.mother(), ped.father());
 
-    let mut f = alloc::filled(0.0f64, n, WALK, "float64")?;
-    let mut d_var = alloc::filled(0.0f64, n, WALK, "float64")?;
-    let mut ancestors = alloc::filled(0i32, n, WALK, "int32")?;
-    let mut t = alloc::filled(0.0f64, n, WALK, "float64")?;
-    let mut in_frontier = alloc::filled(false, n, WALK, "bool")?;
+    let mut f = alloc::filled(0.0f64, n, WALK)?;
+    let mut d_var = alloc::filled(0.0f64, n, WALK)?;
+    let mut ancestors = alloc::filled(0i32, n, WALK)?;
+    let mut t = alloc::filled(0.0f64, n, WALK)?;
+    let mut in_frontier = alloc::filled(false, n, WALK)?;
     // Which co-twin rows the current walk has reached as a graph-row parent.
-    let mut reached = alloc::filled(false, if genome.has_twins { n } else { 0 }, WALK, "bool")?;
-    let mut head = alloc::filled(NIL, sweep.max_depth() + 1, WALK, "uint32")?;
+    let mut reached = alloc::filled(false, if genome.has_twins { n } else { 0 }, WALK)?;
+    let mut head = alloc::filled(NIL, sweep.max_depth() + 1, WALK)?;
     let capacity = initial_capacity(n, sweep.max_depth());
-    let mut touched: Vec<u32> = alloc::with_capacity(capacity, WALK, "uint32")?;
-    let mut next: Vec<u32> = alloc::with_capacity(capacity, WALK, "uint32")?;
+    let mut touched: Vec<u32> = alloc::with_capacity(capacity, WALK)?;
+    let mut next: Vec<u32> = alloc::with_capacity(capacity, WALK)?;
 
     for &row in &sweep.order {
         let i = row as usize;
@@ -100,9 +100,9 @@ pub fn inbreeding_and_ancestor_counts(
         t[i] = 1.0;
         in_frontier[i] = true;
         let di = depth[i] as usize;
-        alloc::push(&mut next, head[di], WALK, "uint32")?;
+        alloc::push(&mut next, head[di], WALK)?;
         head[di] = 0;
-        alloc::push(&mut touched, row, WALK, "uint32")?;
+        alloc::push(&mut touched, row, WALK)?;
         let mut both_twins = 0usize;
 
         for k in (0..=di).rev() {
@@ -127,9 +127,9 @@ pub fn inbreeding_and_ancestor_counts(
                         in_frontier[p] = true;
                         t[p] = 0.0;
                         let dp = depth[p] as usize;
-                        alloc::push(&mut next, head[dp], WALK, "uint32")?;
+                        alloc::push(&mut next, head[dp], WALK)?;
                         head[dp] = touched.len() as u32;
-                        alloc::push(&mut touched, p as u32, WALK, "uint32")?;
+                        alloc::push(&mut touched, p as u32, WALK)?;
                     }
                     t[p] += 0.5 * t_a;
                 }
@@ -212,7 +212,6 @@ impl<'a> GenomePedigree<'a> {
                 .zip(self.father.iter())
                 .map(|(&s, &d)| mendelian_variance(s, d, f)),
             family,
-            "float64",
         )
     }
 }
@@ -267,7 +266,6 @@ fn genome_parents<'a>(
                 }
             }),
             family,
-            "int32",
         )
     };
     Ok((

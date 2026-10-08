@@ -46,13 +46,13 @@ impl AncestorSignatures {
     /// or the stack they are built with.
     pub fn build(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
         let (mother, father, twin) = (ped.mother(), ped.father(), ped.twin());
-        let mut sets = alloc::filled(UNBUILT, ped.len(), Family::KinshipSignatures, "uint64")?;
+        let mut sets = alloc::filled(UNBUILT, ped.len(), Family::KinshipSignatures)?;
         let mut stack: Vec<usize> = Vec::new();
         for root in 0..ped.len() {
             if sets[root] != UNBUILT {
                 continue;
             }
-            alloc::push(&mut stack, root, Family::KinshipSignatures, "uint64")?;
+            alloc::push(&mut stack, root, Family::KinshipSignatures)?;
             while let Some(&row) = stack.last() {
                 if sets[row] != UNBUILT {
                     stack.pop();
@@ -62,12 +62,7 @@ impl AncestorSignatures {
                 let mut waiting = false;
                 for parent in parents.into_iter().filter(|&p| p >= 0) {
                     if sets[parent as usize] == UNBUILT {
-                        alloc::push(
-                            &mut stack,
-                            parent as usize,
-                            Family::KinshipSignatures,
-                            "uint64",
-                        )?;
+                        alloc::push(&mut stack, parent as usize, Family::KinshipSignatures)?;
                         waiting = true;
                     }
                 }

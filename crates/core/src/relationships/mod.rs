@@ -318,11 +318,8 @@ pub fn count_view_pairs_compact(
     pairs::check_view_map(view)?;
     let compact = CompactView::build(ped, view)?;
     progress.checkpoint(Checkpoint::Compacted)?;
-    let mut selected = crate::alloc::with_capacity(
-        compact.view_rows.len(),
-        crate::alloc::Family::RowSet,
-        "bool",
-    )?;
+    let mut selected =
+        crate::alloc::with_capacity(compact.view_rows.len(), crate::alloc::Family::RowSet)?;
     selected.extend(compact.view_rows.iter().map(|&row| row >= 0));
     count_pairs(
         &compact.columns.try_borrow()?,

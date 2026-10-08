@@ -30,6 +30,16 @@ live on the corresponding GitHub release pages.
   classed vector is now a usage error naming the class, as for
   `relatives_per_person()` thresholds and Python's datetime64 and
   timedelta64; convert with `as.double()`.
+- **Fixed: an `allocation_failed` error's `dtype` names the element the
+  engine was reserving.** The core passed each reservation's dtype as a
+  string beside its element type, and 28 of the 121 drifted; it now reads it
+  from the type. Row sets, the parent CSR's indices, the sibling index's
+  rows and the sparse accumulator's markers report `uint32` (was `int32`);
+  CSR and sibling-index offsets report `uint64` (was `intp`); composite
+  elements report `object`: parent edges and multiplicity-tagged row sets
+  (were `int32`), keyed sibling pairs (`int64`), kinship signatures, DP
+  scratch and memo slots (`uint64`), and lineage ancestor sets (`uint32`).
+  Operations and element counts are unchanged.
 
 ## v0.12.2
 

@@ -149,15 +149,15 @@ fn ancestors_in(
 ) -> Result<Vec<i32>, Error> {
     let n = ped.len();
     let (mother, father) = (ped.mother(), ped.father());
-    let mut remaining = alloc::filled(0u32, n, SETS, "uint32")?;
+    let mut remaining = alloc::filled(0u32, n, SETS)?;
     for &p in mother.iter().chain(father) {
         if p >= 0 {
             remaining[p as usize] += 1;
         }
     }
-    let mut sets: Vec<Box<[u32]>> = alloc::filled(Box::default(), n, SETS, "uint32")?;
+    let mut sets: Vec<Box<[u32]>> = alloc::filled(Box::default(), n, SETS)?;
     let mut merged: Vec<u32> = Vec::new();
-    let mut counts = alloc::filled(0i32, n, OUTPUT, "int32")?;
+    let mut counts = alloc::filled(0i32, n, OUTPUT)?;
 
     for row in rows {
         let i = row as usize;
@@ -170,13 +170,13 @@ fn ancestors_in(
         };
         let (a, b) = (side(mother[i]), side(father[i]));
         merged.clear();
-        alloc::reserve(&mut merged, a.len() + b.len() + 1, SETS, "uint32")?;
+        alloc::reserve(&mut merged, a.len() + b.len() + 1, SETS)?;
         union_into(a, b, &mut merged);
         counts[i] = merged.len() as i32;
 
         if remaining[i] > 0 {
             let at = merged.partition_point(|&r| r < row);
-            let mut set: Vec<u32> = alloc::with_capacity(merged.len() + 1, SETS, "uint32")?;
+            let mut set: Vec<u32> = alloc::with_capacity(merged.len() + 1, SETS)?;
             set.extend_from_slice(&merged[..at]);
             set.push(row);
             set.extend_from_slice(&merged[at..]);
@@ -232,7 +232,7 @@ fn descendants_in(
     rows: impl Iterator<Item = u32>,
 ) -> Result<Vec<i64>, Error> {
     let (mother, father) = (ped.mother(), ped.father());
-    let mut counts = alloc::filled(0i64, ped.len(), OUTPUT, "int64")?;
+    let mut counts = alloc::filled(0i64, ped.len(), OUTPUT)?;
     let mut overflowed = false;
     for row in rows {
         let i = row as usize;

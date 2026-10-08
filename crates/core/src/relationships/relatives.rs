@@ -148,7 +148,7 @@ pub fn relatives_per_person(
             operation: OPERATION,
             dtype: "uint32",
         })?;
-    let mut counts = alloc::with_capacity(len, Family::RelativeCounts, "uint32")?;
+    let mut counts = alloc::with_capacity(len, Family::RelativeCounts)?;
     counts.extend((0..len).map(|_| AtomicU32::new(0)));
     let mut slot = [0usize; N_CATEGORIES];
     for (i, cat) in requested.iter().enumerate() {

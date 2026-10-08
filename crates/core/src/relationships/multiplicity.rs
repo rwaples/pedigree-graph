@@ -20,6 +20,10 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Mult(u8);
 
+impl crate::alloc::Dtype for Mult {
+    const NAME: &'static str = "uint8";
+}
+
 impl Mult {
     pub const ZERO: Mult = Mult(0);
     pub const ONE: Mult = Mult(1);

@@ -62,7 +62,7 @@ impl Topo {
         let n = ped.len();
         let DepthOrder { order, starts } =
             DepthOrder::build(ped.mother(), ped.father(), ped.depth(), SCRATCH)?;
-        let mut inverse = alloc::filled(0u32, n, SCRATCH, "uint32")?;
+        let mut inverse = alloc::filled(0u32, n, SCRATCH)?;
         for (position, &row) in order.iter().enumerate() {
             inverse[row as usize] = position as u32;
         }
@@ -77,7 +77,6 @@ impl Topo {
                     }
                 }),
                 SCRATCH,
-                "int32",
             )
         };
         let mother = gather(ped.mother())?;
@@ -106,7 +105,7 @@ impl Topo {
     /// after which no merge walk reads them.
     fn retirement(&self) -> Result<(Vec<usize>, Vec<u32>), Error> {
         let n = self.n;
-        let mut last = alloc::filled(0i32, n, SCRATCH, "int32")?;
+        let mut last = alloc::filled(0i32, n, SCRATCH)?;
         for d in 0..=self.max_depth() {
             for j in self.rows_at(d) {
                 last[j] = d as i32;
@@ -120,7 +119,7 @@ impl Topo {
                 }
             }
         }
-        let mut starts = alloc::filled(0usize, self.max_depth() + 2, SCRATCH, "uint64")?;
+        let mut starts = alloc::filled(0usize, self.max_depth() + 2, SCRATCH)?;
         for &d in &last {
             starts[d as usize + 1] += 1;
         }
@@ -128,7 +127,7 @@ impl Topo {
             starts[d] += starts[d - 1];
         }
         let mut cursor = starts.clone();
-        let mut rows = alloc::filled(0u32, n, SCRATCH, "uint32")?;
+        let mut rows = alloc::filled(0u32, n, SCRATCH)?;
         for (j, &d) in last.iter().enumerate() {
             rows[cursor[d as usize]] = j as u32;
             cursor[d as usize] += 1;
@@ -246,7 +245,7 @@ impl<'t> Dp<'t> {
             if f64::from(val) <= self.threshold {
                 continue;
             }
-            alloc::push(&mut self.scratch, (k, val), SCRATCH, "uint64")?;
+            alloc::push(&mut self.scratch, (k, val), SCRATCH)?;
         }
 
         for i in 0..self.scratch.len() {
@@ -307,12 +306,7 @@ impl<'t> Dp<'t> {
                 for j in topo.rows_at(d) {
                     let row = self.store.cols(j);
                     let upper = row.partition_point(|&k| k <= j as u32);
-                    alloc::extend(
-                        cols,
-                        row[..upper].iter().copied(),
-                        Family::KinshipRows,
-                        "uint32",
-                    )?;
+                    alloc::extend(cols, row[..upper].iter().copied(), Family::KinshipRows)?;
                     indptr[j + 1] = cols.len();
                 }
             }
@@ -359,7 +353,7 @@ fn checked_indptr(counts: &[usize], max_nnz: usize) -> Result<Vec<i32>, Error> {
             maximum: max_nnz as i64,
         });
     }
-    let mut indptr = alloc::filled(0i32, counts.len() + 1, Family::KinshipCsc, "int32")?;
+    let mut indptr = alloc::filled(0i32, counts.len() + 1, Family::KinshipCsc)?;
     let mut total = 0i32;
     for (column, &count) in counts.iter().enumerate() {
         total += count as i32;
@@ -394,7 +388,7 @@ fn assemble<'a>(
     max_nnz: usize,
 ) -> Result<Csc, Error> {
     let n = topo.n;
-    let mut counts = alloc::filled(0usize, n, Family::KinshipCsc, "uint64")?;
+    let mut counts = alloc::filled(0usize, n, Family::KinshipCsc)?;
     for r in 0..n {
         let graph_row = topo.order[r] as usize;
         for &c in row(r).0 {
@@ -410,8 +404,8 @@ fn assemble<'a>(
     for (column, slot) in cursor.iter_mut().enumerate() {
         *slot = indptr[column] as usize;
     }
-    let mut indices = alloc::filled(0i32, nnz, Family::KinshipCsc, "int32")?;
-    let mut data = alloc::filled(0.0f32, nnz, Family::KinshipCsc, "float32")?;
+    let mut indices = alloc::filled(0i32, nnz, Family::KinshipCsc)?;
+    let mut data = alloc::filled(0.0f32, nnz, Family::KinshipCsc)?;
     for i in 0..n {
         let (cols, vals) = row(topo.inverse[i] as usize);
         for (&c, &v) in cols.iter().zip(vals) {
@@ -446,7 +440,7 @@ fn approximate_with(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
         threshold,
         true,
         Sink::Harvest {
-            indptr: alloc::filled(0usize, n + 1, Family::KinshipRows, "uint64")?,
+            indptr: alloc::filled(0usize, n + 1, Family::KinshipRows)?,
             cols: Vec::new(),
         },
     )?;
@@ -469,7 +463,7 @@ fn approximate_with(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
         Sink::Capture {
             indptr,
             cols,
-            vals: alloc::filled(f32::NAN, upper, Family::KinshipRows, "float32")?,
+            vals: alloc::filled(f32::NAN, upper, Family::KinshipRows)?,
         },
     )?;
     pass2.run()?;
@@ -490,7 +484,7 @@ fn approximate_with(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
     // Mirror the one-sided support into symmetric rows, each row's columns
     // in the order they arrive: its own candidates ascending, then the
     // deeper rows that hold it, ascending.
-    let mut counts = alloc::filled(0usize, n, Family::KinshipRows, "uint64")?;
+    let mut counts = alloc::filled(0usize, n, Family::KinshipRows)?;
     for j in 0..n {
         for &k in &cols[indptr[j]..indptr[j + 1]] {
             counts[j] += 1;
@@ -499,15 +493,15 @@ fn approximate_with(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
             }
         }
     }
-    let mut sym_indptr = alloc::filled(0usize, n + 1, Family::KinshipRows, "uint64")?;
+    let mut sym_indptr = alloc::filled(0usize, n + 1, Family::KinshipRows)?;
     for j in 0..n {
         sym_indptr[j + 1] = sym_indptr[j] + counts[j];
     }
     let total = sym_indptr[n];
     let mut cursor = counts;
     cursor.copy_from_slice(&sym_indptr[..n]);
-    let mut sym_cols = alloc::filled(0u32, total, Family::KinshipRows, "uint32")?;
-    let mut sym_vals = alloc::filled(0.0f32, total, Family::KinshipRows, "float32")?;
+    let mut sym_cols = alloc::filled(0u32, total, Family::KinshipRows)?;
+    let mut sym_vals = alloc::filled(0.0f32, total, Family::KinshipRows)?;
     for j in 0..n {
         for p in indptr[j]..indptr[j + 1] {
             let (k, v) = (cols[p], vals[p]);

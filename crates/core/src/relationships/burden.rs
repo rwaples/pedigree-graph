@@ -33,9 +33,9 @@ pub fn relationship_burden(
     assert_eq!(ped.len(), depth.len());
     let n = ped.len();
     let n_depths = depth.iter().copied().max().map_or(0, |d| d as usize + 1);
-    let mut cells = alloc::with_capacity(n * 5, Family::RowSet, "uint32")?;
+    let mut cells = alloc::with_capacity(n * 5, Family::RowSet)?;
     cells.extend((0..n * 5).map(|_| AtomicU32::new(0)));
-    let mut same_depth = alloc::with_capacity(n_depths, Family::RowSet, "uint64")?;
+    let mut same_depth = alloc::with_capacity(n_depths, Family::RowSet)?;
     same_depth.extend((0..n_depths).map(|_| AtomicU64::new(0)));
     let categories: [AtomicU64; N_CATEGORIES] = std::array::from_fn(|_| AtomicU64::new(0));
 

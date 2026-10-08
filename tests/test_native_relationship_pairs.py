@@ -289,4 +289,4 @@ def test_a_refused_allocation_raises_a_resource_error(family):
         label, code, operation, dtype, counted = parts
         outcomes[label] = True
         assert (code, operation, counted) == ("allocation_failed", family, "True"), line
-        assert dtype in {"bool", "int32", "int64", "intp", "uint8", "uint64", "object"}
+        assert dtype in {"bool", "int32", "int64", "uint8", "uint32", "uint64", "object"}

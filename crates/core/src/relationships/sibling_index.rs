@@ -24,12 +24,12 @@ impl Groups {
         n: usize,
         keyed: impl Iterator<Item = (K, u32)>,
     ) -> Result<Groups, Error> {
-        let mut pairs: Vec<(K, u32)> = alloc::collect(keyed, Family::SiblingIndex, "int64")?;
+        let mut pairs: Vec<(K, u32)> = alloc::collect(keyed, Family::SiblingIndex)?;
         pairs.sort_unstable();
-        let mut group_of = alloc::filled(-1i32, n, Family::SiblingIndex, "int32")?;
-        let mut indptr = alloc::with_capacity(n + 1, Family::SiblingIndex, "intp")?;
+        let mut group_of = alloc::filled(-1i32, n, Family::SiblingIndex)?;
+        let mut indptr = alloc::with_capacity(n + 1, Family::SiblingIndex)?;
         indptr.push(0usize);
-        let mut members = alloc::with_capacity(pairs.len(), Family::SiblingIndex, "int32")?;
+        let mut members = alloc::with_capacity(pairs.len(), Family::SiblingIndex)?;
         let mut k = 0;
         while k < pairs.len() {
             let key = pairs[k].0;
@@ -102,7 +102,6 @@ impl SiblingIndex {
                 .copied()
                 .filter(|&j| j as usize != row),
             Family::RowSet,
-            "int32",
         )
     }
 
@@ -140,7 +139,7 @@ impl SiblingIndex {
 
     fn minus(all: &[u32], remove: &[u32], row: usize, out: &mut Vec<u32>) -> Result<(), Error> {
         out.clear();
-        alloc::reserve(out, all.len(), Family::RowSet, "int32")?;
+        alloc::reserve(out, all.len(), Family::RowSet)?;
         let mut r = 0;
         for &j in all {
             while r < remove.len() && remove[r] < j {

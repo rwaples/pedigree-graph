@@ -68,12 +68,12 @@ pub fn pack_labels(
     n: usize,
     field: &'static str,
 ) -> Result<PackedLabels, Error> {
-    let mut labels: Vec<i64> = alloc::filled(0, n, Family::MomentInput, "int64")?;
+    let mut labels: Vec<i64> = alloc::filled(0, n, Family::MomentInput)?;
     let mut n_labels: usize = 1;
     let mut levels = Vec::with_capacity(factors.len());
     for column in factors {
         super::check_column_length(field, column.len(), n)?;
-        let mut distinct = alloc::with_capacity(n, Family::MomentInput, "int64")?;
+        let mut distinct = alloc::with_capacity(n, Family::MomentInput)?;
         distinct.extend_from_slice(column);
         distinct.sort_unstable();
         distinct.dedup();
@@ -96,7 +96,7 @@ pub fn pack_labels(
         }
         levels.push(distinct);
     }
-    let mut packed = alloc::with_capacity(n, Family::MomentInput, "int32")?;
+    let mut packed = alloc::with_capacity(n, Family::MomentInput)?;
     // n_labels <= 2^31, so every label fits.
     packed.extend(labels.iter().map(|&label| label as i32));
     Ok(PackedLabels {
@@ -384,7 +384,7 @@ fn needed_i128(v: i128) -> usize {
 /// [`Error::AllocationFailed`] for the bytes.
 pub fn encode_i128(values: &[i128], family: Family) -> Result<(usize, Vec<u8>), Error> {
     let width = values.iter().map(|&v| needed_i128(v)).max().unwrap_or(1);
-    let mut bytes = alloc::with_capacity(values.len() * width, family, "uint8")?;
+    let mut bytes = alloc::with_capacity(values.len() * width, family)?;
     for v in values {
         bytes.extend_from_slice(&v.to_le_bytes()[..width]);
     }
@@ -782,7 +782,7 @@ impl<'a> MomentsTable<'a> {
             products: self.products.clone(),
             exponents,
             width,
-            bytes: Cow::Owned(alloc::filled(0u8, len, Family::MomentTable, "uint8")?),
+            bytes: Cow::Owned(alloc::filled(0u8, len, Family::MomentTable)?),
         })
     }
 
@@ -1001,7 +1001,7 @@ impl<'a> MomentsTable<'a> {
                 statistic.name()
             )));
         }
-        let mut out = alloc::with_capacity(self.cells(), Family::MomentOutput, "float64")?;
+        let mut out = alloc::with_capacity(self.cells(), Family::MomentOutput)?;
         for cell in 0..self.cells() {
             let value = self
                 .derive_i128(statistic, index, cell)
