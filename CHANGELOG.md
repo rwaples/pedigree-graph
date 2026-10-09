@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.12.3
 
 - **Added (R): `relatives_per_person()`** (ADR 0014). Python's
   `PedigreeGraph.relatives_per_person` for an R graph: per row and selected

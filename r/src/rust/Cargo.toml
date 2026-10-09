@@ -2,7 +2,7 @@
 name = "pedigree-graph-r"
 # Kept equal to [workspace.package].version in the repository root; this crate
 # is its own workspace (below) so the R source tarball builds without that one.
-version = "0.12.2"
+version = "0.12.3"
 edition = "2021"
 # The floor r/DESCRIPTION states; clippy holds the code to it.
 rust-version = "1.85"

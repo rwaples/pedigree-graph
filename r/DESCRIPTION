@@ -1,6 +1,6 @@
 Package: pedigreegraph
 Title: Pedigree Relationships and Kinship on a Rust Core
-Version: 0.12.2
+Version: 0.12.3
 Authors@R: c(
     person("Ryan", "Waples", email = "ryan.waples@gmail.com", role = c("aut", "cre", "cph")),
     person("Authors of the bundled Rust crates", role = c("ctb", "cph"),
