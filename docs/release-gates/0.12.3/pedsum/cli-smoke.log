@@ -1,0 +1,20 @@
+11:58:29 INFO pedigree_summary: memory limit 14.0 GiB (80% of 17.6 GiB available; --max-memory to change)
+11:58:29 INFO pedigree_summary: read 6000 rows from /tmp/consumer-gate-o_7tpy2v/pedigree.tsv in 0.01s
+11:58:29 INFO pedigree_summary: parsed 6000 ids; five random ids: 1618, 1846, 3065, 3819, 5100
+11:58:29 INFO pedigree_summary: sex parsed: female={2} (n=3006), male={1} (n=2994), unknown=0
+11:58:29 INFO pedigree_summary: validated 6000 rows in 0.04s
+11:58:29 INFO pedigree_summary: load+validate in 0.04s
+11:58:29 INFO pedigree_summary: built PedigreeGraph in 0.00s
+11:58:29 INFO pedigree_summary: descendants in 0.00s
+11:58:29 INFO pedigree_summary: size+structure in 0.00s
+11:58:29 INFO pedigree_summary: mating pairs grouped in 0.00s
+11:58:29 INFO pedigree_summary: sibship sizes in 0.00s
+11:58:29 INFO pedigree_summary: mating-pair summary in 0.00s
+11:58:29 INFO pedigree_graph._relationship_counts: relationship_counts: max_degree=5, threads=1
+11:58:29 INFO pedigree_graph._relationship_counts: relationship_counts total: 0.096s
+11:58:29 INFO pedigree_summary: relationship pair counts (relationship_counts) in 0.10s
+11:58:29 INFO pedigree_summary: inbreeding (F + n_ancestors) in 0.00s
+11:58:29 INFO pedigree_summary: individual table built in 0.01s
+11:58:29 INFO pedigree_summary: aggregate pedigree sections in 0.01s
+11:58:29 INFO pedigree_summary: wrote /tmp/consumer-gate-o_7tpy2v/pedsum-smoke/{summary.yaml, summary.extra.yaml}
+11:58:29 INFO pedigree_summary: wrote annotated.tsv.gz in 0.03s

@@ -1,0 +1,144 @@
+✨ Pixi task (test-against-pg in default): tools/test_against_pg.sh /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/clean
+    Updating git repository `https://github.com/rwaples/pedigree-graph`
+    Updating crates.io index
+     Locking 1 package to latest compatible version
+      Adding pedigree-graph-core v0.12.3 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/clean/crates/core)
+    Removing pedigree-graph-core v0.12.2 (https://github.com/rwaples/pedigree-graph?rev=66595d3371d2f8c68622b7b98f597af56818a77c#66595d33)
+    Updating git repository `https://github.com/rwaples/pedigree-graph`
+    Updating crates.io index
+     Locking 1 package to latest compatible version
+      Adding pedigree-graph-core v0.12.3 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/clean/crates/core)
+    Removing pedigree-graph-core v0.12.2 (https://github.com/rwaples/pedigree-graph?rev=66595d3371d2f8c68622b7b98f597af56818a77c#66595d33)
+== pedigree-graph-core <- /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/clean (7271591)
+== cargo test
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling target-lexicon v0.13.5
+   Compiling rayon-core v1.13.0
+   Compiling libm v0.2.16
+   Compiling either v1.19.0
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling libc v0.2.190
+   Compiling heck v0.5.0
+   Compiling rawpointer v0.2.1
+   Compiling once_cell v1.21.4
+   Compiling rustc-hash v2.1.3
+   Compiling num-traits v0.2.19
+   Compiling matrixmultiply v0.3.11
+   Compiling pyo3-build-config v0.29.3
+   Compiling syn v2.0.119
+   Compiling num-integer v0.1.47
+   Compiling num-complex v0.4.6
+   Compiling pyo3-ffi v0.29.3
+   Compiling pyo3 v0.29.3
+   Compiling numpy v0.29.0
+   Compiling num-bigint v0.4.8
+   Compiling ndarray v0.17.2
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.3
+   Compiling pedigree-graph-core v0.12.3 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/clean/crates/core)
+   Compiling pg-phenotype-core v0.1.1 (/data/Documents/simACE/external/pg-phenotype/crates/core)
+   Compiling pyo3-macros v0.29.3
+   Compiling pg-phenotype-python v0.1.1 (/data/Documents/simACE/external/pg-phenotype/crates/python)
+    Finished `release` profile [optimized + debuginfo] target(s) in 31.24s
+     Running unittests src/lib.rs (target/release/deps/pg_phenotype_core-c8e3a979df7f5055)
+
+running 42 tests
+test assortative::fit::tests::brent_finds_an_interior_minimum ... ok
+test assortative::fit::tests::newton_hands_over_and_flags_bounds ... ok
+test assortative::input::tests::counts_lengths_and_kinds ... ok
+test assortative::input::tests::huge_codes_and_level_counts_are_rejected_without_allocating ... ok
+test assortative::input::tests::missing_constant_then_levels ... ok
+test assortative::input::tests::settings_and_strata ... ok
+test assortative::input::tests::values_must_be_codes_or_finite ... ok
+test assortative::kernels::tests::margin_status_order ... ok
+test assortative::kernels::tests::blocks_cover_every_pair_once ... ok
+test assortative::kernels::tests::thresholds_frame_and_invert_the_margin ... ok
+test assortative::kernels::tests::ranks_average_ties_by_weight ... ok
+test assortative::primitives_parity::bounded_brent_retraces_scipy ... ok
+test lineage::tests::founder_mz_twins_share_a_label ... ok
+test lineage::tests::relatives_are_never_disjoint_and_strangers_are ... ok
+test normal::tests::quantile_inverts_cdf ... ok
+test normal::tests::tails_are_complementary_and_symmetric ... ok
+test normal::tests::truncated_moments_match_closed_forms ... ok
+test assortative::primitives_parity::kernel_normal_functions_match_numba ... ok
+test assortative::result::tests::reasons_are_declared_in_name_order ... ok
+test pafgrs::cip::tests::invalid_tables_name_the_position ... ok
+test assortative::sample::tests::codes_rank_labels_with_unknown_first ... ok
+test pafgrs::cip::tests::observation_rules ... ok
+test assortative::sample::tests::pairs_sort_by_parent_id_and_networks_number_by_first_pair ... ok
+test normal::tests::fully_observed_control_is_plain_truncation ... ok
+test assortative::tests::ci_level_and_wald_z_agree ... ok
+test pafgrs::cip::tests::interpolation_follows_numpy_interp ... ok
+test pafgrs::prep::tests::degree_one_drops_grandparents_and_aunts ... ok
+test pafgrs::prep::tests::ndegree_is_checked_before_the_pedigree ... ok
+test pafgrs::prep::tests::mz_twins_are_relatives_at_half ... ok
+test pafgrs::prep::tests::pedigree_errors_pass_through_with_their_code ... ok
+test pafgrs::prep::tests::proband_list_errors ... ok
+test assortative::primitives_parity::cephes_ports_are_bit_identical_to_scipy ... ok
+test assortative::bootstrap::tests::every_fitted_estimator_gets_its_draws ... ok
+test assortative::primitives_parity::bivariate_normal_matches_pedsum ... ok
+test assortative::kernels::tests::parallel_and_serial_kernels_agree_bit_for_bit ... ok
+test pafgrs::prep::tests::tri_index_is_row_major_upper ... ok
+test pafgrs::triangle::tests::negative_zero_keeps_its_bits ... ok
+test pafgrs::prep::tests::relatives_follow_degree_and_kinship ... ok
+test pafgrs::prep::tests::probands_restrict_the_scored_rows_not_the_relatives ... ok
+test tests::pg_core_rev_is_the_rev_cargo_toml_pins ... ok
+test threads::tests::configure_commit_and_conflict ... ok
+test pafgrs::triangle::tests::round_trips_every_width ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/pg_composition.rs (target/release/deps/pg_composition-61a02ef8315057e5)
+
+running 1 test
+test build_pairs_and_walk_compose_from_outside_the_crate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/release/deps/pg_phenotype_native-a5f44343c2a6ce56)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests pg_phenotype_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+== Python suite
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.14 at /data/Documents/simACE/external/pg-phenotype/.pixi/envs/default/bin/python
+🔗 Found pyo3 bindings with abi3-py3.13 support
+Using Python 3.14.8 environment at: .pixi/envs/default
+Checked 10 packages in 0.99ms
+   Compiling pyo3-ffi v0.29.3
+   Compiling pyo3 v0.29.3
+   Compiling numpy v0.29.0
+   Compiling pg-phenotype-python v0.1.1 (/data/Documents/simACE/external/pg-phenotype/crates/python)
+    Finished `release` profile [optimized + debuginfo] target(s) in 7.26s
+📦 Built wheel for abi3 Python ≥ 3.13 to /tmp/.tmpr9V3ry/pg_phenotype-0.1.1-cp313-abi3-linux_x86_64.whl
+✏️ Setting installed package as editable
+🛠 Installed pg-phenotype-0.1.1
+============================= test session starts ==============================
+platform linux -- Python 3.14.8, pytest-9.1.1, pluggy-1.6.0
+rootdir: /data/Documents/simACE/external/pg-phenotype
+configfile: pyproject.toml
+testpaths: tests
+plugins: hypothesis-6.168.5, xdist-3.8.0
+created: 6/6 workers
+6 workers [281 items]
+
+........................................................................ [ 25%]
+........................................................................ [ 51%]
+........................................................................ [ 76%]
+.................................................................        [100%]
+============================= 281 passed in 38.62s =============================
+== all suites pass against /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/clean
+== restoring the editable build against the pinned pedigree-graph-core

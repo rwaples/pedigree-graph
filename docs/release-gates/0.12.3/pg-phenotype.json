@@ -1,0 +1,69 @@
+{
+  "unit": "pg-phenotype",
+  "stage": "0.12.3",
+  "routing": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/wheel-site",
+  "cwd": "external/pg-phenotype",
+  "started": "2026-10-09T11:58:29",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pg-phenotype/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.5,
+      "max_rss_mib": 59.7,
+      "tree_peak_mib": 66.8,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.3/pg-phenotype/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pg-phenotype/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 42.1,
+      "tree_peak_mib": 21.4,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.3/pg-phenotype/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pg-phenotype/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.2,
+      "max_rss_mib": 41.9,
+      "tree_peak_mib": 21.6,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.3/pg-phenotype/format.log",
+      "tail": [
+        "51 files already formatted"
+      ]
+    },
+    {
+      "step": "test-against-pg",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pg-phenotype/pixi.toml --frozen test-against-pg /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/clean",
+      "exit": 0,
+      "wall_s": 107.5,
+      "max_rss_mib": 380.6,
+      "tree_peak_mib": 1435.5,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.3/pg-phenotype/test-against-pg.log",
+      "tail": [
+        "testpaths: tests",
+        "plugins: hypothesis-6.168.5, xdist-3.8.0",
+        "created: 6/6 workers",
+        "6 workers [281 items]",
+        "",
+        "........................................................................ [ 25%]",
+        "........................................................................ [ 51%]",
+        "........................................................................ [ 76%]",
+        ".................................................................        [100%]",
+        "============================= 281 passed in 38.62s =============================",
+        "== all suites pass against /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.3/clean",
+        "== restoring the editable build against the pinned pedigree-graph-core"
+      ]
+    }
+  ],
+  "ok": true
+}
