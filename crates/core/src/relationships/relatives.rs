@@ -12,9 +12,9 @@
 //! fewer than `2^32`, so no counter can wrap.
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
-use super::moments::{receiver_len, reduce_pairs, Reducer, Symmetric};
+use super::moments::{reduce_pairs, Reducer, Symmetric};
 use super::progress::Progress;
-use super::{check_column_length, on_receiver, MaxDegree, Pedigree, Receiver};
+use super::{check_column_length, on_receiver, receiver_len, MaxDegree, Pedigree, Receiver};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use std::num::NonZeroUsize;

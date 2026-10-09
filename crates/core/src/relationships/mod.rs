@@ -343,10 +343,37 @@ impl<'a> From<Option<&'a [i32]>> for Receiver<'a> {
     }
 }
 
+/// The receiver's row count: graph rows, or view rows.
+///
+/// # Errors
+///
+/// [`Error::InvalidViewMap`] when the view map is not a partial permutation.
+///
+/// # Panics
+///
+/// If the view map does not have one entry per graph row.
+fn receiver_len(ped: &Pedigree, receiver: Receiver<'_>) -> Result<usize, Error> {
+    let Receiver::View { rows: map, .. } = receiver else {
+        return Ok(ped.len());
+    };
+    assert_eq!(
+        map.len(),
+        ped.len(),
+        "view map must have one entry per graph row"
+    );
+    pairs::check_view_map(map)?;
+    Ok(map
+        .iter()
+        .copied()
+        .filter(|&m| m >= 0)
+        .max()
+        .map_or(0, |m| m as usize + 1))
+}
+
 /// Run `query` on the pedigree and view map the engine walks for
 /// `receiver`: `ped` itself, or for a compact view the view's
 /// ancestry-compact pedigree and its view rows.  The caller has checked the
-/// view map.
+/// view map with [`receiver_len`].
 fn on_receiver<T>(
     ped: &Pedigree,
     receiver: Receiver<'_>,

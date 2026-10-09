@@ -23,7 +23,7 @@
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
 use super::progress::{Checkpoint, Progress};
-use super::{on_receiver, task_ranges, walk_task, MaxDegree, Pedigree, Receiver};
+use super::{on_receiver, receiver_len, task_ranges, walk_task, MaxDegree, Pedigree, Receiver};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
@@ -212,14 +212,7 @@ pub fn pair_blocks(
     execution: Execution,
     progress: &Progress,
 ) -> Result<PairBlocks, Error> {
-    if let Receiver::View { rows, .. } = receiver {
-        assert_eq!(
-            rows.len(),
-            ped.len(),
-            "view map must have one entry per graph row"
-        );
-        check_view_map(rows)?;
-    }
+    receiver_len(ped, receiver)?;
     on_receiver(ped, receiver, progress, |ped, view| {
         emit(ped, max_degree, requested, view, execution, progress)
     })

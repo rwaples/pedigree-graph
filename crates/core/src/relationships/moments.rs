@@ -24,10 +24,10 @@
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
-use super::pairs::check_view_map;
 use super::progress::{Checkpoint, Progress};
 use super::{
-    check_column_length, on_receiver, task_ranges, walk_rows, MaxDegree, Pedigree, Receiver,
+    check_column_length, on_receiver, receiver_len, task_ranges, walk_rows, MaxDegree, Pedigree,
+    Receiver,
 };
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -670,33 +670,6 @@ pub struct Moments {
     pub lane_pairs: Vec<u64>,
     /// The planned accumulator peak.
     pub estimated_peak_bytes: u64,
-}
-
-/// The receiver's row count: graph rows, or view rows.
-///
-/// # Errors
-///
-/// [`Error::InvalidViewMap`] when the view map is not a partial permutation.
-///
-/// # Panics
-///
-/// If the view map does not have one entry per graph row.
-pub(super) fn receiver_len(ped: &Pedigree, receiver: Receiver<'_>) -> Result<usize, Error> {
-    let Receiver::View { rows: map, .. } = receiver else {
-        return Ok(ped.len());
-    };
-    assert_eq!(
-        map.len(),
-        ped.len(),
-        "view map must have one entry per graph row"
-    );
-    check_view_map(map)?;
-    Ok(map
-        .iter()
-        .copied()
-        .filter(|&m| m >= 0)
-        .max()
-        .map_or(0, |m| m as usize + 1))
 }
 
 /// The relationship moments of every requested category, using the current
