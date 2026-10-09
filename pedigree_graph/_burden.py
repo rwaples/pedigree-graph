@@ -44,6 +44,6 @@ def relationship_burden(graph: PedigreeGraph, progress: ProgressArg = None) -> R
     counts, per_person, same_depth = _native.relationship_burden(
         graph._built, graph.depth, threads=thread_budget(), progress=watch, tick=_progress.TICK_S
     )
-    rows = _own_native(per_person, np.uint32).reshape((graph.n_individuals, 5))
+    rows = _own_native(per_person, np.uint32).reshape((graph.n_individuals, _native.BURDEN_DEGREES))
     depth = _own_native(same_depth, np.uint64)
     return RelationshipBurden(MappingProxyType(counts), rows, depth)

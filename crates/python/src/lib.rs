@@ -914,7 +914,7 @@ fn moments_table_derive<'py>(
 }
 
 /// What [`relationship_burden`] hands back: category counts keyed by code,
-/// the per-person degree-1..5 counts (row-major, five per graph row) and the
+/// the per-person degree-1..5 counts (row-major, `DEGREES` per graph row) and the
 /// related-pair count per structural depth.
 type BurdenArrays<'py> = (
     Bound<'py, PyDict>,
@@ -1472,6 +1472,7 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
         relationships::MAX_VALUE_COLUMNS,
     )?;
     m.add("MOMENTS_MAX_SAME_KEYS", relationships::MAX_SAME_KEYS)?;
+    m.add("BURDEN_DEGREES", relationships::DEGREES)?;
     m.add_function(wrap_pyfunction!(moments_pack, m)?)?;
     m.add_function(wrap_pyfunction!(moments_quantize, m)?)?;
     m.add_function(wrap_pyfunction!(moments_ratio, m)?)?;

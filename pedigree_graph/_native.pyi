@@ -126,6 +126,7 @@ def moments_plan(
 
 MOMENTS_MAX_VALUE_COLUMNS: int
 MOMENTS_MAX_SAME_KEYS: int
+BURDEN_DEGREES: int
 
 #: ``(shape, n_columns, operands, exponents, width, bytes)``.
 _Table = tuple[list[int], int, list[tuple[int, int, int, int]], list[int], int, NDArray[np.uint8]]

@@ -16,7 +16,7 @@ mod sibling_index;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use burden::{relationship_burden, Burden};
+pub use burden::{relationship_burden, Burden, DEGREES};
 pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
 pub use compact::CompactView;
 pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};

@@ -14,7 +14,7 @@ use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
     count_pairs, pair_blocks, relationship_burden as burden_of, Burden, Category, CategorySet,
-    Counts, Execution, MaxDegree, PairBlock, Pedigree, Progress, Receiver, N_CATEGORIES,
+    Counts, Execution, MaxDegree, PairBlock, Pedigree, Progress, Receiver, DEGREES, N_CATEGORIES,
 };
 use std::num::NonZeroUsize;
 
@@ -427,15 +427,19 @@ pub fn start_burden(native: &Robj, seal: &Robj) -> HostResult<Robj> {
 fn burden_list(n: usize, burden: Burden) -> HostResult<Robj> {
     // A row has at most n - 1 relatives at a degree, and n fits an int32.
     let mut per_person = Integers::from_values(Exact::new(
-        (0..5)
+        (0..DEGREES)
             .flat_map(|d| (0..n).map(move |r| (r, d)))
-            .map(|(r, d)| burden.per_person[r * 5 + d] as i32),
-        n * 5,
+            .map(|(r, d)| burden.per_person[r * DEGREES + d] as i32),
+        n * DEGREES,
     ))
     .into_robj();
     per_person
-        .set_attrib(dim_symbol(), [n as i32, 5])
+        .set_attrib(dim_symbol(), [n as i32, DEGREES as i32])
         .expect("an integer dim");
+    let columns = Strings::from_values((0..DEGREES).map(|d| format!("degree_{}", d + 1)));
+    per_person
+        .set_attrib(dimnames_symbol(), list!(NULL, columns))
+        .expect("matrix dimnames");
     let doubles = |what: &str, counts: &[u64]| -> HostResult<Robj> {
         let values = counts
             .iter()

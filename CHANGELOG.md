@@ -60,6 +60,9 @@ live on the corresponding GitHub release pages.
   `for_pairs`), `Workspace::new` and `Workspace::for_pairs`, the
   `kinship::rows::RowStore` trait (`Owned`'s methods are inherent),
   `PairMemo::bytes`, and `topology::depth_major_order_in`.
+- **Added (core): `relationships::DEGREES`**, the number of per-person
+  degree columns in `Burden::per_person`. The Python and R hosts read the
+  burden width from it instead of a literal 5; their output is unchanged.
 
 ## v0.12.2
 

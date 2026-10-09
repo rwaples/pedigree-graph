@@ -127,7 +127,6 @@ relationship_counts <- function(pg, max_degree = NULL, categories = NULL,
 relationship_burden <- function(pg, progress = getOption("pedigreegraph.progress", TRUE)) {
   native <- .pg_native(pg)
   found <- .pg_run(progress, "relationship_burden", function() .native_start_burden(native, pg$seal))
-  dimnames(found$per_person) <- list(NULL, paste0("degree_", 1:5))
   names(found$category_counts) <- .pg_codes()
   found
 }
