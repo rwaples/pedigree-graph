@@ -45,6 +45,21 @@ live on the corresponding GitHub release pages.
   (were `int32`), keyed sibling pairs (`int64`), kinship signatures, DP
   scratch and memo slots (`uint64`), and lineage ancestor sets (`uint32`).
   Operations and element counts are unchanged.
+- **Changed (core): view queries take a `Receiver`.** `pair_blocks`,
+  `relationship_moments` and `relatives_per_person` take
+  `Receiver::{Graph, View { rows, compact }}` in place of
+  `view: Option<&[i32]>` (and, on the last two, `compact: bool`);
+  `pair_blocks_compact` is removed. Migrate `view` to `Receiver::from(view)`
+  and `pair_blocks_compact(.., view, ..)` to
+  `Receiver::View { rows: view, compact: true }`. Python and R are
+  unchanged.
+- **Changed (core): moments products name their operands.** `Product.a` and
+  `.b` are `Operand { side, column }`, not `(Side, usize)`; `Side::code` and
+  `Side::from_code` are the host encoding (`0` first, `1` second).
+- **Removed (core):** `WorkspacePool::new(n, orient)` (use `for_counts` or
+  `for_pairs`), `Workspace::new` and `Workspace::for_pairs`, the
+  `kinship::rows::RowStore` trait (`Owned`'s methods are inherent),
+  `PairMemo::bytes`, and `topology::depth_major_order_in`.
 
 ## v0.12.2
 
