@@ -214,12 +214,17 @@ def units() -> tuple[Unit, ...]:
                 Step("ruff", ("ruff", "check")),
                 Step("format", ("ruff", "format", "--check")),
                 Step("pytest", _pytest("tests")),
+                # simACE codes sex 0=female, 1=male; pedsum reads PLINK
+                # (1=male, 2=female, 0=unknown).
                 Step(
                     "tsv",
                     (
                         "python",
                         "-c",
-                        f"import polars as pl; pl.read_parquet({str(smoke_ped)!r}).write_csv('{{tmp}}/pedigree.tsv', separator='\\t')",
+                        "import polars as pl; "
+                        f"pl.read_parquet({str(smoke_ped)!r})"
+                        ".with_columns(pl.col('sex').replace_strict({0: 2, 1: 1}))"
+                        ".write_csv('{tmp}/pedigree.tsv', separator='\\t')",
                     ),
                 ),
                 Step(
