@@ -37,21 +37,16 @@ from _harness import (
     Suite,
     checksum_matrix_upper,
     checksum_values,
-    file_fixture,
     main,
     parity_fixture,
+    study_fixture,
 )
 
 MAX_DEGREE = 3
 
-# The simACE study pedigrees (ADR 0009 corpus), machine-local under the
-# umbrella's results/; absent files record as unavailable.
-UMBRELLA = Path(__file__).resolve().parent.parent.parent.parent
-STUDY = {
-    "dev_mean_n10k": ("results/dev/dev_mean_n10k/rep1/pedigree.parquet", "`dev_mean_n10k/rep1` (20,400 rows)"),
-    "baseline10K": ("results/base/baseline10K/rep1/pedigree.parquet", "`baseline10K/rep1` (53,466 rows)"),
-    "baseline100K": ("results/base/baseline100K/rep1/pedigree.parquet", "`baseline100K/rep1` (536,036 rows)"),
-}
+# The simACE study pedigrees (ADR 0009 corpus), machine-local under
+# :data:`_harness.RESULTS`; absent files record as unavailable.
+STUDY = ("dev_mean_n10k", "baseline10K", "baseline100K")
 
 
 def _pairs_setup(graph) -> Prepared:
@@ -97,7 +92,7 @@ SUITE = Suite(
     fixtures=(
         parity_fixture("random_30k", label="`random_30k`"),
         parity_fixture("random_300k", label="`random_300k`"),
-        *(file_fixture(name, UMBRELLA / rel, label=label) for name, (rel, label) in STUDY.items()),
+        *(study_fixture(name) for name in STUDY),
     ),
     arms=(
         Arm("cold", _pair_kinship, label="degree-3 pair_kinship, fresh graph", setup=_pairs_setup),
