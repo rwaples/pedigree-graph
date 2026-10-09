@@ -174,6 +174,8 @@ class Verdict(StrEnum):
     INCONCLUSIVE = "inconclusive"
     MISMATCH = "mismatch"
     """The arm and its baseline returned different checksums under a gate that requires them equal."""
+    INCOMPLETE = "incomplete"
+    """A build gate's candidate failed or timed out where its baseline completed."""
 
 
 _STATUS = Path("/proc/self/status")
@@ -419,6 +421,8 @@ class Gate:
     same_checksum: bool = False
     """A gated arm whose checksum differs from its baseline's is :attr:`Verdict.MISMATCH`."""
     min_repeats: int = MIN_CONFIDENT_REPEATS
+    build: bool = False
+    """Each gated arm is the same operation as its baseline in another build (:func:`build_pair`)."""
 
     def baseline_of(self, arm: str) -> str | None:
         """The arm *arm* is gated against, or ``None`` when it is not gated."""
@@ -467,6 +471,7 @@ def build_pair(suite: Suite, baseline_python: Path) -> Suite:
             baselines={name: name + BASE_SUFFIX for name in names},
             same_checksum=True,
             min_repeats=BUILD_GATE_REPEATS,
+            build=True,
         ),
         order=RunOrder.INTERLEAVED,
     )
@@ -1114,6 +1119,9 @@ class Report:
             baseline = results.get(Cell(result.cell.fixture, name))
             if baseline is None:
                 continue
+            if gate.build and baseline.outcome is Outcome.COMPLETED and result.outcome is not Outcome.COMPLETED:
+                out[result.cell] = Verdict.INCOMPLETE
+                continue
             completed = result.outcome is Outcome.COMPLETED and baseline.outcome is Outcome.COMPLETED
             if gate.same_checksum and completed and (result.checksum is None or result.checksum != baseline.checksum):
                 out[result.cell] = Verdict.MISMATCH
@@ -1149,7 +1157,7 @@ class Report:
         """
         native = {arm: {build[0] for build in seen} - {"?"} for arm, seen in self.builds().items()}
         problems = [f"{arm} imported {len(seen)} different builds" for arm, seen in native.items() if len(seen) > 1]
-        build_gate = gate is not None and gate.same_checksum
+        build_gate = gate is not None and gate.build
         for arm, seen in native.items():
             name = gate.baseline_of(arm) if build_gate and gate is not None else None
             shared = seen & native.get(name or "", set())
@@ -1283,6 +1291,8 @@ def render_markdown(suite: Suite, report: Report) -> str:
             flag = " **BLOCK**"
         elif verdicts.get(result.cell) is Verdict.MISMATCH:
             flag = " **CHECKSUM MISMATCH**"
+        elif verdicts.get(result.cell) is Verdict.INCOMPLETE:
+            flag = " **INCOMPLETE**"
         elif verdicts.get(result.cell) is Verdict.INCONCLUSIVE:
             flag = " (inconclusive)"
         tree = f"{result.median('tree_peak_mib'):,.0f} MiB" if result.measured("tree_peak_mib") else "n/a"
@@ -1435,6 +1445,8 @@ def main(suite: Suite) -> NoReturn:
         suite = build_pair(suite, args.baseline_python)
         child_args = ("--baseline-python", str(args.baseline_python))
     repeat = args.repeat or (BUILD_GATE_REPEATS if args.baseline_python is not None else 3)
+    if args.baseline_python is not None and repeat < BUILD_GATE_REPEATS:
+        raise SystemExit(f"a build gate needs --repeat >= {BUILD_GATE_REPEATS}, got {repeat}")
 
     if args.list:
         for cell in suite.resolved_cells():
@@ -1470,15 +1482,19 @@ def main(suite: Suite) -> NoReturn:
     verdicts = report.verdicts(gate)
     blocked = [cell for cell, verdict in verdicts.items() if verdict is Verdict.BLOCK]
     mismatched = [cell for cell, verdict in verdicts.items() if verdict is Verdict.MISMATCH]
+    incomplete = [cell for cell, verdict in verdicts.items() if verdict is Verdict.INCOMPLETE]
     unsure = [cell for cell, verdict in verdicts.items() if verdict is Verdict.INCONCLUSIVE]
     wrong_build = report.build_conflicts(gate)
     for cell in blocked:
         print(f"BLOCK: {cell} regressed beyond {GATE:.2f}x with disjoint ranges")
     for cell in mismatched:
         print(f"CHECKSUM MISMATCH: {cell} returned a different result from its baseline")
+    for cell in incomplete:
+        print(f"INCOMPLETE: {cell} failed or timed out where its baseline completed")
     for problem in wrong_build:
         print(f"WRONG BUILD: {problem}")
     min_repeats = gate.min_repeats if gate is not None else MIN_CONFIDENT_REPEATS
     for cell in unsure:
         print(f"inconclusive: {cell} (needs >= {min_repeats} reps and disjoint ranges to decide)")
-    raise SystemExit(1 if blocked or mismatched or wrong_build or (args.strict and unsure) else 0)
+    failed = blocked or mismatched or incomplete or wrong_build
+    raise SystemExit(1 if failed or (args.strict and unsure) else 0)

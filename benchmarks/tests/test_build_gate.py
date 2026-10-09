@@ -112,6 +112,13 @@ def test_a_slower_candidate_blocks_against_its_own_base_twin():
     assert report.build_conflicts(gate) == []
 
 
+def test_a_candidate_that_times_out_fails_the_build_gate():
+    gate = build_pair(_suite(), BASE_PYTHON).gate
+    base = CellResult(Cell("f", "one@base"), Outcome.COMPLETED, (_record(Cell("f", "one@base"), 1.0),) * 5)
+    report = Report("s", (base, CellResult(Cell("f", "one"), Outcome.TIMED_OUT, ())), {})
+    assert report.verdicts(gate) == {Cell("f", "one"): Verdict.INCOMPLETE}
+
+
 def test_a_candidate_with_another_checksum_is_a_mismatch_whatever_its_speed():
     gate = build_pair(_suite(), BASE_PYTHON).gate
     report = _report(
@@ -147,7 +154,7 @@ def test_a_source_tree_turning_dirty_mid_sweep_is_not_a_rebuild():
 
 
 def test_an_ab_gate_of_two_arms_in_one_build_is_not_a_wrong_build():
-    gate = Gate(baseline="one@base", gated=frozenset({"one"}))
+    gate = Gate(baseline="one@base", gated=frozenset({"one"}), same_checksum=True)
     report = _report([_record(Cell("f", "one@base"), 1.0)], [_record(Cell("f", "one"), 1.0)])
     assert report.build_conflicts(gate) == []
 
