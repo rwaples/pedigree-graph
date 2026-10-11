@@ -138,29 +138,103 @@ impl PedigreeGraph {
     }
 }
 
-/// Sorted ids plus the permutation that sorted them, for repeated id lookups.
+/// The widest id span, in slots per id, that [`IdIndex`] stores as a table.
+///
+/// Three `i32` slots per id is 12 bytes per row, what the sorted layout costs,
+/// so no table grows with the largest id.
+const DENSE_SLOTS_PER_ID: i128 = 3;
+
+/// Ids mapped to rows, for repeated id lookups.
 ///
 /// Rows are `i32` because a graph never has more than [`MAX_ROWS`] rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdIndex {
-    sorted: Vec<i64>,
-    order: Vec<i32>,
+    layout: Layout,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Layout {
+    /// `rows[id - min]` is the row of `id`, or `-1` where no row has it.
+    Dense { min: i64, rows: Vec<i32> },
+    /// Ids ascending, equal ids in row order, beside their rows.
+    Sorted { ids: Vec<i64>, rows: Vec<i32> },
+}
+
+impl Layout {
+    /// A table over `[min, min + span)`.
+    fn dense(ids: &[i64], min: i64, span: usize) -> Layout {
+        // Scatter without reading the slot first: a read before each write
+        // made the shuffled 5.4M-row build 1.75x slower.
+        let mut rows = vec![-1; span];
+        for (row, &id) in ids.iter().enumerate() {
+            rows[(id - min) as usize] = row as i32;
+        }
+        Layout::Dense { min, rows }
+    }
+
+    /// Sorted ids and rows, for ids too sparse for a table.
+    fn sorted(ids: &[i64]) -> Layout {
+        let mut pairs: Vec<(i64, i32)> = ids
+            .iter()
+            .enumerate()
+            .map(|(row, &id)| (id, row as i32))
+            .collect();
+        pairs.sort_unstable();
+        let rows = pairs.iter().map(|&(_, row)| row).collect();
+        // std collects in place into the pairs' buffer, so building peaks at
+        // 20 bytes per row and the index keeps 12 (pinned by a test).
+        let mut ids: Vec<i64> = pairs.into_iter().map(|(id, _)| id).collect();
+        ids.shrink_to_fit();
+        Layout::Sorted { ids, rows }
+    }
 }
 
 impl IdIndex {
-    /// Index `ids`, which must be unique and at most [`MAX_ROWS`] long.
+    /// Index `ids`, which are at most [`MAX_ROWS`] long.
     ///
-    /// The sort is stable, so the index is a function of the ids alone.
+    /// Ids spanning at most [`DENSE_SLOTS_PER_ID`] slots per id get a table
+    /// indexed by `id - min`; others are sorted.  Either way the index is a
+    /// function of the ids alone.  Which row of a repeated id
+    /// [`IdIndex::row`] returns is unspecified.
     pub fn build(ids: &[i64]) -> IdIndex {
-        let mut order: Vec<i32> = (0..ids.len() as i32).collect();
-        order.sort_by_key(|&row| ids[row as usize]);
-        let sorted = order.iter().map(|&row| ids[row as usize]).collect();
-        IdIndex { sorted, order }
+        let (min, max) = ids.iter().fold((i64::MAX, i64::MIN), |(min, max), &id| {
+            (min.min(id), max.max(id))
+        });
+        let span = i128::from(max) - i128::from(min) + 1;
+        let layout = if ids.is_empty() || span > DENSE_SLOTS_PER_ID * ids.len() as i128 {
+            Layout::sorted(ids)
+        } else {
+            Layout::dense(ids, min, span as usize)
+        };
+        IdIndex { layout }
     }
 
-    /// The sorted ids.
-    fn sorted(&self) -> &[i64] {
-        &self.sorted
+    /// The smallest repeated id and how many rows repeat an id an earlier row
+    /// has, for the `ids` this index was built from.
+    fn duplicate(&self, ids: &[i64]) -> Option<(i64, usize)> {
+        match &self.layout {
+            Layout::Dense { min, rows } => {
+                // A repeated id overwrote its earlier rows, leaving fewer
+                // slots filled than rows.
+                let repeats = ids.len() - rows.iter().filter(|&&row| row >= 0).count();
+                if repeats == 0 {
+                    return None;
+                }
+                ids.iter()
+                    .enumerate()
+                    .filter(|&(row, &id)| rows[(id - min) as usize] != row as i32)
+                    .map(|(_, &id)| id)
+                    .min()
+                    .map(|id| (id, repeats))
+            }
+            Layout::Sorted { ids: sorted, .. } => {
+                let mut repeats = sorted
+                    .windows(2)
+                    .filter(|pair| pair[0] == pair[1])
+                    .map(|pair| pair[0]);
+                repeats.next().map(|id| (id, 1 + repeats.count()))
+            }
+        }
     }
 
     /// The row of `id`, or `-1` for a negative id or one not in the index.
@@ -168,9 +242,16 @@ impl IdIndex {
         if id < 0 {
             return -1;
         }
-        match self.sorted.binary_search(&id) {
-            Ok(position) => self.order[position],
-            Err(_) => -1,
+        match &self.layout {
+            Layout::Dense { min, rows } => id
+                .checked_sub(*min)
+                .and_then(|offset| usize::try_from(offset).ok())
+                .and_then(|offset| rows.get(offset))
+                .map_or(-1, |&row| row),
+            Layout::Sorted { ids, rows } => match ids.binary_search(&id) {
+                Ok(position) => rows[position],
+                Err(_) => -1,
+            },
         }
     }
 
@@ -217,15 +298,9 @@ fn check_length(field: &'static str, values: &[i64], n: usize) -> Result<(), Err
 
 /// `duplicate_id` naming the smallest repeated id and all its rows.
 fn check_duplicate_ids(ids: &[i64], index: &IdIndex) -> Result<(), Error> {
-    let sorted = index.sorted();
-    let Some(duplicated) = sorted
-        .windows(2)
-        .find(|pair| pair[0] == pair[1])
-        .map(|pair| pair[0])
-    else {
+    let Some((duplicated, repeats)) = index.duplicate(ids) else {
         return Ok(());
     };
-    let repeats = sorted.windows(2).filter(|pair| pair[0] == pair[1]).count();
     let rows = ids
         .iter()
         .enumerate()
@@ -438,13 +513,12 @@ pub fn build(
     check_duplicate_ids(columns.ids, &index)?;
     check_same_parent(columns.ids, columns.mother, columns.father)?;
 
-    let twin_ids: Vec<i64> = match columns.twin {
-        Some(twin) => twin.to_vec(),
-        None => vec![-1; n],
-    };
     let mother_rows = index.resolve(columns.mother);
     let father_rows = index.resolve(columns.father);
-    let twin_rows = index.resolve(&twin_ids);
+    let (twin_ids, twin_rows) = match columns.twin {
+        Some(twin) => (twin.to_vec(), index.resolve(twin)),
+        None => (vec![-1; n], vec![-1; n]),
+    };
     drop(index);
 
     let rows_topological = topology::is_topological(&mother_rows, &father_rows);
@@ -486,7 +560,7 @@ pub fn build(
 
 #[cfg(test)]
 mod tests {
-    use super::{build, Columns, IdIndex, Limits, PedigreeGraph, SexEncoding};
+    use super::{build, Columns, IdIndex, Layout, Limits, PedigreeGraph, SexEncoding};
     use crate::error::{Error, ParentRole};
 
     fn columns<'a>(ids: &'a [i64], mother: &'a [i64], father: &'a [i64]) -> Columns<'a> {
@@ -857,6 +931,82 @@ mod tests {
         let index = IdIndex::build(&[30, 10, 20]);
         assert_eq!(index.resolve(&[10, 20, 30, -1, 40]), vec![1, 2, 0, -1, -1]);
         assert_eq!(IdIndex::build(&[]).resolve(&[1]), vec![-1]);
+    }
+
+    #[test]
+    fn ids_spanning_three_slots_per_id_get_a_table_and_sparser_ids_are_sorted() {
+        let dense = |ids: &[i64]| matches!(IdIndex::build(ids).layout, Layout::Dense { .. });
+        assert!(dense(&[0, 5]));
+        assert!(!dense(&[0, 6]));
+        assert!(dense(&[1_000_000, 1_000_005]));
+        assert!(!dense(&[i64::MIN, i64::MAX]));
+    }
+
+    #[test]
+    fn both_layouts_resolve_the_same_rows() {
+        let ids = [12, 4, 9, 5, 11, 7];
+        let query = [4, 5, 6, 7, 9, 11, 12, 13, 3, -1, -4, i64::MAX];
+        let expected = vec![1, 3, -1, 5, 2, 4, 0, -1, -1, -1, -1, -1];
+        let index = IdIndex::build(&ids);
+        assert!(matches!(index.layout, Layout::Dense { min: 4, .. }));
+        assert_eq!(index.resolve(&query), expected);
+        let sorted = IdIndex {
+            layout: Layout::sorted(&ids),
+        };
+        assert!(matches!(sorted.layout, Layout::Sorted { .. }));
+        assert_eq!(sorted.resolve(&query), expected);
+    }
+
+    #[test]
+    fn a_table_starting_below_zero_resolves_without_overflow() {
+        let index = IdIndex::build(&[-5, 0, 2]);
+        assert!(matches!(index.layout, Layout::Dense { min: -5, .. }));
+        assert_eq!(
+            index.resolve(&[0, 2, -5, 3, i64::MAX]),
+            vec![1, 2, -1, -1, -1]
+        );
+        let extremes = IdIndex::build(&[i64::MIN, i64::MAX]);
+        assert_eq!(extremes.resolve(&[i64::MAX, 0]), vec![1, -1]);
+    }
+
+    #[test]
+    fn both_layouts_report_the_smallest_repeated_id_and_the_repeat_count() {
+        let sorted = |ids: &[i64]| IdIndex {
+            layout: Layout::sorted(ids),
+        };
+        let ids = [7, 3, 7, 3, 7, 5];
+        assert!(matches!(IdIndex::build(&ids).layout, Layout::Dense { .. }));
+        assert_eq!(IdIndex::build(&ids).duplicate(&ids), Some((3, 3)));
+        assert_eq!(sorted(&ids).duplicate(&ids), Some((3, 3)));
+        assert_eq!(IdIndex::build(&[3, 7, 5]).duplicate(&[3, 7, 5]), None);
+        assert_eq!(sorted(&[3, 7, 5]).duplicate(&[3, 7, 5]), None);
+    }
+
+    #[test]
+    fn ids_collect_into_the_sorted_pairs_buffer() {
+        // Layout::sorted's 20-byte-per-row peak rests on this std optimisation.
+        let pairs: Vec<(i64, i32)> = vec![(1, 0), (2, 1), (3, 2)];
+        let buffer = pairs.as_ptr() as usize;
+        let ids: Vec<i64> = pairs.into_iter().map(|(id, _)| id).collect();
+        assert_eq!(ids.as_ptr() as usize, buffer);
+    }
+
+    #[test]
+    fn duplicate_id_is_the_same_error_for_sparse_ids() {
+        let err = build(
+            columns(&[5000, 3, 5000, 3, 3], &[-1; 5], &[-1; 5]),
+            SexEncoding::Simace,
+            Limits::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            Error::DuplicateId {
+                id: 3,
+                rows: vec![1, 3, 4],
+                duplicate_count: 3
+            }
+        );
     }
 
     #[test]

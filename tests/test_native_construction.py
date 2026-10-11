@@ -276,12 +276,13 @@ class TestBoundary:
 
 
 class TestIdIndex:
-    @settings(max_examples=100, deadline=None)
-    @given(
-        ids=st.lists(st.integers(min_value=0, max_value=50), unique=True),
-        query=st.lists(st.integers(min_value=-3, max_value=60)),
-    )
-    def test_resolve_matches_the_oracle(self, ids, query):
+    @settings(max_examples=200, deadline=None)
+    @given(data=st.data(), base=st.sampled_from([0, 2**40]), width=st.sampled_from([50, 2**40]))
+    def test_resolve_matches_the_oracle(self, data, base, width):
+        """A width of 50 draws mostly the table layout, 2**40 the sorted one."""
+        ids = data.draw(st.lists(st.integers(min_value=base, max_value=base + width), unique=True))
+        noise = st.integers(min_value=-3, max_value=base + width + 10)
+        query = data.draw(st.lists(st.sampled_from(ids) | noise if ids else noise))
         index = _native.IdIndex(_column(ids))
         got = index.resolve(_column(query))
         assert got.dtype == np.int32

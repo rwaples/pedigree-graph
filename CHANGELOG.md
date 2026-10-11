@@ -4,6 +4,22 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Changed: construction resolves parent and twin ids through a lookup
+  table when the ids are dense** (issue #43). Ids whose span
+  `max - min + 1` is at most three slots per id get an `i32` table indexed
+  by `id - min`: at most 12 bytes per row, and 4.5 on simACE's pedigrees.
+  Sparser ids keep a sorted index at 12 bytes per row, now built by sorting
+  `(id, row)` pairs, which peaks at 20 bytes per row while it builds. No
+  table grows with the largest id. Without a twin column, no twin ids are
+  looked up. Rows and every validation error, including `duplicate_id`'s
+  fields, are unchanged. On simACE's 5.4M-row pedigree, id resolution went
+  from 722 ms to 78 ms with ids ascending and from 4.1 s to 0.18 s
+  shuffled. The whole `graph::build` went from 0.83 s to 0.20 s and from
+  6.2 s to 2.3 s. With 5.4M ids spread over 1000 slots each, id resolution
+  went from 4.1 s to 2.8 s. `_native.IdIndex` gets the same layouts.
+
 ## v0.12.3
 
 - **Added (R): `relatives_per_person()`** (ADR 0014). Python's

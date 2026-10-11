@@ -108,7 +108,7 @@ class PedigreeProperties:
 
     @cached_property
     def _id_index(self) -> _native.IdIndex:
-        """Sorted-id lookup built on first id selection and reused by every later one."""
+        """Id-to-row lookup built on first id selection and reused by every later one."""
         return _native.IdIndex(self._built.ids)
 
     def __len__(self) -> int:

@@ -1419,7 +1419,7 @@ fn _panic_in_watched_worker_for_test(py: Python<'_>, threads: usize, tick: f64) 
     })
 }
 
-/// Sorted-id lookup over a graph's unique ids, for repeated id selections.
+/// Id-to-row lookup over a graph's unique ids, for repeated id selections.
 #[pyclass(frozen, name = "IdIndex", module = "pedigree_graph._native")]
 struct PyIdIndex {
     index: IdIndex,
