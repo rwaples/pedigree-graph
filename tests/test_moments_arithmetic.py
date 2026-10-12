@@ -155,9 +155,7 @@ def test_quantize_matches_frexp_ldexp_rint(column):
 
 def test_quantize_refuses_a_non_finite_value():
     column = np.array([1.0, 2.0, np.inf])
-    with pytest.raises(
-        ValueError, match=r"values\['x'\] is not finite at row 2; mask it with a factor level instead"
-    ):
+    with pytest.raises(ValueError, match=r"values\['x'\] is not finite at row 2; mask it with a factor level instead"):
         _native.moments_quantize(column, np.zeros((3, 1), dtype=np.int64), 0, "values['x']")
 
 
