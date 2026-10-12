@@ -269,7 +269,8 @@ test_that("an uncaught interrupt halts Rscript", {
     child_code,
     "configure_threads(1)",
     "pg <- long_graph(8000, 6)",
-    "kill_soon(0.5)",
+    "start <- clock(); invisible(relationship_counts(pg, max_degree = 5)); full <- clock() - start",
+    "kill_soon(full / 4)",
     "relationship_counts(pg, max_degree = 5)",
     "cat('NOT REACHED\\n')"
   )))
