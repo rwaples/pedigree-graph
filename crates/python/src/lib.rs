@@ -12,7 +12,7 @@ use numpy::{
     PyUntypedArrayMethods,
 };
 use pedigree_graph_core::alloc::{self, Family};
-use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, MAX_ROWS};
+use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, IndexBase, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
 use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree};
 use pedigree_graph_core::lineage::{self, ParentColumns};
@@ -107,22 +107,22 @@ fn to_pyerr(py: Python<'_>, err: Error) -> PyErr {
     // rule `_threads.configure_threads` states, so it raises what that
     // function raises rather than the `Usage` family's ValueError.
     if matches!(err, Error::ThreadPoolConflict { .. }) {
-        return PyRuntimeError::new_err(err.to_string());
+        return PyRuntimeError::new_err(err.message(IndexBase::Zero));
     }
     let class_name = match err.class() {
         ErrorClass::Validation => "PedigreeValidationError",
         ErrorClass::Metadata => "MissingMetadataError",
         ErrorClass::Resource => "ResourceError",
-        ErrorClass::Usage => return PyValueError::new_err(err.to_string()),
+        ErrorClass::Usage => return PyValueError::new_err(err.message(IndexBase::Zero)),
     };
     let raise = || -> PyResult<PyErr> {
         let fields = PyDict::new(py);
-        for (name, value) in err.fields() {
+        for (name, value) in err.fields(IndexBase::Zero) {
             fields.set_item(name, field_object(py, value)?)?;
         }
         let module = py.import("pedigree_graph._errors")?;
         let class = module.getattr(class_name)?;
-        let instance = class.call((err.code(), err.to_string()), Some(&fields))?;
+        let instance = class.call((err.code(), err.message(IndexBase::Zero)), Some(&fields))?;
         Ok(PyErr::from_value(instance))
     };
     raise().unwrap_or_else(|e| e)

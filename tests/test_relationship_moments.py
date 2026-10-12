@@ -312,7 +312,7 @@ class TestQuantization:
         graph = _graph("random_1k")
         bad = np.ones(graph.n_individuals)
         bad[5] = np.nan
-        with pytest.raises(ValueError, match=r"values\['x'\] is not finite at position 5"):
+        with pytest.raises(ValueError, match=r"values\['x'\] is not finite at row 5"):
             graph.relationship_moments(categories=["FS"], values={"x": bad})
         bad[5] = -np.inf
         with pytest.raises(ValueError, match="not finite"):

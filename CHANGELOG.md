@@ -19,6 +19,22 @@ live on the corresponding GitHub release pages.
   shuffled. The whole `graph::build` went from 0.83 s to 0.20 s and from
   6.2 s to 2.3 s. With 5.4M ids spread over 1000 slots each, id resolution
   went from 4.1 s to 2.8 s. `_native.IdIndex` gets the same layouts.
+- **Changed (R): error messages count rows and positions from 1, as their
+  fields already did** (issue #44). A pedigree whose third row names itself
+  as its MZ co-twin now says "row 3 names itself as its MZ co-twin", not
+  "row 2", matching `fields$row = 3`. The same holds for every message that
+  names a row, column or position (`duplicate_id`, `same_parent_id`, the
+  `mz_*` codes, `birth_year_topology`, `value_out_of_range`,
+  `kinship_support_*`). Codes and field values are unchanged.
+- **Changed: a non-finite moments value says "at row N; mask it with a
+  factor level instead"** in Python too, the wording R already used; Python
+  said "at position N; mask with a factor level instead".
+- **Changed (core): errors render in the host's index base.** Every row,
+  column or position an `Error` carries is an `error::Position`, read only
+  through `Position::at(IndexBase)`. `Error::fields` takes an `IndexBase`, and
+  `Error::message(base)` writes the message; `Display` is
+  `message(IndexBase::Zero)`. A binding passes its base (Python `Zero`, R
+  `One`) and no longer guesses positions by field name.
 
 ## v0.12.3
 

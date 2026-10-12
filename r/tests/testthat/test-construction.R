@@ -73,12 +73,21 @@ test_that("core validation errors report 1-based rows", {
   )
   expect_identical(err$fields$id, 7)
   expect_identical(err$fields$rows, c(1, 3))
+  expect_match(conditionMessage(err), "id 7 appears at rows (1, 3);", fixed = TRUE)
 
   err <- expect_pg_error(
     pedigree_graph(data.frame(id = c(1, -2), mother = NA, father = NA)),
     "validation", "value_out_of_range"
   )
   expect_identical(err$fields$position, 2)
+  expect_match(conditionMessage(err), "value at position 2 is outside", fixed = TRUE)
+
+  err <- expect_pg_error(
+    pedigree_graph(data.frame(id = 1:3, mother = NA, father = NA, twin = c(NA, NA, 3))),
+    "validation", "mz_self_reference"
+  )
+  expect_identical(err$fields$row, 3)
+  expect_match(conditionMessage(err), "row 3 names itself as its MZ co-twin", fixed = TRUE)
 
   expect_pg_error(
     pedigree_graph(data.frame(id = 1:2, mother = c(2L, 1L), father = NA)),

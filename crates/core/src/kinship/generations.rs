@@ -86,7 +86,7 @@ pub fn founder_contribution_means(
     if n_cohorts > i32::MAX as usize {
         return Err(Error::ValueOutOfRange {
             field: "n_cohorts",
-            position: 0,
+            position: 0.into(),
             value: n_cohorts as i64,
             minimum: 0,
             maximum: i64::from(i32::MAX),
@@ -95,7 +95,7 @@ pub fn founder_contribution_means(
     if let Some(position) = cohort.iter().position(|&b| b < 0 || b as usize > n_cohorts) {
         return Err(Error::ValueOutOfRange {
             field: "cohort",
-            position,
+            position: position.into(),
             value: i64::from(cohort[position]),
             minimum: 0,
             maximum: n_cohorts as i64,
@@ -107,7 +107,7 @@ pub fn founder_contribution_means(
     {
         return Err(Error::ValueOutOfRange {
             field: "founder_column",
-            position,
+            position: position.into(),
             value: founder_column[position],
             minimum: -1,
             maximum: n_genomes as i64 - 1,
@@ -208,7 +208,7 @@ pub fn generation_kinship_sums(
     if n_buckets > i32::MAX as usize {
         return Err(Error::ValueOutOfRange {
             field: "n_buckets",
-            position: 0,
+            position: 0.into(),
             value: n_buckets as i64,
             minimum: 0,
             maximum: i64::from(i32::MAX),
@@ -217,7 +217,7 @@ pub fn generation_kinship_sums(
     if let Some(position) = labels.iter().position(|&b| b < 0 || b as usize > n_buckets) {
         return Err(Error::ValueOutOfRange {
             field: "labels",
-            position,
+            position: position.into(),
             value: i64::from(labels[position]),
             minimum: 0,
             maximum: n_buckets as i64,
@@ -322,17 +322,17 @@ mod tests {
                 founder_contribution_means(p, &[0, 2, 0], 1, &[0, 1, -1], 2),
                 Err(Error::ValueOutOfRange {
                     field: "cohort",
-                    position: 1,
+                    position,
                     ..
-                })
+                }) if position == 1.into()
             ));
             assert!(matches!(
                 founder_contribution_means(p, &[0, 0, 0], 1, &[0, 2, -1], 2),
                 Err(Error::ValueOutOfRange {
                     field: "founder_column",
-                    position: 1,
+                    position,
                     ..
-                })
+                }) if position == 1.into()
             ));
             assert!(matches!(
                 founder_contribution_means(p, &[0, 0], 1, &[0, 1, -1], 2),
@@ -422,11 +422,11 @@ mod tests {
                 err,
                 Error::ValueOutOfRange {
                     field: "depth",
-                    position: 2,
+                    position,
                     value: 2,
                     minimum: 1,
                     maximum: 1,
-                }
+                } if position == 2.into()
             )
         };
         assert!(rejected(inbreeding(ped).unwrap_err()));
@@ -463,17 +463,17 @@ mod tests {
                 sums(&[0, 0, 2], 1),
                 Err(Error::ValueOutOfRange {
                     field: "labels",
-                    position: 2,
+                    position,
                     ..
-                })
+                }) if position == 2.into()
             ));
             assert!(matches!(
                 sums(&[0, -1, 0], 1),
                 Err(Error::ValueOutOfRange {
                     field: "labels",
-                    position: 1,
+                    position,
                     ..
-                })
+                }) if position == 1.into()
             ));
         });
     }

@@ -274,7 +274,7 @@ fn check_range(
     {
         Some(position) => Err(Error::ValueOutOfRange {
             field,
-            position,
+            position: position.into(),
             value: values[position],
             minimum: reported.0,
             maximum: reported.1,
@@ -305,7 +305,7 @@ fn check_duplicate_ids(ids: &[i64], index: &IdIndex) -> Result<(), Error> {
         .iter()
         .enumerate()
         .filter(|(_, &id)| id == duplicated)
-        .map(|(row, _)| row as i64)
+        .map(|(row, _)| row.into())
         .collect();
     Err(Error::DuplicateId {
         id: duplicated,
@@ -322,7 +322,7 @@ fn check_same_parent(ids: &[i64], mother: &[i64], father: &[i64]) -> Result<(), 
         .position(|(&m, &f)| m == f && m >= 0)
     {
         Some(row) => Err(Error::SameParentId {
-            row,
+            row: row.into(),
             child_id: ids[row],
             parent_id: mother[row],
         }),
@@ -353,16 +353,19 @@ fn check_mz_pairs(
         .collect();
 
     if let Some(&(row, _)) = referencing.iter().find(|&&(row, partner)| row == partner) {
-        return Err(Error::MzSelfReference { row, id: ids[row] });
+        return Err(Error::MzSelfReference {
+            row: row.into(),
+            id: ids[row],
+        });
     }
     if let Some(&(row, partner)) = referencing
         .iter()
         .find(|&&(row, partner)| twin_rows[partner] != row as i32)
     {
         return Err(Error::MzNonreciprocal {
-            row,
+            row: row.into(),
             id: ids[row],
-            twin_row: partner,
+            twin_row: partner.into(),
             twin_id: ids[partner],
         });
     }
@@ -378,9 +381,9 @@ fn check_mz_pairs(
         }
         if !parent_roles.is_empty() {
             return Err(Error::MzParentMismatch {
-                row,
+                row: row.into(),
                 id: ids[row],
-                twin_row: partner,
+                twin_row: partner.into(),
                 twin_id: ids[partner],
                 parent_roles,
             });
@@ -393,9 +396,9 @@ fn check_mz_pairs(
     for &(row, partner) in pairs {
         if sex[row] != -1 && sex[partner] != -1 && sex[row] != sex[partner] {
             return Err(Error::MzSexMismatch {
-                row,
+                row: row.into(),
                 id: ids[row],
-                twin_row: partner,
+                twin_row: partner.into(),
                 twin_id: ids[partner],
                 sex: sex[row],
                 twin_sex: sex[partner],
@@ -435,8 +438,8 @@ fn check_birth_year_topology(
         if let Some((child_row, parent_row)) = first {
             return Err(Error::BirthYearTopology {
                 parent_role: role,
-                child_row,
-                parent_row,
+                child_row: child_row.into(),
+                parent_row: parent_row.into(),
                 child_id: ids[child_row],
                 parent_id: ids[parent_row],
                 child_birth_year: birth_year[child_row],
@@ -649,7 +652,7 @@ mod tests {
             err,
             Error::ValueOutOfRange {
                 field: "id",
-                position: 1,
+                position: 1.into(),
                 value: -1,
                 minimum: 0,
                 maximum: i64::MAX
@@ -676,7 +679,7 @@ mod tests {
             err,
             Error::ValueOutOfRange {
                 field: "sex",
-                position: 0,
+                position: 0.into(),
                 value: 3,
                 minimum: 0,
                 maximum: 2
@@ -724,7 +727,7 @@ mod tests {
             err,
             Error::DuplicateId {
                 id: 3,
-                rows: vec![1, 3, 4],
+                rows: vec![1.into(), 3.into(), 4.into()],
                 duplicate_count: 3
             }
         );
@@ -745,7 +748,7 @@ mod tests {
         assert_eq!(
             err,
             Error::SameParentId {
-                row: 1,
+                row: 1.into(),
                 child_id: 1,
                 parent_id: 99
             }
@@ -779,7 +782,13 @@ mod tests {
             Limits::default(),
         )
         .unwrap_err();
-        assert_eq!(self_ref, Error::MzSelfReference { row: 0, id: 0 });
+        assert_eq!(
+            self_ref,
+            Error::MzSelfReference {
+                row: 0.into(),
+                id: 0
+            }
+        );
         assert_eq!(self_ref.to_string(), "row 0 names itself as its MZ co-twin");
 
         let nonreciprocal = build(
@@ -794,9 +803,9 @@ mod tests {
         assert_eq!(
             nonreciprocal,
             Error::MzNonreciprocal {
-                row: 0,
+                row: 0.into(),
                 id: 0,
-                twin_row: 1,
+                twin_row: 1.into(),
                 twin_id: 1
             }
         );
@@ -817,9 +826,9 @@ mod tests {
         assert_eq!(
             parents,
             Error::MzParentMismatch {
-                row: 0,
+                row: 0.into(),
                 id: 0,
-                twin_row: 1,
+                twin_row: 1.into(),
                 twin_id: 1,
                 parent_roles: vec![ParentRole::Mother]
             }
@@ -842,9 +851,9 @@ mod tests {
         assert_eq!(
             sexes,
             Error::MzSexMismatch {
-                row: 0,
+                row: 0.into(),
                 id: 0,
-                twin_row: 1,
+                twin_row: 1.into(),
                 twin_id: 1,
                 sex: 0,
                 twin_sex: 1
@@ -886,8 +895,8 @@ mod tests {
             err,
             Error::BirthYearTopology {
                 parent_role: ParentRole::Mother,
-                child_row: 2,
-                parent_row: 0,
+                child_row: 2.into(),
+                parent_row: 0.into(),
                 child_id: 2,
                 parent_id: 0,
                 child_birth_year: 1990,
@@ -1003,7 +1012,7 @@ mod tests {
             err,
             Error::DuplicateId {
                 id: 3,
-                rows: vec![1, 3, 4],
+                rows: vec![1.into(), 3.into(), 4.into()],
                 duplicate_count: 3
             }
         );

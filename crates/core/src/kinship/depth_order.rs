@@ -131,7 +131,7 @@ fn check_structural(mother: &[i32], father: &[i32], depth: &[i32]) -> Result<(),
         if i64::from(d) < floor {
             return Err(Error::ValueOutOfRange {
                 field: "depth",
-                position: row,
+                position: row.into(),
                 value: i64::from(d),
                 minimum: floor,
                 maximum: i64::from(i32::MAX),

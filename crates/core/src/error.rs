@@ -7,9 +7,15 @@
 //! [`Error::class`] names which of the host exception families a variant
 //! belongs to, which is the only routing decision a binding has to make.
 //!
-//! The `Display` prose is byte-identical to the Python raise site it replaces.
-//! That is not part of the contract, but it keeps the migration invisible to
-//! anyone reading a traceback across the boundary.
+//! A host renders an error under its [`IndexBase`]: Python counts rows and
+//! positions from 0, R from 1, and the message and the fields count alike.
+//! Every row, column or position that locates the failure is a [`Position`],
+//! so neither can show one raw.  An offending value and its bounds are
+//! reported as given, even when the field itself holds rows
+//! ([`Error::ValueOutOfRange`]).
+//!
+//! The prose is not part of the contract; most of it began as the Python
+//! raise site it replaced.
 
 /// Row coordinates are int32, so the row count is the hard capacity limit.
 pub const MAX_ROWS: usize = i32::MAX as usize;
@@ -51,6 +57,44 @@ impl ParentRole {
     }
 }
 
+/// A row, column or list position an error names, counted from 0.
+///
+/// It has no `Display` and no integer conversion: a message or field reads
+/// it only through [`Position::at`], so it always appears in the host's base.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Position(usize);
+
+impl From<usize> for Position {
+    fn from(position: usize) -> Position {
+        Position(position)
+    }
+}
+
+impl Position {
+    /// The position as a host counting from `base` writes it.
+    pub fn at(self, base: IndexBase) -> i64 {
+        self.0 as i64 + base.offset()
+    }
+}
+
+/// Where a host starts counting rows and positions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexBase {
+    /// Python and Rust.
+    Zero,
+    /// R.
+    One,
+}
+
+impl IndexBase {
+    fn offset(self) -> i64 {
+        match self {
+            IndexBase::Zero => 0,
+            IndexBase::One => 1,
+        }
+    }
+}
+
 /// One keyword field of a structured error, in the value kinds hosts receive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldValue {
@@ -77,11 +121,14 @@ pub enum Error {
         actual_length: usize,
     },
     /// A value of `field` lies outside the range that field accepts.
+    ///
+    /// `position` locates the value; `value`, `minimum` and `maximum` are in
+    /// the field's own units, 0-based when the field holds rows.
     ValueOutOfRange {
         /// The input field.
         field: &'static str,
         /// The first offending position.
-        position: usize,
+        position: Position,
         /// The offending value.
         value: i64,
         /// The reported lower bound.
@@ -94,14 +141,14 @@ pub enum Error {
         /// The smallest repeated id.
         id: i64,
         /// Every row carrying that id, in row order.
-        rows: Vec<i64>,
+        rows: Vec<Position>,
         /// How many rows repeat an earlier id, over every repeated id.
         duplicate_count: usize,
     },
     /// A row names one id in both parent roles.
     SameParentId {
         /// The offending row.
-        row: usize,
+        row: Position,
         /// That row's id.
         child_id: i64,
         /// The id named twice.
@@ -115,29 +162,29 @@ pub enum Error {
     /// A row names itself as its MZ co-twin.
     MzSelfReference {
         /// The offending row.
-        row: usize,
+        row: Position,
         /// That row's id.
         id: i64,
     },
     /// A row's represented co-twin does not name it back.
     MzNonreciprocal {
         /// The referencing row.
-        row: usize,
+        row: Position,
         /// That row's id.
         id: i64,
         /// The row that did not reciprocate.
-        twin_row: usize,
+        twin_row: Position,
         /// That row's id.
         twin_id: i64,
     },
     /// Reciprocal co-twins name different parents.
     MzParentMismatch {
         /// The lower row of the pair.
-        row: usize,
+        row: Position,
         /// That row's id.
         id: i64,
         /// The co-twin's row.
-        twin_row: usize,
+        twin_row: Position,
         /// The co-twin's id.
         twin_id: i64,
         /// The roles whose ids differ, mother first.
@@ -146,11 +193,11 @@ pub enum Error {
     /// Reciprocal co-twins have different known sexes.
     MzSexMismatch {
         /// The lower row of the pair.
-        row: usize,
+        row: Position,
         /// That row's id.
         id: i64,
         /// The co-twin's row.
-        twin_row: usize,
+        twin_row: Position,
         /// The co-twin's id.
         twin_id: i64,
         /// The lower row's stored sex.
@@ -163,9 +210,9 @@ pub enum Error {
         /// The role of the offending edge.
         parent_role: ParentRole,
         /// The child row.
-        child_row: usize,
+        child_row: Position,
         /// The parent row.
-        parent_row: usize,
+        parent_row: Position,
         /// The child's id.
         child_id: i64,
         /// The parent's id.
@@ -224,14 +271,14 @@ pub enum Error {
     /// A kinship support column's row indices are not strictly increasing.
     KinshipSupportUnsorted {
         /// The offending column.
-        column: usize,
+        column: Position,
     },
     /// An upper entry of a kinship support has no mirror in its row's column.
     KinshipSupportAsymmetric {
         /// The entry's row.
-        row: usize,
+        row: Position,
         /// The entry's column.
-        column: usize,
+        column: Position,
     },
     /// The symmetric CSC a kinship matrix would assemble has more entries
     /// than an int32 index can address.
@@ -250,9 +297,9 @@ pub enum Error {
     /// The graph-to-view map is not a partial permutation of view rows.
     InvalidViewMap {
         /// The graph row carrying the offending entry.
-        position: usize,
+        position: Position,
         /// The offending view row.
-        value: i64,
+        value: Position,
         /// Why it is rejected.
         reason: &'static str,
     },
@@ -277,7 +324,7 @@ pub enum Error {
         /// The column as the host names it, e.g. `values['x']`.
         field: String,
         /// The first offending row.
-        position: usize,
+        position: Position,
     },
     /// A float a relationship-moments table derives is past the float64 range.
     NotRepresentable {
@@ -366,10 +413,12 @@ impl Error {
         }
     }
 
-    /// The keyword fields the code requires, in the order the code table lists them.
-    pub fn fields(&self) -> Vec<(&'static str, FieldValue)> {
+    /// The keyword fields the code requires, in the order the code table
+    /// lists them, rows and positions counted from `base`.
+    pub fn fields(&self, base: IndexBase) -> Vec<(&'static str, FieldValue)> {
         use FieldValue::{Int, Ints, Str, Strs};
         let int = |n: usize| Int(n as i64);
+        let at = |p: &Position| Int(p.at(base));
         match self {
             Error::LengthMismatch {
                 field,
@@ -388,7 +437,7 @@ impl Error {
                 maximum,
             } => vec![
                 ("field", Str(field)),
-                ("position", int(*position)),
+                ("position", at(position)),
                 ("value", Int(*value)),
                 ("minimum", Int(*minimum)),
                 ("maximum", Int(*maximum)),
@@ -399,7 +448,7 @@ impl Error {
                 duplicate_count,
             } => vec![
                 ("id", Int(*id)),
-                ("rows", Ints(rows.clone())),
+                ("rows", Ints(rows.iter().map(|p| p.at(base)).collect())),
                 ("duplicate_count", int(*duplicate_count)),
             ],
             Error::SameParentId {
@@ -407,16 +456,16 @@ impl Error {
                 child_id,
                 parent_id,
             } => vec![
-                ("row", int(*row)),
+                ("row", at(row)),
                 ("child_id", Int(*child_id)),
                 ("parent_id", Int(*parent_id)),
             ],
             Error::Cycle { ids } => vec![("ids", Ints(ids.clone()))],
-            Error::MzSelfReference { row, id } => vec![("row", int(*row)), ("id", Int(*id))],
+            Error::MzSelfReference { row, id } => vec![("row", at(row)), ("id", Int(*id))],
             Error::MzNonreciprocal {
                 row, id, twin_id, ..
             } => vec![
-                ("row", int(*row)),
+                ("row", at(row)),
                 ("id", Int(*id)),
                 ("twin_id", Int(*twin_id)),
             ],
@@ -427,7 +476,7 @@ impl Error {
                 parent_roles,
                 ..
             } => vec![
-                ("row", int(*row)),
+                ("row", at(row)),
                 ("id", Int(*id)),
                 ("twin_id", Int(*twin_id)),
                 (
@@ -443,7 +492,7 @@ impl Error {
                 twin_sex,
                 ..
             } => vec![
-                ("row", int(*row)),
+                ("row", at(row)),
                 ("id", Int(*id)),
                 ("twin_id", Int(*twin_id)),
                 ("sex", Int(i64::from(*sex))),
@@ -460,8 +509,8 @@ impl Error {
                 violation_count,
             } => vec![
                 ("parent_role", Str(parent_role.name())),
-                ("child_row", int(*child_row)),
-                ("parent_row", int(*parent_row)),
+                ("child_row", at(child_row)),
+                ("parent_row", at(parent_row)),
                 ("child_id", Int(*child_id)),
                 ("parent_id", Int(*parent_id)),
                 ("child_birth_year", Int(i64::from(*child_birth_year))),
@@ -499,9 +548,9 @@ impl Error {
                 ("minimum", Int(*minimum)),
                 ("maximum", Int(*maximum)),
             ],
-            Error::KinshipSupportUnsorted { column } => vec![("column", int(*column))],
+            Error::KinshipSupportUnsorted { column } => vec![("column", at(column))],
             Error::KinshipSupportAsymmetric { row, column } => {
-                vec![("row", int(*row)), ("column", int(*column))]
+                vec![("row", at(row)), ("column", at(column))]
             }
             Error::CscIndexOverflow { nnz, maximum } => {
                 vec![("nnz", Int(*nnz as i64)), ("maximum", Int(*maximum))]
@@ -528,6 +577,11 @@ impl Error {
             | Error::InvalidMomentsTable { .. }
             | Error::Cancelled => Vec::new(),
         }
+    }
+
+    /// The message, rows and positions counted from `base`.
+    pub fn message(&self, base: IndexBase) -> String {
+        Message { err: self, base }.to_string()
     }
 }
 
@@ -584,9 +638,16 @@ fn grouped(n: usize) -> String {
     out
 }
 
-impl std::fmt::Display for Error {
+/// An error's message with its rows and positions counted from `base`.
+struct Message<'a> {
+    err: &'a Error,
+    base: IndexBase,
+}
+
+impl std::fmt::Display for Message<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
+        let base = self.base;
+        match self.err {
             Error::LengthMismatch {
                 field,
                 expected_length,
@@ -604,8 +665,9 @@ impl std::fmt::Display for Error {
                 maximum,
             } => write!(
                 f,
-                "{} value at position {position} is outside [{minimum}, {maximum}]",
-                python_str(field)
+                "{} value at position {} is outside [{minimum}, {maximum}]",
+                python_str(field),
+                position.at(base)
             ),
             Error::DuplicateId {
                 id,
@@ -614,7 +676,7 @@ impl std::fmt::Display for Error {
             } => write!(
                 f,
                 "id {id} appears at rows {}; {duplicate_count} row(s) repeat an earlier id",
-                python_tuple(rows)
+                python_tuple(&rows.iter().map(|p| p.at(base)).collect::<Vec<_>>())
             ),
             Error::SameParentId {
                 row,
@@ -622,7 +684,8 @@ impl std::fmt::Display for Error {
                 parent_id,
             } => write!(
                 f,
-                "row {row} names id {parent_id} as both mother and father"
+                "row {} names id {parent_id} as both mother and father",
+                row.at(base)
             ),
             Error::Cycle { ids } => write!(
                 f,
@@ -630,19 +693,25 @@ impl std::fmt::Display for Error {
                 python_tuple(ids)
             ),
             Error::MzSelfReference { row, .. } => {
-                write!(f, "row {row} names itself as its MZ co-twin")
+                write!(f, "row {} names itself as its MZ co-twin", row.at(base))
             }
             Error::MzNonreciprocal { row, twin_row, .. } => write!(
                 f,
-                "the MZ reference at row {row} is not reciprocated by row {twin_row}"
+                "the MZ reference at row {} is not reciprocated by row {}",
+                row.at(base),
+                twin_row.at(base)
             ),
             Error::MzParentMismatch { row, twin_row, .. } => write!(
                 f,
-                "MZ co-twins at rows {row} and {twin_row} do not name the same parents"
+                "MZ co-twins at rows {} and {} do not name the same parents",
+                row.at(base),
+                twin_row.at(base)
             ),
             Error::MzSexMismatch { row, twin_row, .. } => write!(
                 f,
-                "MZ co-twins at rows {row} and {twin_row} have different known sexes"
+                "MZ co-twins at rows {} and {} have different known sexes",
+                row.at(base),
+                twin_row.at(base)
             ),
             Error::BirthYearTopology {
                 parent_role,
@@ -652,7 +721,8 @@ impl std::fmt::Display for Error {
                 f,
                 "birth_year topology violation: {role}-child edge at row {child_row} \
                  has child.birth_year below {role}.birth_year",
-                role = parent_role.name()
+                role = parent_role.name(),
+                child_row = child_row.at(base)
             ),
             Error::PedigreeTooLarge { n_individuals, .. } => write!(
                 f,
@@ -687,7 +757,9 @@ impl std::fmt::Display for Error {
                 reason,
             } => write!(
                 f,
-                "view_rows[{position}] is {value}: {reason}"
+                "view_rows[{}] is {}: {reason}",
+                position.at(base),
+                value.at(base)
             ),
             Error::MaxDegreeOutOfRange {
                 value,
@@ -699,11 +771,14 @@ impl std::fmt::Display for Error {
             ),
             Error::KinshipSupportUnsorted { column } => write!(
                 f,
-                "kinship support column {column} is not sorted by row"
+                "kinship support column {} is not sorted by row",
+                column.at(base)
             ),
             Error::KinshipSupportAsymmetric { row, column } => write!(
                 f,
-                "kinship support entry ({row}, {column}) has no mirror at ({column}, {row})"
+                "kinship support entry ({row}, {column}) has no mirror at ({column}, {row})",
+                row = row.at(base),
+                column = column.at(base)
             ),
             Error::CscIndexOverflow { nnz, maximum } => write!(
                 f,
@@ -739,7 +814,8 @@ impl std::fmt::Display for Error {
             }
             Error::NonFiniteValue { field, position } => write!(
                 f,
-                "{field} is not finite at position {position}; mask with a factor level instead"
+                "{field} is not finite at row {}; mask it with a factor level instead",
+                position.at(base)
             ),
             Error::NotRepresentable { statistic, name } => write!(
                 f,
@@ -754,11 +830,226 @@ impl std::fmt::Display for Error {
     }
 }
 
+impl std::fmt::Display for Error {
+    /// The message as Python and Rust count, from 0.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = Message {
+            err: self,
+            base: IndexBase::Zero,
+        };
+        message.fmt(f)
+    }
+}
+
 impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, ErrorClass, MAX_ROWS};
+    use super::{Error, ErrorClass, FieldValue, IndexBase, ParentRole, Position, MAX_ROWS};
+
+    /// How many variants `Error` has.
+    const VARIANTS: usize = 27;
+
+    /// Each variant's slot in [`samples`]; the exhaustive match makes a new
+    /// variant fail to compile until it is counted here.
+    fn variant_index(err: &Error) -> usize {
+        match err {
+            Error::LengthMismatch { .. } => 0,
+            Error::ValueOutOfRange { .. } => 1,
+            Error::DuplicateId { .. } => 2,
+            Error::SameParentId { .. } => 3,
+            Error::Cycle { .. } => 4,
+            Error::MzSelfReference { .. } => 5,
+            Error::MzNonreciprocal { .. } => 6,
+            Error::MzParentMismatch { .. } => 7,
+            Error::MzSexMismatch { .. } => 8,
+            Error::BirthYearTopology { .. } => 9,
+            Error::PedigreeTooLarge { .. } => 10,
+            Error::AllocationFailed { .. } => 11,
+            Error::ArithmeticOverflow { .. } => 12,
+            Error::ThreadPoolConflict { .. } => 13,
+            Error::ThreadPoolUnavailable { .. } => 14,
+            Error::MaxDegreeOutOfRange { .. } => 15,
+            Error::KinshipSupportUnsorted { .. } => 16,
+            Error::KinshipSupportAsymmetric { .. } => 17,
+            Error::CscIndexOverflow { .. } => 18,
+            Error::KinshipThresholdOutOfRange { .. } => 19,
+            Error::InvalidViewMap { .. } => 20,
+            Error::UnknownSexEncoding { .. } => 21,
+            Error::MemoryBudgetExceeded { .. } => 22,
+            Error::NonFiniteValue { .. } => 23,
+            Error::NotRepresentable { .. } => 24,
+            Error::InvalidMomentsTable { .. } => 25,
+            Error::Cancelled => 26,
+        }
+    }
+
+    /// One error of every variant.  Positions are 61 and 93, numbers no
+    /// other operand contains, so a field or message shows which base wrote
+    /// them.
+    fn samples() -> Vec<Error> {
+        let (p, q) = (Position(61), Position(93));
+        vec![
+            Error::LengthMismatch {
+                field: "sex",
+                expected_length: 4,
+                actual_length: 3,
+            },
+            Error::ValueOutOfRange {
+                field: "mother",
+                position: p,
+                value: -7,
+                minimum: -1,
+                maximum: 5,
+            },
+            Error::DuplicateId {
+                id: 5,
+                rows: vec![p, q],
+                duplicate_count: 1,
+            },
+            Error::SameParentId {
+                row: p,
+                child_id: 5,
+                parent_id: 7,
+            },
+            Error::Cycle { ids: vec![5, 7] },
+            Error::MzSelfReference { row: p, id: 5 },
+            Error::MzNonreciprocal {
+                row: p,
+                id: 5,
+                twin_row: q,
+                twin_id: 7,
+            },
+            Error::MzParentMismatch {
+                row: p,
+                id: 5,
+                twin_row: q,
+                twin_id: 7,
+                parent_roles: vec![ParentRole::Mother, ParentRole::Father],
+            },
+            Error::MzSexMismatch {
+                row: p,
+                id: 5,
+                twin_row: q,
+                twin_id: 7,
+                sex: 0,
+                twin_sex: 1,
+            },
+            Error::BirthYearTopology {
+                parent_role: ParentRole::Father,
+                child_row: p,
+                parent_row: q,
+                child_id: 5,
+                parent_id: 7,
+                child_birth_year: 1980,
+                parent_birth_year: 1985,
+                violation_count: 2,
+            },
+            Error::PedigreeTooLarge {
+                n_individuals: MAX_ROWS + 1,
+                maximum: MAX_ROWS,
+            },
+            Error::AllocationFailed {
+                operation: "pair_block",
+                requested_elements: 1000,
+                dtype: "int32",
+            },
+            Error::ArithmeticOverflow {
+                operation: "descendant_path_counts",
+                dtype: "int64",
+            },
+            Error::ThreadPoolConflict {
+                configured: 4,
+                requested: 8,
+            },
+            Error::ThreadPoolUnavailable {
+                reason: "refused".to_string(),
+            },
+            Error::MaxDegreeOutOfRange {
+                value: 9,
+                minimum: 1,
+                maximum: 5,
+            },
+            Error::KinshipSupportUnsorted { column: p },
+            Error::KinshipSupportAsymmetric { row: p, column: q },
+            Error::CscIndexOverflow {
+                nnz: 3_000_000_000,
+                maximum: i64::from(i32::MAX),
+            },
+            Error::KinshipThresholdOutOfRange {
+                value: "1.5".to_string(),
+            },
+            Error::InvalidViewMap {
+                position: p,
+                value: q,
+                reason: "two graph rows map to this view row",
+            },
+            Error::UnknownSexEncoding {
+                name: "x".to_string(),
+            },
+            Error::MemoryBudgetExceeded {
+                operation: "relationship_moments",
+                estimated_bytes: 2048,
+                budget_bytes: 1024,
+            },
+            Error::NonFiniteValue {
+                field: "values['x']".to_string(),
+                position: p,
+            },
+            Error::NotRepresentable {
+                statistic: "sumsq_first",
+                name: "x".to_string(),
+            },
+            Error::InvalidMomentsTable {
+                reason: "bad".to_string(),
+            },
+            Error::Cancelled,
+        ]
+    }
+
+    #[test]
+    fn samples_cover_every_variant() {
+        let mut seen = [false; VARIANTS];
+        for err in samples() {
+            seen[variant_index(&err)] = true;
+        }
+        let missing: Vec<usize> = (0..VARIANTS).filter(|&i| !seen[i]).collect();
+        assert!(missing.is_empty(), "add a sample of variant(s) {missing:?}");
+    }
+
+    /// An integer field's values, if it has any.
+    fn ints(value: &FieldValue) -> Option<Vec<i64>> {
+        match value {
+            FieldValue::Int(n) => Some(vec![*n]),
+            FieldValue::Ints(v) => Some(v.clone()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn positions_count_from_the_hosts_base() {
+        for err in samples() {
+            let (zero, one) = (err.fields(IndexBase::Zero), err.fields(IndexBase::One));
+            assert_eq!(zero.len(), one.len(), "{err:?}");
+            for ((name, v0), (name1, v1)) in zero.iter().zip(&one) {
+                assert_eq!(name, name1, "{err:?}");
+                match ints(v0).zip(ints(v1)) {
+                    Some((p0, p1)) if p0.iter().any(|n| [61, 93].contains(n)) => {
+                        let shifted: Vec<i64> = p0.iter().map(|n| n + 1).collect();
+                        assert_eq!(p1, shifted, "{name} of {err:?}");
+                    }
+                    _ => assert_eq!(v0, v1, "{name} of {err:?} is not a position"),
+                }
+            }
+            let message = err.message(IndexBase::Zero);
+            assert_eq!(message, err.to_string(), "{err:?}");
+            assert_eq!(
+                err.message(IndexBase::One),
+                message.replace("61", "62").replace("93", "94"),
+                "{err:?}"
+            );
+        }
+    }
 
     #[test]
     fn max_rows_is_the_int32_capacity() {

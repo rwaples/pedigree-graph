@@ -205,6 +205,12 @@ and operation context, each with a class, a stable code, and fields
 ADR 0006. In R, failures cross the boundary as data and become classed
 conditions, so nothing unwinds through R's longjmp.
 
+Every row, column or position a variant carries is an `error::Position`,
+which has no `Display` and is read only through `Position::at(IndexBase)`.
+`Error::fields(base)` and `Error::message(base)` count from the base the host
+passes, Python `Zero` and R `One`, so a binding never decides by field name
+which values are positions, and a message cannot print one raw.
+
 ### Python packaging
 
 Maturin is the build backend (`pyproject.toml` `[tool.maturin]`). It builds

@@ -6,7 +6,7 @@
 //! give an untyped `simpleError` and unwind through R's longjmp.
 
 use extendr_api::prelude::*;
-use pedigree_graph_core::error::{Error, ErrorClass, FieldValue};
+use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, IndexBase};
 
 /// One failure on its way to R.
 pub struct HostError {
@@ -104,29 +104,19 @@ impl From<Error> for HostError {
             "" => None,
             code => Some(code),
         };
+        // R counts rows and positions from 1, in the message and the fields.
         let fields = err
-            .fields()
+            .fields(IndexBase::One)
             .into_iter()
-            .map(|(name, value)| (name, field_robj(name, value)))
+            .map(|(name, value)| (name, field_robj(value)))
             .collect();
         HostError {
             class,
             code,
-            message: err.to_string(),
+            message: err.message(IndexBase::One),
             fields,
         }
     }
-}
-
-/// Whether a core field holds 0-based row or column indices, which R reports 1-based.
-///
-/// The rule is by name, so a new core field spelled like these converts
-/// without a change here.
-fn is_index_field(name: &str) -> bool {
-    matches!(name, "row" | "rows" | "column" | "columns" | "position")
-        || ["_row", "_rows", "_column", "_columns"]
-            .iter()
-            .any(|suffix| name.ends_with(suffix))
 }
 
 /// The largest magnitude a double holds exactly.
@@ -134,8 +124,7 @@ const EXACT_IN_DOUBLE: i64 = 1 << 53;
 
 /// Integer field values: doubles when every value is exact in one, else
 /// bit64 `integer64`, so an id above 2^53 is never reported as its neighbour.
-fn int_field(values: Vec<i64>, shift: i64) -> Robj {
-    let values: Vec<i64> = values.into_iter().map(|n| n + shift).collect();
+fn int_field(values: Vec<i64>) -> Robj {
     if values
         .iter()
         .all(|n| n.unsigned_abs() <= EXACT_IN_DOUBLE as u64)
@@ -150,12 +139,11 @@ fn int_field(values: Vec<i64>, shift: i64) -> Robj {
 }
 
 /// A core field value as R holds it.
-fn field_robj(name: &str, value: FieldValue) -> Robj {
-    let shift = i64::from(is_index_field(name));
+fn field_robj(value: FieldValue) -> Robj {
     match value {
-        FieldValue::Int(n) => int_field(vec![n], shift),
+        FieldValue::Int(n) => int_field(vec![n]),
         FieldValue::Str(s) => s.into(),
-        FieldValue::Ints(v) => int_field(v, shift),
+        FieldValue::Ints(v) => int_field(v),
         FieldValue::Strs(v) => Strings::from_values(v).into_robj(),
     }
 }
@@ -163,34 +151,4 @@ fn field_robj(name: &str, value: FieldValue) -> Robj {
 /// A binding's value, or its failure as the list `.pg_call()` signals.
 pub fn finish(result: HostResult<Robj>) -> Robj {
     result.unwrap_or_else(HostError::into_robj)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::is_index_field;
-
-    #[test]
-    fn index_fields_are_named_rows_or_columns() {
-        for name in [
-            "row",
-            "rows",
-            "column",
-            "position",
-            "child_row",
-            "parent_row",
-        ] {
-            assert!(is_index_field(name), "{name}");
-        }
-        for name in [
-            "id",
-            "ids",
-            "field",
-            "maximum",
-            "expected_length",
-            "twin_id",
-            "nnz",
-        ] {
-            assert!(!is_index_field(name), "{name}");
-        }
-    }
 }

@@ -304,7 +304,7 @@ impl MomentsInput<'_> {
         {
             return Err(Error::ValueOutOfRange {
                 field: "values",
-                position,
+                position: position.into(),
                 value: self.values[position],
                 minimum: -MAX_QUANTIZED,
                 maximum: MAX_QUANTIZED,
@@ -315,7 +315,7 @@ impl MomentsInput<'_> {
                 if column >= self.n_columns {
                     return Err(Error::ValueOutOfRange {
                         field: "products",
-                        position,
+                        position: position.into(),
                         value: column as i64,
                         minimum: 0,
                         maximum: self.n_columns as i64 - 1,
@@ -335,7 +335,7 @@ fn check_label_range(field: &'static str, labels: &[i32], n_labels: usize) -> Re
     {
         return Err(Error::ValueOutOfRange {
             field,
-            position,
+            position: position.into(),
             value: i64::from(labels[position]),
             minimum: 0,
             maximum,
@@ -1127,7 +1127,7 @@ mod tests {
             bad_label.check(2).unwrap_err(),
             Error::ValueOutOfRange {
                 field: "labels_second",
-                position: 1,
+                position: 1.into(),
                 value: 2,
                 minimum: 0,
                 maximum: 1,
@@ -1141,9 +1141,9 @@ mod tests {
             too_big.check(2).unwrap_err(),
             Error::ValueOutOfRange {
                 field: "values",
-                position: 3,
+                position,
                 ..
-            }
+            } if position == 3.into()
         ));
         let most_negative = MomentsInput {
             values: &[1, i64::MIN, 3, 4],
@@ -1153,9 +1153,9 @@ mod tests {
             most_negative.check(2).unwrap_err(),
             Error::ValueOutOfRange {
                 field: "values",
-                position: 1,
+                position,
                 ..
-            }
+            } if position == 1.into()
         ));
         let bad_product = MomentsInput {
             products: &[
@@ -1186,7 +1186,7 @@ mod tests {
             bad_product.check(2).unwrap_err(),
             Error::ValueOutOfRange {
                 field: "products",
-                position: 1,
+                position: 1.into(),
                 value: 2,
                 minimum: 0,
                 maximum: 1,

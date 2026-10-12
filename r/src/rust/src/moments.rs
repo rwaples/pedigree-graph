@@ -14,7 +14,6 @@ use crate::kernels::{exact_double, package_pool, selection, walk_of, Native};
 use crate::threads;
 use extendr_api::prelude::*;
 use num_bigint::BigInt;
-use pedigree_graph_core::error::Error;
 use pedigree_graph_core::relationships::{
     encode_big, pack_labels, quantize_column, relationship_moments as moments_of, Moments,
     MomentsInput, MomentsPlan, MomentsTable, Operand, PackedLabels, Product, Progress, Receiver,
@@ -319,15 +318,7 @@ pub fn start_moments(
     for (j, (name, column)) in value_columns.iter().enumerate() {
         let field = format!("values['{name}']");
         let column = value_column(&field, column, n)?;
-        let e =
-            quantize_column(&column, &mut quantized, k, j, &field).map_err(|err| match err {
-                // R counts rows from 1.
-                Error::NonFiniteValue { field, position } => HostError::usage(format!(
-                    "{field} is not finite at row {}; mask it with a factor level instead",
-                    position + 1
-                )),
-                other => other.into(),
-            })?;
+        let e = quantize_column(&column, &mut quantized, k, j, &field)?;
         exponents.push(e);
     }
     let (product_names, resolved) = products(products_arg, &names)?;

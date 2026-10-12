@@ -350,7 +350,7 @@ fn check_pairs(ped: &KinshipPedigree<'_>, first: &[i32], second: &[i32]) -> Resu
         {
             return Err(Error::ValueOutOfRange {
                 field,
-                position,
+                position: position.into(),
                 value: i64::from(rows[position]),
                 minimum: 0,
                 maximum,
@@ -424,8 +424,8 @@ fn support_with(
                 }
                 let mirrored = mirror(indptr, indices, row as usize, column as i32).ok_or(
                     Error::KinshipSupportAsymmetric {
-                        row: row as usize,
-                        column,
+                        row: (row as usize).into(),
+                        column: column.into(),
                     },
                 )?;
                 data.set(mirrored, value);
@@ -446,7 +446,7 @@ fn check_support(ped: &KinshipPedigree<'_>, indptr: &[i64], indices: &[i32]) -> 
     {
         return Err(Error::ValueOutOfRange {
             field: "indptr",
-            position: position + 1,
+            position: (position + 1).into(),
             value: indptr[position + 1],
             minimum: indptr[position].max(0),
             maximum: nnz,
@@ -455,7 +455,7 @@ fn check_support(ped: &KinshipPedigree<'_>, indptr: &[i64], indices: &[i32]) -> 
     if indptr.first().is_some_and(|&v| v != 0) {
         return Err(Error::ValueOutOfRange {
             field: "indptr",
-            position: 0,
+            position: 0.into(),
             value: indptr[0],
             minimum: 0,
             maximum: 0,
@@ -468,7 +468,7 @@ fn check_support(ped: &KinshipPedigree<'_>, indptr: &[i64], indices: &[i32]) -> 
     {
         return Err(Error::ValueOutOfRange {
             field: "indices",
-            position,
+            position: position.into(),
             value: i64::from(indices[position]),
             minimum: 0,
             maximum,
@@ -477,7 +477,7 @@ fn check_support(ped: &KinshipPedigree<'_>, indptr: &[i64], indices: &[i32]) -> 
     if indptr[n] != nnz {
         return Err(Error::ValueOutOfRange {
             field: "indptr",
-            position: n,
+            position: n.into(),
             value: indptr[n],
             minimum: nnz,
             maximum: nnz,
@@ -487,7 +487,9 @@ fn check_support(ped: &KinshipPedigree<'_>, indptr: &[i64], indices: &[i32]) -> 
         let start = indptr[column] as usize;
         let end = indptr[column + 1] as usize;
         if indices[start..end].windows(2).any(|w| w[0] >= w[1]) {
-            return Err(Error::KinshipSupportUnsorted { column });
+            return Err(Error::KinshipSupportUnsorted {
+                column: column.into(),
+            });
         }
     }
     // The walk visits upper entries and writes their mirrors, so a lower
@@ -501,8 +503,8 @@ fn check_support(ped: &KinshipPedigree<'_>, indptr: &[i64], indices: &[i32]) -> 
                 && mirror(indptr, indices, row as usize, column as i32).is_none()
             {
                 return Err(Error::KinshipSupportAsymmetric {
-                    row: row as usize,
-                    column,
+                    row: (row as usize).into(),
+                    column: column.into(),
                 });
             }
         }
@@ -609,7 +611,13 @@ mod tests {
         let indptr = [0i64, 1, 2, 4];
         let indices = [0, 1, 0, 2];
         let err = support_values(ped, &indptr, &indices).unwrap_err();
-        assert_eq!(err, Error::KinshipSupportAsymmetric { row: 0, column: 2 });
+        assert_eq!(
+            err,
+            Error::KinshipSupportAsymmetric {
+                row: 0.into(),
+                column: 2.into()
+            }
+        );
     }
 
     #[test]
@@ -620,7 +628,13 @@ mod tests {
         let indptr = [0i64, 2, 3, 4];
         let indices = [0, 2, 1, 2];
         let err = support_values(ped, &indptr, &indices).unwrap_err();
-        assert_eq!(err, Error::KinshipSupportAsymmetric { row: 2, column: 0 });
+        assert_eq!(
+            err,
+            Error::KinshipSupportAsymmetric {
+                row: 2.into(),
+                column: 0.into()
+            }
+        );
     }
 
     #[test]
@@ -634,11 +648,11 @@ mod tests {
             err,
             Error::ValueOutOfRange {
                 field: "indptr",
-                position: 3,
+                position,
                 value: 2,
                 minimum: 3,
                 maximum: 3
-            }
+            } if position == 3.into()
         ));
     }
 
@@ -649,7 +663,7 @@ mod tests {
         let indptr = [0i64, 1, 2, 5];
         let indices = [0, 1, 2, 0, 1];
         let err = support_values(ped, &indptr, &indices).unwrap_err();
-        assert_eq!(err, Error::KinshipSupportUnsorted { column: 2 });
+        assert_eq!(err, Error::KinshipSupportUnsorted { column: 2.into() });
     }
 
     const KINSHIP_FAMILIES: [Family; 4] = [
@@ -737,10 +751,10 @@ mod tests {
             err,
             Error::ValueOutOfRange {
                 field: "first",
-                position: 1,
+                position,
                 value: 3,
                 ..
-            }
+            } if position == 1.into()
         ));
         let err = pair_kinship(ped, &[0], &[1, 1]).unwrap_err();
         assert!(matches!(

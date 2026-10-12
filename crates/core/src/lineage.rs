@@ -414,9 +414,9 @@ mod tests {
                 result,
                 Err(Error::ValueOutOfRange {
                     field: "depth",
-                    position: 0,
+                    position,
                     ..
-                })
+                }) if position == 0.into()
             ));
         }
     }

@@ -235,7 +235,7 @@ fn check_twin_depths(twin: &[i32], depth: &[i32]) -> Result<(), Error> {
             let partner = i64::from(depth[t as usize]);
             return Err(Error::ValueOutOfRange {
                 field: "depth",
-                position: row,
+                position: row.into(),
                 value: i64::from(depth[row]),
                 minimum: partner,
                 maximum: partner,
@@ -459,9 +459,9 @@ mod tests {
             inbreeding(ped),
             Err(Error::ValueOutOfRange {
                 field: "depth",
-                position: 2,
+                position,
                 ..
-            })
+            }) if position == 2.into()
         ));
     }
 }

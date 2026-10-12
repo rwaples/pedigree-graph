@@ -174,7 +174,7 @@ pub(crate) fn check_row_range(field: &'static str, rows: &[i32], n: usize) -> Re
     {
         return Err(Error::ValueOutOfRange {
             field,
-            position,
+            position: position.into(),
             value: i64::from(rows[position]),
             minimum: -1,
             maximum,
@@ -514,7 +514,7 @@ mod tests {
                 cols.try_borrow().unwrap_err(),
                 Error::ValueOutOfRange {
                     field,
-                    position: 1,
+                    position: 1.into(),
                     value: 5,
                     minimum: -1,
                     maximum: 1,
@@ -531,7 +531,7 @@ mod tests {
             cols.try_borrow().unwrap_err(),
             Error::ValueOutOfRange {
                 field: "mother",
-                position: 0,
+                position: 0.into(),
                 value: -2,
                 minimum: -1,
                 maximum: 1,
@@ -580,7 +580,7 @@ mod tests {
             Pedigree::try_new(&[1], &[-1], &[-1], &[-1], &[-1]).unwrap_err(),
             Error::ValueOutOfRange {
                 field: "mother",
-                position: 0,
+                position: 0.into(),
                 value: 1,
                 minimum: -1,
                 maximum: 0,

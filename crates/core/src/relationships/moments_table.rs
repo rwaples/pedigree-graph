@@ -83,7 +83,7 @@ pub fn pack_labels(
         if n_labels > i32::MAX as usize + 1 {
             return Err(Error::ValueOutOfRange {
                 field,
-                position: 0,
+                position: 0.into(),
                 value: i64::try_from(n_labels - 1).unwrap_or(i64::MAX),
                 minimum: 0,
                 maximum: i64::from(i32::MAX),
@@ -197,7 +197,7 @@ pub fn quantize_column(
     if let Some(position) = column.iter().position(|x| !x.is_finite()) {
         return Err(Error::NonFiniteValue {
             field: field.to_string(),
-            position,
+            position: position.into(),
         });
     }
     let magnitude = column.iter().fold(0.0f64, |m, x| m.max(x.abs()));
@@ -1366,7 +1366,7 @@ mod tests {
         let err = quantize_column(&[1.0, f64::NAN], &mut [0; 2], 1, 0, "values['x']").unwrap_err();
         assert_eq!(
             err.to_string(),
-            "values['x'] is not finite at position 1; mask with a factor level instead"
+            "values['x'] is not finite at row 1; mask it with a factor level instead"
         );
         assert_eq!(quantize_column(&[], &mut [], 1, 0, "v").unwrap(), 0);
     }

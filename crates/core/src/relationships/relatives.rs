@@ -510,7 +510,7 @@ mod tests {
         view[8] = 0;
         assert!(matches!(
             call(Some(&view), &[]).unwrap_err(),
-            Error::InvalidViewMap { position: 8, .. }
+            Error::InvalidViewMap { position, .. } if position == 8.into()
         ));
     }
 }

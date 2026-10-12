@@ -383,15 +383,15 @@ pub(super) fn check_view_map(map: &[i32]) -> Result<(), Error> {
         }
         let view_row = value as usize;
         let reason = if view_row >= map.len() {
-            "view rows run from 0 to one below the graph row count"
+            "the graph has no view row that far"
         } else if std::mem::replace(&mut seen[view_row], true) {
             "two graph rows map to this view row"
         } else {
             continue;
         };
         return Err(Error::InvalidViewMap {
-            position,
-            value: value as i64,
+            position: position.into(),
+            value: view_row.into(),
             reason,
         });
     }
@@ -767,14 +767,14 @@ mod tests {
         repeated[2] = 0;
         assert!(matches!(
             run(repeated),
-            Err(Error::InvalidViewMap { position: 2, .. })
+            Err(Error::InvalidViewMap { position, .. }) if position == 2.into()
         ));
 
         let mut overrun: Vec<i32> = vec![-1; 40];
         overrun[7] = 40;
         assert!(matches!(
             run(overrun),
-            Err(Error::InvalidViewMap { position: 7, .. })
+            Err(Error::InvalidViewMap { position, .. }) if position == 7.into()
         ));
 
         // Selecting nothing is legal and has no pairs.

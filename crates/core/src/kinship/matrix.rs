@@ -826,7 +826,11 @@ mod tests {
         );
         assert_eq!(err.code(), "csc_index_overflow");
         assert_eq!(err.class(), crate::error::ErrorClass::Resource);
-        let names: Vec<&str> = err.fields().iter().map(|(name, _)| *name).collect();
+        let names: Vec<&str> = err
+            .fields(crate::error::IndexBase::Zero)
+            .iter()
+            .map(|(name, _)| *name)
+            .collect();
         assert_eq!(names, ["nnz", "maximum"]);
         assert_eq!(
             checked_indptr(&[2, 0, 3], MAX_CSC_NNZ).unwrap(),
@@ -850,11 +854,11 @@ mod tests {
             err,
             Error::ValueOutOfRange {
                 field: "depth",
-                position: 2,
+                position,
                 value: 0,
                 minimum: 1,
                 ..
-            }
+            } if position == 2.into()
         ));
         let negative =
             KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &[-1, 0, 1]).unwrap();
@@ -862,9 +866,9 @@ mod tests {
             kinship_csc(negative).unwrap_err(),
             Error::ValueOutOfRange {
                 field: "depth",
-                position: 0,
+                position,
                 ..
-            }
+            } if position == 0.into()
         ));
     }
 
