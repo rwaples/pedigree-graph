@@ -38,13 +38,13 @@ test = [
     "pytest>=9,<10",
     "pytest-cov>=7,<8",
     "pytest-xdist>=3.8,<4",
-    "ruff>=0.16,<0.17",
+    "ruff>=0.17,<0.18",
     "hypothesis>=6,<7",
     "pandas>=3.0,<4",
     "polars>=1.43.2,<2",
     "pyarrow>=17,<26",
 ]
-typecheck = ["ty==0.0.84"]
+typecheck = ["ty==0.0.89"]
 
 [tool.maturin]
 manifest-path = "crates/python/Cargo.toml"
@@ -62,7 +62,7 @@ markers = [
 
 [tool.ruff]
 target-version = "py313"
-required-version = ">=0.16,<0.17"
+required-version = ">=0.17,<0.18"
 line-length = 120
 extend-exclude = ["benchmarks/threshold_structure"]  # frozen investigation scripts, evidence not code
 
