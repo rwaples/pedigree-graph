@@ -179,7 +179,7 @@ For contributors: [`docs/architecture.md`](docs/architecture.md) maps the
 module layout and the hidden contracts (coordinate space, exact count
 coverage, sparse-ID handling, default sex), each with its source
 of truth and regression test.
-The relationship/coordinate vocabulary is in [`CONTEXT.md`](CONTEXT.md);
+The relationship/coordinate vocabulary is in [`GLOSSARY.md`](GLOSSARY.md);
 design decisions are in [`docs/adr/`](docs/adr/).
 
 ## License

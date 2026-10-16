@@ -40,7 +40,7 @@ host boundary. The API is therefore redesigned first, in pure Python, and
 ## Decision
 
 **Break the public API once, in 0.8.0, with no deprecation shims.** The
-canonical vocabulary is `CONTEXT.md` (graph-space, view-space, structural
+canonical vocabulary is `GLOSSARY.md` (graph-space, view-space, structural
 depth, generation label, nominal vs pedigree-expected kinship, role-ordered
 relationship pair). "Pedigree-expected kinship" is the public term for the
 value the recurrence returns for a particular pair; "exact rational kinship"

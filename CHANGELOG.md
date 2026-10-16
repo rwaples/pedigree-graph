@@ -4,6 +4,11 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Changed: the glossary is `GLOSSARY.md`**, renamed from `CONTEXT.md`
+  (simACE #35). Update any link to the old file.
+
 ## v0.12.4
 
 - **Changed: construction resolves parent and twin ids through a lookup
@@ -872,7 +877,7 @@ live on the corresponding GitHub release pages.
   `pair_kinship`, `inbreeding`, `relationship_pairs`, `relationship_counts`,
   `distinct_ancestor_counts` or `descendant_path_counts` mentioned depth,
   labels or cohorts.  All nine now say it, as do the three view methods, and
-  the rule is stated once in `CONTEXT.md`'s `## Relationships` section.
+  the rule is stated once in `GLOSSARY.md`'s `## Relationships` section.
   `test_generation_labels_stay_off_the_structural_path` pins the six modules
   that read the `generation_labels` property — the property itself plus five
   cohort-side effective-size modules — so a structural module reading labels
