@@ -1,0 +1,67 @@
+✨ Pixi task (test-against-pg in default): tools/test_against_pg.sh /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/clean
+    Updating git repository `https://github.com/rwaples/pedigree-graph`
+    Updating crates.io index
+     Locking 1 package to latest compatible version
+      Adding pedigree-graph-core v0.12.4 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/clean/crates/core)
+    Removing pedigree-graph-core v0.12.3 (https://github.com/rwaples/pedigree-graph?rev=727159175db19e0315e3743299c1e6538710c0ab#72715917)
+note: pass `--verbose` to see 3 unchanged dependencies behind latest
+    Updating git repository `https://github.com/rwaples/pedigree-graph`
+    Updating crates.io index
+     Locking 1 package to latest compatible version
+      Adding pedigree-graph-core v0.12.4 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/clean/crates/core)
+    Removing pedigree-graph-core v0.12.3 (https://github.com/rwaples/pedigree-graph?rev=727159175db19e0315e3743299c1e6538710c0ab#72715917)
+note: pass `--verbose` to see 2 unchanged dependencies behind latest
+== pedigree-graph-core <- /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/clean (5be610f)
+== cargo test
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling target-lexicon v0.13.5
+   Compiling libm v0.2.16
+   Compiling either v1.19.0
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling libc v0.2.190
+   Compiling heck v0.5.0
+   Compiling rawpointer v0.2.1
+   Compiling once_cell v1.21.4
+   Compiling rustc-hash v2.1.3
+   Compiling num-traits v0.2.19
+   Compiling matrixmultiply v0.3.11
+   Compiling pyo3-build-config v0.29.3
+   Compiling syn v2.0.119
+   Compiling num-integer v0.1.47
+   Compiling num-complex v0.4.6
+   Compiling pyo3-ffi v0.29.3
+   Compiling pyo3 v0.29.3
+   Compiling numpy v0.29.0
+   Compiling num-bigint v0.4.8
+   Compiling rayon v1.12.0
+   Compiling ndarray v0.17.2
+   Compiling pyo3-macros-backend v0.29.3
+   Compiling pedigree-graph-core v0.12.4 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/clean/crates/core)
+   Compiling pg-phenotype-core v0.4.0 (/data/Documents/simACE/external/pg-phenotype/crates/core)
+error[E0061]: this method takes 1 argument but 0 arguments were supplied
+   --> crates/core/src/error.rs:446:18
+    |
+446 |                 .fields()
+    |                  ^^^^^^-- argument #1 of type `pedigree_graph_core::error::IndexBase` is missing
+    |
+note: method defined here
+   --> /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/clean/crates/core/src/error.rs:418:12
+    |
+418 |     pub fn fields(&self, base: IndexBase) -> Vec<(&'static str, FieldValue)> {
+    |            ^^^^^^
+help: provide the argument
+    |
+446 |                 .fields(/* pedigree_graph_core::error::IndexBase */)
+    |                         +++++++++++++++++++++++++++++++++++++++++++
+
+   Compiling pyo3-macros v0.29.3
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `pg-phenotype-core` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+== restoring the editable build against the pinned pedigree-graph-core

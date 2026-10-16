@@ -1,0 +1,24 @@
+{
+  "ref": "5be610f",
+  "head": "5be610fe257b1c288a9bbdcdaf3976abac1fb83a",
+  "version": "0.12.4",
+  "wheel": {
+    "file": "pedigree_graph-0.12.4-cp313-abi3-linux_x86_64.whl",
+    "sha256": "0eeba720473060587b73c019dfd97ad7d49d0fbeb9c32ec95d0ba7e8e7061f5f"
+  },
+  "sdist": {
+    "file": "pedigree_graph-0.12.4.tar.gz",
+    "sha256": "c249a5c93c439e392bb5c11fca2c0c6963e31b3b990d2178222dbf2fb2601422"
+  },
+  "installs": {
+    "wheel": "installed 0.12.4 /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/wheel-venv/lib/python3.14/site-packages/pedigree_graph/__init__.py /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/wheel-venv/lib/python3.14/site-packages/pedigree_graph/_native.abi3.so 16 root names",
+    "sdist": "installed 0.12.4 /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/sdist-venv/lib/python3.14/site-packages/pedigree_graph/__init__.py /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/sdist-venv/lib/python3.14/site-packages/pedigree_graph/_native.abi3.so 16 root names"
+  },
+  "wheel_pytest_exit": 0,
+  "wheel_pytest_tail": [
+    "........................................................................ [ 99%]",
+    "...............                                                          [100%]",
+    "3469 passed, 3 skipped, 16 deselected in 157.56s (0:02:37)"
+  ],
+  "wheel_site": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/wheel-site"
+}

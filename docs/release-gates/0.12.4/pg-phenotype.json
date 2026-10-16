@@ -1,0 +1,69 @@
+{
+  "unit": "pg-phenotype",
+  "stage": "0.12.4",
+  "routing": "/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/wheel-site",
+  "cwd": "external/pg-phenotype",
+  "started": "2026-10-16T09:03:46",
+  "steps": [
+    {
+      "step": "routing",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pg-phenotype/pixi.toml --frozen python -c 'import pedigree_graph as p, sys;ok = '\"'\"'/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/wheel-site/'\"'\"' in p.__file__;print(('\"'\"'routed'\"'\"' if ok else '\"'\"'MISROUTED'\"'\"'), p.__file__);sys.exit(0 if ok else 3)'",
+      "exit": 0,
+      "wall_s": 0.5,
+      "max_rss_mib": 58.8,
+      "tree_peak_mib": 54.2,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.4/pg-phenotype/routing.log",
+      "tail": [
+        "routed /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/wheel-site/pedigree_graph/__init__.py"
+      ]
+    },
+    {
+      "step": "ruff",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pg-phenotype/pixi.toml --frozen ruff check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 41.8,
+      "tree_peak_mib": 25.9,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.4/pg-phenotype/ruff.log",
+      "tail": [
+        "All checks passed!"
+      ]
+    },
+    {
+      "step": "format",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pg-phenotype/pixi.toml --frozen ruff format --check",
+      "exit": 0,
+      "wall_s": 0.1,
+      "max_rss_mib": 41.8,
+      "tree_peak_mib": 26.6,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.4/pg-phenotype/format.log",
+      "tail": [
+        "100 files already formatted"
+      ]
+    },
+    {
+      "step": "test-against-pg",
+      "cmd": "pixi run --manifest-path /data/Documents/simACE/external/pg-phenotype/pixi.toml --frozen test-against-pg /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.12.4/clean",
+      "exit": 101,
+      "wall_s": 48.0,
+      "max_rss_mib": 470.9,
+      "tree_peak_mib": 1365.7,
+      "log": "external/pedigree-graph/docs/release-gates/0.12.4/pg-phenotype/test-against-pg.log",
+      "tail": [
+        "418 |     pub fn fields(&self, base: IndexBase) -> Vec<(&'static str, FieldValue)> {",
+        "    |            ^^^^^^",
+        "help: provide the argument",
+        "    |",
+        "446 |                 .fields(/* pedigree_graph_core::error::IndexBase */)",
+        "    |                         +++++++++++++++++++++++++++++++++++++++++++",
+        "",
+        "   Compiling pyo3-macros v0.29.3",
+        "For more information about this error, try `rustc --explain E0061`.",
+        "error: could not compile `pg-phenotype-core` (lib) due to 1 previous error",
+        "warning: build failed, waiting for other jobs to finish...",
+        "== restoring the editable build against the pinned pedigree-graph-core"
+      ]
+    }
+  ],
+  "ok": false
+}
