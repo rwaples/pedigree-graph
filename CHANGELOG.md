@@ -4,6 +4,11 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Changed: the glossary is `GLOSSARY.md`**, renamed from `CONTEXT.md`
+  (simACE #35). Update any link to the old file.
+
 ## v0.12.4
 
 - **Changed: construction resolves parent and twin ids through a lookup

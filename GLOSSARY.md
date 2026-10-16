@@ -1,7 +1,7 @@
 # pedigree-graph
 
 Pedigree relationship extraction and kinship on a Rust row-streaming core. A
-pedigree is a parent→child DAG of individuals; this context is the vocabulary
+pedigree is a parent→child DAG of individuals; this glossary is the vocabulary
 for the relationships between individuals and the two coordinate systems used
 to name them.
 
