@@ -82,7 +82,7 @@ precedence") is **not** a change to `EXCLUSIONS`. It is a per-row
 precedence fold applied to the final category sets after classification:
 each category loses the members every earlier registry category claims,
 the operation the Python `_fold_precedence` performed on whole blocks.
-Definitions decide membership; the fold decides reporting (`CONTEXT.md`,
+Definitions decide membership; the fold decides reporting (`GLOSSARY.md`,
 "Closest category"). The fold is always on, so `count_pairs` returns the
 counts `PedigreeGraph.relationship_counts` publishes, and the parity
 fixtures under `crates/core/tests/fixtures` hold those folded counts. The

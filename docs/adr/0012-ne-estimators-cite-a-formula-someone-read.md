@@ -114,7 +114,7 @@ Applied:
   library saw the rename until 0.9 shipped. Pure expectation constants moved
   early; every site that reads a key out of a live result dict moved at the
   relock, with no both-keys compatibility shim in between. simACE's
-  `CONTEXT.md`, which records the estimator names as fixed identifiers, was
+  `GLOSSARY.md`, which records the estimator names as fixed identifiers, was
   brought into line on 2026-09-24.
 * **The Caballero-Toro numba ancestor-set arena was deleted, not relocated.**
   Issue #1 names `_caballero_toro_accumulators` as "the exact retirement-style

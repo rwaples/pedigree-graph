@@ -305,7 +305,7 @@ def test_mean_kinship_by_generation_is_the_mean_over_genome_pairs(columns, data)
     graph = PedigreeGraph.from_frame({**columns, "generation": labels})
     # Unlabelled rows are counted as rows, a collapsed co-twin included
     # (``_ne_rates.py``); a wholly unlabelled pedigree groups by structural
-    # depth instead and counts none (CONTEXT.md, "generation label").
+    # depth instead and counts none (GLOSSARY.md, "generation label").
     unlabelled = int((labels == -1).sum())
     if unlabelled == n:
         assert graph.generation_labels is None

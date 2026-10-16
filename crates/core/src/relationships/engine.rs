@@ -26,7 +26,7 @@
 //! [`EXCLUSIONS`] is the reference engine's per-category subtraction table;
 //! it is part of each category's definition.
 //!
-//! Reporting is a separate step (ADR 0010 as amended, `CONTEXT.md` "Closest
+//! Reporting is a separate step (ADR 0010 as amended, `GLOSSARY.md` "Closest
 //! category"): after every set of a row is final, each category loses the
 //! members an earlier registry category already claims, so a pair is counted
 //! under its closest category only, exactly as the Python `_fold_precedence`
