@@ -11,9 +11,10 @@
 //! The walk is an explicit-stack post-order: a key is pushed for *expand*
 //! (discover unresolved dependencies) and re-pushed for *compute* (combine
 //! them).  Each frame carries what was learned where the key was met, so
-//! a key's rule is read once per meeting rather than at every step.  LIFO order resolves a node's whole subtree before its compute
-//! marker, so every distinct key is computed once per walker even when
-//! shared across requested pairs, and endpoint order cannot change a bit.
+//! a key's rule is read once per meeting rather than at every step.  LIFO
+//! order resolves a node's whole subtree before its compute marker, so
+//! every distinct key is computed once per walker even when shared across
+//! requested pairs, and endpoint order cannot change a bit.
 //!
 //! A key whose value needs no walk is never pushed or stored ([`Rule`]):
 //! a self-like key with a missing parent, a key whose peeled endpoint is a
@@ -149,11 +150,10 @@ impl alloc::Dtype for Frame {
 }
 
 /// One row's recurrence columns side by side, so a rule reads one cache
-/// line per endpoint rather than one per column.  Built once per call and
-/// shared by its workers: 16 bytes a row beside the signatures' 32.
+/// line per endpoint rather than one per column.
 #[derive(Clone, Copy)]
 #[repr(C, align(16))]
-pub(crate) struct Row {
+struct Row {
     depth: i32,
     mother: i32,
     father: i32,
@@ -164,19 +164,44 @@ impl alloc::Dtype for Row {
     const NAME: &'static str = "object";
 }
 
-fn pack_rows(ped: &KinshipPedigree<'_>) -> Result<Vec<Row>, Error> {
-    let mut rows = alloc::with_capacity(ped.len(), Family::KinshipColumns)?;
-    rows.extend((0..ped.len()).map(|i| Row {
-        depth: ped.depth[i],
-        mother: ped.mother[i],
-        father: ped.father[i],
-        twin: ped.twin[i],
-    }));
-    Ok(rows)
+/// A pedigree's recurrence columns packed one row to 16 bytes, beside the
+/// signatures' 32.  Build it once per pedigree, next to its
+/// [`AncestorSignatures`], and share it with every [`Walker`] over that
+/// pedigree.
+pub struct KinshipRows(Vec<Row>);
+
+impl KinshipRows {
+    /// Pack `ped`'s depth, parent and twin columns.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] with operation `kinship_columns`.
+    pub fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
+        let mut rows = Vec::new();
+        alloc::extend(
+            &mut rows,
+            (0..ped.len()).map(|i| Row {
+                depth: ped.depth[i],
+                mother: ped.mother[i],
+                father: ped.father[i],
+                twin: ped.twin[i],
+            }),
+            Family::KinshipColumns,
+        )?;
+        Ok(KinshipRows(rows))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
-/// One memo and one stack over a pedigree and its ancestor signatures: the
-/// state of one worker of a call.
+/// One memo and one stack over a pedigree's packed rows and its ancestor
+/// signatures: the state of one worker.
 pub struct Walker<'a> {
     rows: &'a [Row],
     signatures: &'a AncestorSignatures,
@@ -185,9 +210,15 @@ pub struct Walker<'a> {
 }
 
 impl<'a> Walker<'a> {
-    pub(crate) fn new(rows: &'a [Row], signatures: &'a AncestorSignatures) -> Result<Self, Error> {
+    /// A walker with an empty memo.  `rows` and `signatures` must be built
+    /// from the same pedigree.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] with operation `kinship_memo`.
+    pub fn new(rows: &'a KinshipRows, signatures: &'a AncestorSignatures) -> Result<Self, Error> {
         Ok(Walker {
-            rows,
+            rows: &rows.0,
             signatures,
             memo: PairMemo::new(rows.len())?,
             stack: Vec::new(),
@@ -344,9 +375,10 @@ impl SharedOutput {
 /// ancestor keys are walked once per worker rather than once per chunk.  A
 /// key's value does not depend on which walker reaches it, so the result is
 /// the same for every thread count.  After a failure the remaining chunks
-/// are abandoned and one error is returned.
+/// are abandoned and one error is returned.  `len` must be positive, since
+/// the caller builds the rows and signatures only for a call with work.
 fn run_chunks<F>(
-    ped: KinshipPedigree<'_>,
+    rows: &KinshipRows,
     signatures: &AncestorSignatures,
     len: usize,
     chunk: usize,
@@ -355,10 +387,6 @@ fn run_chunks<F>(
 where
     F: Fn(&mut Walker<'_>, Range<usize>) -> Result<(), Error> + Sync,
 {
-    if len == 0 {
-        return Ok(());
-    }
-    let rows = pack_rows(&ped)?;
     let chunks = len.div_ceil(chunk);
     let next = AtomicUsize::new(0);
     let workers = rayon::current_num_threads().min(chunks);
@@ -372,7 +400,7 @@ where
             let items = index * chunk..((index + 1) * chunk).min(len);
             let result = match &mut walker {
                 Some(walker) => fill(walker, items),
-                None => Walker::new(&rows, signatures)
+                None => Walker::new(rows, signatures)
                     .and_then(|built| fill(walker.insert(built), items)),
             };
             if result.is_err() {
@@ -423,10 +451,14 @@ pub fn pair_kinship(
     second: &[i32],
 ) -> Result<Vec<f32>, Error> {
     check_pairs(&ped, first, second)?;
+    if first.is_empty() {
+        return Ok(Vec::new());
+    }
     let out = SharedOutput::new(first.len())?;
     let signatures = AncestorSignatures::build(&ped)?;
+    let rows = KinshipRows::new(&ped)?;
     run_chunks(
-        ped,
+        &rows,
         &signatures,
         first.len(),
         PAIR_CHUNK,
@@ -455,10 +487,14 @@ fn support_with(
     indptr: &[i64],
     indices: &[i32],
 ) -> Result<Vec<f32>, Error> {
+    if indices.is_empty() {
+        return Ok(Vec::new());
+    }
     let n = ped.len();
     let data = SharedOutput::new(indices.len())?;
     let signatures = AncestorSignatures::build(&ped)?;
-    run_chunks(ped, &signatures, n, COLUMN_CHUNK, |walker, columns| {
+    let rows = KinshipRows::new(&ped)?;
+    run_chunks(&rows, &signatures, n, COLUMN_CHUNK, |walker, columns| {
         for column in columns {
             let start = indptr[column] as usize;
             let end = indptr[column + 1] as usize;

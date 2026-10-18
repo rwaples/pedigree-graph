@@ -20,6 +20,13 @@ live on the corresponding GitHub release pages.
   median of 5, one thread: 11.13 s to 8.11 s at 2M rows, 30.5 s to 21.6 s
   at 5M, 62.8 s to 44.0 s at 10M; six threads: 13.1 s to 10.0 s at 5M,
   28.0 s to 19.5 s at 10M.
+- **Breaking (Rust): `pairwise::Walker::new` takes `&KinshipRows`.** A
+  host that runs its own walkers (pg-phenotype's PA-FGRS prep) builds the
+  new `KinshipRows::new(&kped)` once, next to its `AncestorSignatures`,
+  and passes `Walker::new(&rows, &signatures)`, so its workers share one
+  copy of the packed columns rather than packing their own.
+- **Changed: `pair_kinship` with no pairs and `support_values` with no
+  entries return at once**, without building the ancestor signatures.
 - **Changed: the glossary is `GLOSSARY.md`**, renamed from `CONTEXT.md`
   (simACE #35). Update any link to the old file.
 
