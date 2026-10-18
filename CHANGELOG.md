@@ -20,6 +20,14 @@ live on the corresponding GitHub release pages.
   median of 5, one thread: 11.13 s to 8.11 s at 2M rows, 30.5 s to 21.6 s
   at 5M, 62.8 s to 44.0 s at 10M; six threads: 13.1 s to 10.0 s at 5M,
   28.0 s to 19.5 s at 10M.
+- **Changed: `pair_kinship` peak memory falls 11% at six threads.** Each
+  worker's memo keeps its small per-row tables in a pool of 512 KiB chunks,
+  reusing the slots of a table that grew, instead of one heap allocation
+  per row, and its per-row record shrinks from 32 to 12 bytes. Values are
+  bit-identical. On simACE's `bench_scale` pedigrees, median of 5: six
+  threads, 6.76 GB to 6.00 GB at 5M rows and 13.16 GB to 11.64 GB at 10M,
+  in 0.94 and 0.86 times the wall time; one thread, peak memory within
+  0.6% and wall time 0.99 times at 2M and 0.98 times at 10M.
 - **Breaking (Rust): `pairwise::Walker::new` takes `&KinshipRows`.** A
   host that runs its own walkers (pg-phenotype's PA-FGRS prep) builds the
   new `KinshipRows::new(&kped)` once, next to its `AncestorSignatures`,

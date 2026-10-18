@@ -103,5 +103,10 @@ about 14% slower at full scale.
   > Amended 2026-10-18: plus 16 bytes a row, once per call, for the packed
   > columns (57 MB at 3.58M rows). A call with no pairs or support entries
   > builds no columns.
+
+  > Amended 2026-10-18: the memo's row vector is now 12 bytes a row (43 MB
+  > at 3.58M rows). A row's table of up to 1024 slots is carved from the
+  > worker's pool of 512 KiB chunks, so it costs its 8-byte slots and no
+  > allocator header; a larger table has its own allocation.
 * Peak memory grows with the budget, since workers duplicate shared ancestor
   keys: on `cure_rA50` degree 2, 2.7 GB at one thread and 3.5 GB at eight.

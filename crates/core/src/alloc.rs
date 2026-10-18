@@ -246,7 +246,8 @@ fn planted(family: Family, requested_elements: usize) -> bool {
             .is_ok()
 }
 
-fn failed<T: Dtype>(family: Family, requested_elements: usize) -> Error {
+/// The refusal of a reservation of `requested_elements` elements of `T`.
+pub(crate) fn failed<T: Dtype>(family: Family, requested_elements: usize) -> Error {
     Error::AllocationFailed {
         operation: family.name(),
         requested_elements,
