@@ -17,7 +17,7 @@
 //! The row vector is sized by the pedigree, not the query: 32 bytes a row
 //! before any slot is stored, 17 MB on a 536k-row pedigree, paid by every
 //! pool worker of every call, beside the call's 32-byte-a-row ancestor
-//! signatures.  Every consumer issues one bulk query per graph, which is the
+//! signatures and 16-byte-a-row packed columns.  Every consumer issues one bulk query per graph, which is the
 //! shape slice 13 measured; a caller looping single pairs on a large pedigree
 //! pays that fixed cost per call and should batch its pairs instead.
 

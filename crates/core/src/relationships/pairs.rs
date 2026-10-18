@@ -799,6 +799,7 @@ mod tests {
             Family::KinshipMemo
             | Family::KinshipStack
             | Family::KinshipSignatures
+            | Family::KinshipColumns
             | Family::KinshipOutput
             | Family::KinshipRows
             | Family::KinshipCsc

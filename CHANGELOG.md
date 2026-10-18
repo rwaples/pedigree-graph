@@ -6,6 +6,20 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: `pair_kinship` is 23 to 30% faster on large pedigrees.** The
+  walk reads each key's rule once where it meets the key, and carries the
+  rule and its dependencies' values on the stack, instead of re-deriving
+  them from the row columns at every step (about 11 reads per resolved
+  key). The rule is inlined into the walk and reads a row's depth,
+  parents and twin from one 16-byte record, built once per call and shared
+  by its workers. Values are bit-identical. Peak memory grows by those 16
+  bytes a row, 1.6% at 10M rows, reserved through a new allocation
+  family: a refused reservation raises `allocation_failed` with
+  `operation` `kinship_columns`, and one on `kinship_stack` now reports
+  dtype `object` rather than `uint64`. On simACE's `bench_scale` pedigrees,
+  median of 5, one thread: 11.13 s to 8.11 s at 2M rows, 30.5 s to 21.6 s
+  at 5M, 62.8 s to 44.0 s at 10M; six threads: 13.1 s to 10.0 s at 5M,
+  28.0 s to 19.5 s at 10M.
 - **Changed: the glossary is `GLOSSARY.md`**, renamed from `CONTEXT.md`
   (simACE #35). Update any link to the old file.
 

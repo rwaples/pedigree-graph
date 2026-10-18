@@ -52,6 +52,10 @@ The signatures and the stack they are built with reserve through a new
 allocation family, `kinship_signatures`, so the seam tests of
 `kinship_memo` and `kinship_stack` still reach the workers' memo and stack.
 
+> Amended 2026-10-18: the walk also reads each row's depth, parents and twin
+> from one 16-byte record built once per call and shared by its workers,
+> reserved through its own family, `kinship_columns`, for the same reason.
+
 ## Measurements
 
 Whole `relationship_kinship_matrix` build and the fill inside it, medians of
@@ -95,5 +99,9 @@ about 14% slower at full scale.
 * Every call pays 32 bytes a row for the signatures and, per worker that
   takes a chunk, 32 bytes a row for its memo's row vector (115 MB each at
   3.58M rows). A one-chunk query uses one worker.
+
+  > Amended 2026-10-18: plus 16 bytes a row, once per call, for the packed
+  > columns (57 MB at 3.58M rows). A call with no pairs or support entries
+  > builds no columns.
 * Peak memory grows with the budget, since workers duplicate shared ancestor
   keys: on `cure_rA50` degree 2, 2.7 GB at one thread and 3.5 GB at eight.
