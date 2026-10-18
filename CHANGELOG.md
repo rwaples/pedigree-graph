@@ -6,6 +6,11 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Added: `relationships::reduce_pairs_in` and `RowOrder` (Rust).**
+  `reduce_pairs_in(..., RowOrder::Families)` walks the rows in family
+  order, as counts and moments do, for a host reducer whose merged lane
+  does not depend on pair order; `reduce_pairs` keeps graph row order.
+  pg-phenotype's relative-pair SE pass uses it.
 - **Changed: relationship counts and moments are 10 to 12% faster, and
   about 35% faster on pedigrees whose sibs are not stored together.** Full
   sibs share about half of each row's classification, everything that

@@ -154,7 +154,9 @@ other row where it stands; a pedigree whose sibships are already contiguous
 walks in row order with no order to read. Their results are integer sums
 or per-row tallies, so they do not depend on order. Pair emission and the
 public `reduce_pairs`, whose one-lane order a reducer may rely on, keep
-graph row order and reuse only what that order makes adjacent.
+graph row order and reuse only what that order makes adjacent. A host reducer
+that does not depend on order opts in with `reduce_pairs_in` and
+`RowOrder::Families`.
 
 ### Where it lives
 
