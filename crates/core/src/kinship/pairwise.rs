@@ -10,9 +10,11 @@
 //!
 //! The walk is an explicit-stack post-order: a key is pushed for *expand*
 //! (discover unresolved dependencies) and re-pushed for *compute* (combine
-//! them).  LIFO order resolves a node's whole subtree before its compute
-//! marker, so every distinct key is computed once per walker even when
-//! shared across requested pairs, and endpoint order cannot change a bit.
+//! them).  Each frame carries what was learned where the key was met, so
+//! a key's rule is read once per meeting rather than at every step.  LIFO
+//! order resolves a node's whole subtree before its compute marker, so
+//! every distinct key is computed once per walker even when shared across
+//! requested pairs, and endpoint order cannot change a bit.
 //!
 //! A key whose value needs no walk is never pushed or stored ([`Rule`]):
 //! a self-like key with a missing parent, a key whose peeled endpoint is a
@@ -94,19 +96,6 @@ impl<'a> KinshipPedigree<'a> {
     }
 }
 
-/// Bit 63 marks a compute item; the low 64 bits otherwise pack `lo << 32 | hi`.
-const COMPUTE: u64 = 1 << 63;
-
-#[inline]
-fn pack((lo, hi): (u32, u32)) -> u64 {
-    (u64::from(lo) << 32) | u64::from(hi)
-}
-
-#[inline]
-fn unpack(item: u64) -> (u32, u32) {
-    (((item & !COMPUTE) >> 32) as u32, item as u32)
-}
-
 #[inline]
 fn canon(a: i32, b: i32) -> (u32, u32) {
     let (a, b) = (a as u32, b as u32);
@@ -123,6 +112,13 @@ enum Rule {
     /// self-like key with a missing parent, `0` for a key whose peeled
     /// endpoint is a founder or whose endpoints share no ancestor.
     Known(f32),
+    /// Combined from its dependencies, once each is resolved.
+    Walk(Walk),
+}
+
+/// The rule of a key that needs a walk.
+#[derive(Clone, Copy)]
+enum Walk {
     /// A self-like key: `(1 + phi(mother, father)) / 2`.
     SelfLike((u32, u32)),
     /// `(phi(mother, other) + phi(father, other)) / 2`, a missing parent
@@ -130,34 +126,101 @@ enum Rule {
     Peel([Option<(u32, u32)>; 2]),
 }
 
-impl Rule {
-    fn dependencies(&self) -> [Option<(u32, u32)>; 2] {
-        match *self {
-            Rule::Known(_) => [None, None],
-            Rule::SelfLike(key) => [Some(key), None],
-            Rule::Peel(keys) => keys,
-        }
+/// An operand of a compute frame: its value, when the rule fixes it or the
+/// memo holds it at expand time, or else the key its own walk will store.
+#[derive(Clone, Copy)]
+enum Dep {
+    Value(f32),
+    Pending((u32, u32)),
+}
+
+/// One item of the walk stack.  An expand frame carries its key's rule, read
+/// once where the key was met.  A compute frame carries the two operands of
+/// its key's half-sum, `1` standing in for a self-like key's constant term
+/// (`(1 + phi) / 2` is the same bits as `(phi + 1) / 2`), so neither frame
+/// re-reads the rows of a key it has already classified.
+#[derive(Clone, Copy)]
+enum Frame {
+    Expand((u32, u32), Walk),
+    Compute((u32, u32), [Dep; 2]),
+}
+
+impl alloc::Dtype for Frame {
+    const NAME: &'static str = "object";
+}
+
+/// One row's recurrence columns side by side, so a rule reads one cache
+/// line per endpoint rather than one per column.
+#[derive(Clone, Copy)]
+#[repr(C, align(16))]
+struct Row {
+    depth: i32,
+    mother: i32,
+    father: i32,
+    twin: i32,
+}
+
+impl alloc::Dtype for Row {
+    const NAME: &'static str = "object";
+}
+
+/// A pedigree's recurrence columns packed one row to 16 bytes, beside the
+/// signatures' 32.  Build it once per pedigree, next to its
+/// [`AncestorSignatures`], and share it with every [`Walker`] over that
+/// pedigree.
+pub struct KinshipRows(Vec<Row>);
+
+impl KinshipRows {
+    /// Pack `ped`'s depth, parent and twin columns.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] with operation `kinship_columns`.
+    pub fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
+        let mut rows = Vec::new();
+        alloc::extend(
+            &mut rows,
+            (0..ped.len()).map(|i| Row {
+                depth: ped.depth[i],
+                mother: ped.mother[i],
+                father: ped.father[i],
+                twin: ped.twin[i],
+            }),
+            Family::KinshipColumns,
+        )?;
+        Ok(KinshipRows(rows))
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
-/// One memo and one stack over a pedigree and its ancestor signatures: the
-/// state of one worker of a call.
+/// One memo and one stack over a pedigree's packed rows and its ancestor
+/// signatures: the state of one worker.
 pub struct Walker<'a> {
-    ped: KinshipPedigree<'a>,
+    rows: &'a [Row],
     signatures: &'a AncestorSignatures,
     memo: PairMemo,
-    stack: Vec<u64>,
+    stack: Vec<Frame>,
 }
 
 impl<'a> Walker<'a> {
-    pub fn new(
-        ped: KinshipPedigree<'a>,
-        signatures: &'a AncestorSignatures,
-    ) -> Result<Self, Error> {
+    /// A walker with an empty memo.  `rows` and `signatures` must be built
+    /// from the same pedigree.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] with operation `kinship_memo`.
+    pub fn new(rows: &'a KinshipRows, signatures: &'a AncestorSignatures) -> Result<Self, Error> {
         Ok(Walker {
-            ped,
+            rows: &rows.0,
             signatures,
-            memo: PairMemo::new(ped.len())?,
+            memo: PairMemo::new(rows.len())?,
             stack: Vec::new(),
         })
     }
@@ -167,90 +230,105 @@ impl<'a> Walker<'a> {
     }
 
     #[inline]
-    fn push(&mut self, item: u64) -> Result<(), Error> {
-        alloc::push(&mut self.stack, item, Family::KinshipStack)
+    fn push(&mut self, frame: Frame) -> Result<(), Error> {
+        alloc::push(&mut self.stack, frame, Family::KinshipStack)
     }
 
     /// The rule of a canonical key.  The peeled endpoint is the deeper one,
     /// ties to the greater row.
-    #[inline]
-    fn rule(&self, lo: u32, hi: u32) -> Rule {
+    ///
+    /// `always`: under plain `#[inline]` rustc kept this out of line, and
+    /// inlining it alone made `pair_kinship` 7 to 11% faster on the simACE
+    /// `bench_scale` pedigrees of 1M to 10M rows.
+    #[inline(always)]
+    fn rule(&self, (lo, hi): (u32, u32)) -> Rule {
         let (l, h) = (lo as usize, hi as usize);
-        let (peeled, other) = if self.ped.depth[l] > self.ped.depth[h] {
-            (l, h)
+        let (rl, rh) = (self.rows[l], self.rows[h]);
+        let (peeled, other, p, o) = if rl.depth > rh.depth {
+            (l, h, rl, rh)
         } else {
-            (h, l)
+            (h, l, rh, rl)
         };
-        let m = self.ped.mother[peeled];
-        let f = self.ped.father[peeled];
-        let twin = self.ped.twin;
-        if other == peeled || twin[other] == peeled as i32 || twin[peeled] == other as i32 {
+        let (m, f) = (p.mother, p.father);
+        if other == peeled || o.twin == peeled as i32 || p.twin == other as i32 {
             return if m < 0 || f < 0 {
                 Rule::Known(0.5)
             } else {
-                Rule::SelfLike(canon(m, f))
+                Rule::Walk(Walk::SelfLike(canon(m, f)))
             };
         }
         if (m < 0 && f < 0) || self.signatures.disjoint(lo, hi) {
             return Rule::Known(0.0);
         }
         let other = other as i32;
-        Rule::Peel([m, f].map(|parent| (parent >= 0).then(|| canon(parent, other))))
+        Rule::Walk(Walk::Peel(
+            [m, f].map(|parent| (parent >= 0).then(|| canon(parent, other))),
+        ))
     }
 
-    /// The value of a key if it is known or memoised.
-    #[inline]
-    fn value(&self, (lo, hi): (u32, u32)) -> Option<f32> {
-        match self.rule(lo, hi) {
-            Rule::Known(v) => Some(v),
-            _ => self.memo.get(lo, hi),
+    /// A dependency's value if its rule fixes it or the memo holds it, else
+    /// its pending key and the expand frame that will resolve it.
+    #[inline(always)]
+    fn dep(&self, key: (u32, u32)) -> (Dep, Option<Frame>) {
+        match self.rule(key) {
+            Rule::Known(v) => (Dep::Value(v), None),
+            Rule::Walk(walk) => match self.memo.get(key.0, key.1) {
+                Some(v) => (Dep::Value(v), None),
+                None => (Dep::Pending(key), Some(Frame::Expand(key, walk))),
+            },
         }
     }
 
     #[expect(
         clippy::expect_used,
-        reason = "a COMPUTE item is pushed beneath its dependencies, so each is memoised \
-                  before it is read, and the root, pushed first, resolves last"
+        reason = "a compute frame is pushed beneath the expand frames of its pending \
+                  dependencies, so each is memoised before it is read, and the root, \
+                  pushed first, resolves last"
     )]
     #[inline]
-    fn resolved(&self, key: (u32, u32)) -> f32 {
-        self.value(key).expect("dependency resolved")
+    fn stored(&self, (lo, hi): (u32, u32)) -> f32 {
+        self.memo.get(lo, hi).expect("dependency resolved")
     }
 
     /// Kinship of rows `a` and `b`, walking whatever the memo lacks.  Only
-    /// keys whose rule is not [`Rule::Known`] are pushed or stored.
+    /// keys whose rule is [`Rule::Walk`] are pushed or stored.
     pub fn resolve(&mut self, a: i32, b: i32) -> Result<f32, Error> {
         let root = canon(a, b);
-        if let Some(v) = self.value(root) {
+        let walk = match self.rule(root) {
+            Rule::Known(v) => return Ok(v),
+            Rule::Walk(walk) => walk,
+        };
+        if let Some(v) = self.memo.get(root.0, root.1) {
             return Ok(v);
         }
-        self.push(pack(root))?;
-        while let Some(item) = self.stack.pop() {
-            let (lo, hi) = unpack(item);
-            let rule = self.rule(lo, hi);
-            if item & COMPUTE == 0 {
-                if self.memo.get(lo, hi).is_some() {
-                    continue;
-                }
-                self.push(item | COMPUTE)?;
-                for key in rule.dependencies().into_iter().flatten() {
-                    if self.value(key).is_none() {
-                        self.push(pack(key))?;
+        self.push(Frame::Expand(root, walk))?;
+        while let Some(frame) = self.stack.pop() {
+            match frame {
+                Frame::Expand(key, walk) => {
+                    if self.memo.get(key.0, key.1).is_some() {
+                        continue;
+                    }
+                    let [(d0, e0), (d1, e1)] = match walk {
+                        Walk::SelfLike(parents) => [self.dep(parents), (Dep::Value(1.0), None)],
+                        Walk::Peel(keys) => {
+                            keys.map(|key| key.map_or((Dep::Value(0.0), None), |key| self.dep(key)))
+                        }
+                    };
+                    self.push(Frame::Compute(key, [d0, d1]))?;
+                    for expand in [e0, e1].into_iter().flatten() {
+                        self.push(expand)?;
                     }
                 }
-            } else {
-                let value = match rule {
-                    Rule::Known(v) => v,
-                    Rule::SelfLike(key) => 0.5f32 * (1.0f32 + self.resolved(key)),
-                    Rule::Peel(keys) => {
-                        let [v0, v1] = keys.map(|key| key.map_or(0.0, |key| self.resolved(key)));
-                        0.5f32 * (v0 + v1)
-                    }
-                };
-                self.memo.insert(lo, hi, value)?;
+                Frame::Compute(key, deps) => {
+                    let [v0, v1] = deps.map(|dep| match dep {
+                        Dep::Value(v) => v,
+                        Dep::Pending(key) => self.stored(key),
+                    });
+                    self.memo.insert(key.0, key.1, 0.5f32 * (v0 + v1))?;
+                }
             }
         }
-        Ok(self.resolved(root))
+        Ok(self.stored(root))
     }
 }
 
@@ -297,9 +375,10 @@ impl SharedOutput {
 /// ancestor keys are walked once per worker rather than once per chunk.  A
 /// key's value does not depend on which walker reaches it, so the result is
 /// the same for every thread count.  After a failure the remaining chunks
-/// are abandoned and one error is returned.
+/// are abandoned and one error is returned.  `len` must be positive, since
+/// the caller builds the rows and signatures only for a call with work.
 fn run_chunks<F>(
-    ped: KinshipPedigree<'_>,
+    rows: &KinshipRows,
     signatures: &AncestorSignatures,
     len: usize,
     chunk: usize,
@@ -321,9 +400,8 @@ where
             let items = index * chunk..((index + 1) * chunk).min(len);
             let result = match &mut walker {
                 Some(walker) => fill(walker, items),
-                None => {
-                    Walker::new(ped, signatures).and_then(|built| fill(walker.insert(built), items))
-                }
+                None => Walker::new(rows, signatures)
+                    .and_then(|built| fill(walker.insert(built), items)),
             };
             if result.is_err() {
                 next.fetch_max(chunks, Ordering::Relaxed);
@@ -373,10 +451,14 @@ pub fn pair_kinship(
     second: &[i32],
 ) -> Result<Vec<f32>, Error> {
     check_pairs(&ped, first, second)?;
+    if first.is_empty() {
+        return Ok(Vec::new());
+    }
     let out = SharedOutput::new(first.len())?;
     let signatures = AncestorSignatures::build(&ped)?;
+    let rows = KinshipRows::new(&ped)?;
     run_chunks(
-        ped,
+        &rows,
         &signatures,
         first.len(),
         PAIR_CHUNK,
@@ -405,10 +487,14 @@ fn support_with(
     indptr: &[i64],
     indices: &[i32],
 ) -> Result<Vec<f32>, Error> {
+    if indices.is_empty() {
+        return Ok(Vec::new());
+    }
     let n = ped.len();
     let data = SharedOutput::new(indices.len())?;
     let signatures = AncestorSignatures::build(&ped)?;
-    run_chunks(ped, &signatures, n, COLUMN_CHUNK, |walker, columns| {
+    let rows = KinshipRows::new(&ped)?;
+    run_chunks(&rows, &signatures, n, COLUMN_CHUNK, |walker, columns| {
         for column in columns {
             let start = indptr[column] as usize;
             let end = indptr[column + 1] as usize;
@@ -666,10 +752,11 @@ mod tests {
         assert_eq!(err, Error::KinshipSupportUnsorted { column: 2.into() });
     }
 
-    const KINSHIP_FAMILIES: [Family; 4] = [
+    const KINSHIP_FAMILIES: [Family; 5] = [
         Family::KinshipMemo,
         Family::KinshipStack,
         Family::KinshipSignatures,
+        Family::KinshipColumns,
         Family::KinshipOutput,
     ];
 

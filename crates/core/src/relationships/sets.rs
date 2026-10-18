@@ -64,6 +64,14 @@ pub fn union_into(set: &mut Vec<u32>, other: &[u32]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Make `set` a copy of `src`, keeping `set`'s buffer.
+pub fn copy_into(set: &mut Vec<u32>, src: &[u32]) -> Result<(), Error> {
+    set.clear();
+    alloc::reserve(set, src.len(), Family::RowSet)?;
+    set.extend_from_slice(src);
+    Ok(())
+}
+
 /// Remove every member of `remove` (sorted) from `set` (sorted) in place.
 pub fn subtract(set: &mut Vec<u32>, remove: &[u32]) {
     if set.is_empty() || remove.is_empty() {

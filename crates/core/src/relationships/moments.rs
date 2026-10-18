@@ -114,8 +114,21 @@ pub struct Reduced<L> {
     pub lane_pairs: Vec<u64>,
 }
 
+/// The order a pass walks the rows in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum RowOrder {
+    /// Graph row order: with one lane, pairs reach the reducer in it.
+    Rows,
+    /// [`Engine::family_order`], for a reducer whose lane does not depend
+    /// on the order pairs arrive in.
+    Families,
+}
+
 /// Run `reducer` over every owned pair of the requested categories on
 /// `lanes` lanes inside the current Rayon pool, and return the merged lane.
+///
+/// Each lane takes task ranges in graph row order, so with one lane the
+/// pairs reach the reducer in it.
 ///
 /// `view` is the int32 view row of every graph row (`-1` unselected), as for
 /// [`super::pair_blocks`], already checked to be a partial permutation by
@@ -142,12 +155,42 @@ pub fn reduce_pairs<R: Reducer>(
     reducer: &R,
     progress: &Progress,
 ) -> Result<Reduced<R::Lane>, Error> {
+    reduce_pairs_in(
+        ped,
+        max_degree,
+        requested,
+        view,
+        symmetric,
+        lanes,
+        reducer,
+        progress,
+        RowOrder::Rows,
+    )
+}
+
+/// [`reduce_pairs`] with the rows walked in `order`.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn reduce_pairs_in<R: Reducer>(
+    ped: &Pedigree,
+    max_degree: MaxDegree,
+    requested: CategorySet,
+    view: Option<&[i32]>,
+    symmetric: Symmetric,
+    lanes: NonZeroUsize,
+    reducer: &R,
+    progress: &Progress,
+    order: RowOrder,
+) -> Result<Reduced<R::Lane>, Error> {
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
     if let Some(map) = view {
         assert_eq!(map.len(), n, "view map must have one entry per graph row");
     }
     let pool = WorkspacePool::for_pairs(n);
+    let order = match order {
+        RowOrder::Rows => None,
+        RowOrder::Families => engine.family_order()?,
+    };
     let ranges = task_ranges(n);
     let cursor = AtomicUsize::new(0);
     let failed = AtomicBool::new(false);
@@ -172,6 +215,7 @@ pub fn reduce_pairs<R: Reducer>(
                 };
                 result = walk_rows(
                     (start, end),
+                    order.as_deref(),
                     progress,
                     |row| view.is_some_and(|map| map[row] < 0),
                     |row| {
@@ -706,8 +750,16 @@ pub fn relationship_moments(
     let plan = MomentsPlan::new(input.shape(requested), threads, budget_bytes)?;
     let reducer = CellReducer::new(*input, requested, plan);
     let reduced = on_receiver(ped, receiver, progress, |ped, view| {
-        reduce_pairs(
-            ped, max_degree, requested, view, symmetric, plan.lanes, &reducer, progress,
+        reduce_pairs_in(
+            ped,
+            max_degree,
+            requested,
+            view,
+            symmetric,
+            plan.lanes,
+            &reducer,
+            progress,
+            RowOrder::Families,
         )
     })?;
     let (width, table) = reducer.finish(&reduced.lane)?;

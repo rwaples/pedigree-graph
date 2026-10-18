@@ -91,6 +91,31 @@ impl SiblingIndex {
         })
     }
 
+    /// Every row once, each sibling family whole at its first member's
+    /// place and every other row where it stands, so full sibs are
+    /// classified one after another.  `None` when that is the row order
+    /// already, so the walk needs no order to read.
+    pub fn family_order(&self) -> Result<Option<Vec<u32>>, Error> {
+        let groups = &self.family;
+        let n = groups.group_of.len();
+        let mut order = alloc::with_capacity(n, Family::SiblingIndex)?;
+        let mut placed = alloc::filled(false, groups.indptr.len() - 1, Family::SiblingIndex)?;
+        for row in 0..n {
+            match usize::try_from(groups.group_of[row]) {
+                Err(_) => order.push(row as u32),
+                Ok(g) if !std::mem::replace(&mut placed[g], true) => {
+                    order.extend_from_slice(groups.members(row));
+                }
+                Ok(_) => {}
+            }
+        }
+        let moved = order
+            .iter()
+            .enumerate()
+            .any(|(at, &row)| row as usize != at);
+        Ok(moved.then_some(order))
+    }
+
     /// Full sibs of `row` (same known mother and father ids), sorted, excluding `row`.
     pub fn full_sibs(&self, row: usize, out: &mut Vec<u32>) -> Result<(), Error> {
         out.clear();

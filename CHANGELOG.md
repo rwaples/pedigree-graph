@@ -6,6 +6,51 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: relationship counts and moments are 10 to 12% faster, and
+  about 35% faster on pedigrees whose sibs are not stored together.** Full
+  sibs share about half of each row's classification, everything that
+  depends only on the parents, and the engine now reuses it from one sib to
+  the next. `relationship_counts`, `relationship_moments`,
+  `relatives_per_person` and `relationship_burden` gather each sibship
+  before they walk the rows, which costs 4 bytes a row when the sibships
+  are not already contiguous; `relationship_pairs` keeps row order and
+  reuses only what that order puts side by side. Results are identical.
+  On simACE's `bench_scale` pedigrees, median of 5, one thread: counts
+  6.00 s to 5.28 s at 2M rows and 32.5 s to 29.2 s at 10M, moments 6.75 s
+  to 5.91 s and 36.6 s to 33.1 s, pairs 7.55 s to 6.78 s at 2M. With the
+  rows shuffled: counts 14.6 s to 9.4 s at 2M and 81.4 s to 52.5 s at 10M,
+  moments 16.3 s to 10.7 s and 90.7 s to 59.6 s, `relatives_per_person`
+  5.33 s to 4.51 s at 2M; six threads at 10M, counts 21.1 s to 15.7 s and
+  moments 23.2 s to 17.5 s, peak memory up 1.1%.
+- **Changed: `pair_kinship` is 23 to 30% faster on large pedigrees.** The
+  walk reads each key's rule once where it meets the key, and carries the
+  rule and its dependencies' values on the stack, instead of re-deriving
+  them from the row columns at every step (about 11 reads per resolved
+  key). The rule is inlined into the walk and reads a row's depth,
+  parents and twin from one 16-byte record, built once per call and shared
+  by its workers. Values are bit-identical. Peak memory grows by those 16
+  bytes a row, 1.6% at 10M rows, reserved through a new allocation
+  family: a refused reservation raises `allocation_failed` with
+  `operation` `kinship_columns`, and one on `kinship_stack` now reports
+  dtype `object` rather than `uint64`. On simACE's `bench_scale` pedigrees,
+  median of 5, one thread: 11.13 s to 8.11 s at 2M rows, 30.5 s to 21.6 s
+  at 5M, 62.8 s to 44.0 s at 10M; six threads: 13.1 s to 10.0 s at 5M,
+  28.0 s to 19.5 s at 10M.
+- **Changed: `pair_kinship` peak memory falls 11% at six threads.** Each
+  worker's memo keeps its small per-row tables in a pool of 512 KiB chunks,
+  reusing the slots of a table that grew, instead of one heap allocation
+  per row, and its per-row record shrinks from 32 to 12 bytes. Values are
+  bit-identical. On simACE's `bench_scale` pedigrees, median of 5: six
+  threads, 6.76 GB to 6.00 GB at 5M rows and 13.16 GB to 11.64 GB at 10M,
+  in 0.94 and 0.86 times the wall time; one thread, peak memory within
+  0.6% and wall time 0.99 times at 2M and 0.98 times at 10M.
+- **Breaking (Rust): `pairwise::Walker::new` takes `&KinshipRows`.** A
+  host that runs its own walkers (pg-phenotype's PA-FGRS prep) builds the
+  new `KinshipRows::new(&kped)` once, next to its `AncestorSignatures`,
+  and passes `Walker::new(&rows, &signatures)`, so its workers share one
+  copy of the packed columns rather than packing their own.
+- **Changed: `pair_kinship` with no pairs and `support_values` with no
+  entries return at once**, without building the ancestor signatures.
 - **Changed: the glossary is `GLOSSARY.md`**, renamed from `CONTEXT.md`
   (simACE #35). Update any link to the old file.
 

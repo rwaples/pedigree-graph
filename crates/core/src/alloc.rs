@@ -43,6 +43,8 @@ pub enum Family {
     /// The pairwise-kinship ancestor signatures and the stack they are
     /// built with.
     KinshipSignatures,
+    /// The pairwise-kinship walk's packed per-row columns.
+    KinshipColumns,
     /// The pairwise-kinship output, per pair or per support entry.
     KinshipOutput,
     /// The kinship DP's row storage and its growth, and the compacted
@@ -84,7 +86,7 @@ pub enum Family {
 }
 
 impl Family {
-    pub const ALL: [Family; 26] = [
+    pub const ALL: [Family; 27] = [
         Family::ParentEdges,
         Family::Csr,
         Family::SiblingIndex,
@@ -97,6 +99,7 @@ impl Family {
         Family::KinshipMemo,
         Family::KinshipStack,
         Family::KinshipSignatures,
+        Family::KinshipColumns,
         Family::KinshipOutput,
         Family::KinshipRows,
         Family::KinshipCsc,
@@ -128,6 +131,7 @@ impl Family {
             Family::KinshipMemo => "kinship_memo",
             Family::KinshipStack => "kinship_stack",
             Family::KinshipSignatures => "kinship_signatures",
+            Family::KinshipColumns => "kinship_columns",
             Family::KinshipOutput => "kinship_output",
             Family::KinshipRows => "kinship_rows",
             Family::KinshipCsc => "kinship_csc",
@@ -242,7 +246,8 @@ fn planted(family: Family, requested_elements: usize) -> bool {
             .is_ok()
 }
 
-fn failed<T: Dtype>(family: Family, requested_elements: usize) -> Error {
+/// The refusal of a reservation of `requested_elements` elements of `T`.
+pub(crate) fn failed<T: Dtype>(family: Family, requested_elements: usize) -> Error {
     Error::AllocationFailed {
         operation: family.name(),
         requested_elements,

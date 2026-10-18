@@ -203,6 +203,7 @@ KINSHIP_FAMILIES = frozenset(
         "kinship_memo",
         "kinship_stack",
         "kinship_signatures",
+        "kinship_columns",
         "kinship_output",
         "kinship_rows",
         "kinship_csc",
