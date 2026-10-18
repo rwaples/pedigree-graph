@@ -87,7 +87,25 @@ pub struct Engine<'p> {
     max_degree: MaxDegree,
 }
 
+/// What the parent-determined part of a row's classification reads: its
+/// parent rows and both original parent ids.  Full sibs share it.
+///
+/// Only a row with both parent ids known has one.  Then every row with the
+/// same key is in its sibling family, so its half sibs are the same set and
+/// the cousin rule's "shares a known parent id" removes the same rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FamilyKey {
+    mother: i32,
+    father: i32,
+    orig_mother: i64,
+    orig_father: i64,
+}
+
 /// Per-thread scratch: the accumulator plus every per-row set, reused across rows.
+///
+/// A workspace also keeps the parent-determined sets of the last row it
+/// classified, and the next row of the same family reuses them, so it
+/// serves the one [`Engine`] its pool was built for.
 pub struct Workspace {
     acc: Accumulator,
     /// Ancestors at exactly k hops (index k, 0 unused), with path multiplicity.
@@ -104,10 +122,20 @@ pub struct Workspace {
     weighted: [Weighted; 3],
     /// Per asymmetric category, the sorted members for whom the current row
     /// carries `first_role`; captured after multiplicity filtering and before
-    /// the two arms of a product are unioned.  Only filled when `orient`.
+    /// the two arms of a product are unioned.  The avuncular and
+    /// removed-cousin arms are filled on every workspace, for the next sib
+    /// to reuse; the others only when `orient`.
     first_arm: Vec<Vec<u32>>,
     /// Whether this workspace records orientation, which only pair emission needs.
     orient: bool,
+    /// The family whose parent-determined sets the workspace holds: `up`
+    /// beyond the parents, `shares_grandparent`, `shared`, and the
+    /// collateral and removed-cousin arms of `first_arm`.  `None` while a
+    /// row is being classified, so a row that fails leaves nothing to reuse.
+    family: Option<FamilyKey>,
+    /// Per category, the candidates that depend only on the row's family,
+    /// before the row itself and closer categories are removed.
+    shared: Vec<Vec<u32>>,
 }
 
 impl Workspace {
@@ -123,6 +151,8 @@ impl Workspace {
             weighted: Default::default(),
             first_arm: vec![Vec::new(); super::category::N_CATEGORIES],
             orient,
+            family: None,
+            shared: vec![Vec::new(); super::category::N_CATEGORIES],
         })
     }
 }
@@ -160,12 +190,19 @@ impl WorkspacePool {
 
     /// A free workspace, or a new one.
     ///
+    /// A workspace handed back forgets the family it last classified, so a
+    /// pool shared by several engines never reuses one engine's sets in
+    /// another.
+    ///
     /// # Errors
     ///
     /// [`Error::AllocationFailed`] when a new workspace cannot be built.
     pub fn take(&self) -> Result<Workspace, Error> {
         match self.free.lock().unwrap_or_else(|e| e.into_inner()).pop() {
-            Some(ws) => Ok(ws),
+            Some(mut ws) => {
+                ws.family = None;
+                Ok(ws)
+            }
             None => Workspace::build(self.n, self.orient),
         }
     }
@@ -211,6 +248,22 @@ impl<'p> Engine<'p> {
 
     pub fn is_empty(&self) -> bool {
         self.ped.len() == 0
+    }
+
+    /// The rows with every sibling family contiguous, for a walk whose
+    /// result does not depend on row order: each workspace then reuses the
+    /// parent-determined sets of one sib for the next.  `None` when the rows
+    /// are in that order already, or below degree 2, where a sib shares
+    /// nothing but its parents.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] for the order or its scratch.
+    pub fn family_order(&self) -> Result<Option<Vec<u32>>, Error> {
+        if self.max_degree.get() < 2 {
+            return Ok(None);
+        }
+        self.sibs.family_order()
     }
 
     /// Classify every pair involving `row`, fold precedence, then add the
@@ -315,8 +368,33 @@ impl<'p> Engine<'p> {
         ws.acc.claim_in_order(ws.sets[..computed].iter_mut());
     }
 
+    /// The family key of `row`, when both its parent ids are known.
+    fn family_key(&self, row: usize) -> Option<FamilyKey> {
+        let ped = &self.ped;
+        (ped.orig_mother[row] >= 0 && ped.orig_father[row] >= 0).then(|| FamilyKey {
+            mother: ped.mother[row],
+            father: ped.father[row],
+            orig_mother: ped.orig_mother[row],
+            orig_father: ped.orig_father[row],
+        })
+    }
+
     /// Fill `ws.sets` with the final symmetric relative set of `row` for every category.
+    ///
+    /// When the workspace's last row was a full sib of `row`, the sets that
+    /// depend only on the parents are reused rather than recomputed: the
+    /// ancestors beyond the parents, the siblings of those ancestors, the
+    /// half-sib collaterals, and every cousin product.
     pub fn classify_row(&self, row: usize, ws: &mut Workspace) -> Result<(), Error> {
+        let key = self.family_key(row);
+        let reuse = key.is_some() && ws.family == key;
+        ws.family = None;
+        self.classify(row, ws, reuse)?;
+        ws.family = key;
+        Ok(())
+    }
+
+    fn classify(&self, row: usize, ws: &mut Workspace, reuse: bool) -> Result<(), Error> {
         use Category::*;
         let deg = self.max_degree.get();
         for s in &mut ws.sets {
@@ -324,18 +402,22 @@ impl<'p> Engine<'p> {
         }
 
         // Lineal expansions: up with path multiplicity, down as support.
-        let (parents, mults) = self.up.row(row);
-        ws.up[1].clear();
-        alloc::extend(
-            &mut ws.up[1],
-            parents.iter().copied().zip(mults.iter().copied()),
-            Family::RowSet,
-        )?;
+        if !reuse {
+            let (parents, mults) = self.up.row(row);
+            ws.up[1].clear();
+            alloc::extend(
+                &mut ws.up[1],
+                parents.iter().copied().zip(mults.iter().copied()),
+                Family::RowSet,
+            )?;
+            for k in 2..=deg.max(1) as usize {
+                let (below, level) = ws.up.split_at_mut(k);
+                ws.acc.hop(&self.up, &below[k - 1], &mut level[0])?;
+            }
+        }
         ws.acc
             .hop_support(&self.down, &[row as u32], &mut ws.down[1])?;
         for k in 2..=deg.max(1) as usize {
-            let (below, level) = ws.up.split_at_mut(k);
-            ws.acc.hop(&self.up, &below[k - 1], &mut level[0])?;
             let (below, level) = ws.down.split_at_mut(k);
             ws.acc
                 .hop_support(&self.down, &below[k - 1], &mut level[0])?;
@@ -372,39 +454,44 @@ impl<'p> Engine<'p> {
 
         // Degree 2: GP is lineal (up[2] ∪ down[2] as an exclusion set); Av.
         lineal(ws, GP, 2)?;
-        self.collateral(row, ws, Av, SibKind::Full, 2)?;
+        self.collateral(row, ws, Av, SibKind::Full, 2, reuse)?;
         if deg < 3 {
             return Ok(());
         }
 
         // Degree 3.
         lineal(ws, GGP, 3)?;
-        self.collateral(row, ws, HAv, SibKind::Half, 2)?;
-        self.collateral(row, ws, GAv, SibKind::Full, 3)?;
-        self.cousins(row, ws)?;
+        self.collateral(row, ws, HAv, SibKind::Half, 2, reuse)?;
+        self.collateral(row, ws, GAv, SibKind::Full, 3, reuse)?;
+        self.cousins(row, ws, reuse)?;
         if deg < 4 {
             return Ok(());
         }
 
         // Degree 4.
         lineal(ws, GGGP, 4)?;
-        self.collateral(row, ws, HGAv, SibKind::Half, 3)?;
-        self.collateral(row, ws, GGAv, SibKind::Full, 4)?;
-        self.removed_cousins(row, ws, 2, 3, C1R1, |m| m.at_least_two())?;
+        self.collateral(row, ws, HGAv, SibKind::Half, 3, reuse)?;
+        self.collateral(row, ws, GGAv, SibKind::Full, 4, reuse)?;
+        self.removed_cousins(row, ws, 2, 3, C1R1, reuse, |m| m.at_least_two())?;
         if deg < 5 {
             return Ok(());
         }
 
         // Degree 5.
         lineal(ws, G3GP, 5)?;
-        self.collateral(row, ws, HGGAv, SibKind::Half, 4)?;
-        self.collateral(row, ws, G3Av, SibKind::Full, 5)?;
-        self.removed_cousins(row, ws, 2, 3, H1C1R, |m| m.is_one())?;
-        self.removed_cousins(row, ws, 2, 4, C1R2, |m| m.at_least_two())?;
-        self.second_cousins(row, ws)
+        self.collateral(row, ws, HGGAv, SibKind::Half, 4, reuse)?;
+        self.collateral(row, ws, G3Av, SibKind::Full, 5, reuse)?;
+        self.removed_cousins(row, ws, 2, 3, H1C1R, reuse, |m| m.is_one())?;
+        self.removed_cousins(row, ws, 2, 4, C1R2, reuse, |m| m.at_least_two())?;
+        self.second_cousins(row, ws, reuse)
     }
 
     /// `A^(down-1) @ S` and its transpose `S @ (A^T)^(down-1)` for a sibling matrix `S`.
+    ///
+    /// The siblings of the row's ancestors are the first arm.  Every full
+    /// sib shares them, and for half sibs the descendants of the row's own
+    /// half sibs too, so `reuse` keeps whichever the last row left.
+    #[allow(clippy::too_many_arguments)]
     fn collateral(
         &self,
         row: usize,
@@ -412,70 +499,112 @@ impl<'p> Engine<'p> {
         cat: Category,
         kind: SibKind,
         down: usize,
+        reuse: bool,
     ) -> Result<(), Error> {
         let [sib, result, tmp, tmp2] = &mut ws.scratch;
-        result.clear();
-        for &(p, _) in &ws.up[down - 1] {
-            kind.sibs(&self.sibs, p as usize, tmp2, sib)?;
-            sets::union_into(result, sib)?;
-        }
-        if ws.orient {
-            // Sibs of the row's ancestors: the row is the niece or nephew.
-            // Refilled in place so the buffer carries over between rows.
-            let arm = &mut ws.first_arm[cat.index()];
+        // Sibs of the row's ancestors: the row is the niece or nephew.  Kept
+        // whether or not orientation is wanted, for the next sib to reuse.
+        let arm = &mut ws.first_arm[cat.index()];
+        let shared = &mut ws.shared[cat.index()];
+        if !reuse {
             arm.clear();
-            alloc::reserve(arm, result.len(), Family::RowSet)?;
-            arm.extend_from_slice(result);
+            for &(p, _) in &ws.up[down - 1] {
+                kind.sibs(&self.sibs, p as usize, tmp2, sib)?;
+                sets::union_into(arm, sib)?;
+            }
+            if let SibKind::Half = kind {
+                self.sibs_down(row, kind, down, &mut ws.acc, sib, tmp, tmp2)?;
+                sets::copy_into(shared, arm)?;
+                sets::union_into(shared, sib)?;
+            }
         }
-        kind.sibs(&self.sibs, row, tmp2, sib)?;
-        for _ in 1..down {
-            ws.acc.hop_support(&self.down, sib, tmp)?;
-            std::mem::swap(sib, tmp);
+        match kind {
+            SibKind::Half => sets::copy_into(result, shared)?,
+            SibKind::Full => {
+                self.sibs_down(row, kind, down, &mut ws.acc, sib, tmp, tmp2)?;
+                sets::copy_into(result, arm)?;
+                sets::union_into(result, sib)?;
+            }
         }
-        sets::union_into(result, sib)?;
         sets::drop_self(result, row);
         self.finalize(cat, result, &ws.sets);
         std::mem::swap(&mut ws.sets[cat.index()], result);
         Ok(())
     }
 
+    /// The descendants `down - 1` hops below the row's sibs of `kind`, into `sib`.
+    #[allow(clippy::too_many_arguments)]
+    fn sibs_down(
+        &self,
+        row: usize,
+        kind: SibKind,
+        down: usize,
+        acc: &mut Accumulator,
+        sib: &mut Vec<u32>,
+        tmp: &mut Vec<u32>,
+        tmp2: &mut Vec<u32>,
+    ) -> Result<(), Error> {
+        kind.sibs(&self.sibs, row, tmp2, sib)?;
+        for _ in 1..down {
+            acc.hop_support(&self.down, sib, tmp)?;
+            std::mem::swap(sib, tmp);
+        }
+        Ok(())
+    }
+
     /// 1C, H1C, and the shared-grandparent support used by 2C.
-    fn cousins(&self, row: usize, ws: &mut Workspace) -> Result<(), Error> {
+    ///
+    /// All three depend only on the row's grandparents and parent ids, so
+    /// `reuse` keeps them from the last row.  The support keeps the row
+    /// itself, which shares every one of its grandparents, so that it is
+    /// the same for every full sib; 2C drops the row before subtracting it.
+    fn cousins(&self, row: usize, ws: &mut Workspace, reuse: bool) -> Result<(), Error> {
         use Category::*;
-        let ped = &self.ped;
-        let [children, ..] = &mut ws.scratch;
-        let [counted, ..] = &mut ws.weighted;
-        let grandparents = ws.up[2].len();
-        // Grow to the high-water mark only.  Shrinking would free the inner
-        // buffers, and the next wider row would allocate them again.
-        if ws.grandchildren.len() < grandparents {
-            ws.grandchildren.resize_with(grandparents, Vec::new);
+        if !reuse {
+            let ped = &self.ped;
+            let [children, ..] = &mut ws.scratch;
+            let [counted, ..] = &mut ws.weighted;
+            let grandparents = ws.up[2].len();
+            // Grow to the high-water mark only.  Shrinking would free the inner
+            // buffers, and the next wider row would allocate them again.
+            if ws.grandchildren.len() < grandparents {
+                ws.grandchildren.resize_with(grandparents, Vec::new);
+            }
+            for (&(g, _), grandchildren) in
+                ws.up[2].iter().zip(&mut ws.grandchildren[..grandparents])
+            {
+                ws.acc.hop_support(&self.down, &[g], children)?;
+                ws.acc.hop_support(&self.down, children, grandchildren)?;
+            }
+            ws.acc.count_memberships(
+                ws.grandchildren[..grandparents]
+                    .iter()
+                    .map(|v| v.as_slice()),
+                counted,
+            )?;
+            sets::support_into(counted, &mut ws.shares_grandparent)?;
+            // The row and every full sib of it share a known parent id, so
+            // the same rows leave whichever sib computes the sets.
+            let shares_parent_id = |j: u32| {
+                let j = j as usize;
+                (ped.orig_mother[row] >= 0 && ped.orig_mother[row] == ped.orig_mother[j])
+                    || (ped.orig_father[row] >= 0 && ped.orig_father[row] == ped.orig_father[j])
+            };
+            counted.retain(|&(j, _)| j as usize != row && !shares_parent_id(j));
+            sets::select_into(counted, |m| m.at_least_two(), &mut ws.shared[C1.index()])?;
+            sets::select_into(counted, |m| m.is_one(), &mut ws.shared[H1C.index()])?;
         }
-        for (&(g, _), grandchildren) in ws.up[2].iter().zip(&mut ws.grandchildren[..grandparents]) {
-            ws.acc.hop_support(&self.down, &[g], children)?;
-            ws.acc.hop_support(&self.down, children, grandchildren)?;
+        for cat in [C1, H1C] {
+            sets::copy_into(&mut ws.sets[cat.index()], &ws.shared[cat.index()])?;
         }
-        ws.acc.count_memberships(
-            ws.grandchildren[..grandparents]
-                .iter()
-                .map(|v| v.as_slice()),
-            counted,
-        )?;
-        counted.retain(|&(j, _)| j as usize != row);
-        sets::support_into(counted, &mut ws.shares_grandparent)?;
-        let shares_parent_id = |j: u32| {
-            let j = j as usize;
-            (ped.orig_mother[row] >= 0 && ped.orig_mother[row] == ped.orig_mother[j])
-                || (ped.orig_father[row] >= 0 && ped.orig_father[row] == ped.orig_father[j])
-        };
-        sets::select_into(counted, |m| m.at_least_two(), &mut ws.sets[C1.index()])?;
-        ws.sets[C1.index()].retain(|&j| !shares_parent_id(j));
-        sets::select_into(counted, |m| m.is_one(), &mut ws.sets[H1C.index()])?;
-        ws.sets[H1C.index()].retain(|&j| !shares_parent_id(j));
         Ok(())
     }
 
     /// `A^a @ (A^b)^T` in both orientations with path multiplicity, thresholded by `keep`.
+    ///
+    /// Both products start from the row's ancestors, so `reuse` keeps them
+    /// from the last row.
+    #[allow(clippy::too_many_arguments)]
     fn removed_cousins(
         &self,
         row: usize,
@@ -483,45 +612,46 @@ impl<'p> Engine<'p> {
         a: usize,
         b: usize,
         cat: Category,
+        reuse: bool,
         keep: impl Fn(Mult) -> bool,
     ) -> Result<(), Error> {
-        let [forward, backward, tmp] = &mut ws.weighted;
-        self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp)?;
-        self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp)?;
-        // Both buffers are the ones this category used on the previous row.
-        let mut result = std::mem::take(&mut ws.sets[cat.index()]);
-        let mut junior = std::mem::take(&mut ws.first_arm[cat.index()]);
-        let built = (|| {
-            sets::select_into(forward, &keep, &mut result)?;
-            sets::select_into(backward, &keep, &mut junior)?;
-            sets::union_into(&mut result, &junior)
-        })();
-        if built.is_ok() {
-            sets::drop_self(&mut result, row);
-            self.finalize(cat, &mut result, &ws.sets);
+        if !reuse {
+            let [forward, backward, tmp] = &mut ws.weighted;
+            self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp)?;
+            self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp)?;
+            let shared = &mut ws.shared[cat.index()];
+            // Through `junior` the row sits `b > a` meioses from the shared
+            // ancestor: it is the junior cousin, which the registry puts first
+            // (the matrix oracle reads these products with `row_is_first=False`).
+            // Kept whether or not orientation is wanted, for the next sib to
+            // reuse; the counting path never reads it.
+            let junior = &mut ws.first_arm[cat.index()];
+            sets::select_into(forward, &keep, shared)?;
+            sets::select_into(backward, &keep, junior)?;
+            sets::union_into(shared, junior)?;
         }
+        let set = &mut ws.sets[cat.index()];
+        sets::copy_into(set, &ws.shared[cat.index()])?;
+        sets::drop_self(set, row);
+        let mut result = std::mem::take(set);
+        self.finalize(cat, &mut result, &ws.sets);
         ws.sets[cat.index()] = result;
-        // Through `junior` the row sits `b > a` meioses from the shared
-        // ancestor: it is the junior cousin, which the registry puts first
-        // (the matrix oracle reads these products with `row_is_first=False`).
-        // Kept whether or not orientation is wanted, so the buffer survives
-        // to the next row; the counting path never reads it.
-        ws.first_arm[cat.index()] = junior;
-        built
+        Ok(())
     }
 
     /// `A^3 @ (A^3)^T >= 2`, minus pairs sharing any grandparent.
-    fn second_cousins(&self, row: usize, ws: &mut Workspace) -> Result<(), Error> {
-        let [product, _, tmp] = &mut ws.weighted;
-        self.chain_down(&mut ws.acc, &ws.up[3], 3, product, tmp)?;
-        let mut result = std::mem::take(&mut ws.sets[Category::C2.index()]);
-        let built = sets::select_into(product, |m| m.at_least_two(), &mut result);
-        if built.is_ok() {
-            sets::drop_self(&mut result, row);
-            sets::subtract(&mut result, &ws.shares_grandparent);
+    fn second_cousins(&self, row: usize, ws: &mut Workspace, reuse: bool) -> Result<(), Error> {
+        let cat = Category::C2;
+        if !reuse {
+            let [product, _, tmp] = &mut ws.weighted;
+            self.chain_down(&mut ws.acc, &ws.up[3], 3, product, tmp)?;
+            sets::select_into(product, |m| m.at_least_two(), &mut ws.shared[cat.index()])?;
         }
-        ws.sets[Category::C2.index()] = result;
-        built
+        let set = &mut ws.sets[cat.index()];
+        sets::copy_into(set, &ws.shared[cat.index()])?;
+        sets::drop_self(set, row);
+        sets::subtract(set, &ws.shares_grandparent);
+        Ok(())
     }
 
     /// `src @ (A^T)^k` with saturated path multiplicity.
@@ -579,10 +709,7 @@ fn lineal(ws: &mut Workspace, cat: Category, k: usize) -> Result<(), Error> {
         sets::support_into(&ws.up[k], &mut set)?;
         if ws.orient {
             // The up arm alone: towards an ancestor the row is the descendant.
-            let arm = &mut ws.first_arm[cat.index()];
-            arm.clear();
-            alloc::reserve(arm, set.len(), Family::RowSet)?;
-            arm.extend_from_slice(&set);
+            sets::copy_into(&mut ws.first_arm[cat.index()], &set)?;
         }
         sets::union_into(&mut set, &ws.down[k])
     })();
@@ -621,8 +748,119 @@ fn parent_role(row: usize, parent: &[i32], down1: &[u32], set: &mut Vec<u32>) ->
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::pedigree;
-    use super::super::{count_pairs, Category, Counts, MaxDegree, Progress};
+    use super::super::testing::{pedigree, random_pedigree, shuffled_sibships};
+    use super::super::{count_pairs, Category, CategorySet, Counts, MaxDegree, Progress};
+    use super::{Engine, Workspace};
+
+    /// Every pair `row` owns, as `emit_row` hands them out.
+    fn emitted(engine: &Engine, row: usize, ws: &mut Workspace) -> Vec<(Category, u32, u32)> {
+        let mut pairs = Vec::new();
+        engine
+            .emit_row(
+                row,
+                &CategorySet::up_to_degree(MaxDegree::MAX.get()),
+                None,
+                ws,
+                |cat, a, b| {
+                    pairs.push((cat, a, b));
+                    Ok(())
+                },
+            )
+            .unwrap();
+        pairs
+    }
+
+    /// The pairs `row` owns per category, as `count_row` adds them.
+    fn counted(engine: &Engine, row: usize, ws: &mut Workspace) -> Counts {
+        let mut counts = Counts::default();
+        engine.count_row(row, None, ws, &mut counts).unwrap();
+        counts
+    }
+
+    #[test]
+    fn a_sib_reusing_the_family_sets_classifies_as_a_fresh_workspace_does() {
+        for (cols, family_rows) in [
+            (shuffled_sibships(3), true),
+            (shuffled_sibships(8), true),
+            (random_pedigree(300, 5), false),
+        ] {
+            let ped = cols.try_borrow().unwrap();
+            let engine = Engine::new(&ped, MaxDegree::MAX).unwrap();
+            let order = engine
+                .family_order()
+                .unwrap()
+                .unwrap_or_else(|| (0..ped.len() as u32).collect());
+            let mut sorted = order.clone();
+            sorted.sort_unstable();
+            assert!(sorted.iter().copied().eq(0..ped.len() as u32));
+            // Sorted by parent rows, rows of different families with the
+            // same parent rows meet, and those must not reuse each other.
+            let mut by_parent_rows: Vec<u32> = (0..ped.len() as u32).collect();
+            by_parent_rows.sort_by_key(|&r| (ped.mother[r as usize], ped.father[r as usize]));
+            for walk in [&order, &by_parent_rows] {
+                let mut shared = Workspace::build(ped.len(), true).unwrap();
+                let mut counting = Workspace::build(ped.len(), false).unwrap();
+                let mut reused = 0;
+                for &row in walk {
+                    let row = row as usize;
+                    reused += usize::from(
+                        engine.family_key(row).is_some() && shared.family == engine.family_key(row),
+                    );
+                    let mut fresh = Workspace::build(ped.len(), true).unwrap();
+                    assert_eq!(
+                        emitted(&engine, row, &mut shared),
+                        emitted(&engine, row, &mut fresh),
+                        "row {row}"
+                    );
+                    // The counting path fills no orientation arms of its own.
+                    let mut fresh = Workspace::build(ped.len(), false).unwrap();
+                    assert_eq!(
+                        counted(&engine, row, &mut counting),
+                        counted(&engine, row, &mut fresh),
+                        "row {row}"
+                    );
+                }
+                if family_rows {
+                    assert!(
+                        reused > ped.len() / 3,
+                        "{reused} of {} rows reused",
+                        ped.len()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn contiguous_families_need_no_order_and_scattered_ones_are_gathered() {
+        // Sibs 2 and 4 of parents 0 and 1, with 3 between them.
+        let scattered = pedigree(&[(-1, -1), (-1, -1), (0, 1), (-1, -1), (0, 1)], &[]);
+        let ped = scattered.try_borrow().unwrap();
+        let order = Engine::new(&ped, MaxDegree::MAX).unwrap().family_order();
+        assert_eq!(order.unwrap(), Some(vec![0, 1, 2, 4, 3]));
+        let contiguous = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 1), (-1, -1)], &[]);
+        let ped = contiguous.try_borrow().unwrap();
+        let order = Engine::new(&ped, MaxDegree::MAX).unwrap().family_order();
+        assert_eq!(order.unwrap(), None);
+    }
+
+    #[test]
+    fn counts_do_not_depend_on_row_order() {
+        let shuffled = shuffled_sibships(3);
+        let ped = shuffled.try_borrow().unwrap();
+        let engine = Engine::new(&ped, MaxDegree::MAX).unwrap();
+        let mut in_row_order = Counts::default();
+        for row in 0..ped.len() {
+            // A fresh workspace a row, so nothing is reused.
+            let mut ws = Workspace::build(ped.len(), true).unwrap();
+            for (cat, _, _) in emitted(&engine, row, &mut ws) {
+                in_row_order.add(cat, 1);
+            }
+        }
+        let got = count_pairs(&ped, MaxDegree::MAX, None, &Progress::default()).unwrap();
+        assert_eq!(got, in_row_order);
+        assert!(got.get(Category::C1) > 0 && got.get(Category::C2) > 0);
+    }
 
     fn expect(pairs: &[(Category, u64)]) -> Counts {
         let mut counts = Counts::default();

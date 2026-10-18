@@ -258,8 +258,10 @@ const _: () = assert!(ROWS_PER_TASK % progress::CHECK_EVERY == 0);
 ///
 /// Rows are independent, so the work is split into row ranges; each task
 /// borrows a [`Workspace`] from a pool that never holds more workspaces than
-/// there are threads.  Counts are integers summed in any order, so the result
-/// is bit-identical for every thread count.
+/// there are threads.  The rows are walked in [`Engine::family_order`], so
+/// full sibs share their parent-determined work.  Counts are integers summed
+/// in any order, so the result is bit-identical for every thread count and
+/// row order.
 ///
 /// # Errors
 ///
@@ -274,6 +276,7 @@ pub fn count_pairs(
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
     let pool = WorkspacePool::for_counts(n);
+    let order = engine.family_order()?;
     progress.walk(n)?;
     let counts = task_ranges(n)
         .into_par_iter()
@@ -283,6 +286,7 @@ pub fn count_pairs(
                 &pool,
                 progress,
                 range,
+                order.as_deref(),
                 |row| selected.is_some_and(|s| !s[row]),
                 |row, ws| engine.count_row(row, selected, ws, &mut counts),
             )?;
@@ -397,17 +401,21 @@ fn on_receiver<T>(
     }
 }
 
-/// Run `row` over `range`: each row is checked against `progress` first,
-/// then skipped when `skip` names it; the first error ends the walk.  Every
-/// row loop of the engine goes through here (ADR 0017, "Checkpoints").
+/// Run `row` over the positions in `range`: of `order`, or of the rows
+/// themselves without one.  Each position is checked against `progress`
+/// first, then its row skipped when `skip` names it; the first error ends
+/// the walk.  Every row loop of the engine goes through here (ADR 0017,
+/// "Checkpoints").
 fn walk_rows(
     range: (usize, usize),
+    order: Option<&[u32]>,
     progress: &Progress,
     skip: impl Fn(usize) -> bool,
     mut row: impl FnMut(usize) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    for r in range.0..range.1 {
-        progress.check_row(r)?;
+    for at in range.0..range.1 {
+        progress.check_row(at)?;
+        let r = order.map_or(at, |order| order[at] as usize);
         if skip(r) {
             continue;
         }
@@ -425,11 +433,12 @@ fn walk_task(
     pool: &WorkspacePool,
     progress: &Progress,
     range: (usize, usize),
+    order: Option<&[u32]>,
     skip: impl Fn(usize) -> bool,
     mut row: impl FnMut(usize, &mut Workspace) -> Result<(), Error>,
 ) -> Result<(), Error> {
     let mut ws = pool.take()?;
-    let result = walk_rows(range, progress, skip, |r| row(r, &mut ws));
+    let result = walk_rows(range, order, progress, skip, |r| row(r, &mut ws));
     pool.give(ws);
     progress.advance(range.1 - range.0);
     result

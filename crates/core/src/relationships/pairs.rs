@@ -151,6 +151,7 @@ impl Query<'_> {
             &self.pool,
             self.progress,
             range,
+            None,
             |row| self.view.is_some_and(|map| map[row] < 0),
             |row, ws| {
                 self.engine

@@ -7,6 +7,9 @@
 Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
 Amended 2026-09-30 for issue #29: MZ co-twins take part in sibling groups
 (0.11.0).
+Amended 2026-10-18: full sibs share their parent-determined sets, and walks
+whose result does not depend on row order gather each sibship (see "Full
+sibs share their parent-determined work").
 
 ## Context
 
@@ -104,10 +107,9 @@ Checked or wide integer arithmetic is not used in the pair engine.
 The classifier has more than one consumer. Counting adds the members above
 the owner row after the precedence fold. Pair emission instead hands each
 owned pair to a sink in the category's semantic orientation. To do so the
-engine records, only in workspaces built for emission, a per-category
-*first arm*: the members for whom the owner row carries `first_role`,
-captured after multiplicity filtering and before the two arms of an
-asymmetric product are unioned.
+engine records a per-category *first arm*: the members for whom the owner
+row carries `first_role`, captured after multiplicity filtering and before
+the two arms of an asymmetric product are unioned.
 
 * Lineal codes: the up arm (the row is the descendant).
 * `MO` and `FO`: the row's own parent (the row is the offspring).
@@ -126,8 +128,33 @@ key order and are never sorted; view receivers are relabelled through the
 graph-to-view map and sorted by the view-space key. Emission and counting
 share one pool of workspaces, and emission is byte-identical across thread
 counts and across the output assemblies ADR 0007's amendment selects. The
-counting path never allocates or fills the first arms. The evidence is in
+counting path fills only the avuncular and removed-cousin arms, which the
+next full sib reuses, and never reads them. The evidence is in
 `benchmarks/bench_pair_emitters.md`.
+
+### Full sibs share their parent-determined work
+
+About half of a row's classification depends only on its parents: the
+ancestors beyond them, the sibs of those ancestors, the half-sib collaterals
+(a full sib has the same half sibs), the first-cousin products and shared
+grandparents, and the removed and second cousin products. A workspace keeps
+these from the last row it classified, keyed by both parent rows and both
+original parent ids, and the next row with the same key reuses them; only
+the row itself and closer categories are then removed. Only a row with both
+parent ids known has a key, because only then does every row with the same
+key lie in its sibling family, so the first cousin rule's "shares a known
+parent id" removes the same rows from every sib. The shared-grandparent
+support keeps the row itself, so it is the same for every sib; second
+cousins drop the row before subtracting it. A failing row clears the key.
+
+Reuse needs sibs to be classified one after another. Counting, burden,
+moments and per-person relatives walk the rows in the sibling index's
+family order, each sibship whole at its first member's place and every
+other row where it stands; a pedigree whose sibships are already contiguous
+walks in row order with no order to read. Their results are integer sums
+or per-row tallies, so they do not depend on order. Pair emission and the
+public `reduce_pairs`, whose one-lane order a reducer may rely on, keep
+graph row order and reuse only what that order makes adjacent.
 
 ### Where it lives
 

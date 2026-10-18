@@ -6,6 +6,22 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: relationship counts and moments are 10 to 12% faster, and
+  about 35% faster on pedigrees whose sibs are not stored together.** Full
+  sibs share about half of each row's classification, everything that
+  depends only on the parents, and the engine now reuses it from one sib to
+  the next. `relationship_counts`, `relationship_moments`,
+  `relatives_per_person` and `relationship_burden` gather each sibship
+  before they walk the rows, which costs 4 bytes a row when the sibships
+  are not already contiguous; `relationship_pairs` keeps row order and
+  reuses only what that order puts side by side. Results are identical.
+  On simACE's `bench_scale` pedigrees, median of 5, one thread: counts
+  6.00 s to 5.28 s at 2M rows and 32.5 s to 29.2 s at 10M, moments 6.75 s
+  to 5.91 s and 36.6 s to 33.1 s, pairs 7.55 s to 6.78 s at 2M. With the
+  rows shuffled: counts 14.6 s to 9.4 s at 2M and 81.4 s to 52.5 s at 10M,
+  moments 16.3 s to 10.7 s and 90.7 s to 59.6 s, `relatives_per_person`
+  5.33 s to 4.51 s at 2M; six threads at 10M, counts 21.1 s to 15.7 s and
+  moments 23.2 s to 17.5 s, peak memory up 1.1%.
 - **Changed: `pair_kinship` is 23 to 30% faster on large pedigrees.** The
   walk reads each key's rule once where it meets the key, and carries the
   rule and its dependencies' values on the stack, instead of re-deriving

@@ -12,7 +12,7 @@
 //! fewer than `2^32`, so no counter can wrap.
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
-use super::moments::{reduce_pairs, Reducer, Symmetric};
+use super::moments::{reduce_pairs_in, Reducer, RowOrder, Symmetric};
 use super::progress::Progress;
 use super::{check_column_length, on_receiver, receiver_len, MaxDegree, Pedigree, Receiver};
 use crate::alloc::{self, Family};
@@ -158,7 +158,7 @@ pub fn relatives_per_person(
         slot,
     };
     let reduced = on_receiver(ped, receiver, progress, |ped, view| {
-        reduce_pairs(
+        reduce_pairs_in(
             ped,
             max_degree,
             requested,
@@ -167,6 +167,7 @@ pub fn relatives_per_person(
             threads,
             &reducer,
             progress,
+            RowOrder::Families,
         )
     })?;
     Ok(RelativesPerPerson {
