@@ -94,10 +94,14 @@ impl SiblingIndex {
     /// Every row once, each sibling family whole at its first member's
     /// place and every other row where it stands, so full sibs are
     /// classified one after another.  `None` when that is the row order
-    /// already, so the walk needs no order to read.
+    /// already, found before anything is allocated, so the walk needs no
+    /// order to read.
     pub fn family_order(&self) -> Result<Option<Vec<u32>>, Error> {
         let groups = &self.family;
         let n = groups.group_of.len();
+        if self.contiguous() {
+            return Ok(None);
+        }
         let mut order = alloc::with_capacity(n, Family::SiblingIndex)?;
         let mut placed = alloc::filled(false, groups.indptr.len() - 1, Family::SiblingIndex)?;
         for row in 0..n {
@@ -109,11 +113,31 @@ impl SiblingIndex {
                 Ok(_) => {}
             }
         }
-        let moved = order
-            .iter()
-            .enumerate()
-            .any(|(at, &row)| row as usize != at);
-        Ok(moved.then_some(order))
+        Ok(Some(order))
+    }
+
+    /// Whether every sibling family's members are consecutive rows, so
+    /// [`SiblingIndex::family_order`] would be the row order itself.
+    fn contiguous(&self) -> bool {
+        let groups = &self.family;
+        let n = groups.group_of.len();
+        let mut row = 0;
+        while row < n {
+            if groups.group_of[row] < 0 {
+                row += 1;
+                continue;
+            }
+            let members = groups.members(row);
+            if !members
+                .iter()
+                .enumerate()
+                .all(|(k, &m)| m as usize == row + k)
+            {
+                return false;
+            }
+            row += members.len();
+        }
+        true
     }
 
     /// Full sibs of `row` (same known mother and father ids), sorted, excluding `row`.

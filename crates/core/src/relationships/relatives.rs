@@ -2,9 +2,10 @@
 //! how many relatives the row has, and how many of them pass each threshold
 //! column.
 //!
-//! One pass of [`reduce_pairs`] with [`Symmetric::Both`] credits the `first`
-//! member of every oriented pair, so a symmetric category credits both
-//! members and a directional one only its first (junior) member.  Every lane
+//! One pass of [`reduce_pairs_in`] in family order with [`Symmetric::Both`]
+//! credits the `first` member of every oriented pair, so a symmetric
+//! category credits both members and a directional one only its first
+//! (junior) member.  Every lane
 //! adds into one shared `[rows][categories][1 + K]` array of relaxed
 //! `AtomicU32` counters, so the lanes carry nothing and there is nothing to
 //! merge; integer adds commute, so the counts are the same for every lane

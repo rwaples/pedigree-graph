@@ -276,7 +276,7 @@ pub fn count_pairs(
     let engine = Engine::new(ped, max_degree)?;
     let n = engine.len();
     let pool = WorkspacePool::for_counts(n);
-    let order = engine.family_order()?;
+    let order = engine.family_order();
     progress.walk(n)?;
     let counts = task_ranges(n)
         .into_par_iter()
