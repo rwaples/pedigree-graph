@@ -116,7 +116,7 @@ pub struct Reduced<L> {
 
 /// The order a pass walks the rows in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum RowOrder {
+pub enum RowOrder {
     /// Graph row order: with one lane, pairs reach the reducer in it.
     Rows,
     /// [`Engine::family_order`], for a reducer whose lane does not depend
@@ -169,8 +169,13 @@ pub fn reduce_pairs<R: Reducer>(
 }
 
 /// [`reduce_pairs`] with the rows walked in `order`.
+///
+/// [`RowOrder::Families`] lets each full sib reuse its predecessor's
+/// parent-determined sets (ADR 0010), which is faster, most of all when
+/// the input scatters sibships; use it when the merged lane does not
+/// depend on the order pairs arrive in.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn reduce_pairs_in<R: Reducer>(
+pub fn reduce_pairs_in<R: Reducer>(
     ped: &Pedigree,
     max_degree: MaxDegree,
     requested: CategorySet,
