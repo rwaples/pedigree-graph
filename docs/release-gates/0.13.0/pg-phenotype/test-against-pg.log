@@ -1,0 +1,310 @@
+✨ Pixi task (test-against-pg in default): tools/test_against_pg.sh /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.13.0/clean
+    Updating git repository `https://github.com/rwaples/pedigree-graph`
+    Updating crates.io index
+     Locking 1 package to highest compatible version
+      Adding pedigree-graph-core v0.13.0 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.13.0/clean/crates/core)
+    Removing pedigree-graph-core v0.12.4 (https://github.com/rwaples/pedigree-graph?rev=e2e5d91a8a4e6ad507183ff8370ae0aad1b063c3#e2e5d91a)
+note: pass `--verbose` to see 4 unchanged dependencies behind latest
+    Updating git repository `https://github.com/rwaples/pedigree-graph`
+    Updating crates.io index
+     Locking 1 package to highest compatible version
+      Adding pedigree-graph-core v0.13.0 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.13.0/clean/crates/core)
+    Removing pedigree-graph-core v0.12.4 (https://github.com/rwaples/pedigree-graph?rev=e2e5d91a8a4e6ad507183ff8370ae0aad1b063c3#e2e5d91a)
+note: pass `--verbose` to see 2 unchanged dependencies behind latest
+== pedigree-graph-core <- /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.13.0/clean (0a79c4e)
+== cargo test
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.23
+   Compiling crossbeam-epoch v0.9.21
+   Compiling crossbeam-deque v0.8.8
+   Compiling rayon-core v1.13.0
+   Compiling target-lexicon v0.13.5
+   Compiling either v1.19.0
+   Compiling libm v0.2.16
+   Compiling rustc-hash v2.1.3
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling libc v0.2.190
+   Compiling heck v0.5.0
+   Compiling rawpointer v0.2.1
+   Compiling once_cell v1.21.4
+   Compiling num-traits v0.2.19
+   Compiling matrixmultiply v0.3.11
+   Compiling pyo3-build-config v0.29.3
+   Compiling syn v2.0.119
+   Compiling num-integer v0.1.47
+   Compiling num-complex v0.4.6
+   Compiling pyo3-ffi v0.29.3
+   Compiling pyo3 v0.29.3
+   Compiling numpy v0.29.0
+   Compiling num-bigint v0.4.8
+   Compiling ndarray v0.17.2
+   Compiling rayon v1.12.0
+   Compiling pyo3-macros-backend v0.29.3
+   Compiling pedigree-graph-core v0.13.0 (/data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.13.0/clean/crates/core)
+   Compiling pg-phenotype-core v0.4.0 (/data/Documents/simACE/external/pg-phenotype/crates/core)
+   Compiling pyo3-macros v0.29.3
+   Compiling pg-phenotype-python v0.4.0 (/data/Documents/simACE/external/pg-phenotype/crates/python)
+    Finished `release` profile [optimized + debuginfo] target(s) in 56.62s
+     Running unittests src/lib.rs (target/release/deps/pg_phenotype_core-e6759d6c6918845b)
+
+running 193 tests
+test ace::linear::tests::cholesky_factors_and_inverts_a_positive_definite_matrix ... ok
+test ace::linear::tests::cholesky_refuses_a_matrix_that_is_not_positive_definite ... ok
+test ace::tests::a_categories_subset_reads_its_cells_slots ... ok
+test ace::tests::a_cross_solve_without_a_shared_row_solves_sa_alone ... ok
+test ace::tests::a_correlation_past_one_is_reported_and_flagged ... ok
+test ace::linear::tests::each_right_hand_side_is_its_own_least_squares_solution ... ok
+test ace::tests::a_nonpositive_share_leaves_its_correlation_undefined ... ok
+test ace::tests::a_row_without_an_se_reaches_only_what_reads_it ... ok
+test ace::tests::a_trait_without_a_shared_row_solves_a_alone ... ok
+test ace::tests::an_indefinite_covariance_gives_negative_variance_or_no_gls ... ok
+test ace::tests::cross_rows_weigh_each_complete_orientation_once ... ok
+test ace::tests::every_ace_error ... ok
+test ace::tests::exact_model_correlations_recover_every_parameter ... ok
+test ace::tests::falconer_ses_are_the_closed_forms_under_every_weighting ... ok
+test ace::tests::gls_is_the_generalized_least_squares_fit_and_its_variance ... ok
+test ace::tests::hosts_name_the_request_as_the_tree_does ... ok
+test ace::tests::inverse_variance_is_weighted_least_squares_with_a_sandwich ... ok
+test ace::tests::overidentified_fit_is_the_weighted_least_squares_solution ... ok
+test ace::tests::pairs_weights_give_the_bits_of_the_fit_before_the_se ... ok
+test ace::tests::rank_deficient_designs_are_not_identified ... ok
+test ace::tests::recipes_match_their_closed_forms ... ok
+test ace::tests::the_default_is_pairs_without_the_covariance_read_or_for_phi ... ok
+test ace::tests::the_estimate_and_estimator_pick_each_cells_value ... ok
+test ace::tests::the_fit_reads_the_covariance_of_its_form ... ok
+test ace::tests::the_default_takes_gls_per_fit_and_pairs_where_its_block_has_no_factor ... ok
+test ace::tests::the_tree_echoes_the_request ... ok
+test ace::tests::undefined_cells_are_rows_with_their_reason ... ok
+test ace::tests::the_within_person_row_carries_se_and_re ... ok
+test ace::tests::weights_by_the_covariance_need_one_of_the_cells ... ok
+test ace::tests::without_a_covariance_every_se_is_no_covariance ... ok
+test ace::tests::without_the_within_person_cell_se_is_not_identified ... ok
+test assortative::input::tests::one_or_two_traits_each_admitted_strictly ... ok
+test assortative::input::tests::settings_and_strata ... ok
+test assortative::input::tests::without_inference_every_draw_count_is_zero ... ok
+test assortative::kernels::tests::blocks_cover_every_pair_once ... ok
+test assortative::kernels::tests::ranks_average_ties_by_weight ... ok
+test assortative::result::tests::reasons_are_declared_in_name_order ... ok
+test assortative::result::tests::fit_reasons_keep_their_names ... ok
+test assortative::sample::tests::codes_rank_labels_with_unknown_first ... ok
+test assortative::sample::tests::pooled_borrows_pairs_already_in_one_stratum ... ok
+test correlation::tests::degenerate_tables_carry_a_reason ... ok
+test assortative::sandwich::tests::streamed_table_sums_match_materialized_influences_bitwise ... ok
+test correlation::tests::independence_gives_zero_and_the_delta_method_se ... ok
+test correlation::tests::pairs_count_into_the_table_and_drop_missing ... ok
+test error::tests::positions_count_from_the_hosts_base ... ok
+test assortative::kernels::tests::parallel_and_serial_kernels_agree_bit_for_bit ... ok
+test error::tests::samples_hold_every_variant ... ok
+test assortative::bootstrap::tests::every_fitted_estimator_gets_its_draws ... ok
+test input::tests::admission_rules_in_order ... ok
+test correlation::tests::every_layout_gives_one_rho_up_to_its_sign ... ok
+test input::tests::errors_name_the_field_and_what_failed ... ok
+test input::tests::huge_codes_and_level_counts_are_rejected_without_allocating ... ok
+test input::tests::the_length_comes_before_the_kind ... ok
+test input::tests::no_method_declares_a_categorical_trait - should panic ... ok
+test lineage::tests::founder_mz_twins_share_a_label ... ok
+test lineage::tests::relatives_are_never_disjoint_and_strangers_are ... ok
+test ace::tests::every_se_is_the_finite_difference_gradients_variance ... ok
+test mate_network::tests::pairs_sort_by_parent_id_and_networks_number_by_first_pair ... ok
+test mate_network::tests::parents_in_no_pair_get_their_own_key_and_fits_are_renumbered ... ok
+test mate_network::tests::the_sandwich_needs_two_networks_and_sums_by_label ... ok
+test normal::tests::fully_observed_control_is_plain_truncation ... ok
+test normal::tests::quantile_inverts_cdf ... ok
+test normal::tests::tails_are_complementary_and_symmetric ... ok
+test normal::tests::truncated_moments_match_closed_forms ... ok
+test pafgrs::aalen_johansen::tests::a_case_and_a_death_at_one_age_share_the_survival_before_it ... ok
+test pafgrs::aalen_johansen::tests::a_case_at_age_zero_counts_without_entry ... ok
+test pafgrs::aalen_johansen::tests::a_k_of_zero_or_one_is_not_estimable ... ok
+test pafgrs::aalen_johansen::tests::a_negative_zero_age_is_tabled_as_zero ... ok
+test pafgrs::aalen_johansen::tests::a_row_censored_at_an_event_age_is_at_risk_there ... ok
+test pafgrs::aalen_johansen::tests::a_row_censored_at_its_entry_age_changes_nothing ... ok
+test pafgrs::aalen_johansen::tests::a_row_entering_at_an_event_age_is_not_at_risk_there ... ok
+test pafgrs::aalen_johansen::tests::invalid_rows_name_the_first ... ok
+test pafgrs::aalen_johansen::tests::steps_at_case_ages_with_death_competing ... ok
+test pafgrs::aalen_johansen::tests::the_table_is_a_step_function_at_the_case_ages ... ok
+test pafgrs::aalen_johansen::tests::zero_entries_match_no_entry_when_no_age_is_zero ... ok
+test pafgrs::cip::tests::interpolation_follows_numpy_interp ... ok
+test pafgrs::biv::tests::metadata_follows_the_hosts_key_order ... ok
+test pafgrs::cip::tests::interpolation_names_round_trip ... ok
+test pafgrs::cip::tests::invalid_tables_name_the_position ... ok
+test pafgrs::cip::tests::observation_rules ... ok
+test pafgrs::cip::tests::the_status_is_checked_before_the_age ... ok
+test pafgrs::pa::tests::packed_index_covers_triangle_once ... ok
+test pafgrs::pa::tests::reset_zeroes_and_sizes ... ok
+test pafgrs::prep::tests::ndegree_is_checked_before_the_pedigree ... ok
+test pafgrs::prep::tests::degree_one_drops_grandparents_and_aunts ... ok
+test pafgrs::prep::tests::pedigree_errors_pass_through_with_their_code ... ok
+test pafgrs::prep::tests::mz_twins_are_relatives_at_half ... ok
+test pafgrs::prep::tests::proband_list_errors ... ok
+test pafgrs::cip::tests::a_step_table_holds_each_value_until_the_next_age ... ok
+test pafgrs::prep::tests::probands_restrict_the_scored_rows_not_the_relatives ... ok
+test pafgrs::prep::tests::tri_index_is_row_major_upper ... ok
+test pafgrs::prep::tests::relatives_follow_degree_and_kinship ... ok
+test pafgrs::prep::tests::probands_reuse_an_id_index_but_never_cache_one ... ok
+test pafgrs::triangle::tests::negative_zero_keeps_its_bits ... ok
+test pedigree::tests::a_built_arg_borrows_and_columns_build ... ok
+test pafgrs::uni::tests::metadata_follows_the_hosts_key_order ... ok
+test pedigree::tests::caches_are_built_once ... ok
+test pedigree::tests::len_and_ids_follow_the_input_rows ... ok
+test pedigree::tests::concurrent_first_use_sees_one_cache ... ok
+test pedigree::tests::pedigree_errors_pass_through_with_their_code ... ok
+test pedigree::tests::rows_and_align_follow_the_ids ... ok
+test pedigree::tests::rows_and_align_reject_unknown_and_repeated_ids ... ok
+test polychoric::bvn::tests::a_rectangle_at_zero_correlation_is_a_product_of_tails ... ok
+test polychoric::bvn::tests::gauss_kronrod_is_exact_to_its_degrees ... ok
+test polychoric::fit::tests::a_plateau_reaching_the_bound_is_flagged ... ok
+test polychoric::fit::tests::brent_finds_an_interior_minimum ... ok
+test polychoric::fit::tests::newton_hands_over_and_flags_bounds ... ok
+test polychoric::bvn::tests::a_rectangle_matches_the_corner_cdfs_where_they_are_exact ... ok
+test polychoric::primitives_parity::bounded_brent_retraces_scipy ... ok
+test polychoric::table::tests::margin_status_order ... ok
+test polychoric::table::tests::thresholds_frame_and_invert_the_margin ... ok
+test polychoric::tests::the_bound_nll_resolves_a_cell_that_is_rounding ... ok
+test regression::tests::a_parent_missing_the_trait_still_joins_two_sibships ... ok
+test regression::tests::a_single_parent_is_its_own_network_shared_by_its_children ... ok
+test regression::tests::a_stratum_counts_only_its_own_networks ... ok
+test polychoric::primitives_parity::kernel_normal_functions_match_numba ... ok
+test regression::tests::binary_traits_regress_on_codes ... ok
+test regression::tests::drops_count_each_row_once_and_sum_to_the_rows ... ok
+test regression::tests::midparent_mother_and_father_match_the_hand_computation ... ok
+test regression::tests::parent_differences_that_underflow_have_no_line ... ok
+test regression::tests::settings_pick_lines_and_skip_inference_alone ... ok
+test regression::tests::strata_partition_children_and_unknown_stay_pooled ... ok
+test regression::tests::trait_checks ... ok
+test regression::tests::two_children_in_two_networks_fit_exactly ... ok
+test regression::tests::two_networks_of_one_parent_value_each_have_no_wald_test ... ok
+test regression::tests::undefined_lines_and_zero_se_carry_reasons ... ok
+test polychoric::primitives_parity::cephes_ports_are_bit_identical_to_scipy ... ok
+test relative_pairs::clusters::tests::rows_are_as_small_as_planned ... ok
+test relative_pairs::clusters::tests::a_share_below_one_growth_is_refused_before_the_pass ... ok
+test polychoric::primitives_parity::bivariate_normal_matches_pedsum ... ok
+test polychoric::tests::a_stratified_table_fits_alike_in_every_layout ... ok
+test relative_pairs::covariance::tests::finish_puts_the_meats_on_the_diagonal_and_nan_where_there_is_none ... ok
+test relative_pairs::covariance::tests::the_tally_bound_covers_every_grouping ... ok
+test relative_pairs::covariance::tests::combine_does_not_depend_on_how_columns_are_split ... ok
+test relative_pairs::covariance::tests::combine_is_the_dense_sum_over_every_key_two_sources_share ... ok
+test regression::tests::exact_lines_keep_r_within_one ... ok
+test relative_pairs::mrca::tests::fixed_cases_find_their_mrca ... ok
+test relative_pairs::mrca::tests::meioses_match_the_degree_rule ... ok
+test relative_pairs::tests::a_meat_within_rounding_of_zero_is_degenerate_and_one_below_it_negative ... ok
+test relative_pairs::tests::a_constant_or_missing_trait_gives_reasons ... ok
+test relative_pairs::tests::a_directed_pair_with_its_second_stratum_unknown_is_out_of_the_stratified_fit ... ok
+test pafgrs::triangle::tests::round_trips_every_width ... ok
+test relative_pairs::tests::a_symmetric_table_that_is_not_mirrored_raises ... ok
+test relative_pairs::tests::a_parent_offspring_group_pools_mother_and_father_tables ... ok
+test relative_pairs::tests::an_outlier_far_past_the_spread_is_insufficient_precision ... ok
+test relative_pairs::tests::category_requests_are_checked ... ok
+test relative_pairs::tests::a_symmetric_cross_cell_is_the_double_entered_cross_list ... ok
+test relative_pairs::clusters::tests::the_store_is_held_to_the_budget ... ok
+test relative_pairs::tests::a_meat_of_rounding_noise_or_below_zero_has_no_se ... ok
+test relative_pairs::tests::centring_keeps_close_values_near_a_large_offset_distinct ... ok
+test relative_pairs::tests::default_cells_count_each_category_in_registry_order ... ok
+test relative_pairs::tests::directed_cross_cells_read_each_role_at_its_own_trait ... ok
+test relative_pairs::tests::errors_report_the_callers_positions ... ok
+test relative_pairs::tests::groups_keep_roles_and_reject_mixtures ... ok
+test relative_pairs::tests::host_flags_are_one_se_each_and_the_covariance_needs_the_se ... ok
+test relative_pairs::tests::binary_stratified_is_the_polychoric_fit_of_the_pairs_strata_table ... ok
+test relative_pairs::tests::missing_values_drop_pairs_and_count_them ... ok
+test relative_pairs::tests::phi_matches_its_formula ... ok
+test relative_pairs::tests::dropping_a_constant_stratum_can_make_another_constant ... ok
+test relative_pairs::tests::one_stratum_over_every_row_gives_the_pooled_primary ... ok
+test relative_pairs::tests::quantile_and_sd_helpers ... ok
+test relative_pairs::tests::strata_are_checked_after_the_trait_and_before_the_request ... ok
+test relative_pairs::tests::symmetric_pearson_is_the_double_entry_pearson ... ok
+test relative_pairs::influence::tests::weights_are_every_influence_tried_on_every_engine_cell ... ok
+test relative_pairs::tests::continuous_stratified_is_the_pearson_of_values_standardised_per_stratum ... ok
+test relative_pairs::tests::a_pair_counts_once_when_either_orientation_is_complete ... ok
+test relative_pairs::tests::strata_assign_directed_pairs_at_the_first_role_and_symmetric_within_one ... ok
+test relative_pairs::tests::the_se_reserve_is_held_back_from_the_budget ... ok
+test relative_pairs::tests::the_trait_and_budget_are_checked_in_order ... ok
+test pafgrs::pa::tests::matches_square_kernel_bit_for_bit ... ok
+test relative_pairs::tests::traits_are_counted_then_admitted_then_matched_in_kind ... ok
+test relative_pairs::mrca::tests::every_engine_pair_up_to_degree_3_has_an_mrca_shared_at_its_meioses ... ok
+test relative_pairs::tests::the_stratified_fits_se_is_the_brute_force_cluster_sum ... ok
+test relative_pairs::tests::within_person_is_each_rows_trait_0_against_its_trait_1 ... ok
+test relative_pairs::tests::without_strata_the_new_fields_are_empty ... ok
+test relative_pairs::tests::stratified_n_entries_counts_the_complete_orientations_fitted ... ok
+test relative_pairs::within_person::tests::every_column_of_an_influence_takes_its_sums ... ok
+test relative_pairs::within_person::tests::past_the_most_terms_the_sums_may_have_wrapped ... ok
+test relative_pairs::within_person::tests::sums_wrap_without_a_panic_and_the_term_count_refuses_them ... ok
+test tests::pg_core_rev_is_the_rev_cargo_toml_pins ... ok
+test threads::tests::configure_commit_and_conflict ... ok
+test wald::tests::ci_level_and_wald_z_agree ... ok
+test relative_pairs::within_person::tests::a_binary_kernel_from_the_table_counts_is_the_per_pair_sums ... ok
+test regression::tests::shifting_the_trait_leaves_the_sandwich_se_alone ... ok
+test relative_pairs::tests::the_covariance_matrices_are_held_back_before_the_pass ... ok
+test relative_pairs::tests::cross_trait_strata_partition_and_fit_each_orientation ... ok
+test relative_pairs::tests::two_traits_same_trait_cells_are_the_single_trait_cells ... ok
+test relative_pairs::within_person::tests::a_continuous_kernel_is_its_float_sum_whatever_the_lanes_and_the_request ... ok
+test relative_pairs::influence::tests::eighty_strata_weights_are_built_from_the_blocks_read ... ok
+test relative_pairs::tests::the_covariance_tallies_are_bounded_before_the_sweeps ... ok
+test relative_pairs::tests::the_covariance_does_not_depend_on_threads_or_batching ... ok
+test relative_pairs::tests::the_within_person_accumulator_is_held_to_the_budget ... ok
+test relative_pairs::clusters::tests::the_store_is_every_entry_by_key_and_twice_the_engine_lane_and_the_table_is_relationship_moments ... ok
+
+test result: ok. 193 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.14s
+
+     Running tests/pg_composition.rs (target/release/deps/pg_composition-b49d4a99fb7a6809)
+
+running 1 test
+test build_pairs_and_walk_compose_from_outside_the_crate ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/relative_pairs_se_memory.rs (target/release/deps/relative_pairs_se_memory-d75e1804ea78abd3)
+
+running 1 test
+test a_call_with_the_se_stays_within_its_budget ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.87s
+
+     Running unittests src/lib.rs (target/release/deps/pg_phenotype_native-fa17d8633563f553)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests pg_phenotype_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+== Python suite
+🍹 Building a mixed python/rust project
+🐍 Found CPython 3.14 at /data/Documents/simACE/external/pg-phenotype/.pixi/envs/default/bin/python
+🔗 Found pyo3 bindings with abi3-py3.13 support
+Using Python 3.14.8 environment at: .pixi/envs/default
+Checked 10 packages in 2ms
+   Compiling pyo3-ffi v0.29.3
+   Compiling pyo3 v0.29.3
+   Compiling numpy v0.29.0
+   Compiling pg-phenotype-python v0.4.0 (/data/Documents/simACE/external/pg-phenotype/crates/python)
+    Finished `release` profile [optimized + debuginfo] target(s) in 8.15s
+📦 Built wheel for abi3 Python ≥ 3.13 to /tmp/.tmpPhdONb/pg_phenotype-0.4.0-cp313-abi3-linux_x86_64.whl
+✏️ Setting installed package as editable
+🛠 Installed pg-phenotype-0.4.0
+============================= test session starts ==============================
+platform linux -- Python 3.14.8, pytest-9.1.1, pluggy-1.7.0
+rootdir: /data/Documents/simACE/external/pg-phenotype
+configfile: pyproject.toml
+testpaths: tests
+plugins: xdist-3.8.0, hypothesis-6.170.0
+created: 6/6 workers
+6 workers [717 items]
+
+........................................................................ [ 10%]
+........................................................................ [ 20%]
+........................................................................ [ 30%]
+........................................................................ [ 40%]
+........................................................................ [ 50%]
+........................................................................ [ 60%]
+........................................................................ [ 70%]
+........................................................................ [ 80%]
+........................................................................ [ 90%]
+.....................................................................    [100%]
+============================= 717 passed in 35.68s =============================
+== all suites pass against /data/Documents/simACE/external/pedigree-graph/target/consumer-gate/0.13.0/clean
+== restoring the editable build against the pinned pedigree-graph-core
