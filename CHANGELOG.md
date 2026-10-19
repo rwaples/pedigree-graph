@@ -11,6 +11,20 @@ live on the corresponding GitHub release pages.
   order, as counts and moments do, for a host reducer whose merged lane
   does not depend on pair order; `reduce_pairs` keeps graph row order.
   pg-phenotype's relative-pair SE pass uses it.
+- **Fixed: a workspace never reuses one engine's family sets in another.**
+  The family key now names the engine, so a host that classifies a row
+  with one `Engine` and its full sib with another of a different
+  `max_degree` on the same `Workspace` recomputes the sets instead of
+  reading ones the first engine never filled.
+- **Changed: `Engine::family_order` returns `Option<Vec<u32>>` and never
+  fails (Rust).** It finds contiguous sibships before allocating, and when
+  the order cannot be allocated the walk keeps row order rather than
+  failing counts, moments, relatives or burden with `allocation_failed`
+  (`sibling_index`); results are the same either way.
+- **Changed: `Walker::new` panics when `KinshipRows` and
+  `AncestorSignatures` cover different row counts (Rust),** instead of
+  indexing past the end or reading the wrong rows' signatures.
+  `AncestorSignatures` gains `len` and `is_empty`.
 - **Changed: relationship counts and moments are 10 to 12% faster, and
   about 35% faster on pedigrees whose sibs are not stored together.** Full
   sibs share about half of each row's classification, everything that

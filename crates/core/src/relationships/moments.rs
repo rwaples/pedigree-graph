@@ -194,7 +194,7 @@ pub fn reduce_pairs_in<R: Reducer>(
     let pool = WorkspacePool::for_pairs(n);
     let order = match order {
         RowOrder::Rows => None,
-        RowOrder::Families => engine.family_order()?,
+        RowOrder::Families => engine.family_order(),
     };
     let ranges = task_ranges(n);
     let cursor = AtomicUsize::new(0);

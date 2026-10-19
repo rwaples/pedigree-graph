@@ -216,7 +216,16 @@ impl<'a> Walker<'a> {
     /// # Errors
     ///
     /// [`Error::AllocationFailed`] with operation `kinship_memo`.
+    ///
+    /// # Panics
+    ///
+    /// If `rows` and `signatures` cover different row counts.
     pub fn new(rows: &'a KinshipRows, signatures: &'a AncestorSignatures) -> Result<Self, Error> {
+        assert_eq!(
+            rows.len(),
+            signatures.len(),
+            "KinshipRows and AncestorSignatures must come from the same pedigree"
+        );
         Ok(Walker {
             rows: &rows.0,
             signatures,
@@ -657,6 +666,18 @@ mod tests {
             &[(0, 0), (0, 1), (0, 2), (2, 3), (3, 2), (3, 4), (4, 4)],
         );
         assert_eq!(got, vec![0.5, 0.0, 0.25, 0.25, 0.25, 0.125, 0.5]);
+    }
+
+    #[test]
+    #[should_panic(expected = "must come from the same pedigree")]
+    fn a_walker_refuses_rows_and_signatures_of_different_pedigrees() {
+        let small = ped(&[(-1, -1), (-1, -1), (0, 1)], &[]);
+        let large = ped(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[]);
+        let small = KinshipPedigree::try_new(&small.0, &small.1, &small.2, &small.3).unwrap();
+        let large = KinshipPedigree::try_new(&large.0, &large.1, &large.2, &large.3).unwrap();
+        let rows = KinshipRows::new(&small).unwrap();
+        let signatures = AncestorSignatures::build(&large).unwrap();
+        let _ = Walker::new(&rows, &signatures);
     }
 
     #[test]

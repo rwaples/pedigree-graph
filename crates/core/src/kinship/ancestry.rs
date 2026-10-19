@@ -86,6 +86,15 @@ impl AncestorSignatures {
         Ok(AncestorSignatures { sets })
     }
 
+    /// The rows signed.
+    pub fn len(&self) -> usize {
+        self.sets.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.sets.is_empty()
+    }
+
     /// Whether rows `a` and `b` provably share no ancestor-or-self genome.
     #[inline]
     pub fn disjoint(&self, a: u32, b: u32) -> bool {

@@ -46,7 +46,7 @@ pub fn relationship_burden(
     let engine = Engine::new(ped, MaxDegree::MAX)?;
     let pool = WorkspacePool::for_pairs(n);
     let requested = CategorySet::up_to_degree(MaxDegree::MAX.get());
-    let order = engine.family_order()?;
+    let order = engine.family_order();
     progress.walk(n)?;
     task_ranges(n).into_par_iter().try_for_each(|range| {
         walk_task(

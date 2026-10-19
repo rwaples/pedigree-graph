@@ -40,6 +40,7 @@ use super::sibling_index::SiblingIndex;
 use super::{MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 /// Closer categories subtracted from each category's raw candidates
@@ -78,8 +79,14 @@ pub const EXCLUSIONS: [&[Category]; super::category::N_CATEGORIES] = {
     ]
 };
 
+/// Distinct per [`Engine`] built in the process, so a workspace never reuses
+/// one engine's sets in another.
+static NEXT_ENGINE: AtomicU64 = AtomicU64::new(0);
+
 /// Immutable engine state shared by every row.
 pub struct Engine<'p> {
+    /// This engine's place in [`NEXT_ENGINE`].
+    id: u64,
     ped: Pedigree<'p>,
     up: Csr,
     down: Csr,
@@ -88,13 +95,15 @@ pub struct Engine<'p> {
 }
 
 /// What the parent-determined part of a row's classification reads: its
-/// parent rows and both original parent ids.  Full sibs share it.
+/// parent rows and both original parent ids, and the engine, whose degree
+/// decides which of those sets exist.  Full sibs share it.
 ///
 /// Only a row with both parent ids known has one.  Then every row with the
 /// same key is in its sibling family, so its half sibs are the same set and
 /// the cousin rule's "shares a known parent id" removes the same rows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FamilyKey {
+    engine: u64,
     mother: i32,
     father: i32,
     orig_mother: i64,
@@ -234,6 +243,7 @@ impl<'p> Engine<'p> {
         let down = up.transpose()?;
         let sibs = SiblingIndex::build(ped.orig_mother, ped.orig_father)?;
         Ok(Engine {
+            id: NEXT_ENGINE.fetch_add(1, Ordering::Relaxed),
             ped: *ped,
             up,
             down,
@@ -253,17 +263,14 @@ impl<'p> Engine<'p> {
     /// The rows with every sibling family contiguous, for a walk whose
     /// result does not depend on row order: each workspace then reuses the
     /// parent-determined sets of one sib for the next.  `None` when the rows
-    /// are in that order already, or below degree 2, where a sib shares
-    /// nothing but its parents.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::AllocationFailed`] for the order or its scratch.
-    pub fn family_order(&self) -> Result<Option<Vec<u32>>, Error> {
+    /// are in that order already, below degree 2, where a sib shares
+    /// nothing but its parents, or when the order cannot be allocated: it
+    /// only saves time, so the walk then keeps row order.
+    pub fn family_order(&self) -> Option<Vec<u32>> {
         if self.max_degree.get() < 2 {
-            return Ok(None);
+            return None;
         }
-        self.sibs.family_order()
+        self.sibs.family_order().ok().flatten()
     }
 
     /// Classify every pair involving `row`, fold precedence, then add the
@@ -372,6 +379,7 @@ impl<'p> Engine<'p> {
     fn family_key(&self, row: usize) -> Option<FamilyKey> {
         let ped = &self.ped;
         (ped.orig_mother[row] >= 0 && ped.orig_father[row] >= 0).then(|| FamilyKey {
+            engine: self.id,
             mother: ped.mother[row],
             father: ped.father[row],
             orig_mother: ped.orig_mother[row],
@@ -788,7 +796,6 @@ mod tests {
             let engine = Engine::new(&ped, MaxDegree::MAX).unwrap();
             let order = engine
                 .family_order()
-                .unwrap()
                 .unwrap_or_else(|| (0..ped.len() as u32).collect());
             let mut sorted = order.clone();
             sorted.sort_unstable();
@@ -832,16 +839,38 @@ mod tests {
     }
 
     #[test]
+    fn a_workspace_moved_between_engines_reuses_nothing() {
+        let cols = shuffled_sibships(3);
+        let ped = cols.try_borrow().unwrap();
+        let shallow = Engine::new(&ped, MaxDegree::try_new(2).unwrap()).unwrap();
+        let deep = Engine::new(&ped, MaxDegree::MAX).unwrap();
+        let order = deep.family_order().unwrap();
+        let mut shared = Workspace::build(ped.len(), true).unwrap();
+        for pair in order.chunks(2) {
+            // Each sib after the first meets the other engine's family sets.
+            for (engine, &row) in [&shallow, &deep].into_iter().zip(pair) {
+                let row = row as usize;
+                let mut fresh = Workspace::build(ped.len(), true).unwrap();
+                assert_eq!(
+                    emitted(engine, row, &mut shared),
+                    emitted(engine, row, &mut fresh),
+                    "row {row}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn contiguous_families_need_no_order_and_scattered_ones_are_gathered() {
         // Sibs 2 and 4 of parents 0 and 1, with 3 between them.
         let scattered = pedigree(&[(-1, -1), (-1, -1), (0, 1), (-1, -1), (0, 1)], &[]);
         let ped = scattered.try_borrow().unwrap();
         let order = Engine::new(&ped, MaxDegree::MAX).unwrap().family_order();
-        assert_eq!(order.unwrap(), Some(vec![0, 1, 2, 4, 3]));
+        assert_eq!(order, Some(vec![0, 1, 2, 4, 3]));
         let contiguous = pedigree(&[(-1, -1), (-1, -1), (0, 1), (0, 1), (-1, -1)], &[]);
         let ped = contiguous.try_borrow().unwrap();
         let order = Engine::new(&ped, MaxDegree::MAX).unwrap().family_order();
-        assert_eq!(order.unwrap(), None);
+        assert_eq!(order, None);
     }
 
     #[test]
