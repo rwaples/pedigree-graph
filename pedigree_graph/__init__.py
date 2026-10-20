@@ -82,8 +82,9 @@ from pedigree_graph.relationships import (
     RelationshipPairs,
 )
 
-#: The release this build was compiled from; the core carries it, so it never goes stale
-#: the way an editable install's distribution metadata does after a version bump.
+#: The core crate's Cargo (SemVer) version; the core carries it, so it never goes stale the way
+#: an editable install's distribution metadata does after a version bump. It equals the PEP 440
+#: distribution version for plain X.Y.Z releases; a prerelease would spell it differently.
 __version__: str = _native.core_version()
 
 __all__ = [

@@ -36,13 +36,17 @@ build-dev = "maturin develop --release --features test-hooks"
 test = { cmd = "pytest -n 6 --dist worksteal -m 'not slow'", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
 test-all = { cmd = "pytest -n 6 --dist worksteal", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
 test-rust = "cargo test --release"
-# `ci-local` runs the checks the CI push jobs run (.github/workflows/ci.yml),
-# before a push. CI-only: the offline R tarball check (needs sudo unshare), the
+# `ci-local` runs the checks the CI push jobs run (.github/workflows/ci.yml calls
+# these tasks, except in the R job, which has no pixi), before a push. CI-only: the offline R tarball check (needs sudo unshare), the
 # wheel install matrix, and the publish workflow's macOS/Windows/ARM legs, so
 # float comparisons in tests need a tolerance.
+# ADR 0007: the core declares no host bindings and forbids unsafe code.
+check-core = "bash tools/check_core_boundary.sh"
 lint-rust = "cargo fmt --check && cargo clippy --all-targets --all-features -- -D warnings"
+# Private items are not in the public docs, so name them in backticks without a link.
+doc-rust = "RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace"
 lint-python = "ruff check && ruff format --check && ty check"
-ci-local = { depends-on = ["lint-rust", "test-rust", "lint-python", "test", { task = "ci-r", environment = "r" }] }
+ci-local = { depends-on = ["check-core", "lint-rust", "doc-rust", "test-rust", "lint-python", "test", { task = "ci-r", environment = "r" }] }
 
 # The R package under r/ (slice 16, plans/pedigree-graph-slice-16-r-package.md
 # in simACE, a session-local draft). Its own environment so the default one never pulls in R; it
@@ -66,8 +70,10 @@ r-test = { cmd = "Rscript -e 'testthat::test_local(\"r\", stop_on_failure = TRUE
 # The binding crate under r/src/rust builds only in this env: outside it, extendr's
 # build script finds no R and caches the failure (`cargo clean -p extendr-api -p
 # extendr-ffi` clears it).
-lint-r-rust = { cmd = "cargo fmt --check && cargo clippy --release --all-targets --all-features -- -D warnings && cargo test --release", cwd = "r/src/rust" }
-ci-r = { depends-on = ["lint-r-rust", "r-test"] }
+lint-r-rust = { cmd = "cargo fmt --check && cargo clippy --release --all-targets --all-features -- -D warnings", cwd = "r/src/rust" }
+doc-r-rust = { cmd = "cargo doc --no-deps", cwd = "r/src/rust", env = { RUSTDOCFLAGS = "-D warnings" } }
+test-r-rust = { cmd = "cargo test --release", cwd = "r/src/rust" }
+ci-r = { depends-on = ["lint-r-rust", "doc-r-rust", "test-r-rust", "r-test"] }
 
 [environments]
 r = { features = ["r"], no-default-feature = false }

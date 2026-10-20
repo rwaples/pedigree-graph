@@ -6,8 +6,9 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
-- **Added: `pedigree_graph.__version__`**, the release the native core was
-  built from (`_native.core_version()`).
+- **Added: `pedigree_graph.__version__`**, the native core's Cargo version
+  (`_native.core_version()`); for an `X.Y.Z` release it equals the distribution
+  version.
 
 ## v0.13.0
 
