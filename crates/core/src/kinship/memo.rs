@@ -14,8 +14,8 @@
 //! The layout never affects a value: the walker computes each key exactly
 //! once from its dependencies' stored bits whatever the table shape.
 //!
-//! A table of up to [`POOLED_MAX`] slots lives in the memo's own pool of
-//! [`CHUNK_SLOTS`]-slot chunks.  A table that grows puts its old slots on
+//! A table of up to `POOLED_MAX` slots lives in the memo's own pool of
+//! `CHUNK_SLOTS`-slot chunks.  A table that grows puts its old slots on
 //! the free list of their size, where the next row to need that size takes
 //! them, so the many rows that hold a few keys cost no allocator call and
 //! no allocator header each.  A larger table has its own vector.

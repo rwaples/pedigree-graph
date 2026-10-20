@@ -10,7 +10,7 @@
 //! pairwise walk returns for the same pair.
 //!
 //! Beside them live the sweeps that share the DP's stable depth-major order
-//! ([`depth_order`]) but not its values: the Meuwissen-Luo inbreeding walk
+//! (`depth_order`) but not its values: the Meuwissen-Luo inbreeding walk
 //! ([`inbreeding()`]) and the Ne prerequisites of [`generations`], among
 //! them the per-cohort kinship sums ([`generation_kinship_sums`]), which
 //! read no kinship rows.

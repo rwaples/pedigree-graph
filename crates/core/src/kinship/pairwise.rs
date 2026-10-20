@@ -16,12 +16,12 @@
 //! every distinct key is computed once per walker even when shared across
 //! requested pairs, and endpoint order cannot change a bit.
 //!
-//! A key whose value needs no walk is never pushed or stored ([`Rule`]):
+//! A key whose value needs no walk is never pushed or stored (`Rule`):
 //! a self-like key with a missing parent, a key whose peeled endpoint is a
 //! founder, and a key whose endpoints share no ancestor, which
 //! [`AncestorSignatures`] proves.  A call splits its pairs or support
 //! columns into chunks over the current Rayon pool, one walker per worker
-//! ([`run_chunks`]); since a key has one value whoever computes it, the
+//! (`run_chunks`); since a key has one value whoever computes it, the
 //! output is the same bits for every thread count.
 
 use super::ancestry::AncestorSignatures;
@@ -300,7 +300,7 @@ impl<'a> Walker<'a> {
     }
 
     /// Kinship of rows `a` and `b`, walking whatever the memo lacks.  Only
-    /// keys whose rule is [`Rule::Walk`] are pushed or stored.
+    /// keys whose rule is `Rule::Walk` are pushed or stored.
     pub fn resolve(&mut self, a: i32, b: i32) -> Result<f32, Error> {
         let root = canon(a, b);
         let walk = match self.rule(root) {

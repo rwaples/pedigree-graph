@@ -3,7 +3,7 @@
 //! founder-genome contributions, and the per-cohort kinship sums.
 //!
 //! EqG sweeps parents first (the graph rows when they already are, else the
-//! stable depth-major order of [`super::depth_order`]); the founder means
+//! stable depth-major order of `super::depth_order`); the founder means
 //! and the kinship sums walk depth by depth, graph rows ascending within a
 //! depth.  EqG and the founder means evaluate each value by the float64
 //! expression the 0.9.3 NumPy and Numba code used, in the same order.

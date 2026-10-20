@@ -8,7 +8,7 @@
 //!
 //! Both sweep parents first and index graph rows directly: the graph rows
 //! themselves when every parent row already precedes its children, else the
-//! stable depth-major order of [`crate::kinship::depth_order`].  Counts do
+//! stable depth-major order of `crate::kinship::depth_order`.  Counts do
 //! not depend on row labels or sweep order, so they are the 0.9.3 Numba
 //! kernels' counts exactly.
 

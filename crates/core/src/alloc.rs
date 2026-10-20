@@ -3,7 +3,7 @@
 //!
 //! A refused reservation surfaces as [`Error::AllocationFailed`] naming the
 //! [`Family`] that asked, the resulting element count, and the element
-//! type's [`Dtype`], instead of aborting the process.  Because a real
+//! type's `Dtype`, instead of aborting the process.  Because a real
 //! allocator refusal cannot be provoked in a test without harming the host,
 //! [`fail_next`] plants one failure for a named family; the next reservation
 //! of that family then fails as the allocator would have.  The check is one

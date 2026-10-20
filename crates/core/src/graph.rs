@@ -192,7 +192,7 @@ impl Layout {
 impl IdIndex {
     /// Index `ids`, which are at most [`MAX_ROWS`] long.
     ///
-    /// Ids spanning at most [`DENSE_SLOTS_PER_ID`] slots per id get a table
+    /// Ids spanning at most `DENSE_SLOTS_PER_ID` slots per id get a table
     /// indexed by `id - min`; others are sorted.  Either way the index is a
     /// function of the ids alone.  Which row of a repeated id
     /// [`IdIndex::row`] returns is unspecified.
