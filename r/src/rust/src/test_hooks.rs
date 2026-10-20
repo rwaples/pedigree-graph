@@ -27,6 +27,7 @@ use std::time::Duration;
 /// Panic inside a native call, so the package tests can show a Rust panic
 /// reaches R as an error and leaves the session usable.
 #[cfg(feature = "test-hooks")]
+#[expect(clippy::panic, reason = "deliberate panic to exercise unwinding")]
 #[extendr]
 fn panic_for_test() {
     panic!("pedigree-graph test hook: deliberate panic");
@@ -35,6 +36,7 @@ fn panic_for_test() {
 /// A pair total of `count` (a decimal string) as `relationship_counts`
 /// hands it to R, so the tests can reach the 2^53 refusal.
 #[cfg(feature = "test-hooks")]
+#[expect(clippy::expect_used, reason = "the R tests pass a decimal u64 literal")]
 #[extendr]
 fn count_as_double_for_test(count: &str) -> Robj {
     let count: u64 = count.parse().expect("a decimal u64");
@@ -119,6 +121,7 @@ fn release_for_test() {
 
 /// A job whose work panics.
 #[cfg(feature = "test-hooks")]
+#[expect(clippy::panic, reason = "deliberate panic to exercise unwinding")]
 #[extendr]
 fn panicking_job_for_test() -> Robj {
     finish(spawn_i32(|_| {

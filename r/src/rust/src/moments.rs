@@ -20,7 +20,6 @@ use pedigree_graph_core::relationships::{
     Side, Statistic, Symmetric, MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
 };
 use std::borrow::Cow;
-use std::num::NonZeroUsize;
 use std::str::FromStr;
 
 /// The named columns of a `first`, `second`, `values` or `same` list.
@@ -248,7 +247,7 @@ fn table_out(table: MomentsTable<'_>) -> Robj {
         table.width() as i32,
     );
     let bytes = Raw::from_bytes(table.bytes()).into_robj();
-    List::from_names_and_values(
+    crate::named_list(
         ["shape", "exponents", "width", "table"],
         [
             Integers::from_values(shape).into_robj(),
@@ -257,8 +256,6 @@ fn table_out(table: MomentsTable<'_>) -> Robj {
             bytes,
         ],
     )
-    .expect("four names and four values")
-    .into_robj()
 }
 
 /// Start `relationship_moments()`; collecting the job gives the list the R
@@ -340,7 +337,7 @@ pub fn start_moments(
         }
     }
 
-    let threads = NonZeroUsize::new(threads::budget()?).expect("a budget of at least 1");
+    let threads = threads::budget_nonzero()?;
     let pool = package_pool()?;
     let walk = walk_of(&graph, requested)?;
     let operands: Vec<i32> = resolved
@@ -402,7 +399,7 @@ pub fn start_moments(
     };
     let finish = move |moments: Moments| {
         let codes: Vec<&str> = requested.iter().map(|c| c.code()).collect();
-        Ok(List::from_names_and_values(
+        Ok(crate::named_list(
             [
                 "categories",
                 "first_levels",
@@ -438,9 +435,7 @@ pub fn start_moments(
                 Doubles::from_values(moments.lane_pairs.iter().map(|&p| p as f64)).into_robj(),
                 (moments.estimated_peak_bytes as f64).into(),
             ],
-        )
-        .expect("one value per name")
-        .into_robj())
+        ))
     };
     Ok(job::spawn(pool, work, finish))
 }
@@ -595,10 +590,8 @@ pub fn encode(values: &Robj) -> HostResult<Robj> {
         })
         .collect::<HostResult<Vec<_>>>()?;
     let (width, bytes) = encode_big(&ints);
-    Ok(List::from_names_and_values(
+    Ok(crate::named_list(
         ["width", "table"],
         [(width as i32).into(), Raw::from_bytes(&bytes).into_robj()],
-    )
-    .expect("two names and two values")
-    .into_robj())
+    ))
 }

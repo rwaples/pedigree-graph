@@ -6,6 +6,21 @@
 //! `pedigree_graph._errors`, keyed by their `.code`, with the keyword fields
 //! rebuilt from `Error::fields`.  A usage error crosses as a plain `ValueError`.
 
+// No user-reachable panics (ADR 0007): input errors cross as host error values,
+// as in the core.  A surviving `expect` / `unreachable!` names the internal
+// invariant it relies on in an `#[expect(..., reason)]`.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 use num_bigint::{BigInt, BigUint};
 use numpy::{
     IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray2,
@@ -211,9 +226,13 @@ fn run_watched<T: Send>(
     if let Some(err) = kept {
         return Err(err);
     }
-    // The scope re-raises a panicking job, so a job that got here filled the slot.
-    slot.expect("the watched job ran")
-        .map_err(|e| to_pyerr(py, e))
+    #[expect(
+        clippy::expect_used,
+        reason = "in_place_scope returns only after the spawned job ran, and \
+                  re-raises a job that panicked before filling the slot"
+    )]
+    let outcome = slot.expect("the watched job ran");
+    outcome.map_err(|e| to_pyerr(py, e))
 }
 
 /// True iff every represented parent row strictly precedes its child row.
@@ -1394,6 +1413,7 @@ fn fail_next_allocation(family: Option<&str>, min_elements: usize) -> PyResult<(
 /// Rust panic reaches Python as `PanicException` and leaves the process
 /// usable.  Compiled only with the `test-hooks` feature.
 #[cfg(feature = "test-hooks")]
+#[expect(clippy::panic, reason = "deliberate panic to exercise unwinding")]
 #[pyfunction]
 fn _panic_for_test() {
     panic!("pedigree-graph test hook: deliberate panic");
@@ -1404,6 +1424,7 @@ fn _panic_for_test() {
 /// of after a `tick`, and the pool stays usable.  Compiled only with the
 /// `test-hooks` feature.
 #[cfg(feature = "test-hooks")]
+#[expect(clippy::panic, reason = "deliberate panic to exercise unwinding")]
 #[pyfunction]
 #[pyo3(signature = (*, threads, tick))]
 fn _panic_in_watched_worker_for_test(py: Python<'_>, threads: usize, tick: f64) -> PyResult<()> {

@@ -107,7 +107,9 @@ pub fn coerce(field: &'static str, column: &Robj) -> HostResult<Coerced> {
     }
     match column.rtype() {
         Rtype::Integers => {
-            let slice = column.as_integer_slice().expect("an integer vector");
+            let slice = column
+                .as_integer_slice()
+                .ok_or_else(|| invalid(field, 0, describe(column)))?;
             let nulls: Vec<bool> = slice.iter().map(|&v| v == i32::MIN).collect();
             let values = slice
                 .iter()
@@ -120,7 +122,9 @@ pub fn coerce(field: &'static str, column: &Robj) -> HostResult<Coerced> {
             })
         }
         Rtype::Doubles if column.inherits("integer64") => {
-            let slice = column.as_real_slice().expect("a double vector");
+            let slice = column
+                .as_real_slice()
+                .ok_or_else(|| invalid(field, 0, describe(column)))?;
             let raw: Vec<i64> = slice.iter().map(|v| v.to_bits() as i64).collect();
             let nulls: Vec<bool> = raw.iter().map(|&v| v == i64::MIN).collect();
             let values = raw
@@ -134,7 +138,9 @@ pub fn coerce(field: &'static str, column: &Robj) -> HostResult<Coerced> {
             })
         }
         Rtype::Doubles => {
-            let slice = column.as_real_slice().expect("a double vector");
+            let slice = column
+                .as_real_slice()
+                .ok_or_else(|| invalid(field, 0, describe(column)))?;
             let mut values = Vec::with_capacity(n);
             let mut nulls = Vec::with_capacity(n);
             for (position, &v) in slice.iter().enumerate() {
@@ -162,7 +168,9 @@ pub fn coerce(field: &'static str, column: &Robj) -> HostResult<Coerced> {
         // is a column of nulls, as a column of `None` is in Python.  Any
         // TRUE/FALSE has no integer form.
         Rtype::Logicals => {
-            let slice = column.as_logical_slice().expect("a logical vector");
+            let slice = column
+                .as_logical_slice()
+                .ok_or_else(|| invalid(field, 0, describe(column)))?;
             match slice.iter().position(|v| !v.is_na()) {
                 Some(position) => Err(invalid(field, position, slice[position].to_bool().into())),
                 None => Ok(Coerced {

@@ -4,6 +4,21 @@
 //! list the R wrapper `.pg_call()` signals (`errors.rs`).  Nothing here
 //! raises into R.
 
+// No user-reachable panics (ADR 0007): input errors cross as host error values,
+// as in the core.  A surviving `expect` / `unreachable!` names the internal
+// invariant it relies on in an `#[expect(..., reason)]`.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable,
+        clippy::todo,
+        clippy::unimplemented
+    )
+)]
+
 mod errors;
 mod graph;
 mod input;
@@ -17,6 +32,38 @@ mod threads;
 use errors::{finish, HostError};
 use extendr_api::prelude::*;
 use pedigree_graph_core::relationships::Category;
+
+/// An R list with one name per value.
+#[expect(
+    clippy::expect_used,
+    reason = "every caller passes one name per value, and a length mismatch is \
+              the only way setting the names of a fresh list fails"
+)]
+pub(crate) fn named_list<N, V>(names: N, values: V) -> Robj
+where
+    N: IntoIterator,
+    N::IntoIter: ExactSizeIterator,
+    N::Item: extendr_api::ToVectorValue + AsRef<str>,
+    V: IntoIterator,
+    V::IntoIter: ExactSizeIterator,
+    V::Item: Into<Robj>,
+{
+    List::from_names_and_values(names, values)
+        .expect("one name per value")
+        .into_robj()
+}
+
+/// `robj` with the S3 class `class`.
+#[expect(
+    clippy::expect_used,
+    reason = "every caller classes a fresh vector or external pointer, never \
+              NULL, and R sets a character class on any of those"
+)]
+pub(crate) fn with_class(mut robj: Robj, class: &str) -> Robj {
+    robj.set_class([class])
+        .expect("a character class attribute");
+    robj
+}
 
 /// Validate and build a pedigree; see `graph::build`.
 #[extendr]
@@ -251,7 +298,7 @@ fn relationship_categories() -> Robj {
         }))
         .into_robj()
     };
-    List::from_names_and_values(
+    crate::named_list(
         [
             "code",
             "degree",
@@ -273,8 +320,6 @@ fn relationship_categories() -> Robj {
             .into_robj(),
         ],
     )
-    .expect("five names and five values")
-    .into_robj()
 }
 
 extendr_module! {

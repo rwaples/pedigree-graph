@@ -111,6 +111,10 @@ impl Task {
 
     /// Wait for the outcome and take it, leaving the task collected
     /// whatever the outcome is.  A panic in the work resumes here.
+    #[expect(
+        clippy::unreachable,
+        reason = "until_ready returns only once the slot has left Running"
+    )]
     pub fn take(&self) -> Result<Result<Output, Error>, AlreadyCollected> {
         let taken = std::mem::replace(&mut *self.shared.until_ready(), Slot::Collected);
         match taken {
@@ -142,6 +146,10 @@ pub struct Job {
 
 /// Spawn `work` on `pool` and return R's handle to it; collecting the handle
 /// passes the work's value to `finish`.
+#[expect(
+    clippy::expect_used,
+    reason = "the task's output is the value this spawn's work returned, boxed as T"
+)]
 pub fn spawn<T: Send + 'static>(
     pool: &rayon::ThreadPool,
     work: impl FnOnce(&Progress) -> Result<T, Error> + Send + 'static,
@@ -162,6 +170,10 @@ pub fn spawn<T: Send + 'static>(
 
 impl Job {
     /// The R result, or the work's error; the job is collected either way.
+    #[expect(
+        clippy::expect_used,
+        reason = "finish is taken only here and in cancel, and either leaves the task collected"
+    )]
     pub fn collect(&self) -> HostResult<Robj> {
         let finish = self.finish.take();
         match self.task.take() {
@@ -217,7 +229,7 @@ pub(crate) fn snapshot_robj(state: Option<Snapshot>) -> Robj {
     let count = |c: Option<usize>| {
         Doubles::from_values([c.map_or_else(Rfloat::na, |c| Rfloat::from(c as f64))]).into_robj()
     };
-    List::from_names_and_values(
+    crate::named_list(
         ["finished", "phase", "rows_done", "rows_total"],
         [
             state.is_none().into(),
@@ -226,8 +238,6 @@ pub(crate) fn snapshot_robj(state: Option<Snapshot>) -> Robj {
             count(total),
         ],
     )
-    .expect("four names and four values")
-    .into_robj()
 }
 
 /// Wait up to `tick` seconds; see [`Task::wait`].
@@ -255,6 +265,10 @@ pub fn cancel(handle: &Robj) -> HostResult<Robj> {
 /// Whether `progress` was cancelled.  `Progress` has no getter, so this asks
 /// the engine itself: a walk over two rows fails at once once cancelled.
 #[cfg(any(test, feature = "test-hooks"))]
+#[expect(
+    clippy::expect_used,
+    reason = "two founder rows are a valid pedigree, and 1 a valid degree"
+)]
 pub(crate) fn cancelled(progress: &Progress) -> bool {
     use pedigree_graph_core::relationships::{count_pairs, MaxDegree, Pedigree};
     let none = [-1i32; 2];

@@ -8,6 +8,7 @@
 //! rebuilds itself under the child's pid (`pool.rs`).
 
 use crate::errors::{HostError, HostResult};
+use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
 const ENV_VAR: &str = "PEDIGREE_GRAPH_THREADS";
@@ -78,4 +79,13 @@ pub fn budget() -> HostResult<usize> {
     };
     budget.committed = Some(committed);
     Ok(committed)
+}
+
+/// The committed budget as a pool size.
+#[expect(
+    clippy::expect_used,
+    reason = "configure and from_env commit only budgets from 1 to MAX_THREADS"
+)]
+pub fn budget_nonzero() -> HostResult<NonZeroUsize> {
+    Ok(NonZeroUsize::new(budget()?).expect("a budget of at least 1"))
 }

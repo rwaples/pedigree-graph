@@ -16,7 +16,6 @@ use pedigree_graph_core::relationships::{
     count_pairs, pair_blocks, relationship_burden as burden_of, Burden, Category, CategorySet,
     Counts, Execution, MaxDegree, PairBlock, Pedigree, Progress, Receiver, DEGREES, N_CATEGORIES,
 };
-use std::num::NonZeroUsize;
 
 /// A verified graph's `native` fields, held so their slices stay valid.
 pub struct Native {
@@ -31,6 +30,10 @@ impl Native {
         })
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "callers name only entries of NATIVE_FIELDS"
+    )]
     fn field(&self, name: &str) -> &Robj {
         let at = NATIVE_FIELDS
             .iter()
@@ -40,6 +43,10 @@ impl Native {
     }
 
     /// An int32 field; the seal fixed its type when the graph was built.
+    #[expect(
+        clippy::expect_used,
+        reason = "Native::verified matched the seal, which fixes each row field as an integer vector"
+    )]
     fn rows(&self, name: &str) -> &[i32] {
         self.field(name)
             .as_integer_slice()
@@ -47,6 +54,10 @@ impl Native {
     }
 
     /// An int64 field, stored as its bits in doubles.
+    #[expect(
+        clippy::expect_used,
+        reason = "Native::verified matched the seal, which fixes each id field as a double vector"
+    )]
     fn int64(&self, name: &str) -> Vec<i64> {
         self.field(name)
             .as_real_slice()
@@ -60,6 +71,10 @@ impl Native {
         self.rows("mother_rows").len()
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "Native::verified refuses a graph whose id_type does not parse"
+    )]
     fn id_type(&self) -> IdType {
         IdType::parse(self.field("id_type").as_str().unwrap_or("")).expect("a sealed id type")
     }
@@ -92,11 +107,9 @@ impl Native {
             IdType::Integer => Integers::from_values(rows.map(|r| at(r) as i32)).into_robj(),
             IdType::Double => Doubles::from_values(rows.map(|r| at(r) as f64)).into_robj(),
             IdType::Integer64 => {
-                let mut out =
+                let out =
                     Doubles::from_values(rows.map(|r| f64::from_bits(at(r) as u64))).into_robj();
-                out.set_class(["integer64"])
-                    .expect("a character class attribute");
-                out
+                crate::with_class(out, "integer64")
             }
         }
     }
@@ -238,7 +251,7 @@ pub fn selection(max_degree: &Robj, categories: &Robj) -> HostResult<CategorySet
 
 /// The package pool at the committed budget.
 pub fn package_pool() -> HostResult<&'static rayon::ThreadPool> {
-    let threads = NonZeroUsize::new(threads::budget()?).expect("a budget of at least 1");
+    let threads = threads::budget_nonzero()?;
     Ok(pool::configure(threads)?)
 }
 
@@ -341,9 +354,7 @@ fn pairs_list(
     }
     names.push("requested");
     values.push(requested_flags);
-    Ok(List::from_names_and_values(names, values)
-        .expect("one value per name")
-        .into_robj())
+    Ok(crate::named_list(names, values))
 }
 
 /// Past 2^53 a double no longer holds every integer.
@@ -402,12 +413,10 @@ fn counts_list(requested: CategorySet, counts: Counts) -> HostResult<Robj> {
         .collect::<HostResult<Vec<_>>>()?;
     let requested_flags =
         Logicals::from_values(Category::ALL.iter().map(|c| requested.contains(*c))).into_robj();
-    Ok(List::from_names_and_values(
+    Ok(crate::named_list(
         ["counts", "requested"],
         [Doubles::from_values(values).into_robj(), requested_flags],
-    )
-    .expect("two names and two values")
-    .into_robj())
+    ))
 }
 
 /// Start `relationship_burden()`; collecting the job gives
@@ -433,10 +442,18 @@ fn burden_list(n: usize, burden: Burden) -> HostResult<Robj> {
         n * DEGREES,
     ))
     .into_robj();
+    #[expect(
+        clippy::expect_used,
+        reason = "an integer vector of n * DEGREES cells takes an n x DEGREES dim"
+    )]
     per_person
         .set_attrib(dim_symbol(), [n as i32, DEGREES as i32])
         .expect("an integer dim");
     let columns = Strings::from_values((0..DEGREES).map(|d| format!("degree_{}", d + 1)));
+    #[expect(
+        clippy::expect_used,
+        reason = "the dim is set, and the dimnames have one name per column"
+    )]
     per_person
         .set_attrib(dimnames_symbol(), list!(NULL, columns))
         .expect("matrix dimnames");
@@ -452,16 +469,14 @@ fn burden_list(n: usize, burden: Burden) -> HostResult<Robj> {
         .zip(burden.categories)
         .map(|(c, count)| exact_double(c.code(), count))
         .collect::<HostResult<Vec<_>>>()?;
-    Ok(List::from_names_and_values(
+    Ok(crate::named_list(
         ["per_person", "category_counts", "same_depth_pairs"],
         [
             per_person,
             Doubles::from_values(category_counts).into_robj(),
             doubles("a structural depth", &burden.same_depth)?,
         ],
-    )
-    .expect("three names and three values")
-    .into_robj())
+    ))
 }
 
 /// 1-based R rows to 0-based graph rows, or the first one that is not a row.
@@ -550,9 +565,8 @@ pub fn kinship_matrix(native: &Robj, seal: &Robj, max_nnz: Option<usize>) -> Hos
     drop(csc.indices);
     let p = Integers::from_values(csc.indptr.iter().copied()).into_robj();
     let x = Doubles::from_values(csc.data.iter().map(|&v| f64::from(v))).into_robj();
-    Ok(
-        List::from_names_and_values(["i", "p", "x", "names"], [i, p, x, graph.id_names()])
-            .expect("four names and four values")
-            .into_robj(),
-    )
+    Ok(crate::named_list(
+        ["i", "p", "x", "names"],
+        [i, p, x, graph.id_names()],
+    ))
 }

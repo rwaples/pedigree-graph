@@ -58,10 +58,8 @@ fn ids_as(values: &[i64], storage: IdType) -> Robj {
         IdType::Integer => Integers::from_values(values.iter().map(|&v| v as i32)).into_robj(),
         IdType::Double => Doubles::from_values(values.iter().map(|&v| v as f64)).into_robj(),
         IdType::Integer64 => {
-            let mut out = int64_bits(values);
-            out.set_class(["integer64"])
-                .expect("a character class attribute");
-            out
+            let out = int64_bits(values);
+            crate::with_class(out, "integer64")
         }
     }
 }
@@ -117,7 +115,7 @@ pub fn build(
     )?;
     let depth = topology::structural_depth(&built.mother_rows, &built.father_rows);
 
-    let native = List::from_names_and_values(
+    let native = crate::named_list(
         NATIVE_FIELDS,
         [
             ids.storage.name().into(),
@@ -134,16 +132,12 @@ pub fn build(
             optional_integers(built.birth_year),
             built.rows_topological.into(),
         ],
-    )
-    .expect("one value per native field")
-    .into_robj();
+    );
     let seal = seal_of(&native)?;
-    Ok(List::from_names_and_values(
+    Ok(crate::named_list(
         ["native", "id", "seal"],
         [native, ids_as(&built.ids, ids.storage), seal.into()],
-    )
-    .expect("three names and three values")
-    .into_robj())
+    ))
 }
 
 /// Feed bytes through a fixed buffer so large vectors hash without a copy of their size.
@@ -204,17 +198,26 @@ fn seal_of(native: &Robj) -> HostResult<String> {
         feed.push(&(value.len() as u64).to_le_bytes());
         match value.rtype() {
             Rtype::Integers => {
-                for v in value.as_integer_slice().expect("an integer vector") {
+                for v in value
+                    .as_integer_slice()
+                    .ok_or_else(HostError::graph_modified)?
+                {
                     feed.push(&v.to_le_bytes());
                 }
             }
             Rtype::Doubles => {
-                for v in value.as_real_slice().expect("a double vector") {
+                for v in value
+                    .as_real_slice()
+                    .ok_or_else(HostError::graph_modified)?
+                {
                     feed.push(&v.to_bits().to_le_bytes());
                 }
             }
             Rtype::Logicals => {
-                for v in value.as_logical_slice().expect("a logical vector") {
+                for v in value
+                    .as_logical_slice()
+                    .ok_or_else(HostError::graph_modified)?
+                {
                     feed.push(&[if v.is_true() {
                         1
                     } else if v.is_false() {
@@ -225,7 +228,10 @@ fn seal_of(native: &Robj) -> HostResult<String> {
                 }
             }
             Rtype::Strings => {
-                for s in value.as_str_vector().expect("a character vector") {
+                for s in value
+                    .as_str_vector()
+                    .ok_or_else(HostError::graph_modified)?
+                {
                     feed.push(&(s.len() as u64).to_le_bytes());
                     feed.push(s.as_bytes());
                 }

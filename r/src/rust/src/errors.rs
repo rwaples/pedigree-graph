@@ -72,22 +72,16 @@ impl HostError {
     /// The R list `.pg_call()` signals.
     pub fn into_robj(self) -> Robj {
         let (names, values): (Vec<&str>, Vec<Robj>) = self.fields.into_iter().unzip();
-        let fields = List::from_names_and_values(names, values)
-            .expect("names and values have one entry each")
-            .into_robj();
+        let fields = crate::named_list(names, values);
         let code: Robj = match self.code {
             Some(code) => code.into(),
             None => Strings::from_values([Rstr::na()]).into_robj(),
         };
-        let mut out = List::from_names_and_values(
+        let out = crate::named_list(
             ["class", "code", "message", "fields"],
             [self.class.into(), code, self.message.into(), fields],
-        )
-        .expect("four names and four values")
-        .into_robj();
-        out.set_class(["pedigree_graph_native_error"])
-            .expect("a character class attribute");
-        out
+        );
+        crate::with_class(out, "pedigree_graph_native_error")
     }
 }
 
@@ -131,11 +125,8 @@ fn int_field(values: Vec<i64>) -> Robj {
     {
         return Doubles::from_values(values.iter().map(|&n| n as f64)).into_robj();
     }
-    let mut out =
-        Doubles::from_values(values.iter().map(|&n| f64::from_bits(n as u64))).into_robj();
-    out.set_class(["integer64"])
-        .expect("a character class attribute");
-    out
+    let out = Doubles::from_values(values.iter().map(|&n| f64::from_bits(n as u64))).into_robj();
+    crate::with_class(out, "integer64")
 }
 
 /// A core field value as R holds it.

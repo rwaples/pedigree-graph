@@ -15,7 +15,6 @@ use pedigree_graph_core::relationships::{
     relatives_per_person as relatives_of, Progress, Receiver, Threshold, ThresholdColumn,
     MAX_VALUE_COLUMNS,
 };
-use std::num::NonZeroUsize;
 
 /// The pair-count column, always first; no threshold column may take its name.
 const RELATIVES: &str = "relatives";
@@ -125,7 +124,7 @@ pub fn start_relatives(
     let n_categories = requested.iter().count();
     let stride = 1 + columns.len();
 
-    let threads = NonZeroUsize::new(threads::budget()?).expect("a budget of at least 1");
+    let threads = threads::budget_nonzero()?;
     let pool = package_pool()?;
     let walk = walk_of(&graph, requested)?;
     let work = move |progress: &Progress| match walk {
@@ -156,12 +155,10 @@ pub fn start_relatives(
     Ok(job::spawn(pool, work, move |counts| {
         let codes: Vec<&str> = requested.iter().map(|c| c.code()).collect();
         let codes = Strings::from_values(codes).into_robj();
-        Ok(List::from_names_and_values(
+        Ok(crate::named_list(
             ["counts", "categories"],
             [column_major(&counts, n, n_categories, stride), codes],
-        )
-        .expect("two names and two values")
-        .into_robj())
+        ))
     }))
 }
 
@@ -179,6 +176,10 @@ fn column_major(counts: &[u32], n: usize, n_categories: usize, stride: usize) ->
         }
     }
     let mut out = out.into_robj();
+    #[expect(
+        clippy::expect_used,
+        reason = "the vector holds n * n_categories * stride cells, the product of the dim"
+    )]
     out.set_attrib(dim_symbol(), [n as i32, n_categories as i32, stride as i32])
         .expect("an integer dim");
     out
