@@ -6,21 +6,6 @@
 //! `pedigree_graph._errors`, keyed by their `.code`, with the keyword fields
 //! rebuilt from `Error::fields`.  A usage error crosses as a plain `ValueError`.
 
-// No user-reachable panics (ADR 0007): input errors cross as host error values,
-// as in the core.  A surviving `expect` / `unreachable!` names the internal
-// invariant it relies on in an `#[expect(..., reason)]`.
-#![cfg_attr(
-    not(test),
-    deny(
-        clippy::unwrap_used,
-        clippy::expect_used,
-        clippy::panic,
-        clippy::unreachable,
-        clippy::todo,
-        clippy::unimplemented
-    )
-)]
-
 use num_bigint::{BigInt, BigUint};
 use numpy::{
     IntoPyArray, PyArray1, PyArrayMethods, PyReadonlyArray1, PyReadonlyArray2, PyReadwriteArray2,

@@ -4,6 +4,13 @@
 //! is this binary's global allocator, so the test sees every byte core
 //! asks for.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test helpers outside #[test] functions: a panic fails the test"
+)]
+
 use pedigree_graph_core::relationships::{MomentsTable, Operand, Product, Side, Statistic};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};

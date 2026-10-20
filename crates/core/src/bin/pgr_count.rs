@@ -7,6 +7,13 @@
 //! default to `PEDIGREE_GRAPH_THREADS`, then 1.  Prints one JSON object with
 //! `n`, `threads`, `seconds`, and per-code `counts` to stdout.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a developer tool, never reached from a host: a panic is its error report"
+)]
+
 use pedigree_graph_core::relationships::{
     count_pairs, Category, MaxDegree, PedigreeColumns, Progress,
 };

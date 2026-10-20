@@ -12,6 +12,13 @@
 //! every block as `<code>.first.u32` and `<code>.second.u32`, little-endian,
 //! for an element-for-element comparison by the qualification driver.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a developer tool, never reached from a host: a panic is its error report"
+)]
+
 use pedigree_graph_core::relationships::{
     pair_blocks, Category, CategorySet, Execution, MaxDegree, PedigreeColumns, Progress, Receiver,
 };

@@ -9,7 +9,6 @@ use crate::input::doubles;
 use crate::job;
 use crate::kernels::{package_pool, selection, walk_of, Native};
 use crate::moments::{check_length, named_columns};
-use crate::threads;
 use extendr_api::prelude::*;
 use pedigree_graph_core::relationships::{
     relatives_per_person as relatives_of, Progress, Receiver, Threshold, ThresholdColumn,
@@ -124,8 +123,7 @@ pub fn start_relatives(
     let n_categories = requested.iter().count();
     let stride = 1 + columns.len();
 
-    let threads = threads::budget_nonzero()?;
-    let pool = package_pool()?;
+    let (threads, pool) = package_pool()?;
     let walk = walk_of(&graph, requested)?;
     let work = move |progress: &Progress| match walk {
         Some((max_degree, rows)) => {

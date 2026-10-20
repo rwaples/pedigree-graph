@@ -57,7 +57,11 @@ static CANCELLED: AtomicBool = AtomicBool::new(false);
 fn spawn_i32(
     work: impl FnOnce(&Progress) -> Result<i32, Error> + Send + 'static,
 ) -> HostResult<Robj> {
-    Ok(job::spawn(package_pool()?, work, |value| Ok(value.into())))
+    Ok(job::spawn(
+        package_pool()?.1,
+        work,
+        |value| Ok(value.into()),
+    ))
 }
 
 /// A job that reports what `script_for_test()` sets, starting at

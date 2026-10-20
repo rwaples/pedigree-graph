@@ -165,9 +165,10 @@ serial.
 extendr dependencies in the core crate and runs Clippy with warnings as
 errors.
 
-No user-reachable panics. Outside tests the core denies
-`clippy::unwrap_used`, `expect_used`, `panic`, `unreachable`, `todo`, and
-`unimplemented` (`crates/core/src/lib.rs`). Each surviving site carries an
+No user-reachable panics. Outside tests the core and both binding crates
+deny `clippy::unwrap_used`, `expect_used`, `panic`, `unreachable`, `todo`,
+and `unimplemented` (`[workspace.lints.clippy]` in `Cargo.toml`, repeated in
+`r/src/rust/Cargo.toml`; `clippy.toml` exempts test code). Each surviving site carries an
 `#[expect(..., reason = ...)]` that names the invariant it relies on.
 `assert!` stays allowed for invariants the caller already checked. A const
 block in `lib.rs` asserts at compile time that the public core types are

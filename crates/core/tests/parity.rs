@@ -6,6 +6,13 @@
 //! `relationship_counts(max_degree=5)` on a graph rebuilt from that TSV.
 //! Every fixture must match on all 23 categories, at one thread and at four.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test helpers outside #[test] functions: a panic fails the test"
+)]
+
 use pedigree_graph_core::relationships::{
     count_pairs, Category, Counts, MaxDegree, PedigreeColumns, Progress,
 };

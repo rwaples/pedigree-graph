@@ -11,6 +11,22 @@ rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/rwaples/pedigree-graph"
 
+# No user-reachable panics (ADR 0007): input errors are error values the
+# hosts raise, never panics.  A surviving `expect` / `unreachable!` names the
+# internal invariant it relies on in an `#[expect(..., reason)]`.  `assert!`
+# stays allowed: it states an invariant the caller already checked, and a
+# failure is a bug the bindings surface as an exception rather than an abort.
+# Test code is exempt through clippy.toml.  r/src/rust/Cargo.toml repeats
+# this table (it is its own workspace); tests/test_r_version_agreement.py
+# fails when the two differ.
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+
 [profile.release]
 opt-level = 3
 debug = 1

@@ -11,7 +11,6 @@ use crate::errors::{HostError, HostResult};
 use crate::input::doubles;
 use crate::job;
 use crate::kernels::{exact_double, package_pool, selection, walk_of, Native};
-use crate::threads;
 use extendr_api::prelude::*;
 use num_bigint::BigInt;
 use pedigree_graph_core::relationships::{
@@ -337,8 +336,7 @@ pub fn start_moments(
         }
     }
 
-    let threads = threads::budget_nonzero()?;
-    let pool = package_pool()?;
+    let (threads, pool) = package_pool()?;
     let walk = walk_of(&graph, requested)?;
     let operands: Vec<i32> = resolved
         .iter()

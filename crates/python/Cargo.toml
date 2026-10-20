@@ -8,6 +8,9 @@ repository.workspace = true
 publish = false
 description = "PyO3 host binding for pedigree-graph-core (ADR 0007)"
 
+[lints]
+workspace = true
+
 [lib]
 name = "pedigree_graph_native"
 crate-type = ["cdylib"]
