@@ -115,6 +115,11 @@ class TestBoundary:
 
         assert _native.core_version() == importlib.metadata.version("pedigree-graph")
 
+    def test_package_version_is_the_core_version(self):
+        import pedigree_graph
+
+        assert pedigree_graph.__version__ == _native.core_version()
+
 
 def test_facade_returns_read_only_depth_and_intp_maps():
     mother = np.array([3, -1, 0, -1], dtype=np.int32)

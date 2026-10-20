@@ -4,6 +4,11 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Added: `pedigree_graph.__version__`**, the release the native core was
+  built from (`_native.core_version()`).
+
 ## v0.13.0
 
 - **Added: `relationships::reduce_pairs_in` and `RowOrder` (Rust).**

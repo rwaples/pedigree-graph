@@ -60,6 +60,7 @@ Public non-root modules:
     pedigree_graph.typing        — FrameLike, the structural table protocol
 """
 
+from pedigree_graph import _native
 from pedigree_graph._burden import RelationshipBurden
 from pedigree_graph._core import PedigreeGraph
 from pedigree_graph._errors import (
@@ -80,6 +81,10 @@ from pedigree_graph.relationships import (
     RelationshipPairBlock,
     RelationshipPairs,
 )
+
+#: The release this build was compiled from; the core carries it, so it never goes stale
+#: the way an editable install's distribution metadata does after a version bump.
+__version__: str = _native.core_version()
 
 __all__ = [
     "MAX_DEGREE",
