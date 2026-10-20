@@ -8,6 +8,9 @@ repository.workspace = true
 publish = false
 description = "Host-neutral pedigree relationship engine (ADR 0007)"
 
+[lints]
+workspace = true
+
 [lib]
 name = "pedigree_graph_core"
 

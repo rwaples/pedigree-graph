@@ -41,7 +41,8 @@ mkdir -p "$PKG"
 tar -C "$REPO/r" --exclude=src/rust/target --exclude='src/*.o' --exclude='src/*.so' \
   --exclude=src/.cargo -cf - . | tar -C "$PKG" -xf -
 
-# The core: its library sources only, keys the workspace supplied written out.
+# The core: its library sources only, keys the workspace supplied written out,
+# and no [lints] table (clippy's, inherited from a workspace the tarball lacks).
 CORE="$PKG/src/rust/core"
 mkdir -p "$CORE"
 cp -R "$REPO/crates/core/src" "$CORE/src"
@@ -52,6 +53,7 @@ sed -e "s|^version.workspace = true|version = \"$VERSION\"|" \
     -e "s|^license.workspace = true|license = \"$LICENSE\"|" \
     -e "s|^repository.workspace = true|repository = \"$REPOSITORY\"|" \
     -e '/^\[\[bin\]\]/,/^$/d' \
+    -e '/^\[lints\]$/,/^$/d' \
     "$REPO/crates/core/Cargo.toml" > "$CORE/Cargo.toml"
 if grep -q 'workspace = true' "$CORE/Cargo.toml"; then
   echo "error: an inherited key is left in the staged core Cargo.toml" >&2

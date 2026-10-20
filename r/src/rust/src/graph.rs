@@ -196,62 +196,54 @@ fn seal_of(native: &Robj) -> HostResult<String> {
         feed.push(name.as_bytes());
         feed.push(&[0, sexptype(value.rtype())]);
         feed.push(&(value.len() as u64).to_le_bytes());
-        match value.rtype() {
-            Rtype::Integers => {
-                for v in value
-                    .as_integer_slice()
-                    .ok_or_else(HostError::graph_modified)?
-                {
-                    feed.push(&v.to_le_bytes());
-                }
+        // Each typed read is `Some` only for its own R type.
+        if let Some(values) = value.as_integer_slice() {
+            for v in values {
+                feed.push(&v.to_le_bytes());
             }
-            Rtype::Doubles => {
-                for v in value
-                    .as_real_slice()
-                    .ok_or_else(HostError::graph_modified)?
-                {
-                    feed.push(&v.to_bits().to_le_bytes());
-                }
+        } else if let Some(values) = value.as_real_slice() {
+            for v in values {
+                feed.push(&v.to_bits().to_le_bytes());
             }
-            Rtype::Logicals => {
-                for v in value
-                    .as_logical_slice()
-                    .ok_or_else(HostError::graph_modified)?
-                {
-                    feed.push(&[if v.is_true() {
-                        1
-                    } else if v.is_false() {
-                        0
-                    } else {
-                        2
-                    }]);
-                }
+        } else if let Some(values) = value.as_logical_slice() {
+            for v in values {
+                feed.push(&[if v.is_true() {
+                    1
+                } else if v.is_false() {
+                    0
+                } else {
+                    2
+                }]);
             }
-            Rtype::Strings => {
-                for s in value
-                    .as_str_vector()
-                    .ok_or_else(HostError::graph_modified)?
-                {
-                    feed.push(&(s.len() as u64).to_le_bytes());
-                    feed.push(s.as_bytes());
-                }
+        } else if let Some(strings) = value.as_str_vector() {
+            for s in strings {
+                feed.push(&(s.len() as u64).to_le_bytes());
+                feed.push(s.as_bytes());
             }
-            Rtype::Null => {}
-            _ => return Err(HostError::graph_modified()),
+        } else if !value.is_null() {
+            return Err(HostError::graph_modified());
         }
     }
     Ok(format!("{SEAL_VERSION}:{:016x}", feed.finish()))
 }
 
-/// A graph's `native` list after its seal checked out.
-pub fn verified(native: &Robj, seal: &Robj) -> HostResult<List> {
+/// A graph's id type and its `native` fields in [`NATIVE_FIELDS`] order,
+/// after its seal checked out.
+pub fn verified(native: &Robj, seal: &Robj) -> HostResult<(IdType, [Robj; NATIVE_FIELDS.len()])> {
     let expected = seal.as_str().ok_or_else(HostError::graph_modified)?;
     if seal_of(native)? != expected {
         return Err(HostError::graph_modified());
     }
     let list = List::try_from(native.clone()).map_err(|_| HostError::graph_modified())?;
-    if IdType::parse(list.values().next().and_then(|v| v.as_str()).unwrap_or("")).is_none() {
-        return Err(HostError::graph_modified());
-    }
-    Ok(list)
+    let fields: [Robj; NATIVE_FIELDS.len()] = list
+        .values()
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| HostError::graph_modified())?;
+    let [id_type, ..] = &fields;
+    let id_type = id_type
+        .as_str()
+        .and_then(IdType::parse)
+        .ok_or_else(HostError::graph_modified)?;
+    Ok((id_type, fields))
 }

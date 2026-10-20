@@ -105,83 +105,71 @@ pub fn coerce(field: &'static str, column: &Robj) -> HostResult<Coerced> {
     if column.inherits("factor") {
         return Err(invalid(field, 0, "factor".into()));
     }
-    match column.rtype() {
-        Rtype::Integers => {
-            let slice = column
-                .as_integer_slice()
-                .ok_or_else(|| invalid(field, 0, describe(column)))?;
-            let nulls: Vec<bool> = slice.iter().map(|&v| v == i32::MIN).collect();
-            let values = slice
-                .iter()
-                .map(|&v| if v == i32::MIN { -1 } else { i64::from(v) })
-                .collect();
-            Ok(Coerced {
-                values,
-                nulls,
-                storage: IdType::Integer,
-            })
-        }
-        Rtype::Doubles if column.inherits("integer64") => {
-            let slice = column
-                .as_real_slice()
-                .ok_or_else(|| invalid(field, 0, describe(column)))?;
+    // Each typed slice is `Some` only for its own R type, so the first that
+    // reads is the column's type.
+    if let Some(slice) = column.as_integer_slice() {
+        let nulls: Vec<bool> = slice.iter().map(|&v| v == i32::MIN).collect();
+        let values = slice
+            .iter()
+            .map(|&v| if v == i32::MIN { -1 } else { i64::from(v) })
+            .collect();
+        return Ok(Coerced {
+            values,
+            nulls,
+            storage: IdType::Integer,
+        });
+    }
+    if let Some(slice) = column.as_real_slice() {
+        if column.inherits("integer64") {
             let raw: Vec<i64> = slice.iter().map(|v| v.to_bits() as i64).collect();
             let nulls: Vec<bool> = raw.iter().map(|&v| v == i64::MIN).collect();
             let values = raw
                 .into_iter()
                 .map(|v| if v == i64::MIN { -1 } else { v })
                 .collect();
-            Ok(Coerced {
+            return Ok(Coerced {
                 values,
                 nulls,
                 storage: IdType::Integer64,
-            })
+            });
         }
-        Rtype::Doubles => {
-            let slice = column
-                .as_real_slice()
-                .ok_or_else(|| invalid(field, 0, describe(column)))?;
-            let mut values = Vec::with_capacity(n);
-            let mut nulls = Vec::with_capacity(n);
-            for (position, &v) in slice.iter().enumerate() {
-                if v.is_nan() {
-                    values.push(-1);
-                    nulls.push(true);
-                    continue;
-                }
-                if !v.is_finite() || v != v.trunc() {
-                    return Err(invalid(field, position, v.into()));
-                }
-                if !(-TWO_POW_63..TWO_POW_63).contains(&v) {
-                    return Err(out_of_range(field, position, v));
-                }
-                values.push(v as i64);
-                nulls.push(false);
+        let mut values = Vec::with_capacity(n);
+        let mut nulls = Vec::with_capacity(n);
+        for (position, &v) in slice.iter().enumerate() {
+            if v.is_nan() {
+                values.push(-1);
+                nulls.push(true);
+                continue;
             }
-            Ok(Coerced {
-                values,
-                nulls,
-                storage: IdType::Double,
-            })
-        }
-        // `NA` alone is a logical in R, so an all-`NA` column (`mother = NA`)
-        // is a column of nulls, as a column of `None` is in Python.  Any
-        // TRUE/FALSE has no integer form.
-        Rtype::Logicals => {
-            let slice = column
-                .as_logical_slice()
-                .ok_or_else(|| invalid(field, 0, describe(column)))?;
-            match slice.iter().position(|v| !v.is_na()) {
-                Some(position) => Err(invalid(field, position, slice[position].to_bool().into())),
-                None => Ok(Coerced {
-                    values: vec![-1; n],
-                    nulls: vec![true; n],
-                    storage: IdType::Integer,
-                }),
+            if !v.is_finite() || v != v.trunc() {
+                return Err(invalid(field, position, v.into()));
             }
+            if !(-TWO_POW_63..TWO_POW_63).contains(&v) {
+                return Err(out_of_range(field, position, v));
+            }
+            values.push(v as i64);
+            nulls.push(false);
         }
-        _ => Err(invalid(field, 0, describe(column))),
+        return Ok(Coerced {
+            values,
+            nulls,
+            storage: IdType::Double,
+        });
     }
+    // `NA` alone is a logical in R, so an all-`NA` column (`mother = NA`)
+    // is a column of nulls, as a column of `None` is in Python.  Any
+    // TRUE/FALSE has no integer form.
+    if let Some(slice) = column.as_logical_slice() {
+        return match slice.iter().position(|v| !v.is_na()) {
+            Some(position) => Err(invalid(field, position, slice[position].to_bool().into())),
+            None => Ok(Coerced {
+                values: vec![-1; n],
+                nulls: vec![true; n],
+                storage: IdType::Integer,
+            }),
+        };
+    }
+    Err(invalid(field, 0, describe(column)))
 }
 
 /// Coerce the required `id` column, which has no null form.

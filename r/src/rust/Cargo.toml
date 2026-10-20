@@ -24,6 +24,17 @@ num-bigint = "0.4"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 rayon = "1.10"
 
+# The repository workspace's [workspace.lints.clippy], repeated because this
+# crate is its own workspace; tests/test_r_version_agreement.py fails
+# when the two differ.  The repository's clippy.toml exempts test code.
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unreachable = "deny"
+todo = "deny"
+unimplemented = "deny"
+
 [features]
 # Test-only entry points (the panic-boundary probe).  `pixi run -e r r-install`
 # enables it through PG_CARGO_FEATURES; tools/r_build_tarball.sh refuses to run

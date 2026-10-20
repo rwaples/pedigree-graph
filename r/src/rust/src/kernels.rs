@@ -4,11 +4,12 @@
 //! columns, and runs the core.
 
 use crate::errors::{HostError, HostResult};
-use crate::graph::{self, NATIVE_FIELDS};
+use crate::graph;
 use crate::input::IdType;
 use crate::job;
 use crate::threads;
 use extendr_api::prelude::*;
+use extendr_api::AsTypedSlice;
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
@@ -16,94 +17,109 @@ use pedigree_graph_core::relationships::{
     count_pairs, pair_blocks, relationship_burden as burden_of, Burden, Category, CategorySet,
     Counts, Execution, MaxDegree, PairBlock, Pedigree, Progress, Receiver, DEGREES, N_CATEGORIES,
 };
+use std::marker::PhantomData;
+use std::num::NonZeroUsize;
 
-/// A verified graph's `native` fields, held so their slices stay valid.
+/// An R vector whose type was checked once.  extendr's typed read is `Some`
+/// only for the vector's own type, and an R vector keeps its type for life.
+struct Typed<T> {
+    robj: Robj,
+    element: PhantomData<T>,
+}
+
+impl<T> Typed<T>
+where
+    Robj: for<'a> AsTypedSlice<'a, T>,
+{
+    /// `robj` if it is a vector of `T`; a sealed field of another type means
+    /// the graph was modified.
+    fn new(robj: Robj) -> HostResult<Typed<T>> {
+        match <Robj as AsTypedSlice<'_, T>>::as_typed_slice(&robj) {
+            Some(_) => Ok(Typed {
+                robj,
+                element: PhantomData,
+            }),
+            None => Err(HostError::graph_modified()),
+        }
+    }
+
+    #[expect(
+        clippy::expect_used,
+        reason = "Typed::new read this vector as a T slice, and its type cannot change"
+    )]
+    fn slice(&self) -> &[T] {
+        self.robj
+            .as_typed_slice()
+            .expect("a vector of its checked type")
+    }
+}
+
+/// A verified graph's `native` fields, typed once and held so their slices
+/// stay valid.  int32 fields are graph rows; int64 fields are ids, stored as
+/// their bits in doubles.
 pub struct Native {
-    fields: Vec<Robj>,
+    id_type: IdType,
+    ids: Typed<f64>,
+    mother_ids: Typed<f64>,
+    father_ids: Typed<f64>,
+    mother_rows: Typed<i32>,
+    father_rows: Typed<i32>,
+    twin_rows: Typed<i32>,
+    depth: Typed<i32>,
+}
+
+/// An int64 field's values.
+fn int64(field: &Typed<f64>) -> Vec<i64> {
+    field.slice().iter().map(|v| v.to_bits() as i64).collect()
 }
 
 impl Native {
     pub fn verified(native: &Robj, seal: &Robj) -> HostResult<Native> {
-        let list = graph::verified(native, seal)?;
+        let (id_type, fields) = graph::verified(native, seal)?;
+        // NATIVE_FIELDS order.
+        let [_, ids, mother_ids, father_ids, _, mother_rows, father_rows, twin_rows, depth, ..] =
+            fields;
         Ok(Native {
-            fields: list.values().collect(),
+            id_type,
+            ids: Typed::new(ids)?,
+            mother_ids: Typed::new(mother_ids)?,
+            father_ids: Typed::new(father_ids)?,
+            mother_rows: Typed::new(mother_rows)?,
+            father_rows: Typed::new(father_rows)?,
+            twin_rows: Typed::new(twin_rows)?,
+            depth: Typed::new(depth)?,
         })
     }
 
-    #[expect(
-        clippy::expect_used,
-        reason = "callers name only entries of NATIVE_FIELDS"
-    )]
-    fn field(&self, name: &str) -> &Robj {
-        let at = NATIVE_FIELDS
-            .iter()
-            .position(|f| *f == name)
-            .expect("a native field name");
-        &self.fields[at]
-    }
-
-    /// An int32 field; the seal fixed its type when the graph was built.
-    #[expect(
-        clippy::expect_used,
-        reason = "Native::verified matched the seal, which fixes each row field as an integer vector"
-    )]
-    fn rows(&self, name: &str) -> &[i32] {
-        self.field(name)
-            .as_integer_slice()
-            .expect("a sealed integer field")
-    }
-
-    /// An int64 field, stored as its bits in doubles.
-    #[expect(
-        clippy::expect_used,
-        reason = "Native::verified matched the seal, which fixes each id field as a double vector"
-    )]
-    fn int64(&self, name: &str) -> Vec<i64> {
-        self.field(name)
-            .as_real_slice()
-            .expect("a sealed double field")
-            .iter()
-            .map(|v| v.to_bits() as i64)
-            .collect()
-    }
-
     pub fn len(&self) -> usize {
-        self.rows("mother_rows").len()
-    }
-
-    #[expect(
-        clippy::expect_used,
-        reason = "Native::verified refuses a graph whose id_type does not parse"
-    )]
-    fn id_type(&self) -> IdType {
-        IdType::parse(self.field("id_type").as_str().unwrap_or("")).expect("a sealed id type")
+        self.mother_rows.slice().len()
     }
 
     /// Copies of the columns a relationship pedigree borrows.
     fn copy_rows(&self) -> OwnedRows {
         OwnedRows {
-            mother_rows: self.rows("mother_rows").to_vec(),
-            father_rows: self.rows("father_rows").to_vec(),
-            twin_rows: self.rows("twin_rows").to_vec(),
-            mother_ids: self.int64("mother_ids"),
-            father_ids: self.int64("father_ids"),
+            mother_rows: self.mother_rows.slice().to_vec(),
+            father_rows: self.father_rows.slice().to_vec(),
+            twin_rows: self.twin_rows.slice().to_vec(),
+            mother_ids: int64(&self.mother_ids),
+            father_ids: int64(&self.father_ids),
         }
     }
 
     fn kinship(&self) -> HostResult<KinshipPedigree<'_>> {
         Ok(KinshipPedigree::try_new(
-            self.rows("mother_rows"),
-            self.rows("father_rows"),
-            self.rows("twin_rows"),
-            self.rows("depth"),
+            self.mother_rows.slice(),
+            self.father_rows.slice(),
+            self.twin_rows.slice(),
+            self.depth.slice(),
         )?)
     }
 
     /// The ids at `rows` in the graph's id type, as R vectors of that type.
     fn ids_at(&self, rows: impl ExactSizeIterator<Item = i32>) -> Robj {
-        let ids = self.int64("ids");
+        let ids = int64(&self.ids);
         let at = |r: i32| ids[r as usize];
-        match self.id_type() {
+        match self.id_type {
             IdType::Integer => Integers::from_values(rows.map(|r| at(r) as i32)).into_robj(),
             IdType::Double => Doubles::from_values(rows.map(|r| at(r) as f64)).into_robj(),
             IdType::Integer64 => {
@@ -117,7 +133,7 @@ impl Native {
     /// Every id as a string, for matrix dimnames: exact for int64 ids, which
     /// `as.character()` cannot print without bit64.
     fn id_names(&self) -> Robj {
-        Strings::from_values(self.int64("ids").iter().map(|id| id.to_string())).into_robj()
+        Strings::from_values(int64(&self.ids).iter().map(|id| id.to_string())).into_robj()
     }
 }
 
@@ -249,10 +265,10 @@ pub fn selection(max_degree: &Robj, categories: &Robj) -> HostResult<CategorySet
     }
 }
 
-/// The package pool at the committed budget.
-pub fn package_pool() -> HostResult<&'static rayon::ThreadPool> {
-    let threads = threads::budget_nonzero()?;
-    Ok(pool::configure(threads)?)
+/// The committed budget and the package pool at that size.
+pub fn package_pool() -> HostResult<(NonZeroUsize, &'static rayon::ThreadPool)> {
+    let threads = threads::budget()?;
+    Ok((threads, pool::configure(threads)?))
 }
 
 /// The rows an R data frame can hold: compact row names are int32.
@@ -279,7 +295,7 @@ pub fn start_pairs(
         ))
     })?;
     // Every public operation commits the budget, as in Python.
-    let pool = package_pool()?;
+    let (_, pool) = package_pool()?;
     let walk = walk_of(&graph, requested)?;
     let work = move |progress: &Progress| match walk {
         Some((max_degree, rows)) => Ok(pair_blocks(
@@ -392,7 +408,7 @@ pub fn start_counts(
 ) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
     let requested = selection(max_degree, categories)?;
-    let pool = package_pool()?;
+    let (_, pool) = package_pool()?;
     let walk = walk_of(&graph, requested)?;
     let work = move |progress: &Progress| match walk {
         Some((max_degree, rows)) => count_pairs(&rows.pedigree()?, max_degree, None, progress),
@@ -425,9 +441,9 @@ fn counts_list(requested: CategorySet, counts: Counts) -> HostResult<Robj> {
 /// the pairs of every category, and the related pairs per structural depth.
 pub fn start_burden(native: &Robj, seal: &Robj) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
-    let pool = package_pool()?;
+    let (_, pool) = package_pool()?;
     let rows = graph.copy_rows();
-    let depth = graph.rows("depth").to_vec();
+    let depth = graph.depth.slice().to_vec();
     let n = graph.len();
     let work = move |progress: &Progress| burden_of(&rows.pedigree()?, &depth, progress);
     Ok(job::spawn(pool, work, move |burden| burden_list(n, burden)))
@@ -543,7 +559,7 @@ pub fn pair_kinship(native: &Robj, seal: &Robj, first: &Robj, second: &Robj) -> 
             second.len()
         )));
     }
-    let pool = package_pool()?;
+    let (_, pool) = package_pool()?;
     let ped = graph.kinship()?;
     let values = pool.install(|| kinship::pair_kinship(ped, &first, &second))?;
     Ok(Doubles::from_values(values.into_iter().map(f64::from)).into_robj())

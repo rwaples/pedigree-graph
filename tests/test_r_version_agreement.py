@@ -1,9 +1,10 @@
-"""The R package carries the workspace version (ADR 0007).
+"""The R package carries the workspace version and lints (ADR 0007).
 
 ``[workspace.package].version`` is the one version anyone edits.  The R
 binding crate sits outside that workspace so the R source tarball builds on
 its own, and DESCRIPTION is R's, so both repeat it; this test fails a bump
-that misses either, as the publish workflow's version check does.
+that misses either, as the publish workflow's version check does.  The
+crate repeats ``[workspace.lints.clippy]`` for the same reason.
 """
 
 from __future__ import annotations
@@ -29,3 +30,9 @@ def test_r_description_and_binding_crate_carry_the_workspace_version() -> None:
         "DESCRIPTION": workspace,
         "r/src/rust/Cargo.toml": workspace,
     }
+
+
+def test_r_binding_crate_carries_the_workspace_lints() -> None:
+    workspace = tomllib.loads((REPO / "Cargo.toml").read_text())["workspace"]["lints"]["clippy"]
+    binding = tomllib.loads((REPO / "r" / "src" / "rust" / "Cargo.toml").read_text())["lints"]["clippy"]
+    assert binding == workspace

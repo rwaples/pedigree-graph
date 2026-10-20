@@ -14,8 +14,8 @@ use std::sync::Mutex;
 const ENV_VAR: &str = "PEDIGREE_GRAPH_THREADS";
 
 struct Budget {
-    configured: Option<usize>,
-    committed: Option<usize>,
+    configured: Option<NonZeroUsize>,
+    committed: Option<NonZeroUsize>,
 }
 
 static BUDGET: Mutex<Budget> = Mutex::new(Budget {
@@ -23,22 +23,27 @@ static BUDGET: Mutex<Budget> = Mutex::new(Budget {
     committed: None,
 });
 
-fn conflict(committed: usize, requested: usize) -> HostError {
+fn conflict(committed: NonZeroUsize, requested: NonZeroUsize) -> HostError {
     HostError::from(pedigree_graph_core::error::Error::ThreadPoolConflict {
-        configured: committed,
-        requested,
+        configured: committed.get(),
+        requested: requested.get(),
     })
 }
 
 /// The largest budget: `thread_budget()` returns it as an R integer.
 pub const MAX_THREADS: usize = i32::MAX as usize;
 
+/// `n` as a budget, if it is one: from 1 to [`MAX_THREADS`].
+fn in_range(n: usize) -> Option<NonZeroUsize> {
+    NonZeroUsize::new(n).filter(|n| n.get() <= MAX_THREADS)
+}
+
 pub fn configure(n: usize) -> HostResult<()> {
-    if !(1..=MAX_THREADS).contains(&n) {
-        return Err(HostError::usage(format!(
+    let n = in_range(n).ok_or_else(|| {
+        HostError::usage(format!(
             "configure_threads(n) requires a whole number from 1 to {MAX_THREADS}, got {n}"
-        )));
-    }
+        ))
+    })?;
     let mut budget = BUDGET.lock().unwrap_or_else(|e| e.into_inner());
     match budget.committed {
         Some(committed) if committed != n => Err(conflict(committed, n)),
@@ -50,25 +55,26 @@ pub fn configure(n: usize) -> HostResult<()> {
     }
 }
 
-fn from_env() -> HostResult<usize> {
+fn from_env() -> HostResult<NonZeroUsize> {
     let raw = match std::env::var(ENV_VAR) {
         Ok(raw) => raw,
-        Err(std::env::VarError::NotPresent) => return Ok(1),
+        Err(std::env::VarError::NotPresent) => return Ok(NonZeroUsize::MIN),
         Err(std::env::VarError::NotUnicode(raw)) => {
             return Err(HostError::usage(format!(
                 "{ENV_VAR} must be a decimal integer >= 1, got {raw:?}"
             )))
         }
     };
-    match raw.parse::<usize>() {
-        Ok(n) if (1..=MAX_THREADS).contains(&n) && raw.bytes().all(|b| b.is_ascii_digit()) => Ok(n),
+    match raw.parse::<usize>().ok().and_then(in_range) {
+        Some(n) if raw.bytes().all(|b| b.is_ascii_digit()) => Ok(n),
         _ => Err(HostError::usage(format!(
             "{ENV_VAR} must be a decimal integer from 1 to {MAX_THREADS}, got {raw:?}"
         ))),
     }
 }
 
-pub fn budget() -> HostResult<usize> {
+/// The committed budget, committing it on the first call.
+pub fn budget() -> HostResult<NonZeroUsize> {
     let mut budget = BUDGET.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(committed) = budget.committed {
         return Ok(committed);
@@ -79,13 +85,4 @@ pub fn budget() -> HostResult<usize> {
     };
     budget.committed = Some(committed);
     Ok(committed)
-}
-
-/// The committed budget as a pool size.
-#[expect(
-    clippy::expect_used,
-    reason = "configure and from_env commit only budgets from 1 to MAX_THREADS"
-)]
-pub fn budget_nonzero() -> HostResult<NonZeroUsize> {
-    Ok(NonZeroUsize::new(budget()?).expect("a budget of at least 1"))
 }

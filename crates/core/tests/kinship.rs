@@ -5,6 +5,13 @@
 //! `tests/oracle/pair_kinship.py` statement in Rust so the core is held to
 //! the same contract the Python differential test holds the binding to.
 
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "test helpers outside #[test] functions: a panic fails the test"
+)]
+
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::kinship::{
     kinship_csc, kinship_csc_upper, pair_kinship, support_values, Csc, KinshipPedigree, MAX_CSC_NNZ,

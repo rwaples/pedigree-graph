@@ -1,0 +1,5 @@
+# Test code may unwrap, expect and panic; the deny list is [workspace.lints.clippy]
+# in Cargo.toml.  Clippy finds this file from r/src/rust too, by walking up.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
