@@ -24,6 +24,13 @@ first path assertion.
 - `compare_floats.py` — where two `byte_parity.sh` manifests differ, parses
   both sides and reports the largest float difference against
   `rtol 1e-9, atol 1e-12`.
+- [pedigree-graph-validate](https://github.com/rwaples/pedigree-graph-validate)
+  (a separate repo) checks both bindings against outside R software (kinship2,
+  ribd, GENLIB, nadiv, pedigreeTools, AGHmatrix, purgeR, verbalisr). Before
+  tagging, run it against the candidate as its README's "Checking a local
+  pedigree-graph checkout" describes. Don't tag while a row is FAIL or ERROR.
+  A row whose status changed needs its `differences.md` or `status.md` entry
+  updated there.
 
 ## R package
 
