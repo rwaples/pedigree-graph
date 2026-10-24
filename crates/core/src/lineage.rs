@@ -127,8 +127,9 @@ impl<'a> ParentColumns<'a> {
 /// A row with children owns its closed ancestor set (its strict ancestors
 /// and itself) as a sorted, exactly sized slice, built by one merge of its
 /// parents' sets; a child's count is the length of that merge before the
-/// child is added.  A set is dropped once its row's last child is counted,
-/// and a row without children stores nothing.
+/// child is added; a row with the previous row's parents reuses its merge.
+/// A set is dropped once its row's last child is counted, and a row without
+/// children stores nothing.
 ///
 /// # Errors
 ///
@@ -157,21 +158,26 @@ fn ancestors_in(
     }
     let mut sets: Vec<Box<[u32]>> = alloc::filled(Box::default(), n, SETS)?;
     let mut merged: Vec<u32> = Vec::new();
+    let mut merged_for = None;
     let mut counts = alloc::filled(0i32, n, OUTPUT)?;
 
     for row in rows {
         let i = row as usize;
-        let side = |p: i32| -> &[u32] {
-            if p < 0 {
-                &[]
-            } else {
-                &sets[p as usize]
-            }
-        };
-        let (a, b) = (side(mother[i]), side(father[i]));
-        merged.clear();
-        alloc::reserve(&mut merged, a.len() + b.len() + 1, SETS)?;
-        union_into(a, b, &mut merged);
+        // A full sib of the previous row reuses its merge.
+        if merged_for != Some((mother[i], father[i])) {
+            let side = |p: i32| -> &[u32] {
+                if p < 0 {
+                    &[]
+                } else {
+                    &sets[p as usize]
+                }
+            };
+            let (a, b) = (side(mother[i]), side(father[i]));
+            merged.clear();
+            alloc::reserve(&mut merged, a.len() + b.len() + 1, SETS)?;
+            union_into(a, b, &mut merged);
+            merged_for = Some((mother[i], father[i]));
+        }
         counts[i] = merged.len() as i32;
 
         if remaining[i] > 0 {
@@ -323,6 +329,28 @@ mod tests {
                 .collect()
         };
         (flip(mother), flip(father))
+    }
+
+    #[test]
+    fn adjacent_full_sibs_match_the_brute_force_in_either_row_order() {
+        // Each random row becomes a sibship of one to three consecutive rows,
+        // its children drawn from the first.
+        let c = crate::relationships::testing::random_pedigree(400, 5);
+        let (mut mother, mut father, mut first) = (Vec::new(), Vec::new(), Vec::new());
+        let moved = |p: i32, first: &[i32]| if p < 0 { -1 } else { first[p as usize] };
+        for i in 0..c.mother.len() {
+            first.push(mother.len() as i32);
+            for _ in 0..1 + i % 3 {
+                mother.push(moved(c.mother[i], &first));
+                father.push(moved(c.father[i], &first));
+            }
+        }
+        for (m, f) in [(mother.clone(), father.clone()), reversed(&mother, &father)] {
+            assert_eq!(
+                run(&m, &f, distinct_ancestor_counts).unwrap(),
+                closure(&m, &f)
+            );
+        }
     }
 
     #[test]

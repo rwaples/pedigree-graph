@@ -16,6 +16,9 @@ live on the corresponding GitHub release pages.
   one thread): 108.0 s to 41.5 s with MZ twins and 70.0 s to 36.5 s without,
   peak RSS within 0.2%; 16.2 s on 8 threads, where each worker adds O(rows)
   scratch (198 to 285 MB).
+- **Changed: `distinct_ancestor_counts()` reuses a full sib's ancestor merge**
+  when consecutive rows in its sweep share both parents: 5.5 s to 3.4 s on the
+  same pedigree and 2.3 s to 1.3 s on N 500 / G 100, same counts and peak RSS.
 - **Added: `kinship::inbreeding_and_ancestor_counts_in(ped, pool)` (Rust)**,
   the walk across a Rayon pool. `inbreeding` and
   `inbreeding_and_ancestor_counts` stay serial.
