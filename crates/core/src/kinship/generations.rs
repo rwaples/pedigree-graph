@@ -193,8 +193,8 @@ pub fn founder_contribution_means(
 ///
 /// [`Error::LengthMismatch`] when `inbreeding` or `labels` is not one per row,
 /// [`Error::ValueOutOfRange`] on `labels`, on `n_buckets` past int32 or on
-/// `depth` as [`inbreeding()`](super::inbreeding()) reports it, and [`Error::AllocationFailed`]
-/// for any buffer.
+/// `twin` or `depth` as [`inbreeding()`](super::inbreeding()) reports them, and
+/// [`Error::AllocationFailed`] for any buffer.
 pub fn generation_kinship_sums(
     ped: KinshipPedigree<'_>,
     inbreeding: &[f64],

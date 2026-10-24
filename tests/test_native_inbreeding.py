@@ -21,6 +21,7 @@ from oracle.remap import build_topology
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, _native
 from pedigree_graph._lineage import sweep_depth
+from pedigree_graph._threads import thread_budget
 
 PERMUTATION_SEEDS = (None, 5, 11)
 RTOL, ATOL = 1e-9, 1e-12
@@ -40,7 +41,7 @@ def _oracle_F(graph: PedigreeGraph) -> np.ndarray:
 
 def _walk_F(graph: PedigreeGraph) -> np.ndarray:
     """The walk's F, checking its ancestor counts against the set sweep on the way."""
-    F, ancestors = _native.inbreeding(graph._built, graph.depth)
+    F, ancestors = _native.inbreeding(graph._built, graph.depth, threads=thread_budget())
     sets = _native.distinct_ancestor_counts(graph._built, sweep_depth(graph))
     assert ancestors.tobytes() == sets.tobytes()
     return F
@@ -80,7 +81,7 @@ def test_the_oracle_handles_selfing():
 class TestBoundary:
     def test_the_arrays_are_owned_and_contiguous(self):
         graph = parity_graph("random_1k")
-        F, ancestors = _native.inbreeding(graph._built, graph.depth)
+        F, ancestors = _native.inbreeding(graph._built, graph.depth, threads=thread_budget())
         for array, dtype in ((F, np.float64), (ancestors, np.int32)):
             assert array.dtype == dtype
             assert array.shape == (graph.n_individuals,)
@@ -92,7 +93,7 @@ class TestBoundary:
         F = graph.inbreeding()
         assert not isinstance(F.base, np.ndarray)
         assert not F.flags.writeable
-        assert F.tobytes() == _native.inbreeding(graph._built, graph.depth)[0].tobytes()
+        assert F.tobytes() == _native.inbreeding(graph._built, graph.depth, threads=thread_budget())[0].tobytes()
 
     def test_inbreeding_fills_the_ancestor_count_memo(self, monkeypatch):
         graph = parity_graph("random_1k")
@@ -110,13 +111,13 @@ class TestBoundary:
     def test_an_empty_pedigree_gives_empty_arrays(self):
         empty = np.zeros(0, np.int64)
         graph = PedigreeGraph.from_frame({"id": empty, "mother": empty, "father": empty})
-        F, ancestors = _native.inbreeding(graph._built, graph.depth)
+        F, ancestors = _native.inbreeding(graph._built, graph.depth, threads=thread_budget())
         assert F.shape == ancestors.shape == (0,)
 
     def test_a_non_structural_depth_is_rejected(self):
         graph = parity_graph("nuclear_full_sibs")
         with pytest.raises(PedigreeValidationError) as info:
-            _native.inbreeding(graph._built, np.zeros(graph.n_individuals, dtype=np.int32))
+            _native.inbreeding(graph._built, np.zeros(graph.n_individuals, dtype=np.int32), threads=thread_budget())
         assert info.value.code == "value_out_of_range"
         assert info.value.fields["field"] == "depth"
 
@@ -126,14 +127,57 @@ def test_a_refused_allocation_raises_a_resource_error():
         from pedigree_graph import ResourceError
         _native.fail_next_allocation("inbreeding_walk", n)
         try:
-            _native.inbreeding(graph._built, graph.depth)
+            _native.inbreeding(graph._built, graph.depth, threads=thread_budget())
         except ResourceError as e:
             print(e.code, e.fields["operation"], e.fields["requested_elements"] >= n)
         else:
             print("no error")
         _native.fail_next_allocation(None)
-        _native.inbreeding(graph._built, graph.depth)
+        _native.inbreeding(graph._built, graph.depth, threads=thread_budget())
         print("recovered")
     """
     lines = _run_child(CHILD_PRELUDE, body).strip().splitlines()
     assert lines == ["allocation_failed inbreeding_walk True", "recovered"]
+
+
+THREAD_BODY = """
+    import hashlib
+    import numpy as np
+    from pedigree_graph import PedigreeGraph
+    from pedigree_graph._threads import thread_budget
+    rng = np.random.default_rng(3)
+    mother, father, twin = [-1] * 300, [-1] * 300, [-1] * 300
+    for _ in range(6):
+        earlier = len(mother)
+        for _ in range(700):
+            m, f = int(rng.integers(earlier)), int(rng.integers(earlier))
+            first = len(mother)
+            for _ in range(int(rng.integers(1, 5))):
+                mother.append(m); father.append(f if f != m else -1); twin.append(-1)
+            if len(mother) - first >= 2 and rng.random() < 0.3:
+                twin[first], twin[first + 1] = first + 1, first
+    rows = rng.permutation(len(mother))
+    graph = PedigreeGraph.from_frame({
+        "id": rows,
+        "mother": np.asarray(mother)[rows],
+        "father": np.asarray(father)[rows],
+        "twin": np.asarray(twin)[rows],
+    })
+    F = graph.inbreeding()
+    counts = graph.distinct_ancestor_counts()
+    print(thread_budget(), hashlib.sha256(F.tobytes() + counts.tobytes()).hexdigest())
+"""
+
+
+def test_f_and_counts_are_bit_identical_under_every_thread_budget():
+    """Each budget runs in its own interpreter, since the package pool is built once per process.
+
+    Every depth holds hundreds of sibships, many opening with MZ co-twins, in
+    shuffled rows, so the walks split across workers and full sibs and
+    co-twins stand apart in the input.
+    """
+    one = _run_child(THREAD_BODY, PEDIGREE_GRAPH_THREADS="1").split()
+    four = _run_child(THREAD_BODY, PEDIGREE_GRAPH_THREADS="4").split()
+    assert one[0] == "1"
+    assert four[0] == "4"
+    assert one[1] == four[1]

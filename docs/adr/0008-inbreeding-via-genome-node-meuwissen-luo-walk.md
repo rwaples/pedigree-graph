@@ -61,6 +61,16 @@ without loops, founder twins, and inbred twins.
   `tests/test_native_inbreeding.py` holds the core to it within
   `rtol 1e-9` on the parity fixtures in three row orders and records, without
   asserting, whether the bits match.
+* Since issue #49 the walk is faster with the same bits. A genome parent whose
+  graph-row parent has an MZ co-twin is flagged in the parent column, so the
+  ancestor-count bookkeeping reads the twin columns only there. Within a depth,
+  rows whose genome nodes have the same graph-row parents (full sibs and
+  co-twins) copy one walk, and the depth's walks run on the package pool, one
+  walker and O(rows) scratch per worker. A walk reads only shallower values, so
+  neither changes a value; the core's unit tests hold `F` and the counts to the
+  previous serial walk's bits. The sharing key is the graph-row parents, not
+  the genome nodes: children of co-twin mothers share genome parents but can
+  count different ancestor rows.
 
 ## Alternatives considered
 

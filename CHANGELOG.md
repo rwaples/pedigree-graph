@@ -6,6 +6,22 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: `inbreeding()` is faster with the same bits, and uses the
+  thread budget** (issue #49). A genome parent whose row parent has an MZ
+  co-twin is flagged in the parent column, so the ancestor-count bookkeeping
+  reads the twin columns only there; full sibs and co-twins in a depth share
+  one walk; and each depth's walks run on the package pool. `F` and the
+  distinct-ancestor counts are bit-identical to 0.13.0 under every budget. On
+  a simACE pedigree of 1.3M rows (N 100k, G 12; median of 5 interleaved runs,
+  one thread): 108.0 s to 41.5 s with MZ twins and 70.0 s to 36.5 s without,
+  peak RSS within 0.2%; 16.2 s on 8 threads, where each worker adds O(rows)
+  scratch (198 to 285 MB).
+- **Added: `kinship::inbreeding_and_ancestor_counts_in(ped, pool)` (Rust)**,
+  the walk across a Rayon pool. `inbreeding` and
+  `inbreeding_and_ancestor_counts` stay serial.
+- **Changed: the inbreeding walk and the generation kinship sums refuse a
+  non-reciprocal MZ pair (Rust)** with `ValueOutOfRange` on `twin`. Graph
+  construction already refused one, so no Python or R caller is affected.
 - **Added: `pedigree_graph.__version__`**, the native core's Cargo version
   (`_native.core_version()`); for an `X.Y.Z` release it equals the distribution
   version.

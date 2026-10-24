@@ -27,6 +27,8 @@ pub mod rows;
 pub use generations::{
     equivalent_generations, founder_contribution_means, generation_kinship_sums,
 };
-pub use inbreeding::{inbreeding, inbreeding_and_ancestor_counts};
+pub use inbreeding::{
+    inbreeding, inbreeding_and_ancestor_counts, inbreeding_and_ancestor_counts_in,
+};
 pub use matrix::{approximate_kinship_csc, kinship_csc, kinship_csc_upper, Csc, MAX_CSC_NNZ};
 pub use pairwise::{pair_kinship, support_values, KinshipPedigree};

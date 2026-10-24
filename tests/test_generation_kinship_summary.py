@@ -59,9 +59,9 @@ def test_the_summary_and_inbreeding_share_one_walk(monkeypatch):
     walks = []
     walk = _native.inbreeding
 
-    def counted(*args):
+    def counted(*args, **kwargs):
         walks.append(1)
-        return walk(*args)
+        return walk(*args, **kwargs)
 
     monkeypatch.setattr(_native, "inbreeding", counted)
     pg = _graph()

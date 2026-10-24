@@ -716,16 +716,17 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         return self._inbreeding_values()
 
     def _inbreeding_values(self) -> np.ndarray:
-        """Return the memoised *F* without committing the package thread budget.
+        """Return the memoised *F*.
 
         The effective-size estimators read F through here; their own entry
-        points commit the budget.  :meth:`inbreeding` is the public entry
-        point that commits.  The walk counts every row's distinct ancestors
-        on the way, so the :meth:`distinct_ancestor_counts` memo is filled
-        too, and a later call to it runs no second sweep.
+        points commit the budget first, and :meth:`inbreeding` is the public
+        entry point.  The walk runs on the package pool, so a first call
+        commits the budget too.  It counts every row's distinct ancestors on
+        the way, so the :meth:`distinct_ancestor_counts` memo is filled too,
+        and a later call to it runs no second sweep.
         """
         if self._inbreeding is None:
-            f, ancestors = _native.inbreeding(self._built, self.depth)
+            f, ancestors = _native.inbreeding(self._built, self.depth, threads=thread_budget())
             self._inbreeding = _own_native(f, np.float64)
             if self._distinct_ancestor_counts is None:
                 self._distinct_ancestor_counts = _own_native(ancestors, np.int32)

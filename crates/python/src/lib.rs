@@ -1216,18 +1216,21 @@ fn generation_kinship_sums<'py>(
 
 /// Inbreeding `F` per graph row, float64, and distinct strict ancestors per
 /// graph row, int32: one Meuwissen-Luo walk over the genome-node pedigree
-/// (ADR 0008), serial, with the GIL released.
+/// (ADR 0008), each depth's walks across the package pool configured to
+/// `threads`, with the GIL released.  Both are the same for every value.
 #[pyfunction]
-#[pyo3(signature = (pedigree, depth, /))]
+#[pyo3(signature = (pedigree, depth, /, *, threads))]
 fn inbreeding<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
+    threads: usize,
 ) -> PyResult<InbreedingArrays<'py>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
+    let pool = checked_pool(py, threads)?;
     let (f, ancestors) = py
-        .detach(|| kinship::inbreeding_and_ancestor_counts(ped))
+        .detach(|| kinship::inbreeding_and_ancestor_counts_in(ped, pool))
         .map_err(|e| to_pyerr(py, e))?;
     Ok((f.into_pyarray(py), ancestors.into_pyarray(py)))
 }

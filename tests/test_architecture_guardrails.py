@@ -216,6 +216,8 @@ CORE_SRC = CHECKOUT / "crates" / "core" / "src"
 PARALLEL_MODULES = {
     "kinship/pairwise.rs": "tests/test_native_pair_kinship.py::"
     "test_both_entries_return_the_same_bits_under_every_thread_budget",
+    "kinship/inbreeding.rs": "tests/test_native_inbreeding.py::"
+    "test_f_and_counts_are_bit_identical_under_every_thread_budget",
     "relationships/pairs.rs": "tests/test_native_relationship_pairs.py::TestProcessWidePool::"
     "test_blocks_are_identical_under_every_thread_budget",
     "relationships/mod.rs": "tests/test_native_relationship_counts.py::TestSelectorsAndErrors::"

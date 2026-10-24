@@ -565,10 +565,13 @@ pub fn pair_kinship(native: &Robj, seal: &Robj, first: &Robj, second: &Robj) -> 
     Ok(Doubles::from_values(values.into_iter().map(f64::from)).into_robj())
 }
 
-/// `F` per row, as doubles.
+/// `F` per row, as doubles, each depth's walks across the package pool.
 pub fn inbreeding(native: &Robj, seal: &Robj) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
-    Ok(Doubles::from_values(kinship::inbreeding(graph.kinship()?)?).into_robj())
+    let (_, pool) = package_pool()?;
+    let ped = graph.kinship()?;
+    let (f, _) = kinship::inbreeding_and_ancestor_counts_in(ped, pool)?;
+    Ok(Doubles::from_values(f).into_robj())
 }
 
 /// `list(i, p, x, names)`: the upper triangle as `dsCMatrix` slots

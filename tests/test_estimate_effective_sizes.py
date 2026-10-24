@@ -17,7 +17,7 @@ from types import MappingProxyType
 
 import numpy as np
 import pytest
-from _support import CHAIN_BIRTH, _chain_graph
+from _support import CHAIN_BIRTH, _chain_graph, _run_child
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph, _threads, configure_threads
 from pedigree_graph import _ne_estimate as ne_estimate
@@ -584,12 +584,20 @@ class TestThreadBudget:
         assert _threads._STATE.committed == 3
 
     def test_results_do_not_depend_on_the_budget(self):
-        under_one = estimate_effective_sizes(_chain_graph(birth_year=CHAIN_BIRTH))
-        _threads._reset_thread_state()
-        configure_threads(3)
-        under_three = estimate_effective_sizes(_chain_graph(birth_year=CHAIN_BIRTH))
-        assert _threads._STATE.committed == 3
-        assert under_one == under_three
+        """Each budget runs in its own interpreter, since the package pool is built once per process."""
+        body = f"""
+            import json, sys
+            sys.path.insert(0, {str(Path(__file__).parent)!r})
+            from _support import CHAIN_BIRTH, _chain_graph
+            from pedigree_graph.effective_size import estimate_effective_sizes
+            from pedigree_graph._threads import thread_budget
+            results = estimate_effective_sizes(_chain_graph(birth_year=CHAIN_BIRTH))
+            print(thread_budget(), json.dumps(results.to_dict(), sort_keys=True))
+        """
+        one = _run_child(body, PEDIGREE_GRAPH_THREADS="1").split(" ", 1)
+        three = _run_child(body, PEDIGREE_GRAPH_THREADS="3").split(" ", 1)
+        assert (one[0], three[0]) == ("1", "3")
+        assert one[1] == three[1]
 
     def test_selector_validation_precedes_the_commit(self):
         with pytest.raises(TypeError):
