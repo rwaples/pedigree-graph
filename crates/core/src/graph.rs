@@ -248,17 +248,59 @@ impl IdIndex {
                 .and_then(|offset| usize::try_from(offset).ok())
                 .and_then(|offset| rows.get(offset))
                 .map_or(-1, |&row| row),
-            Layout::Sorted { ids, rows } => match ids.binary_search(&id) {
-                Ok(position) => rows[position],
-                Err(_) => -1,
-            },
+            Layout::Sorted { ids, rows } => {
+                // The first of equal ids, as `resolve_sorted` finds it.
+                let position = ids.partition_point(|&sorted| sorted < id);
+                match ids.get(position) {
+                    Some(&found) if found == id => rows[position],
+                    _ => -1,
+                }
+            }
         }
     }
 
-    /// The row per query id, `-1` where unresolved.
+    /// The row per query id, `-1` where unresolved; the row
+    /// [`IdIndex::row`] gives each.
     pub fn resolve(&self, query: &[i64]) -> Vec<i32> {
-        query.iter().map(|&id| self.row(id)).collect()
+        match &self.layout {
+            Layout::Dense { .. } => query.iter().map(|&id| self.row(id)).collect(),
+            Layout::Sorted { ids, rows } => resolve_sorted(ids, rows, query),
+        }
     }
+}
+
+/// Look up `query` in ascending order, each search galloping forward from the
+/// last hit.  A binary search per query missed cache at almost every probe:
+/// `build` on 20M rows of sparse ids took 24.8 s that way and 5.1 s this way.
+/// The sort holds 16 bytes per nonnegative query while it runs.
+fn resolve_sorted(ids: &[i64], rows: &[i32], query: &[i64]) -> Vec<i32> {
+    let mut order: Vec<(i64, usize)> = query
+        .iter()
+        .enumerate()
+        .filter(|&(_, &id)| id >= 0)
+        .map(|(at, &id)| (id, at))
+        .collect();
+    order.sort_unstable();
+    let mut resolved = vec![-1; query.len()];
+    let mut start = 0;
+    for (id, at) in order {
+        start += first_at_least(&ids[start..], id);
+        if ids.get(start) == Some(&id) {
+            resolved[at] = rows[start];
+        }
+    }
+    resolved
+}
+
+/// The first position in ascending `ids` holding `id` or more: double the
+/// bound until it passes `id`, then bisect the last doubling.
+fn first_at_least(ids: &[i64], id: i64) -> usize {
+    let mut bound = 1;
+    while bound <= ids.len() && ids[bound - 1] < id {
+        bound *= 2;
+    }
+    let low = bound / 2;
+    low + ids[low..bound.min(ids.len())].partition_point(|&sorted| sorted < id)
 }
 
 /// The first position whose value lies outside `[minimum, maximum]`.
@@ -964,6 +1006,40 @@ mod tests {
         };
         assert!(matches!(sorted.layout, Layout::Sorted { .. }));
         assert_eq!(sorted.resolve(&query), expected);
+    }
+
+    #[test]
+    fn the_sorted_layout_resolves_as_a_scan_would() {
+        // xorshift, so the case is fixed without a dev-dependency.
+        let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % bound) as i64
+        };
+        for n in [0, 1, 2, 7, 64, 1000] {
+            // n draws from n + 1 values, so many ids repeat.
+            let ids: Vec<i64> = (0..n).map(|_| 20 * next(n as u64 + 1)).collect();
+            let index = IdIndex {
+                layout: Layout::sorted(&ids),
+            };
+            for len in [0, 1, 3, 5000] {
+                // Mostly stored ids (and -20), some between them or past the ends.
+                let query: Vec<i64> = (0..len)
+                    .map(|_| match next(4) {
+                        0 => next(20 * n as u64 + 40) - 20,
+                        _ => 20 * next(n as u64 + 2) - 20,
+                    })
+                    .collect();
+                let resolved = index.resolve(&query);
+                for (&id, &row) in query.iter().zip(&resolved) {
+                    assert_eq!(row, index.row(id), "id {id}");
+                    let first = ids.iter().position(|&x| x == id && id >= 0);
+                    assert_eq!(row, first.map_or(-1, |r| r as i32), "id {id}");
+                }
+            }
+        }
     }
 
     #[test]

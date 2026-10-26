@@ -6,6 +6,16 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Changed: building a graph from sparse ids is faster.** When the ids span
+  more than three slots per id, the mother, father and twin columns are now
+  resolved in sorted order, each lookup galloping forward from the last,
+  instead of by one binary search per id. Building 5 generations of
+  distinct sparse ids took 0.31 s to 0.13 s at 1M rows, 2.9 s to 0.86 s at
+  5M and 24.8 s to 5.1 s at 20M (best of 3, one thread), with the same peak
+  RSS growth (49 bytes per row) at 5M and 20M; at 1M it rose from 47 to
+  54 MB from the query sort's buffer. Contiguous ids, which use the
+  dense table, are unchanged. A repeated id passed to the native `IdIndex`
+  now always resolves to its first row.
 - **Changed: `inbreeding()` is faster with the same bits, and uses the
   thread budget** (issue #49). A genome parent whose row parent has an MZ
   co-twin is flagged in the parent column, so the ancestor-count bookkeeping
