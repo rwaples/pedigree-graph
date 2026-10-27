@@ -144,6 +144,13 @@ impl PedigreeGraph {
 /// so no table grows with the largest id.
 const DENSE_SLOTS_PER_ID: i128 = 3;
 
+/// The fewest sorted ids and queries [`IdIndex::resolve`] merges; below it a
+/// binary search per query stays in cache and beats sorting the queries.  On
+/// an i7-9750H, `build` on 200k sparse rows was 5% faster by binary search
+/// and on 300k 9% slower; 10k queries into 20M ids took 1.6 ms that way and
+/// 3.5 ms merged.
+const MERGE_MIN: usize = 300_000;
+
 /// Ids mapped to rows, for repeated id lookups.
 ///
 /// Rows are `i32` because a graph never has more than [`MAX_ROWS`] rows.
@@ -263,8 +270,10 @@ impl IdIndex {
     /// [`IdIndex::row`] gives each.
     pub fn resolve(&self, query: &[i64]) -> Vec<i32> {
         match &self.layout {
-            Layout::Dense { .. } => query.iter().map(|&id| self.row(id)).collect(),
-            Layout::Sorted { ids, rows } => resolve_sorted(ids, rows, query),
+            Layout::Sorted { ids, rows } if ids.len().min(query.len()) >= MERGE_MIN => {
+                resolve_sorted(ids, rows, query)
+            }
+            _ => query.iter().map(|&id| self.row(id)).collect(),
         }
     }
 }
@@ -1032,11 +1041,20 @@ mod tests {
                         _ => 20 * next(n as u64 + 2) - 20,
                     })
                     .collect();
-                let resolved = index.resolve(&query);
-                for (&id, &row) in query.iter().zip(&resolved) {
-                    assert_eq!(row, index.row(id), "id {id}");
-                    let first = ids.iter().position(|&x| x == id && id >= 0);
-                    assert_eq!(row, first.map_or(-1, |r| r as i32), "id {id}");
+                // Inputs this small resolve by binary search, so call the
+                // merge directly too.
+                let Layout::Sorted { ids: sorted, rows } = &index.layout else {
+                    panic!("built sorted");
+                };
+                for resolved in [
+                    index.resolve(&query),
+                    super::resolve_sorted(sorted, rows, &query),
+                ] {
+                    for (&id, &row) in query.iter().zip(&resolved) {
+                        assert_eq!(row, index.row(id), "id {id}");
+                        let first = ids.iter().position(|&x| x == id && id >= 0);
+                        assert_eq!(row, first.map_or(-1, |r| r as i32), "id {id}");
+                    }
                 }
             }
         }
