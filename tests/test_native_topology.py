@@ -120,6 +120,13 @@ class TestBoundary:
 
         assert pedigree_graph.__version__ == _native.core_version()
 
+    def test_pg_core_rev_is_a_git_revision(self):
+        import re
+
+        import pedigree_graph
+
+        assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", pedigree_graph.pg_core_rev())
+
 
 def test_facade_returns_read_only_depth_and_intp_maps():
     mother = np.array([3, -1, 0, -1], dtype=np.int32)

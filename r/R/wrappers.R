@@ -7,6 +7,7 @@
 .native_configure_threads <- function(n) .Call(wrap__configure_threads, n)
 .native_thread_budget <- function() .Call(wrap__thread_budget)
 .native_relationship_categories <- function() .Call(wrap__relationship_categories)
+.native_pg_core_rev <- function() .Call(wrap__pg_core_rev)
 .native_start_pairs <- function(native, seal, max_degree, categories, execution, ids) {
   .Call(wrap__relationship_pairs_start, native, seal, max_degree, categories, execution, ids)
 }

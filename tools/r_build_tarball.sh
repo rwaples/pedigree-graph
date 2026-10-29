@@ -6,7 +6,8 @@
 #   tools/r_build_tarball.sh [out-dir]       # default: target/r
 #
 # In a temporary copy of r/ it stages crates/core at src/rust/core with the
-# workspace-inherited keys written out, points the binding crate at it,
+# workspace-inherited keys written out and the core's git revision in
+# REVISION (the tarball has no .git for crates/core/build.rs to read), points the binding crate at it,
 # vendors the complete locked dependency graph into src/rust/vendor.tar.xz
 # (with the source-replacement config Makevars installs), lists every
 # vendored crate's authors and license in inst/AUTHORS, and runs R CMD build.
@@ -47,6 +48,14 @@ CORE="$PKG/src/rust/core"
 mkdir -p "$CORE"
 cp -R "$REPO/crates/core/src" "$CORE/src"
 rm -rf "$CORE/src/bin"
+cp "$REPO/crates/core/build.rs" "$CORE/build.rs"
+# The revision build.rs would read from git, `-dirty` for uncommitted changes
+# under crates/core; PG_CORE_REV overrides it, as it does for build.rs.
+REV="${PG_CORE_REV:-$(git -C "$REPO" rev-parse HEAD)}"
+if [ -z "${PG_CORE_REV:-}" ] && [ -n "$(git -C "$REPO" status --porcelain -- crates/core)" ]; then
+  REV="$REV-dirty"
+fi
+echo "$REV" > "$CORE/REVISION"
 sed -e "s|^version.workspace = true|version = \"$VERSION\"|" \
     -e "s|^edition.workspace = true|edition = \"$EDITION\"|" \
     -e "s|^rust-version.workspace = true|rust-version = \"$RUST_VERSION\"|" \

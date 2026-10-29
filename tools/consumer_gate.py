@@ -459,6 +459,9 @@ def build_stage(ref: str, work: Path, stage: str) -> Path:
         raise BuildFailed("clean worktree is dirty")
     version = tomllib.loads((clean / "Cargo.toml").read_text())["workspace"]["package"]["version"]
     print(f"building version {version} from {head}", flush=True)
+    # `python -m build` compiles the wheel from the sdist, which has no .git
+    # for crates/core/build.rs to read, so pg_core_rev() would be "unknown".
+    env["PG_CORE_REV"] = head
 
     dist, build_venv = work / "dist", work / "build-venv"
     shutil.rmtree(dist, ignore_errors=True)

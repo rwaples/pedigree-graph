@@ -45,6 +45,12 @@ fn core_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+/// The git revision of the core this build compiled (`pedigree_graph_core::CORE_REV`).
+#[pyfunction]
+fn core_rev() -> &'static str {
+    pedigree_graph_core::CORE_REV
+}
+
 /// The deepest `max_degree` this build counts, derived from the category registry.
 #[pyfunction]
 fn max_degree_max() -> u8 {
@@ -1463,6 +1469,7 @@ impl PyIdIndex {
 #[pymodule(name = "_native")]
 fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(core_version, m)?)?;
+    m.add_function(wrap_pyfunction!(core_rev, m)?)?;
     m.add_function(wrap_pyfunction!(max_degree_max, m)?)?;
     m.add_function(wrap_pyfunction!(is_topological, m)?)?;
     m.add_function(wrap_pyfunction!(structural_depth, m)?)?;

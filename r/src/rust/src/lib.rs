@@ -273,6 +273,12 @@ fn thread_budget() -> Robj {
     finish(threads::budget().map(|n| (n.get() as i32).into()))
 }
 
+/// The git revision of the core this build compiled (`CORE_REV`).
+#[extendr]
+fn pg_core_rev() -> &'static str {
+    pedigree_graph_core::CORE_REV
+}
+
 /// The relationship registry as columns, in registry order.
 #[extendr]
 fn relationship_categories() -> Robj {
@@ -334,4 +340,5 @@ extendr_module! {
     fn configure_threads;
     fn thread_budget;
     fn relationship_categories;
+    fn pg_core_rev;
 }

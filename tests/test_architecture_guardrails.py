@@ -77,6 +77,7 @@ ROOT_EXPORTS = (
     "RelativesPerPerson",
     "ResourceError",
     "configure_threads",
+    "pg_core_rev",
 )
 
 # Names deleted from the public or internal surface, which must not come back.

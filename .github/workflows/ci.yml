@@ -177,11 +177,16 @@ jobs:
 
       - name: Build the wheel
         uses: PyO3/maturin-action@v1
+        env:
+          # git cannot read the checkout mounted into the manylinux
+          # container, so crates/core/build.rs takes the revision from here.
+          PG_CORE_REV: ${{ github.sha }}
         with:
           command: build
           args: --release --out dist
           manylinux: auto
           sccache: "true"
+          docker-options: --env PG_CORE_REV
 
       - name: Assert the wheel carries the abi3 tag
         run: ls dist/*cp313-abi3*.whl

@@ -16,6 +16,13 @@ live on the corresponding GitHub release pages.
   host replaces `AncestorSignatures::build`, `KinshipRows::new` and
   `Walker::new(&rows, &signatures)` with `KinshipIndex::new` and
   `index.walker()`.
+- **Added: `pg_core_rev()` in Python and R** (issue #46), the git revision
+  of the Rust core the build compiled, `-dirty` when `crates/core` had
+  uncommitted changes, so a harness can confirm an editable wheel and an R
+  tarball were built from the same core. `crates/core/build.rs` takes it
+  from `PG_CORE_REV` (set by the wheel workflows), else a `REVISION` file
+  (written by `tools/r_build_tarball.sh`), else git, else `unknown` (the
+  sdist). Rust: `pedigree_graph_core::CORE_REV`.
 - **Changed: building a graph from sparse ids is faster.** When the ids span
   more than three slots per id, the mother, father and twin columns are now
   resolved in sorted order, each lookup galloping forward from the last,

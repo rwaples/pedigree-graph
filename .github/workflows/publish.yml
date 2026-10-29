@@ -83,12 +83,17 @@ jobs:
 
       - name: Build the wheel
         uses: PyO3/maturin-action@v1
+        env:
+          # git cannot read the checkout mounted into the manylinux
+          # container, so crates/core/build.rs takes the revision from here.
+          PG_CORE_REV: ${{ github.sha }}
         with:
           command: build
           args: --release --out dist
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
           sccache: "true"
+          docker-options: --env PG_CORE_REV
 
       - name: Upload the wheel
         uses: actions/upload-artifact@v7

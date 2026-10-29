@@ -87,6 +87,17 @@ from pedigree_graph.relationships import (
 #: distribution version for plain X.Y.Z releases; a prerelease would spell it differently.
 __version__: str = _native.core_version()
 
+
+def pg_core_rev() -> str:
+    """The git revision of the Rust core this build compiled.
+
+    A full commit hash, suffixed ``-dirty`` when ``crates/core`` had uncommitted changes, or
+    ``"unknown"`` for a build that saw neither a git checkout nor a recorded revision (the sdist).
+    R's ``pg_core_rev()`` reports the same value for a build of the same tree.
+    """
+    return _native.core_rev()
+
+
 __all__ = [
     "MAX_DEGREE",
     "RELATIONSHIPS",
@@ -104,4 +115,5 @@ __all__ = [
     "RelativesPerPerson",
     "ResourceError",
     "configure_threads",
+    "pg_core_rev",
 ]

@@ -14,6 +14,10 @@
 
 #![forbid(unsafe_code)]
 
+/// The git revision this core was built from, `-dirty` when the crate had
+/// uncommitted changes, or `unknown` (see `build.rs`).
+pub const CORE_REV: &str = env!("PG_CORE_REV");
+
 pub mod alloc;
 pub mod error;
 pub mod graph;
