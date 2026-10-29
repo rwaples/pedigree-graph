@@ -6,6 +6,16 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking (Rust): walkers come from a `pairwise::KinshipIndex`** (issue
+  #45). `KinshipIndex::new(&kped)` builds a pedigree's packed rows and
+  ancestor signatures together and `index.walker()` hands out a `Walker`,
+  so a walker can no longer read rows and signatures of two different
+  pedigrees, which at equal lengths returned wrong kinship without an error.
+  `Walker::new`, `KinshipRows` and `AncestorSignatures` (with the `ancestry`
+  module) are no longer public, and the 0.13.0 row-count panic is gone. A
+  host replaces `AncestorSignatures::build`, `KinshipRows::new` and
+  `Walker::new(&rows, &signatures)` with `KinshipIndex::new` and
+  `index.walker()`.
 - **Changed: building a graph from sparse ids is faster.** When the ids span
   more than three slots per id, the mother, father and twin columns are now
   resolved in sorted order, each lookup galloping forward from the last,

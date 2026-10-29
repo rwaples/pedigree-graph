@@ -15,7 +15,7 @@
 //! them the per-cohort kinship sums ([`generation_kinship_sums`]), which
 //! read no kinship rows.
 
-pub mod ancestry;
+pub(crate) mod ancestry;
 pub(crate) mod depth_order;
 pub mod generations;
 pub mod inbreeding;
@@ -31,4 +31,4 @@ pub use inbreeding::{
     inbreeding, inbreeding_and_ancestor_counts, inbreeding_and_ancestor_counts_in,
 };
 pub use matrix::{approximate_kinship_csc, kinship_csc, kinship_csc_upper, Csc, MAX_CSC_NNZ};
-pub use pairwise::{pair_kinship, support_values, KinshipPedigree};
+pub use pairwise::{pair_kinship, support_values, KinshipIndex, KinshipPedigree};

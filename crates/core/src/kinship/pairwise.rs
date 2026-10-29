@@ -18,8 +18,10 @@
 //!
 //! A key whose value needs no walk is never pushed or stored (`Rule`):
 //! a self-like key with a missing parent, a key whose peeled endpoint is a
-//! founder, and a key whose endpoints share no ancestor, which
-//! [`AncestorSignatures`] proves.  A call splits its pairs or support
+//! founder, and a key whose endpoints share no ancestor, which the
+//! pedigree's ancestor signatures prove.  A [`KinshipIndex`] holds those
+//! signatures beside the packed rows and hands out walkers, so a walker can
+//! only read the two from one pedigree.  A call splits its pairs or support
 //! columns into chunks over the current Rayon pool, one walker per worker
 //! (`run_chunks`); since a key has one value whoever computes it, the
 //! output is the same bits for every thread count.
@@ -165,18 +167,12 @@ impl alloc::Dtype for Row {
 }
 
 /// A pedigree's recurrence columns packed one row to 16 bytes, beside the
-/// signatures' 32.  Build it once per pedigree, next to its
-/// [`AncestorSignatures`], and share it with every [`Walker`] over that
-/// pedigree.
-pub struct KinshipRows(Vec<Row>);
+/// signatures' 32.
+struct KinshipRows(Vec<Row>);
 
 impl KinshipRows {
     /// Pack `ped`'s depth, parent and twin columns.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::AllocationFailed`] with operation `kinship_columns`.
-    pub fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
+    fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
         let mut rows = Vec::new();
         alloc::extend(
             &mut rows,
@@ -190,18 +186,54 @@ impl KinshipRows {
         )?;
         Ok(KinshipRows(rows))
     }
+}
 
+/// A pedigree's packed rows and ancestor signatures, built together from one
+/// [`KinshipPedigree`].  Build it once per pedigree and share it with every
+/// worker; each takes its own [`Walker`] from [`KinshipIndex::walker`].
+pub struct KinshipIndex {
+    rows: KinshipRows,
+    signatures: AncestorSignatures,
+}
+
+impl KinshipIndex {
+    /// The signatures and packed rows of `ped`.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] with operation `kinship_signatures` or
+    /// `kinship_columns`.
+    pub fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
+        let signatures = AncestorSignatures::build(ped)?;
+        let rows = KinshipRows::new(ped)?;
+        Ok(KinshipIndex { rows, signatures })
+    }
+
+    /// The rows indexed.
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.rows.0.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.rows.0.is_empty()
+    }
+
+    /// A walker over this pedigree with an empty memo.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] with operation `kinship_memo`.
+    pub fn walker(&self) -> Result<Walker<'_>, Error> {
+        Ok(Walker {
+            rows: &self.rows.0,
+            signatures: &self.signatures,
+            memo: PairMemo::new(self.len())?,
+            stack: Vec::new(),
+        })
     }
 }
 
-/// One memo and one stack over a pedigree's packed rows and its ancestor
-/// signatures: the state of one worker.
+/// One memo and one stack over a [`KinshipIndex`]: the state of one worker.
 pub struct Walker<'a> {
     rows: &'a [Row],
     signatures: &'a AncestorSignatures,
@@ -209,31 +241,7 @@ pub struct Walker<'a> {
     stack: Vec<Frame>,
 }
 
-impl<'a> Walker<'a> {
-    /// A walker with an empty memo.  `rows` and `signatures` must be built
-    /// from the same pedigree.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::AllocationFailed`] with operation `kinship_memo`.
-    ///
-    /// # Panics
-    ///
-    /// If `rows` and `signatures` cover different row counts.
-    pub fn new(rows: &'a KinshipRows, signatures: &'a AncestorSignatures) -> Result<Self, Error> {
-        assert_eq!(
-            rows.len(),
-            signatures.len(),
-            "KinshipRows and AncestorSignatures must come from the same pedigree"
-        );
-        Ok(Walker {
-            rows: &rows.0,
-            signatures,
-            memo: PairMemo::new(rows.len())?,
-            stack: Vec::new(),
-        })
-    }
-
+impl Walker<'_> {
     pub fn memo(&self) -> &PairMemo {
         &self.memo
     }
@@ -385,14 +393,8 @@ impl SharedOutput {
 /// key's value does not depend on which walker reaches it, so the result is
 /// the same for every thread count.  After a failure the remaining chunks
 /// are abandoned and one error is returned.  `len` must be positive, since
-/// the caller builds the rows and signatures only for a call with work.
-fn run_chunks<F>(
-    rows: &KinshipRows,
-    signatures: &AncestorSignatures,
-    len: usize,
-    chunk: usize,
-    fill: F,
-) -> Result<(), Error>
+/// the caller builds the index only for a call with work.
+fn run_chunks<F>(index: &KinshipIndex, len: usize, chunk: usize, fill: F) -> Result<(), Error>
 where
     F: Fn(&mut Walker<'_>, Range<usize>) -> Result<(), Error> + Sync,
 {
@@ -402,14 +404,15 @@ where
     (0..workers).into_par_iter().try_for_each(|_| {
         let mut walker = None;
         loop {
-            let index = next.fetch_add(1, Ordering::Relaxed);
-            if index >= chunks {
+            let c = next.fetch_add(1, Ordering::Relaxed);
+            if c >= chunks {
                 return Ok(());
             }
-            let items = index * chunk..((index + 1) * chunk).min(len);
+            let items = c * chunk..((c + 1) * chunk).min(len);
             let result = match &mut walker {
                 Some(walker) => fill(walker, items),
-                None => Walker::new(rows, signatures)
+                None => index
+                    .walker()
                     .and_then(|built| fill(walker.insert(built), items)),
             };
             if result.is_err() {
@@ -464,20 +467,13 @@ pub fn pair_kinship(
         return Ok(Vec::new());
     }
     let out = SharedOutput::new(first.len())?;
-    let signatures = AncestorSignatures::build(&ped)?;
-    let rows = KinshipRows::new(&ped)?;
-    run_chunks(
-        &rows,
-        &signatures,
-        first.len(),
-        PAIR_CHUNK,
-        |walker, pairs| {
-            for k in pairs {
-                out.set(k, walker.resolve(first[k], second[k])?);
-            }
-            Ok(())
-        },
-    )?;
+    let index = KinshipIndex::new(&ped)?;
+    run_chunks(&index, first.len(), PAIR_CHUNK, |walker, pairs| {
+        for k in pairs {
+            out.set(k, walker.resolve(first[k], second[k])?);
+        }
+        Ok(())
+    })?;
     Ok(out.into_values())
 }
 
@@ -501,9 +497,8 @@ fn support_with(
     }
     let n = ped.len();
     let data = SharedOutput::new(indices.len())?;
-    let signatures = AncestorSignatures::build(&ped)?;
-    let rows = KinshipRows::new(&ped)?;
-    run_chunks(&rows, &signatures, n, COLUMN_CHUNK, |walker, columns| {
+    let index = KinshipIndex::new(&ped)?;
+    run_chunks(&index, n, COLUMN_CHUNK, |walker, columns| {
         for column in columns {
             let start = indptr[column] as usize;
             let end = indptr[column + 1] as usize;
@@ -669,15 +664,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "must come from the same pedigree")]
-    fn a_walker_refuses_rows_and_signatures_of_different_pedigrees() {
-        let small = ped(&[(-1, -1), (-1, -1), (0, 1)], &[]);
-        let large = ped(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[]);
-        let small = KinshipPedigree::try_new(&small.0, &small.1, &small.2, &small.3).unwrap();
-        let large = KinshipPedigree::try_new(&large.0, &large.1, &large.2, &large.3).unwrap();
-        let rows = KinshipRows::new(&small).unwrap();
-        let signatures = AncestorSignatures::build(&large).unwrap();
-        let _ = Walker::new(&rows, &signatures);
+    fn an_index_walker_resolves_what_pair_kinship_returns() {
+        let cols = ped(&[(-1, -1), (-1, -1), (0, 1), (0, 1), (2, 5), (-1, -1)], &[]);
+        let ped = KinshipPedigree::try_new(&cols.0, &cols.1, &cols.2, &cols.3).unwrap();
+        let index = KinshipIndex::new(&ped).unwrap();
+        assert_eq!(index.len(), 6);
+        let pairs = [(0, 0), (0, 2), (2, 3), (3, 4), (4, 4), (4, 5)];
+        let mut walker = index.walker().unwrap();
+        let walked: Vec<f32> = pairs
+            .iter()
+            .map(|&(a, b)| walker.resolve(a, b).unwrap())
+            .collect();
+        assert_eq!(walked, values(&cols, &pairs));
     }
 
     #[test]

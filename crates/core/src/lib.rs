@@ -35,6 +35,7 @@ const _: () = {
     send_sync::<graph::Limits>();
     send_sync::<kinship::ancestry::AncestorSignatures>();
     send_sync::<kinship::matrix::Csc>();
+    send_sync::<kinship::pairwise::KinshipIndex>();
     send_sync::<kinship::memo::PairMemo>();
     send_sync::<kinship::pairwise::KinshipPedigree<'static>>();
     send_sync::<kinship::pairwise::Walker<'static>>();

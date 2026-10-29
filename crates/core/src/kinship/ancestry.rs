@@ -33,7 +33,7 @@ type Signature = [u64; WORDS];
 const UNBUILT: Signature = [0; WORDS];
 
 /// One ancestor signature per row.
-pub struct AncestorSignatures {
+pub(crate) struct AncestorSignatures {
     sets: Vec<Signature>,
 }
 
@@ -44,7 +44,7 @@ impl AncestorSignatures {
     ///
     /// [`Error::AllocationFailed`] (`kinship_signatures`) for the signatures
     /// or the stack they are built with.
-    pub fn build(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
+    pub(crate) fn build(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
         let (mother, father, twin) = (ped.mother(), ped.father(), ped.twin());
         let mut sets = alloc::filled(UNBUILT, ped.len(), Family::KinshipSignatures)?;
         let mut stack: Vec<usize> = Vec::new();
@@ -86,18 +86,9 @@ impl AncestorSignatures {
         Ok(AncestorSignatures { sets })
     }
 
-    /// The rows signed.
-    pub fn len(&self) -> usize {
-        self.sets.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.sets.is_empty()
-    }
-
     /// Whether rows `a` and `b` provably share no ancestor-or-self genome.
     #[inline]
-    pub fn disjoint(&self, a: u32, b: u32) -> bool {
+    pub(crate) fn disjoint(&self, a: u32, b: u32) -> bool {
         let (a, b) = (&self.sets[a as usize], &self.sets[b as usize]);
         a.iter().zip(b).fold(0, |acc, (x, y)| acc | (x & y)) == 0
     }
