@@ -1,7 +1,7 @@
 """``PedigreeGraph.relationship_pairs`` and its result types (ADR 0006).
 
 Fixtures come from ``tests/parity/pedigrees.py``.  Membership is locked by the
-v0.8 golden (``test_relationship_pairs_golden``) and held to the SciPy oracle by
+v0.8 golden (``test_relationship_pairs_golden``) and held to the path oracle by
 ``test_relationship_pairs_execution``; ``relationship_predicates.AncestorWalk``
 checks orientation without the engine.
 """
@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 from _support import ASYMMETRIC, CODES, SYMMETRIC, _ped_double_first_cousins
 from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, parity_graph
-from oracle.relationship_pairs import check_exclusive, dependency_closure
+from oracle.pair_utils import check_exclusive
 from relationship_predicates import AncestorWalk
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, RelationshipPairs
@@ -166,25 +166,7 @@ class TestSelectors:
         assert len(parity_graph("lineal_five_generations").relationship_pairs(max_degree=3)["GGP"]) > 0
 
 
-class TestDependencyClosure:
-    def test_closure_of_1c1r_is_the_registry_prefix(self):
-        expected = frozenset(
-            (
-                "MZ", "MO", "FO", "FS", "MHS", "PHS", "GP", "Av", "GGP", "HAv", "GAv", "1C",
-                "GGGP", "HGAv", "GGAv", "H1C", "1C1R",
-            )
-        )  # fmt: skip
-        assert dependency_closure(frozenset({"1C1R"})) == expected
-
-    def test_closure_of_nothing_is_nothing(self):
-        assert dependency_closure(frozenset()) == frozenset()
-
-    def test_closure_is_idempotent_and_contains_its_input(self):
-        for code in CODES:
-            closure = dependency_closure(frozenset({code}))
-            assert code in closure
-            assert dependency_closure(closure) == closure
-
+class TestSingleCategory:
     @pytest.mark.parametrize("code", ["1C1R", "H1C", "2C", "HAv"])
     @pytest.mark.parametrize("name", FIXTURE_NAMES)
     def test_single_category_equals_the_full_run(self, full_results, name, code):
@@ -219,21 +201,28 @@ class TestOrientation:
 
 
 class TestDualValid:
-    """random_1k holds H1C1R pairs valid in both orientations through different paths."""
+    """random_1k holds removed cousins joined in both orientations through different paths."""
 
     def test_random_1k_has_dual_valid_pairs_reported_once_lower_row_first(self, full_results):
         graph = parity_graph("random_1k")
         walk = AncestorWalk(graph)
-        block = full_results["random_1k"]["H1C1R"]
-        duals = [(a, b) for a, b in _oriented(block) if walk.dual_valid("H1C1R", a, b)]
+        block = full_results["random_1k"]["1C1R"]
+        duals = [(a, b) for a, b in _oriented(block) if walk.dual_valid("1C1R", a, b)]
         assert duals
         assert all(a < b for a, b in duals)
         unordered = _unordered(block.first_rows, block.second_rows)
         assert len(unordered) == len(block)
 
-    def test_hand_built_dual_valid_half_avuncular_pair(self):
+    @pytest.mark.parametrize("code", ["HAv", "HGAv", "HGGAv", "H1C1R"])
+    def test_a_half_pair_is_never_joined_both_ways(self, full_results, code):
+        # A path each way is two paths, the full code (ADR 0018).
+        graph = parity_graph("random_1k")
+        walk = AncestorWalk(graph)
+        assert not [(a, b) for a, b in _oriented(full_results["random_1k"][code]) if walk.dual_valid(code, a, b)]
+
+    def test_a_pair_half_avuncular_both_ways_is_av_with_the_lower_row_first(self):
         # 4's mother 2 is a paternal half sib of 5 (father 0), and 5's mother 3
-        # is a paternal half sib of 4 (father 1), so (4, 5) is HAv both ways.
+        # is a paternal half sib of 4 (father 1): one path each way, so Av.
         graph = PedigreeGraph.from_frame(
             {
                 "id": np.array([0, 1, 2, 3, 4, 5]),
@@ -245,7 +234,8 @@ class TestDualValid:
         assert walk.dual_valid("HAv", 4, 5)
         result = graph.relationship_pairs(max_degree=5)
         check_exclusive(result)
-        assert _oriented(result["HAv"]) == [(4, 5)]
+        assert _oriented(result["Av"]) == [(4, 5)]
+        assert not _oriented(result["HAv"])
 
 
 class TestCheckExclusive:

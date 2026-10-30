@@ -2,7 +2,7 @@
 
 ADR 0006 as amended: ``"speed"`` and ``"memory"`` change resource use only,
 so both must return element-for-element identical blocks, on graphs and on
-views, equal to the matrix oracle in ``tests/oracle``.  ADR 0007 as
+views, equal to the path oracle in ``tests/oracle``.  ADR 0007 as
 amended: the blocks are the core's own arrays, frozen without a copy, and
 an allocation the core cannot make is ``ResourceError("allocation_failed")``
 rather than an abort.
@@ -17,7 +17,8 @@ import numpy as np
 import pytest
 from _support import _run_child
 from conftest import FIXTURE_NAMES, parity_graph
-from oracle.relationship_pairs import check_exclusive, oracle_pairs, oracle_view_pairs
+from oracle.pair_utils import check_exclusive
+from oracle.relationship_paths import oracle_pairs, oracle_view_pairs
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 

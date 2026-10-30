@@ -84,11 +84,20 @@ _Avoid_: edge, link, tuple; treating internal key order as relationship-role ord
 **Relationship category**:
 A class of relationship identified by a short code (e.g. `FS`, `MHS`, `1C`),
 defined by `(up, down, ancestor_count)` — meioses up to the common ancestor(s),
-meioses back down, and whether the connecting ancestor is a single individual
-(half / lineal) or a mated pair (full). `first` is the pair member at least as
-far from the ancestor(s), so `up` counts meioses from `first` up, `down` counts
-them from the ancestor(s) down to `second`, and `up >= down` always holds.
+meioses back down, and whether at least two **paths** of that shape join the
+pair (full) or exactly one does (half). Paths are counted in both
+orientations of the pair. Lineal categories have no full/half split. `first`
+is the pair member at least as far from the ancestor(s), so `up` counts
+meioses from `first` up, `down` counts them from the ancestor(s) down to
+`second`, and `up >= down` always holds.
 _Avoid_: relationship type (when the code is meant), kind, n_ancestors
+
+**Path**:
+One route joining two people through one shared ancestor. A sibling link is
+one path per parent id the two share, so full sibs are joined by two paths
+and half sibs by one. A mated pair of shared ancestors gives two paths, and
+so do one ancestor reached by two routes and two unmated ancestors.
+_Avoid_: line (genealogical sense), connection
 
 **Close relative**:
 For relationship-count reporting, an MZ co-twin, mother, father, full sibling,
@@ -229,6 +238,7 @@ _Avoid_: founder equivalents, founder genome equivalents
 
 ## Flagged ambiguities
 
+- "full" and "half" mean the path count here (at least two paths, or one), not the genealogical "the shared ancestors are a mated pair". The two disagree on double half first cousins (`1C` here) and on an aunt who is a half sib of both parents (`Av` here); verbalisr and genealogy texts use the mated-pair sense (ADR 0018).
 - "index" alone is ambiguous between **graph-space** and **view-space** — always qualify which space, since the same individual differs between them and conflating them caused a kinship-lookup bug (PGQ-001).
 - "coancestry" alone is ambiguous between **group coancestry** (diagonal included, over genome nodes) and the off-diagonal mean pairwise kinship — always qualify which, since conflating them let an estimator carry an attribution its source did not support (#15, ADR 0012).
 - "contribution" was used for both a **founder contribution** and the long-term contribution of an arbitrary ancestor — resolved: the package's contribution columns are always **represented founder genomes**.

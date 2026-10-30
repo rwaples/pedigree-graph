@@ -15,16 +15,15 @@
 //! here reduces to expansions upward through `A` and downward through `A^T`.
 //! Each unordered pair is then counted once, at its lower row.
 //!
-//! The category definitions below reproduce the matrix engine of
-//! `pedigree_graph/_pair_extractor.py` bit for bit, including its two
-//! idiosyncrasies: first cousins count *distinct* shared grandparents while
-//! the once/twice-removed cousins and second cousins count *paths*, and the
-//! cousin sibling exclusion is "shares a known parent id", which is wider than
-//! the sibling lists the collateral categories subtract.  Siblings include MZ
-//! co-twins, a deliberate departure from 0.7.1 (issue #29, ADR 0010 as
+//! The category definitions are ADR 0018's: a collateral category is full
+//! when at least two paths of its shape join the pair, summed over both
+//! orientations, and half when exactly one does.  A sib link carries one
+//! path per shared parent id.  The first cousin sibling exclusion is "shares
+//! a known parent id", which is wider than the sibling lists the collateral
+//! categories subtract.  Siblings include MZ co-twins (issue #29, ADR 0010 as
 //! amended).
-//! [`EXCLUSIONS`] is the reference engine's per-category subtraction table;
-//! it is part of each category's definition.
+//! [`EXCLUSIONS`] is the per-category subtraction table; it is part of each
+//! category's definition.
 //!
 //! Reporting is a separate step (ADR 0010 as amended, `GLOSSARY.md` "Closest
 //! category"): after every set of a row is final, each category loses the
@@ -43,9 +42,8 @@ use crate::error::Error;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-/// Closer categories subtracted from each category's raw candidates
-/// (`_pair_extractor.py` subtract lists).  `MO, FO` together are the
-/// reference engine's parent-child-by-row set (`PO`).
+/// Closer categories subtracted from each category's raw candidates.
+/// `MO, FO` together are the parent-child-by-row set (`PO`).
 pub const EXCLUSIONS: [&[Category]; super::category::N_CATEGORIES] = {
     use Category::*;
     [
@@ -78,6 +76,10 @@ pub const EXCLUSIONS: [&[Category]; super::category::N_CATEGORIES] = {
         &[], // 2C: shares-a-grandparent rule, see `cousins`
     ]
 };
+
+/// The deepest avuncular shape: `G3Av`, four hops from the niece up to the
+/// aunt's sib.
+const MAX_AVUNCULAR_DEPTH: usize = 4;
 
 /// Distinct per [`Engine`] built in the process, so a workspace never reuses
 /// one engine's sets in another.
@@ -125,8 +127,19 @@ pub struct Workspace {
     sets: Vec<Vec<u32>>,
     /// Pairs sharing at least one grandparent (any path), for the 2C rule.
     shares_grandparent: Vec<u32>,
-    /// Distinct grandchildren of each grandparent of the current row.
-    grandchildren: Vec<Vec<u32>>,
+    /// Per avuncular depth (index k, 0 unused): the sibs of the row's k-hop
+    /// ancestors, with the paths through them.  The row is the niece or
+    /// nephew.  Depends only on the parents.
+    niece: Vec<Weighted>,
+    /// Per avuncular depth: the descendants k hops below the row's half
+    /// sibs, with path multiplicity.  The same for every full sib.
+    half_aunt: Vec<Weighted>,
+    /// Per avuncular depth: the descendants k hops below the row's full
+    /// sibs, with path multiplicity.
+    full_aunt: Vec<Weighted>,
+    /// Per avuncular depth: the current row's paths of that shape, both
+    /// orientations summed.
+    avuncular: Vec<Weighted>,
     scratch: [Vec<u32>; 4],
     weighted: [Weighted; 3],
     /// Per asymmetric category, the sorted members for whom the current row
@@ -155,7 +168,10 @@ impl Workspace {
             down: vec![Vec::new(); MaxDegree::MAX.get() as usize + 1],
             sets: vec![Vec::new(); super::category::N_CATEGORIES],
             shares_grandparent: Vec::new(),
-            grandchildren: Vec::new(),
+            niece: vec![Vec::new(); MAX_AVUNCULAR_DEPTH + 1],
+            half_aunt: vec![Vec::new(); MAX_AVUNCULAR_DEPTH + 1],
+            full_aunt: vec![Vec::new(); MAX_AVUNCULAR_DEPTH + 1],
+            avuncular: vec![Vec::new(); MAX_AVUNCULAR_DEPTH + 1],
             scratch: Default::default(),
             weighted: Default::default(),
             first_arm: vec![Vec::new(); super::category::N_CATEGORIES],
@@ -461,16 +477,22 @@ impl<'p> Engine<'p> {
         }
 
         // Degree 2: GP is lineal (up[2] ∪ down[2] as an exclusion set); Av.
+        // Each avuncular depth's paths are counted at its full category's
+        // degree and read again at its half category's, one degree on.
+        let full = |m: Mult| m.at_least_two();
+        let half = |m: Mult| m.is_one();
         lineal(ws, GP, 2)?;
-        self.collateral(row, ws, Av, SibKind::Full, 2, reuse)?;
+        self.avuncular_paths(row, ws, 1, reuse)?;
+        self.collateral(row, ws, Av, 1, full)?;
         if deg < 3 {
             return Ok(());
         }
 
         // Degree 3.
         lineal(ws, GGP, 3)?;
-        self.collateral(row, ws, HAv, SibKind::Half, 2, reuse)?;
-        self.collateral(row, ws, GAv, SibKind::Full, 3, reuse)?;
+        self.collateral(row, ws, HAv, 1, half)?;
+        self.avuncular_paths(row, ws, 2, reuse)?;
+        self.collateral(row, ws, GAv, 2, full)?;
         self.cousins(row, ws, reuse)?;
         if deg < 4 {
             return Ok(());
@@ -478,61 +500,84 @@ impl<'p> Engine<'p> {
 
         // Degree 4.
         lineal(ws, GGGP, 4)?;
-        self.collateral(row, ws, HGAv, SibKind::Half, 3, reuse)?;
-        self.collateral(row, ws, GGAv, SibKind::Full, 4, reuse)?;
-        self.removed_cousins(row, ws, 2, 3, C1R1, reuse, |m| m.at_least_two())?;
+        self.collateral(row, ws, HGAv, 2, half)?;
+        self.avuncular_paths(row, ws, 3, reuse)?;
+        self.collateral(row, ws, GGAv, 3, full)?;
+        self.removed_cousins(row, ws, 2, 3, C1R1, reuse, full)?;
         if deg < 5 {
             return Ok(());
         }
 
         // Degree 5.
         lineal(ws, G3GP, 5)?;
-        self.collateral(row, ws, HGGAv, SibKind::Half, 4, reuse)?;
-        self.collateral(row, ws, G3Av, SibKind::Full, 5, reuse)?;
-        self.removed_cousins(row, ws, 2, 3, H1C1R, reuse, |m| m.is_one())?;
-        self.removed_cousins(row, ws, 2, 4, C1R2, reuse, |m| m.at_least_two())?;
+        self.collateral(row, ws, HGGAv, 3, half)?;
+        self.avuncular_paths(row, ws, 4, reuse)?;
+        self.collateral(row, ws, G3Av, 4, full)?;
+        self.removed_cousins(row, ws, 2, 3, H1C1R, reuse, half)?;
+        self.removed_cousins(row, ws, 2, 4, C1R2, reuse, full)?;
         self.second_cousins(row, ws, reuse)
     }
 
-    /// `A^(down-1) @ S` and its transpose `S @ (A^T)^(down-1)` for a sibling matrix `S`.
+    /// The avuncular family's paths at `depth` (1 for Av and HAv, 2 for GAv
+    /// and HGAv, and so on), into `ws.avuncular[depth]`.
     ///
-    /// The siblings of the row's ancestors are the first arm.  Every full
-    /// sib shares them, and for half sibs the descendants of the row's own
-    /// half sibs too, so `reuse` keeps whichever the last row left.
-    #[allow(clippy::too_many_arguments)]
+    /// The row is the niece or nephew of each sib of its `depth`-hop
+    /// ancestors, and the aunt or uncle of the descendants `depth` hops below
+    /// its own sibs.  A sib link carries one path per parent id the two
+    /// share, so two for full sibs, and the two orientations are summed
+    /// (ADR 0018).  Depths are visited in order, each sib arm one hop below
+    /// the last.  The niece arm depends only on the parents and the half sib
+    /// arm only on the family, so `reuse` keeps both from the last row.
+    fn avuncular_paths(
+        &self,
+        row: usize,
+        ws: &mut Workspace,
+        depth: usize,
+        reuse: bool,
+    ) -> Result<(), Error> {
+        let [sib, scratch, ..] = &mut ws.scratch;
+        let [terms, tmp, _] = &mut ws.weighted;
+        if !reuse {
+            // One path per shared parent id: each id group of the ancestor.
+            terms.clear();
+            for &(a, m) in &ws.up[depth] {
+                for group in self.sibs.by_parent_id(a as usize) {
+                    let others = group.iter().filter(|&&j| j != a);
+                    alloc::extend(terms, others.map(|&j| (j, m)), Family::RowSet)?;
+                }
+            }
+            ws.acc.sum(terms.iter().copied(), &mut ws.niece[depth])?;
+            if depth == 1 {
+                self.sibs.half_sibs(row, scratch, sib)?;
+                weighted_rows(sib, Mult::ONE, terms)?;
+            }
+            sibs_below(&self.down, &mut ws.acc, &mut ws.half_aunt, depth, terms)?;
+        }
+        if depth == 1 {
+            self.sibs.full_sibs(row, sib)?;
+            weighted_rows(sib, Mult::TWO, terms)?;
+        }
+        sibs_below(&self.down, &mut ws.acc, &mut ws.full_aunt, depth, terms)?;
+        sets::sum_into(&ws.niece[depth], &ws.half_aunt[depth], tmp)?;
+        sets::sum_into(tmp, &ws.full_aunt[depth], &mut ws.avuncular[depth])
+    }
+
+    /// One avuncular category: the members of `ws.avuncular[depth]` whose
+    /// path count `keep` accepts, minus the row and closer categories.
     fn collateral(
         &self,
         row: usize,
         ws: &mut Workspace,
         cat: Category,
-        kind: SibKind,
-        down: usize,
-        reuse: bool,
+        depth: usize,
+        keep: impl Fn(Mult) -> bool,
     ) -> Result<(), Error> {
-        let [sib, result, tmp, tmp2] = &mut ws.scratch;
-        // Sibs of the row's ancestors: the row is the niece or nephew.  Kept
-        // whether or not orientation is wanted, for the next sib to reuse.
-        let arm = &mut ws.first_arm[cat.index()];
-        let shared = &mut ws.shared[cat.index()];
-        if !reuse {
-            arm.clear();
-            for &(p, _) in &ws.up[down - 1] {
-                kind.sibs(&self.sibs, p as usize, tmp2, sib)?;
-                sets::union_into(arm, sib)?;
-            }
-            if let SibKind::Half = kind {
-                self.sibs_down(row, kind, down, &mut ws.acc, sib, tmp, tmp2)?;
-                sets::copy_into(shared, arm)?;
-                sets::union_into(shared, sib)?;
-            }
-        }
-        match kind {
-            SibKind::Half => sets::copy_into(result, shared)?,
-            SibKind::Full => {
-                self.sibs_down(row, kind, down, &mut ws.acc, sib, tmp, tmp2)?;
-                sets::copy_into(result, arm)?;
-                sets::union_into(result, sib)?;
-            }
+        let result = &mut ws.scratch[0];
+        sets::select_into(&ws.avuncular[depth], keep, result)?;
+        if ws.orient {
+            // The row is the niece or nephew of every member the niece arm
+            // reaches, including a pair joined in both orientations.
+            sets::support_into(&ws.niece[depth], &mut ws.first_arm[cat.index()])?;
         }
         sets::drop_self(result, row);
         self.finalize(cat, result, &ws.sets);
@@ -540,56 +585,19 @@ impl<'p> Engine<'p> {
         Ok(())
     }
 
-    /// The descendants `down - 1` hops below the row's sibs of `kind`, into `sib`.
-    #[allow(clippy::too_many_arguments)]
-    fn sibs_down(
-        &self,
-        row: usize,
-        kind: SibKind,
-        down: usize,
-        acc: &mut Accumulator,
-        sib: &mut Vec<u32>,
-        tmp: &mut Vec<u32>,
-        tmp2: &mut Vec<u32>,
-    ) -> Result<(), Error> {
-        kind.sibs(&self.sibs, row, tmp2, sib)?;
-        for _ in 1..down {
-            acc.hop_support(&self.down, sib, tmp)?;
-            std::mem::swap(sib, tmp);
-        }
-        Ok(())
-    }
-
     /// 1C, H1C, and the shared-grandparent support used by 2C.
     ///
-    /// All three depend only on the row's grandparents and parent ids, so
-    /// `reuse` keeps them from the last row.  The support keeps the row
+    /// 1C and H1C threshold the paths through shared grandparents,
+    /// `A^2 @ (A^2)^T`.  All three depend only on the row's grandparents
+    /// and parent ids, so `reuse` keeps them from the last row.  The support keeps the row
     /// itself, which shares every one of its grandparents, so that it is
     /// the same for every full sib; 2C drops the row before subtracting it.
     fn cousins(&self, row: usize, ws: &mut Workspace, reuse: bool) -> Result<(), Error> {
         use Category::*;
         if !reuse {
             let ped = &self.ped;
-            let [children, ..] = &mut ws.scratch;
-            let [counted, ..] = &mut ws.weighted;
-            let grandparents = ws.up[2].len();
-            // Grow to the high-water mark only.  Shrinking would free the inner
-            // buffers, and the next wider row would allocate them again.
-            if ws.grandchildren.len() < grandparents {
-                ws.grandchildren.resize_with(grandparents, Vec::new);
-            }
-            for (&(g, _), grandchildren) in
-                ws.up[2].iter().zip(&mut ws.grandchildren[..grandparents])
-            {
-                ws.acc.hop_support(&self.down, &[g], children)?;
-                ws.acc.hop_support(&self.down, children, grandchildren)?;
-            }
-            ws.acc.count_memberships(
-                ws.grandchildren[..grandparents]
-                    .iter()
-                    .map(|v| v.as_slice()),
-                counted,
-            )?;
+            let [counted, _, tmp] = &mut ws.weighted;
+            self.chain_down(&mut ws.acc, &ws.up[2], 2, counted, tmp)?;
             sets::support_into(counted, &mut ws.shares_grandparent)?;
             // The row and every full sib of it share a known parent id, so
             // the same rows leave whichever sib computes the sets.
@@ -608,10 +616,11 @@ impl<'p> Engine<'p> {
         Ok(())
     }
 
-    /// `A^a @ (A^b)^T` in both orientations with path multiplicity, thresholded by `keep`.
+    /// `A^a @ (A^b)^T` plus its transpose, with path multiplicity, thresholded by `keep`.
     ///
-    /// Both products start from the row's ancestors, so `reuse` keeps them
-    /// from the last row.
+    /// The two orientations of a pair are summed before the threshold
+    /// (ADR 0018).  Both products start from the row's ancestors, so `reuse`
+    /// keeps them from the last row.
     #[allow(clippy::too_many_arguments)]
     fn removed_cousins(
         &self,
@@ -627,16 +636,14 @@ impl<'p> Engine<'p> {
             let [forward, backward, tmp] = &mut ws.weighted;
             self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp)?;
             self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp)?;
-            let shared = &mut ws.shared[cat.index()];
-            // Through `junior` the row sits `b > a` meioses from the shared
-            // ancestor: it is the junior cousin, which the registry puts first
-            // (the matrix oracle reads these products with `row_is_first=False`).
-            // Kept whether or not orientation is wanted, for the next sib to
-            // reuse; the counting path never reads it.
-            let junior = &mut ws.first_arm[cat.index()];
-            sets::select_into(forward, &keep, shared)?;
-            sets::select_into(backward, &keep, junior)?;
-            sets::union_into(shared, junior)?;
+            // Through `backward` the row sits `b > a` meioses from the shared
+            // ancestor: it is the junior cousin, which the registry puts first.
+            // A pair joined both ways is in this arm too.  Kept whether or not
+            // orientation is wanted, for the next sib to reuse; the counting
+            // path never reads it.
+            sets::support_into(backward, &mut ws.first_arm[cat.index()])?;
+            sets::sum_into(forward, backward, tmp)?;
+            sets::select_into(tmp, &keep, &mut ws.shared[cat.index()])?;
         }
         let set = &mut ws.sets[cat.index()];
         sets::copy_into(set, &ws.shared[cat.index()])?;
@@ -688,25 +695,23 @@ impl<'p> Engine<'p> {
     }
 }
 
-#[derive(Clone, Copy)]
-enum SibKind {
-    Full,
-    Half,
+/// `levels[depth]`: one hop down from `sibs` at depth 1, else from `levels[depth - 1]`.
+fn sibs_below(
+    down: &Csr,
+    acc: &mut Accumulator,
+    levels: &mut [Weighted],
+    depth: usize,
+    sibs: &Weighted,
+) -> Result<(), Error> {
+    let (above, level) = levels.split_at_mut(depth);
+    let src = if depth == 1 { sibs } else { &above[depth - 1] };
+    acc.hop(down, src, &mut level[0])
 }
 
-impl SibKind {
-    fn sibs(
-        self,
-        index: &SiblingIndex,
-        row: usize,
-        scratch: &mut Vec<u32>,
-        out: &mut Vec<u32>,
-    ) -> Result<(), Error> {
-        match self {
-            SibKind::Full => index.full_sibs(row, out),
-            SibKind::Half => index.half_sibs(row, scratch, out),
-        }
-    }
+/// `rows`, each with multiplicity `m`, into a buffer the caller reuses.
+fn weighted_rows(rows: &[u32], m: Mult, out: &mut Weighted) -> Result<(), Error> {
+    out.clear();
+    alloc::extend(out, rows.iter().map(|&j| (j, m)), Family::RowSet)
 }
 
 /// Lineal pairs in both orientations: ancestors at k hops and descendants at

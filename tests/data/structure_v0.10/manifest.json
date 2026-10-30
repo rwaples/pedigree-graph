@@ -330,25 +330,25 @@
       "counts": {
         "approx_support_upper_nnz": 264364,
         "complete_upper_nnz": 264364,
-        "view_pairs/1C": 225,
+        "view_pairs/1C": 296,
         "view_pairs/1C1R": 578,
         "view_pairs/1C2R": 323,
         "view_pairs/2C": 123,
-        "view_pairs/Av": 125,
+        "view_pairs/Av": 314,
         "view_pairs/FO": 180,
         "view_pairs/FS": 31,
-        "view_pairs/G3Av": 147,
+        "view_pairs/G3Av": 621,
         "view_pairs/G3GP": 1365,
-        "view_pairs/GAv": 160,
-        "view_pairs/GGAv": 179,
+        "view_pairs/GAv": 607,
+        "view_pairs/GGAv": 708,
         "view_pairs/GGGP": 1220,
         "view_pairs/GGP": 963,
         "view_pairs/GP": 603,
-        "view_pairs/H1C": 248,
+        "view_pairs/H1C": 177,
         "view_pairs/H1C1R": 104,
-        "view_pairs/HAv": 808,
-        "view_pairs/HGAv": 871,
-        "view_pairs/HGGAv": 698,
+        "view_pairs/HAv": 619,
+        "view_pairs/HGAv": 424,
+        "view_pairs/HGGAv": 169,
         "view_pairs/MHS": 110,
         "view_pairs/MO": 175,
         "view_pairs/MZ": 0,
@@ -382,7 +382,7 @@
           "v0_7_1_sha256": "fb4f7f6f39636a016a8f72e01178e9d49fe0d8dbc1b03bb9524ac25600847ac1"
         },
         "view_pairs/1C": {
-          "sha256": "e73c3f816511867777851e0d82646ef3a24c230f7f64b744f06c2e056f755806",
+          "sha256": "a6e0ebc9eceabe383d89dbd87a467ea6fbdd9786a3d6169d4fe465843c8c17a0",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C1R": {
@@ -398,7 +398,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
-          "sha256": "0d92699fe17255712835b26cd4c43eb0ba7b76a563f42726096030bc7712ff0d",
+          "sha256": "d80b47ca9564d38d1ce04b5e6c2832a3bb6c8ebf9b99f2e250b3f2b3f004f0de",
           "v0_7_1_sha256": null
         },
         "view_pairs/FO": {
@@ -410,7 +410,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/G3Av": {
-          "sha256": "e128b5396f9ab5dd85057ed1ceaf1809e6ba39cbeb08c6ecd83316d6b9e3c036",
+          "sha256": "c608d1ec8a88fd75690807864b3d46ab173ce84dec0c32a9b01f9006147d2601",
           "v0_7_1_sha256": null
         },
         "view_pairs/G3GP": {
@@ -418,11 +418,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/GAv": {
-          "sha256": "5536717b85a97e0be0e55e9d936059e5dad39eda3077ea3aebd1d46c7f2183d6",
+          "sha256": "ccf124447e1ef272598b7d21761ec0b0ec2323a59174769a9345f7e1d7e94ca8",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGAv": {
-          "sha256": "ab2ea5b03002d224bc143361dd8024770936418362563b539663ca32ac6237fc",
+          "sha256": "d26ceb798288f61840c0d4c50a136c1c75d0d09d8c002852cb100ea46c64f506",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGGP": {
@@ -438,7 +438,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C": {
-          "sha256": "7335e54b0d0abbe85b18d4af49492a62d5935236ad9f56c8b134eccc7a76cd55",
+          "sha256": "0cb4de8bccab938debfc57254ec884593475e666abe7aeab9ea28ac21f328829",
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C1R": {
@@ -446,15 +446,15 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/HAv": {
-          "sha256": "4cd89e96c66794217714e2af25394ea96e70faf08631420ef2ba4f362590431f",
+          "sha256": "75edaf8c06b3f9f30cf9fa3c675ae690e7ac54ac0ffe454bd181e1ea16bccd5f",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGAv": {
-          "sha256": "42cbc21adef303e0c49f5829a1f25c6c3fbfa2a2b95ca788d872eeffa02e2151",
+          "sha256": "37695a589367ea48d2af60ceed00842b8c98538066bc9c349d97e1557938922d",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGGAv": {
-          "sha256": "5a88ec36de46ba57a52facc096ae1f89f1d089d46453ab64b61179a9dc30dbab",
+          "sha256": "f8f5b6cbcfae063a398c3ee0ecd5c77a60ca0a8a47bbc0bb3681ccd7c3788133",
           "v0_7_1_sha256": null
         },
         "view_pairs/MHS": {
@@ -814,7 +814,7 @@
         "view_pairs/FS": 0,
         "view_pairs/G3Av": 0,
         "view_pairs/G3GP": 0,
-        "view_pairs/GAv": 0,
+        "view_pairs/GAv": 1,
         "view_pairs/GGAv": 0,
         "view_pairs/GGGP": 0,
         "view_pairs/GGP": 0,
@@ -822,7 +822,7 @@
         "view_pairs/H1C": 0,
         "view_pairs/H1C1R": 0,
         "view_pairs/HAv": 1,
-        "view_pairs/HGAv": 1,
+        "view_pairs/HGAv": 0,
         "view_pairs/HGGAv": 0,
         "view_pairs/MHS": 0,
         "view_pairs/MO": 1,
@@ -897,7 +897,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/GAv": {
-          "sha256": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
+          "sha256": "1fda5279d1c4ae2ef41c0dd496264e800d0e70904021838803d3a3e93fc218c3",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGAv": {
@@ -929,7 +929,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/HGAv": {
-          "sha256": "1fda5279d1c4ae2ef41c0dd496264e800d0e70904021838803d3a3e93fc218c3",
+          "sha256": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGGAv": {
@@ -2069,25 +2069,25 @@
       "counts": {
         "approx_support_upper_nnz": 298217,
         "complete_upper_nnz": 300738,
-        "view_pairs/1C": 98,
-        "view_pairs/1C1R": 682,
+        "view_pairs/1C": 130,
+        "view_pairs/1C1R": 684,
         "view_pairs/1C2R": 1697,
         "view_pairs/2C": 805,
-        "view_pairs/Av": 38,
+        "view_pairs/Av": 79,
         "view_pairs/FO": 234,
         "view_pairs/FS": 4,
-        "view_pairs/G3Av": 116,
+        "view_pairs/G3Av": 1247,
         "view_pairs/G3GP": 1363,
-        "view_pairs/GAv": 69,
-        "view_pairs/GGAv": 104,
+        "view_pairs/GAv": 251,
+        "view_pairs/GGAv": 667,
         "view_pairs/GGGP": 1386,
         "view_pairs/GGP": 1067,
         "view_pairs/GP": 759,
-        "view_pairs/H1C": 1732,
-        "view_pairs/H1C1R": 4622,
-        "view_pairs/HAv": 1967,
-        "view_pairs/HGAv": 2833,
-        "view_pairs/HGGAv": 4282,
+        "view_pairs/H1C": 1700,
+        "view_pairs/H1C1R": 4620,
+        "view_pairs/HAv": 1926,
+        "view_pairs/HGAv": 2651,
+        "view_pairs/HGGAv": 3719,
         "view_pairs/MHS": 254,
         "view_pairs/MO": 252,
         "view_pairs/MZ": 6,
@@ -2125,11 +2125,11 @@
           "v0_7_1_sha256": "9f8582703aae911b8fbc6be7ce658298c18928d2d093c6e9f3e81a004cc007ed"
         },
         "view_pairs/1C": {
-          "sha256": "e542c6f5cb41344d307de3d9586599746d48c29d1a5c2efd15c253b01c3741e4",
+          "sha256": "860a27f8f9df588700153fb572d37e4a1affe166b5e477116b47ef2c49e1aa62",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C1R": {
-          "sha256": "1cfb555083c8ce14c1445fb97466c1515a2c92375021d61a6e65823a05606fda",
+          "sha256": "a5c9db3be7f053b26299586b4fc5a43e663009427860fe78b221a42fc07c80d5",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C2R": {
@@ -2141,7 +2141,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
-          "sha256": "fabdd948c9675276ea7f8e22e556aa1cbb1b2f00e3a5f5a0e7524598abdcbf70",
+          "sha256": "63b8793d8664402744b6410aa533eb5965e18a714771e9effc235bbf125c3645",
           "v0_7_1_sha256": null
         },
         "view_pairs/FO": {
@@ -2153,7 +2153,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/G3Av": {
-          "sha256": "8f534718f9c6d467b4d101c018efabb96767e1c9790b113bebc3bcc1c39f0699",
+          "sha256": "2e6fde57bf356430253f8742cbd002787cad5f41ae29797a1bfaba49ecf27d2e",
           "v0_7_1_sha256": null
         },
         "view_pairs/G3GP": {
@@ -2161,11 +2161,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/GAv": {
-          "sha256": "b359d9d1f03ee16a1a013ce63b550f30d5fe6a3b42eabe3c52d81ae864850a0a",
+          "sha256": "2537850d670a9793edc6da7628ee8d0fadb706dcef72be016a2da678789b42eb",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGAv": {
-          "sha256": "9b9acda15fb6ccb40c807a8007a0deee4e0482c7cb055967f131d11855223b5f",
+          "sha256": "58c36b58228c215e6808e16192422cabce50578b721ddba3ce01de35f18519da",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGGP": {
@@ -2181,23 +2181,23 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C": {
-          "sha256": "291494401d7012bd89a97c98562596c38e8b43f1ca2e74c1436aeaf35ec6df26",
+          "sha256": "cabc3212477e5a644fb1cb98c8f7104b0e804ea2e20391f89208697402198450",
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C1R": {
-          "sha256": "537160db4d1c0b24919355f1601671d1dcf9afb140487f8fefec2926bb6d6493",
+          "sha256": "63ef6f2bfc2151b0d56681ef2eda9482fb718c3d4f2fd3890e8a8c7d7fac5c52",
           "v0_7_1_sha256": null
         },
         "view_pairs/HAv": {
-          "sha256": "7945fd6bcbc80769e5eb2d36ba1c1a9af76c75aa0fbd8c14fcfbff7f0c49d165",
+          "sha256": "63b8c697d8d5288128d06c5a6a52c2efb50978f2a239c605f51450f1386c302d",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGAv": {
-          "sha256": "04adce74e79308179bd6d16199a070e0b6e191225307bf222bb27b444f8dc87c",
+          "sha256": "61ae950174e6462c6c94409268a7845010aa7ebae03f619f9bf4a56b02883dc3",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGGAv": {
-          "sha256": "8b26a0583adcf9a9dc174aa877fec4b3e4543ee56a5306d0e3398b644f8675aa",
+          "sha256": "6040f42768ca2d91bb247f3aa96aa75136b87e2e2e5928a248775b29aa7d3cb8",
           "v0_7_1_sha256": null
         },
         "view_pairs/MHS": {
@@ -2229,25 +2229,25 @@
     "random_30k": {
       "counts": {
         "approx_support_upper_nnz": 26924109,
-        "view_pairs/1C": 492,
-        "view_pairs/1C1R": 2221,
+        "view_pairs/1C": 547,
+        "view_pairs/1C1R": 2224,
         "view_pairs/1C2R": 4706,
         "view_pairs/2C": 2685,
-        "view_pairs/Av": 506,
+        "view_pairs/Av": 541,
         "view_pairs/FO": 6740,
         "view_pairs/FS": 4,
-        "view_pairs/G3Av": 1815,
+        "view_pairs/G3Av": 4446,
         "view_pairs/G3GP": 86810,
-        "view_pairs/GAv": 802,
-        "view_pairs/GGAv": 1233,
+        "view_pairs/GAv": 1017,
+        "view_pairs/GGAv": 2008,
         "view_pairs/GGGP": 58214,
         "view_pairs/GGP": 37370,
         "view_pairs/GP": 22691,
-        "view_pairs/H1C": 50993,
-        "view_pairs/H1C1R": 174648,
-        "view_pairs/HAv": 54712,
-        "view_pairs/HGAv": 93590,
-        "view_pairs/HGGAv": 153348,
+        "view_pairs/H1C": 50938,
+        "view_pairs/H1C1R": 174645,
+        "view_pairs/HAv": 54677,
+        "view_pairs/HGAv": 93375,
+        "view_pairs/HGGAv": 152573,
         "view_pairs/MHS": 7899,
         "view_pairs/MO": 6928,
         "view_pairs/MZ": 155,
@@ -2276,11 +2276,11 @@
           "v0_7_1_sha256": "61585ad7fbb680b24dc2cb373f3f741980330e8287fdd233ee4e641bb77a1d00"
         },
         "view_pairs/1C": {
-          "sha256": "05a1141aa6e24b938bb584be046447341d209d41f6c3c1a10149bc6009d8f95f",
+          "sha256": "2cc8ed2017d6f81d24b4eb02a30fe93c50bda6326546739243efadffd2afbc72",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C1R": {
-          "sha256": "4d7069ebfe51249819c452dc66ae0d622f4119ac7da279877493b6b5f482e7f5",
+          "sha256": "5be5b1dd69b36d9c8926597231a8caaa35c2b7b75b010c289feb560255f912bf",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C2R": {
@@ -2292,7 +2292,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
-          "sha256": "252eb7d834d55b56d5c3c79c84e9b712f2c50a2bec45a1f72ffcd482040f1877",
+          "sha256": "f6ce731d81e187d116d6fa686daad94f6c7d816337bbf58e9e7407c740fcf2f2",
           "v0_7_1_sha256": null
         },
         "view_pairs/FO": {
@@ -2304,7 +2304,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/G3Av": {
-          "sha256": "1e364486e09fbcdb25c0c94cc181d8acad8f0181b27898ec573e728d89c1b18a",
+          "sha256": "e5277e6e8946f4fdf57f7a2bcb05f7844f0283148e0c627af3b3684a74956005",
           "v0_7_1_sha256": null
         },
         "view_pairs/G3GP": {
@@ -2312,11 +2312,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/GAv": {
-          "sha256": "b26fd164b3cd7a5ae34a6fb84c9f9466f5b42111d3e6168b1642588bf86c1192",
+          "sha256": "5675dac799283682ef2a1ff1b304f496594610aa196fceb9e5da83d080268ec7",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGAv": {
-          "sha256": "762d3a791abd0c3853648d773b877dae769dd357c24f548e6124bd008fb8af3a",
+          "sha256": "5c55e871539e206955f58d1a4db7bc54cbbc22bc15b5523198ded1ac2f1720b3",
           "v0_7_1_sha256": null
         },
         "view_pairs/GGGP": {
@@ -2332,23 +2332,23 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C": {
-          "sha256": "5be9428ad7f8de2822760ae3a1890dd077394b735b85cd0a227f54ebf927d571",
+          "sha256": "704db2824d36a2e9450d8d25b6853816260dae93481d4583ddfa8bf6bd3226ff",
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C1R": {
-          "sha256": "e7eea0c719b77e699c676f8e604e9fa8c7c0dec18e523777d288280e84ff90a8",
+          "sha256": "bd7b11556e64e69399734a939f5f41857ede2e5f56b2d9968bceeff2a2ce3829",
           "v0_7_1_sha256": null
         },
         "view_pairs/HAv": {
-          "sha256": "7dd7e158f796aefd69d158342d0908c62db1ea92622c11bf08772a5e190e51f2",
+          "sha256": "f137a4d7c64094b8a3c81c845ff6e3d9e6f4ff2bbc2225869ed2cb06dd0d2287",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGAv": {
-          "sha256": "b5b79614e0bc0a54e1153f243c7d6fc7f4595f3308049450ddcbb72bf189fdde",
+          "sha256": "62a699b0fee2e0005ee7c501f3ea3101b7f9e09b3c68521f76ed27f19ec4f683",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGGAv": {
-          "sha256": "d17312cab3014ab719da4c59e171249951341b31a3dbb0ca8f72ab1a622760d0",
+          "sha256": "8b5eadaa020cae61897c86399cf96cb394ba57e111897f03536b7ff5f2f3abff",
           "v0_7_1_sha256": null
         },
         "view_pairs/MHS": {
@@ -2539,11 +2539,11 @@
       "counts": {
         "approx_support_upper_nnz": 26924,
         "complete_upper_nnz": 26924,
-        "view_pairs/1C": 763,
+        "view_pairs/1C": 770,
         "view_pairs/1C1R": 0,
         "view_pairs/1C2R": 0,
         "view_pairs/2C": 0,
-        "view_pairs/Av": 836,
+        "view_pairs/Av": 839,
         "view_pairs/FO": 482,
         "view_pairs/FS": 402,
         "view_pairs/G3Av": 0,
@@ -2553,9 +2553,9 @@
         "view_pairs/GGGP": 0,
         "view_pairs/GGP": 0,
         "view_pairs/GP": 953,
-        "view_pairs/H1C": 744,
+        "view_pairs/H1C": 737,
         "view_pairs/H1C1R": 0,
-        "view_pairs/HAv": 730,
+        "view_pairs/HAv": 727,
         "view_pairs/HGAv": 0,
         "view_pairs/HGGAv": 0,
         "view_pairs/MHS": 175,
@@ -2595,7 +2595,7 @@
           "v0_7_1_sha256": "d3226244009c2855c25cdd4e55a2296c2a2127aa185cc2f2a7426ed93cf60fb0"
         },
         "view_pairs/1C": {
-          "sha256": "b0fc31e78c831444bfdf121cc66b8d23f4f73808da4bf76309b556395d1221fc",
+          "sha256": "19fbce4114ef2356f01cfba651c57ad00e251a3a73cdf3694639dcc16fbc8a78",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C1R": {
@@ -2611,7 +2611,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
-          "sha256": "777c947132758f2cfe30e2395b6fea901df5986e35ffa025f6d6adcff37b3ff5",
+          "sha256": "ecdb8acacd0b824e854b4155739e3cc3e71b0129aaa042ccd3bf37861eae66ad",
           "v0_7_1_sha256": null
         },
         "view_pairs/FO": {
@@ -2651,7 +2651,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C": {
-          "sha256": "741086e7701361a573886451de6ca6b9dbd159b108964520b31f5f57aa2a832c",
+          "sha256": "c2340a9a6972afec13591cce3f5d8cd7fc58e4a6883b28c7279c637f47bcbd69",
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C1R": {
@@ -2659,7 +2659,7 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/HAv": {
-          "sha256": "8a0d1f463cf3ad10fe6ab0fcd6a125391d5d63d057fd3f0c6f667fbb57d1335e",
+          "sha256": "8da461f23c82efa2153654768a93e8138bfb5dc5e0a00bcef8a7753b80957f19",
           "v0_7_1_sha256": null
         },
         "view_pairs/HGAv": {
@@ -2855,7 +2855,7 @@
   },
   "generator_version": 1,
   "max_degree": 5,
-  "package_commit": "9c99f285f79e74c1f59bfda6c89d5b350d5deaeb-dirty",
-  "package_version": null,
+  "package_commit": "76297f61a34272e3156f5382e0aac3606a475428-dirty",
+  "package_version": "0.13.0",
   "subsample_seed": 7
 }

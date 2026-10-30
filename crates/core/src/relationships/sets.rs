@@ -195,20 +195,46 @@ impl Accumulator {
         }
     }
 
-    /// Count, per row, how many of the given sorted sets contain it.
-    pub fn count_memberships<'a>(
+    /// Sum the multiplicities of the given weighted rows, per row.
+    pub fn sum(
         &mut self,
-        sets: impl Iterator<Item = &'a [u32]>,
+        terms: impl Iterator<Item = (u32, Mult)>,
         out: &mut Weighted,
     ) -> Result<(), Error> {
         self.begin();
-        for set in sets {
-            for &j in set {
-                self.add(j, Mult::ONE);
-            }
+        for (j, m) in terms {
+            self.add(j, m);
         }
         self.drain(out)
     }
+}
+
+/// The rows of two sorted weighted sets with their multiplicities summed,
+/// into a buffer the caller reuses.
+pub fn sum_into(a: &[(u32, Mult)], b: &[(u32, Mult)], out: &mut Weighted) -> Result<(), Error> {
+    out.clear();
+    alloc::reserve(out, a.len() + b.len(), Family::RowSet)?;
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].0.cmp(&b[j].0) {
+            std::cmp::Ordering::Less => {
+                out.push(a[i]);
+                i += 1;
+            }
+            std::cmp::Ordering::Greater => {
+                out.push(b[j]);
+                j += 1;
+            }
+            std::cmp::Ordering::Equal => {
+                out.push((a[i].0, a[i].1 + b[j].1));
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    out.extend_from_slice(&a[i..]);
+    out.extend_from_slice(&b[j..]);
+    Ok(())
 }
 
 /// The rows of a weighted set, into a buffer the caller reuses.

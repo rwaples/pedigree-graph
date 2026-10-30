@@ -1,11 +1,9 @@
 """Relationship classification held to its definitions and to exact metamorphic identities.
 
-The engine's differential oracle (``tests/oracle/relationship_pairs.py``) is
-the 0.8 engine moved verbatim and changed in lockstep with the Rust engine, so
-it catches algorithm defects but not definition defects the two share.
-``tests/oracle/relationship_paths.py`` states the ADR 0010 definitions by
-explicit path enumeration; these properties hold the engine to both oracles on
-general topologies and to identities that need no expected pair list.
+``tests/oracle/relationship_paths.py`` states the ADR 0018 definitions by
+explicit path enumeration and is the engine's only classification oracle; these
+properties hold the engine to it on general topologies, graphs and views, and
+to identities that need no expected pair list.
 
 Every registry code occurs in every run: the spec differential is
 parametrized over the 23 codes and appends that code's motif
@@ -21,8 +19,7 @@ from conftest import pedigree_columns
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from oracle.exact_kinship import exact_kinship
-from oracle.relationship_pairs import oracle_pairs, oracle_view_pairs
-from oracle.relationship_paths import relationship_paths
+from oracle.relationship_paths import oracle_pairs, oracle_view_pairs, relationship_paths
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 
@@ -69,10 +66,10 @@ def _paths(columns: dict, max_degree: int = 5) -> dict[str, set[tuple[int, int]]
 
 @settings(deadline=None, max_examples=150)
 @given(pedigree_columns(), st.integers(min_value=0, max_value=5))
-def test_engine_equals_the_copied_oracle_on_generated_pedigrees(columns, max_degree):
-    # The copied oracle has only seen fixtures; this feeds it the general
-    # strategy.  Rejects row-streaming scratch leaks and compaction errors on
-    # topologies no fixture has, in graph and view coordinates alike.
+def test_engine_equals_the_path_oracle_on_generated_graphs_and_views(columns, max_degree):
+    # Exact block arrays, order included, at every degree cutoff.  Rejects
+    # row-streaming scratch leaks and compaction errors on topologies no
+    # fixture has, in graph and view coordinates alike.
     graph = PedigreeGraph.from_frame(columns)
     got = graph.relationship_pairs(max_degree=max_degree)
     for code, (first, second) in oracle_pairs(graph, max_degree=max_degree).items():
@@ -170,6 +167,76 @@ def test_siblings_by_a_shared_external_parent_are_full_sibs_with_zero_kinship():
     pairs = graph.relationship_pairs(max_degree=1)
     assert _pair_sets(pairs)["FS"] == {(0, 1)}
     assert graph.pair_kinship(np.array([0]), np.array([1])).tolist() == [0.0]
+
+
+#: Two half connections of one shape (issue #47), each as (id, mother, father)
+#: rows and the pair (first, second) by id.  Two paths make the full code
+#: (ADR 0018) whether or not the shared ancestors are mates.
+_TWO_HALF_CONNECTIONS = {
+    # The mothers are maternal half sibs through 1, the fathers paternal half
+    # sibs through 6: grandparents 1 and 6 are shared but are not mates.
+    "1C": (
+        [
+            (1, -1, -1),
+            (2, -1, -1),
+            (3, -1, -1),
+            (6, -1, -1),
+            (7, -1, -1),
+            (8, -1, -1),
+            (4, 1, 2),
+            (5, 1, 3),
+            (9, 7, 6),
+            (10, 8, 6),
+            (11, 4, 9),
+            (12, 5, 10),
+        ],
+        (11, 12),
+    ),
+    # The aunt 5 is a maternal half sib of the mother 6 and a paternal half
+    # sib of the father 7.
+    "Av": (
+        [(1, -1, -1), (2, -1, -1), (3, -1, -1), (4, -1, -1), (5, 1, 2), (6, 1, 3), (7, 4, 2), (8, 6, 7)],
+        (8, 5),
+    ),
+    # 15 is the junior cousin of 16 through 1 and the senior cousin through
+    # 2, so one half path joins each orientation.
+    "1C1R": (
+        [
+            (1, -1, -1),
+            (2, -1, -1),
+            (3, -1, -1),
+            (4, -1, -1),
+            (5, -1, -1),
+            (6, -1, -1),
+            (7, -1, -1),
+            (8, -1, -1),
+            (9, 1, 3),
+            (10, 1, 4),
+            (11, 5, 2),
+            (12, 6, 2),
+            (13, 9, 7),
+            (14, 11, 8),
+            (15, 12, 13),
+            (16, 14, 10),
+        ],
+        (15, 16),
+    ),
+}
+
+
+@pytest.mark.parametrize("code", list(_TWO_HALF_CONNECTIONS))
+def test_two_half_connections_make_the_full_code_at_its_nominal_kinship(code):
+    rows, (first, second) = _TWO_HALF_CONNECTIONS[code]
+    ids, mother, father = (np.array(column, dtype=np.int64) for column in zip(*rows, strict=True))
+    graph = PedigreeGraph.from_frame({"id": ids, "mother": mother, "father": father})
+    row_of = {v: r for r, v in enumerate(ids.tolist())}
+    pair = (row_of[first], row_of[second])
+    got = {c for c, pairs in _pair_sets(graph.relationship_pairs(max_degree=5)).items() if pair in pairs}
+    assert got == {code}
+    want = _paths({"id": ids, "mother": mother, "father": father, "twin": np.full(len(ids), -1)})
+    assert pair in want[code]
+    kinship = graph.pair_kinship(np.array([pair[0]]), np.array([pair[1]]))
+    np.testing.assert_allclose(kinship, [RELATIONSHIPS[code].nominal_kinship], rtol=1e-6)
 
 
 def _full_sib_pair(columns: dict, data) -> tuple[dict, int, int]:

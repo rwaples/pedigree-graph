@@ -758,12 +758,17 @@ class TestSurface:
             products=[("first.x", "first.y"), ("second.y", "second.y"), ("first.x", "second.y")],
         )
         pairs = graph.relationship_pairs(categories=["FS", "Av"])
+        # Each value is quantized to within max|v| / 2**43 (ADR 0015), so a
+        # product of two is within 2 * max|v| * step + step**2.
+        largest = max(np.abs(x).max(), np.abs(y).max())
+        step = largest / 2**43
         for ci, code in enumerate(got.categories):
             first, second = pairs[code]
+            bound = len(first) * (2 * largest * step + step**2) + 1e-12
             for pi, want in enumerate(
                 [np.sum(x[first] * y[first]), np.sum(y[second] ** 2), np.sum(x[first] * y[second])]
             ):
-                assert math.isclose(got.cross[ci, pi], want, rel_tol=1e-12, abs_tol=1e-12), (code, pi)
+                assert math.isclose(got.cross[ci, pi], want, rel_tol=0, abs_tol=bound), (code, pi)
             r = np.corrcoef(x[first], y[second])[0, 1]
             assert math.isclose(got.pearson("first.x", "second.y")[ci], r, rel_tol=1e-10)
             assert math.isclose(got.pearson("second.y", "first.x")[ci], r, rel_tol=1e-10)

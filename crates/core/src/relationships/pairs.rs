@@ -733,13 +733,15 @@ mod tests {
     }
 
     #[test]
-    fn a_dual_valid_half_avuncular_pair_keeps_the_lower_row_first() {
+    fn a_pair_half_avuncular_both_ways_is_av_with_the_lower_row_first() {
         // From tests/test_relationship_pairs.py: 4's mother 2 is a paternal
         // half sib of 5 (father 0), and 5's mother 3 is a paternal half sib
-        // of 4 (father 1), so (4, 5) is HAv both ways.
+        // of 4 (father 1), so one path joins (4, 5) each way: two paths, Av
+        // (ADR 0018).
         let cols = pedigree(&[(-1, -1), (-1, -1), (-1, 0), (-1, 1), (2, 1), (3, 0)], &[]);
         let got = all(&cols, None);
-        assert_eq!(pairs(&got, Category::HAv), vec![(4, 5)]);
+        assert_eq!(pairs(&got, Category::Av), vec![(4, 5)]);
+        assert!(pairs(&got, Category::HAv).is_empty());
     }
 
     use crate::alloc::Family;

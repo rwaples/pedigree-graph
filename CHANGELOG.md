@@ -6,6 +6,35 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking: full and half are decided by path count for every collateral
+  category** (issues #47, #48; ADR 0018, superseding ADR 0010's category
+  definitions). A category is full when at least two paths of its shape join
+  the pair, summed over both orientations, and half when exactly one does;
+  a sib link counts one path per shared parent id. Before, the avuncular
+  family needed a full sib, first cousins two *distinct* shared
+  grandparents, and removed cousins two paths in one orientation. Labels
+  change only on pedigrees with double connections (inbreeding, or relatives
+  joined through two lines), and always to a closer category: an aunt who is
+  a half sib of both parents is `Av` (was `HAv`), first cousins through one
+  grandparent reached two ways are `1C` (was `H1C`), a pair that is a half
+  first cousin once removed each way is `1C1R` (was `H1C1R`), and, through
+  the closest-category fold, a lineal or deeper pair can become a newly full
+  collateral code. The label is still a threshold, one path or two and more:
+  when exactly two paths through represented ancestors join a relabelled
+  pair, its kinship is the new label's nominal kinship; with more paths it is
+  higher, and a sib link through an external parent id carries no kinship.
+  `pair_kinship` stays the exact value. Sibs, `pair_kinship` and the kinship
+  matrices are unchanged.
+  Pair blocks, `relationship_counts`, burden, moments and per-person
+  relatives move together; on the parity fixture `deep_inbred_60g`, `Av`
+  goes from 441 to 1,205 pairs and `1C` from 881 to 1,228, and on the
+  random-mating simACE fixture `sim_d6_n3000` (18,000 rows) `G3Av` goes from
+  60,471 to 62,033 and `Av`, `GAv`, `GGAv` and `1C` each by under 1%. Consumers that
+  read `nominal_kinship` off a label or select pairs by degree see more
+  correctly labelled close pairs on such pedigrees.
+- **Removed (tests): the SciPy matrix oracle** `tests/oracle/relationship_pairs.py`.
+  `tests/oracle/relationship_paths.py` is the one classification oracle, and
+  the block helpers moved to `tests/oracle/pair_utils.py`.
 - **Breaking (Rust): walkers come from a `pairwise::KinshipIndex`** (issue
   #45). `KinshipIndex::new(&kped)` builds a pedigree's packed rows and
   ancestor signatures together and `index.walker()` hands out a `Walker`,

@@ -20,8 +20,8 @@ default.  Both binaries must print the same block digests.  Every run
 records the binary it ran and its hash, so a report cannot hide which build
 it timed.  Exits 1 on a block or a digest mismatch.
 
-Before timing anything the driver proves the executions agree with the Python
-matrix oracle: for the ``--parity`` fixtures it computes
+Before timing anything the driver proves the executions agree with the
+installed package: for the ``--parity`` fixtures it computes
 ``relationship_pairs(max_degree=5)`` on the graph and on a deterministic
 half view and compares per-block counts and digests with every execution's
 output.  The digest is ``PairBlock::digest`` re-expressed in wrapping

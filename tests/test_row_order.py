@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from _support import ENVELOPE_UNIT, float32_ulp_distance
 from conftest import FIXTURE_NAMES, FIXTURES, parity_columns
-from oracle.relationship_pairs import sibling_pairs
+from oracle.pair_utils import sibling_pairs
 from relationship_predicates import AncestorWalk
 
 from pedigree_graph import RELATIONSHIPS, MissingMetadataError, PedigreeGraph

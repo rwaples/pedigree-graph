@@ -1,6 +1,8 @@
 # ADR 0010: the relationship engine streams rows and saturates multiplicity at two
 
-**Status:** accepted
+**Status:** accepted; the section "Categories are the 0.7.1 definitions, with
+exclusions as a table" and the SciPy oracle consequence are superseded by
+[ADR 0018](0018-full-and-half-by-path-count.md)
 **Date:** 2026-09-04
 **Context:** resolves issues #11 (memory-bounded exact counts) and #9 (multiplicity overflow); refines the relationship-engine invariants of ADR 0007
 
@@ -54,6 +56,9 @@ pool with a workspace pool that never exceeds the thread count. Counts are
 integers summed in any order and are bit-identical across thread counts.
 
 ### Categories are the 0.7.1 definitions, with exclusions as a table
+
+*Superseded by ADR 0018, which decides full and half by path count for
+every collateral category.*
 
 The engine's category definitions reproduce `count_pairs(max_degree=5)` of
 pedigree-graph 0.7.1, including two idiosyncrasies that must not be "fixed"

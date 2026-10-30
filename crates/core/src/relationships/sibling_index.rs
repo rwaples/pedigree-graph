@@ -140,6 +140,12 @@ impl SiblingIndex {
         true
     }
 
+    /// The rows sharing `row`'s known mother id, then those sharing its known
+    /// father id, each sorted and including `row`; empty where the id is unknown.
+    pub fn by_parent_id(&self, row: usize) -> [&[u32]; 2] {
+        [self.by_mother.members(row), self.by_father.members(row)]
+    }
+
     /// Full sibs of `row` (same known mother and father ids), sorted, excluding `row`.
     pub fn full_sibs(&self, row: usize, out: &mut Vec<u32>) -> Result<(), Error> {
         out.clear();

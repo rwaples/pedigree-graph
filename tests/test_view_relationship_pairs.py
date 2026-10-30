@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from _support import ASYMMETRIC, CODES, SYMMETRIC
 from conftest import FIXTURE_NAMES, FIXTURES, parity_graph
-from oracle.relationship_pairs import canonical_keys, check_exclusive
+from oracle.pair_utils import canonical_keys, check_exclusive
 from relationship_predicates import AncestorWalk
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError

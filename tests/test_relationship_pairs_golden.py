@@ -15,7 +15,7 @@ import numpy as np
 import pedigrees
 import pytest
 from generate_relationship_pairs import MAX_DEGREE, _capture, _columns
-from oracle.relationship_pairs import check_exclusive
+from oracle.pair_utils import check_exclusive
 
 import pedigree_graph
 

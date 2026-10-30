@@ -48,7 +48,7 @@ def _columns(fx: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
 
 def _capture(pg_mod, fx: dict[str, np.ndarray], *, full_arrays: bool) -> tuple[dict, dict]:
     """Return ``(arrays, summary)``; ``arrays`` is empty when ``full_arrays`` is False."""
-    from oracle.relationship_pairs import check_exclusive
+    from oracle.pair_utils import check_exclusive
 
     graph = pg_mod.PedigreeGraph.from_frame(_columns(fx))
     result = graph.relationship_pairs(max_degree=MAX_DEGREE)
