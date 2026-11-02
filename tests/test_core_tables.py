@@ -4,6 +4,9 @@
 These tests read the core's own tables through the binding, so an edit on
 one side only fails here rather than at raise time or as a silent shift in
 nominal kinship.
+
+No core variant is a metadata error yet, so ``METADATA_CODES`` has nothing
+to agree with until one is; its row in ``_TABLES`` checks it from then on.
 """
 
 import math
@@ -27,7 +30,7 @@ _CORE_CATEGORIES = _native.relationship_categories()
 def test_the_core_names_every_structured_code():
     # `error_codes` comes from one error of every core variant; the core's own
     # test holds that list complete.  An empty result would vacuously pass.
-    assert len(_CORE_ERRORS) >= 15
+    assert {class_name for _, class_name, _ in _CORE_ERRORS} >= {"PedigreeValidationError", "ResourceError"}
     assert len({code for code, _, _ in _CORE_ERRORS}) == len(_CORE_ERRORS)
 
 

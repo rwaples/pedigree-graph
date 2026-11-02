@@ -837,6 +837,7 @@ impl Error {
     /// Positions are 61 and 93, numbers no other operand contains, so a
     /// field or message shows which base wrote them.  The core's tests hold
     /// the list to every variant.
+    #[doc(hidden)]
     pub fn samples() -> Vec<Error> {
         let (p, q) = (Position(61), Position(93));
         vec![
