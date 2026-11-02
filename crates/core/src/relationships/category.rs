@@ -109,6 +109,12 @@ impl Category {
         }
     }
 
+    /// Kinship coefficient of a single connecting path through the shared
+    /// ancestor(s), with no inbreeding: `2^-(degree + 1)` for every category.
+    pub fn nominal_kinship(self) -> f64 {
+        0.5f64.powi(i32::from(self.degree()) + 1)
+    }
+
     #[inline]
     pub fn index(self) -> usize {
         self as usize
@@ -239,6 +245,23 @@ mod tests {
     fn roles_exist_exactly_for_asymmetric_categories() {
         for cat in Category::ALL {
             assert_eq!(cat.roles().is_none(), cat.symmetric(), "{}", cat.code());
+        }
+    }
+
+    #[test]
+    fn nominal_kinship_halves_with_each_degree() {
+        for (cat, want) in [
+            (Category::MZ, 0.5),
+            (Category::FS, 0.25),
+            (Category::PHS, 0.125),
+            (Category::C1, 0.0625),
+            (Category::C2, 0.015625),
+        ] {
+            assert!(
+                (cat.nominal_kinship() - want).abs() < 1e-15,
+                "{}",
+                cat.code()
+            );
         }
     }
 }

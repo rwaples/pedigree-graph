@@ -159,8 +159,7 @@ fn relationship_categories() -> Vec<CategoryRow> {
                 c.degree(),
                 roles.map(|r| r.0),
                 roles.map(|r| r.1),
-                // Every registry row's nominal kinship is 2^-(degree + 1).
-                0.5f64.powi(i32::from(c.degree()) + 1),
+                c.nominal_kinship(),
             )
         })
         .collect()

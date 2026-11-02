@@ -302,13 +302,7 @@ fn relationship_categories() -> Robj {
             Integers::from_values(Category::ALL.iter().map(|c| i32::from(c.degree()))).into_robj(),
             role(|r| r.0),
             role(|r| r.1),
-            // Every registry row's nominal kinship is 2^-(degree + 1).
-            Doubles::from_values(
-                Category::ALL
-                    .iter()
-                    .map(|c| 0.5f64.powi(i32::from(c.degree()) + 1)),
-            )
-            .into_robj(),
+            Doubles::from_values(Category::ALL.iter().map(|c| c.nominal_kinship())).into_robj(),
         ],
     )
 }
