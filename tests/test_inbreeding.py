@@ -129,12 +129,6 @@ def test_second_call_returns_the_memo_without_recomputing(monkeypatch):
     assert graph.inbreeding() is first
 
 
-def test_result_is_read_only():
-    F = _graph(MZ_ONLY_LINK).inbreeding()
-    with pytest.raises(ValueError, match="read-only"):
-        F[0] = 0.5
-
-
 def test_result_is_float64():
     assert _graph(MZ_ONLY_LINK).inbreeding().dtype == np.float64
 

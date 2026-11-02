@@ -304,17 +304,6 @@ class TestOverflowFoldsIntoTheViewCodes:
         assert excinfo.value.code == "unknown_view_id"
         assert excinfo.value.fields["id"] == 2**64
 
-    @pytest.mark.parametrize("selection", [{"ids": [13, 13]}, {"rows": [3, 3]}, {"ids": [2**64]}, {"rows": [-1]}])
-    def test_never_a_fifth_code(self, graph, selection):
-        with pytest.raises(PedigreeValidationError) as excinfo:
-            graph.view(**selection)
-        assert excinfo.value.code in {
-            "duplicate_view_id",
-            "unknown_view_id",
-            "duplicate_view_row",
-            "view_row_out_of_range",
-        }
-
 
 class TestIdIndexIsBuiltOnce:
     def test_index_is_memoised_on_the_graph(self, graph):

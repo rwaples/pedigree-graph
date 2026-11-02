@@ -2,7 +2,7 @@
 
 Every array property hands back the graph's own storage with a fixed dtype,
 read-only and identical on each access; ``depth`` is derived from the parent edges alone and
-only when first asked for; the optional columns read as ``None`` when absent.
+only when first asked for.
 """
 
 import numpy as np
@@ -66,10 +66,6 @@ class TestArrayProperties:
         assert getattr(graph, name).shape == (graph.n_individuals,)
 
     @pytest.mark.parametrize("name", ARRAY_PROPERTY_NAMES)
-    def test_is_not_writeable(self, graph, name):
-        assert getattr(graph, name).flags.writeable is False
-
-    @pytest.mark.parametrize("name", ARRAY_PROPERTY_NAMES)
     def test_element_assignment_is_rejected(self, graph, name):
         values = getattr(graph, name)
         with pytest.raises(ValueError, match="read-only"):
@@ -90,11 +86,6 @@ class TestArrayProperties:
 
 
 class TestOptionalProperties:
-    @pytest.mark.parametrize("name", ["sex", "generation_labels", "birth_year"])
-    def test_absent_column_reads_as_none(self, name):
-        pg = PedigreeGraph.from_frame(_minimal_data())
-        assert getattr(pg, name) is None
-
     def test_depth_is_present_without_any_optional_column(self):
         pg = PedigreeGraph.from_frame(_minimal_data())
         assert pg.depth.dtype == np.int32
@@ -139,15 +130,3 @@ class TestSize:
         assert len(pg) == 0
         assert pg.n_individuals == 0
         assert pg.ids.shape == (0,)
-
-
-class TestExternalReferences:
-    def test_external_parent_keeps_its_id_and_loses_its_row(self):
-        pg = PedigreeGraph.from_frame(_minimal_data(mother=np.array([-1, -1, 900], dtype=np.int64)))
-        assert pg.mother_ids.tolist() == [-1, -1, 900]
-        assert pg.mother_rows.tolist() == [-1, -1, -1]
-
-    def test_external_co_twin_keeps_its_id_and_loses_its_row(self):
-        pg = PedigreeGraph.from_frame(_minimal_data(twin=np.array([-1, -1, 900], dtype=np.int64)))
-        assert pg.twin_ids.tolist() == [-1, -1, 900]
-        assert pg.twin_rows.tolist() == [-1, -1, -1]

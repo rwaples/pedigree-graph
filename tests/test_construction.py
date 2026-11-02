@@ -88,6 +88,7 @@ class TestFromFrame:
     def test_dict_of_python_lists(self):
         pg = PedigreeGraph.from_frame({"id": [0, 1, 2], "mother": [-1, -1, 0], "father": [-1, -1, 1]})
         assert pg.ids.tolist() == [0, 1, 2]
+        assert pg.mother_rows.tolist() == [-1, -1, 0]
 
     def test_polars_frame(self):
         pg = PedigreeGraph.from_frame(pl.DataFrame(_full()))

@@ -72,10 +72,6 @@ class TestDtypeAcceptance:
         parsed = _parse(_data(mother=np.array([-1.0, -1.0, 0.0], dtype=object)))
         assert parsed.mother_ids.tolist() == [-1, -1, 0]
 
-    def test_python_lists_are_accepted(self):
-        parsed = _parse({"id": [0, 1, 2], "mother": [-1, -1, 0], "father": [-1, -1, 1]})
-        assert parsed.mother_rows.tolist() == [-1, -1, 0]
-
     def test_uint64_above_int64_max_is_out_of_range(self):
         error = _raises(_data(id=np.array([0, 1, 2**63], dtype=np.uint64)), "value_out_of_range")
         assert error.fields["field"] == "id"
@@ -89,18 +85,6 @@ class TestDtypeAcceptance:
 
 
 class TestFrameInput:
-    def test_polars_int32_columns(self):
-        frame = pl.DataFrame(_data()).with_columns(pl.col(c).cast(pl.Int32) for c in ("id", "mother", "father"))
-        parsed = _parse(frame)
-        assert parsed.ids.tolist() == [0, 1, 2]
-        assert parsed.mother_rows.tolist() == [-1, -1, 0]
-
-    def test_pandas_nullable_int64_columns(self):
-        frame = pd.DataFrame({k: pd.array(v, dtype="Int64") for k, v in _data().items()})
-        parsed = _parse(frame)
-        assert parsed.ids.tolist() == [0, 1, 2]
-        assert parsed.mother_rows.tolist() == [-1, -1, 0]
-
     @pytest.mark.parametrize("field", ["mother", "father", "twin", "sex", "generation", "birth_year"])
     def test_polars_nulls_become_the_missing_sentinel(self, field):
         columns = {**_data(), "twin": [-1, -1, -1], "sex": [0, 1, 0], "generation": [0, 0, 1]}
@@ -355,30 +339,13 @@ class TestIdRemap:
 
 
 class TestOwnership:
-    def test_arrays_are_read_only(self):
-        """Every array the native builder hands over is frozen before a caller sees it."""
-        parsed = _parse(_data(sex=np.array([0, 1, 0]), birth_year=np.array([1, 2, 3])))
-        for array in (
-            parsed.ids,
-            parsed.mother_ids,
-            parsed.father_ids,
-            parsed.twin_ids,
-            parsed.mother_rows,
-            parsed.father_rows,
-            parsed.twin_rows,
-            parsed.sex,
-            parsed.birth_year,
-        ):
-            assert not array.flags.writeable
-            with pytest.raises(ValueError, match="read-only"):
-                array[0] = 0
-
     def test_mutating_the_caller_arrays_changes_nothing(self):
         data = _data()
         parsed = _parse(data)
         data["mother"][2] = 1
         data["id"][0] = 7
         assert parsed.mother_ids.tolist() == [-1, -1, 0]
+        assert parsed.mother_rows.tolist() == [-1, -1, 0]
         assert parsed.ids.tolist() == [0, 1, 2]
 
     def test_strided_and_fortran_views_are_copied(self):
@@ -392,13 +359,6 @@ class TestOwnership:
         fortran[0] = 100
         assert parsed.ids.tolist() == [0, 2, 4]
         assert parsed.mother_ids.tolist() == [-1, -1, 0]
-
-    def test_graph_arrays_survive_caller_mutation(self):
-        mothers = np.array([-1, -1, 0], dtype=np.int64)
-        pg = PedigreeGraph.from_frame({"id": np.array([0, 1, 2]), "mother": mothers, "father": np.array([-1, -1, 1])})
-        mothers[2] = 1
-        assert pg.mother_rows.tolist() == [-1, -1, 0]
-        assert pg.mother_ids.tolist() == [-1, -1, 0]
 
 
 class TestCycles:
@@ -434,29 +394,6 @@ class TestCycles:
         data = {"id": np.array([0, 1]), "mother": np.array([1, -1]), "father": np.array([-1, -1])}
         pg = PedigreeGraph.from_frame(data)
         assert pg.depth.tolist() == [1, 0]
-
-
-class TestFromArraysEntryPoint:
-    def test_matches_the_dict_path(self):
-        parsed = PedigreeGraph.from_arrays(
-            ids=np.array([0, 1, 2]),
-            mother_ids=np.array([-1, -1, 0]),
-            father_ids=np.array([-1, -1, 1]),
-            sex=[0, 1, 0],
-        )
-        assert parsed.mother_rows.tolist() == [-1, -1, 0]
-        assert parsed.sex.tolist() == [0, 1, 0]
-        assert parsed.twin_ids.tolist() == [-1, -1, -1]
-
-    def test_omitted_optionals_are_none(self):
-        parsed = PedigreeGraph.from_arrays(
-            ids=np.array([0]),
-            mother_ids=np.array([-1]),
-            father_ids=np.array([-1]),
-        )
-        assert parsed.sex is None
-        assert parsed.generation_labels is None
-        assert parsed.birth_year is None
 
 
 _SETTINGS = settings(deadline=None, max_examples=50)

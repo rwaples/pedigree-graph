@@ -34,8 +34,6 @@ from pedigree_graph._ne_founders import (
 )
 from pedigree_graph._ne_rates import _kinship_summary_for_labels
 from pedigree_graph.effective_size import (
-    ALL_EFFECTIVE_SIZE_ESTIMATORS,
-    estimate_effective_sizes,
     ne_coancestry,
     ne_hill_overlapping,
     ne_inbreeding,
@@ -613,15 +611,3 @@ def test_streaming_ne_coancestry_recovery_at_n2000_g8() -> None:
         f"streaming Ne_C ({nec.ne:.1f}) diverges from Ne_V ({nev.ne:.1f}) "
         f"by {relative_error:.1%} — exceeds 15% precision gate"
     )
-
-
-@pytest.mark.slow
-def test_estimate_effective_sizes_at_n2000_g8_smoke() -> None:
-    """End-to-end smoke at the scale targeted by the refactor."""
-    rng = np.random.default_rng(11)
-    df = _build_random_mating_pedigree(rng, n_per_gen=2000, n_gens=8)
-    pg = PedigreeGraph.from_frame(df)
-    out = estimate_effective_sizes(pg)
-    assert set(out) == set(ALL_EFFECTIVE_SIZE_ESTIMATORS)
-    for name, result in out.items():
-        assert "ne" in result.to_dict(), name

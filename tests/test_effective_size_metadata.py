@@ -187,6 +187,7 @@ def test_a_batch_reports_the_guard_that_disabled_each_estimator(overrides, code,
         refused = isinstance(result, UnavailableEffectiveSize)
         assert refused == (name in expected), name
         if refused:
+            assert result.reason == "missing_metadata", name
             assert result.code == code, name
             assert result.fields["operation"] == name, name
     for name in ("ne_inbreeding", "ne_sex_ratio"):

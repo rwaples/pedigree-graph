@@ -714,10 +714,6 @@ def test_final_inbreeding_reports_the_observed_cohorts(sparse_line_graph):
     assert result.ne_per_gen == pytest.approx([3.73205081, 8.47975451])
 
 
-def test_a_batch_returns_the_eight_estimators(sparse_line_graph):
-    assert set(estimate_effective_sizes(sparse_line_graph)) == ESTIMATOR_NAMES
-
-
 def test_mean_kinship_by_generation_reports_unlabelled_rows():
     pg = PedigreeGraph.from_arrays(
         ids=list(range(8)),

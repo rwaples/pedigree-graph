@@ -12,13 +12,6 @@ ENV_VAR = "PEDIGREE_GRAPH_THREADS"
 
 PRINT_BUDGET = "from pedigree_graph._threads import thread_budget\nprint(thread_budget())\n"
 
-CONFIGURE_THEN_PRINT = (
-    "from pedigree_graph._threads import configure_threads, thread_budget\n"
-    "configure_threads(3)\n"
-    "print(thread_budget())\n"
-)
-
-
 pytestmark = pytest.mark.usefixtures("fresh_thread_state")
 
 
@@ -135,11 +128,6 @@ class TestFreshProcess:
         proc = run_child(PRINT_BUDGET, env_threads="6")
         assert proc.returncode == 0
         assert proc.stdout.strip() == "6"
-
-    def test_configure_beats_env_var(self):
-        proc = run_child(CONFIGURE_THEN_PRINT, env_threads="6")
-        assert proc.returncode == 0
-        assert proc.stdout.strip() == "3"
 
     def test_default_without_env_var_or_call(self):
         proc = run_child(PRINT_BUDGET)

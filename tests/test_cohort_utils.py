@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
-from pedigree_graph.effective_size import CohortWindow, eligible_cohort_range
+from pedigree_graph.effective_size import eligible_cohort_range
 
 
 def _three_gen_pedigree(birth_year: np.ndarray) -> PedigreeGraph:
@@ -18,14 +18,6 @@ def _three_gen_pedigree(birth_year: np.ndarray) -> PedigreeGraph:
         father_ids=np.array([-1, -1, 1]),
         birth_year=birth_year,
     )
-
-
-class TestCohortWindowDataclass:
-    def test_namedtuple_fields(self):
-        w = CohortWindow(c_min=1990, c_max=2005, reproductive_age_p95=10.0)
-        assert w.c_min == 1990
-        assert w.c_max == 2005
-        assert w.reproductive_age_p95 == 10.0
 
 
 class TestEligibleCohortRange:

@@ -27,6 +27,7 @@ _DATA = {
 
 def _assert_same_graph(pg: PedigreeGraph) -> None:
     expected = PedigreeGraph.from_frame(dict(_DATA)).relationship_pairs(max_degree=2)
+    np.testing.assert_array_equal(pg.ids, _DATA["id"])
     got = pg.relationship_pairs(max_degree=2)
     assert set(got) == set(expected)
     for code, block in expected.items():

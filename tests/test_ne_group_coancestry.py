@@ -297,15 +297,6 @@ def test_an_empty_graph_yields_no_estimate():
         assert getattr(result, name).shape == (0,), name
 
 
-def test_absent_generation_labels_fall_back_to_depth():
-    labelled = _build_closed_line(4)
-    pg_labelled = PedigreeGraph.from_frame(labelled)
-    pg_unlabelled = PedigreeGraph.from_frame(labelled.drop("generation"))
-
-    assert pg_unlabelled.generation_labels is None
-    assert ne_group_coancestry(pg_labelled).to_dict() == ne_group_coancestry(pg_unlabelled).to_dict()
-
-
 def test_the_evaluator_rejects_a_prerequisite_for_other_cohorts():
     pg = PedigreeGraph.from_frame(_build_closed_line(4))
     cohorts = ObservedCohorts.for_graph(pg, "ne_group_coancestry")

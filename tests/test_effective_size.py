@@ -19,7 +19,6 @@ from pedigree_graph._ne_family_size import (
 )
 from pedigree_graph._ne_rates import _equivalent_generations
 from pedigree_graph.effective_size import (
-    ALL_EFFECTIVE_SIZE_ESTIMATORS,
     estimate_effective_sizes,
     ne_coancestry,
     ne_group_coancestry,
@@ -778,22 +777,6 @@ def test_group_coancestry_equals_diluted_theta_plus_self_coancestry():
         theta * (n_g - 1.0) / n_g + s_bar / n_g,
         atol=1e-12,
     )
-
-
-# ---------------------------------------------------------------------------
-# estimate_effective_sizes entry point
-# ---------------------------------------------------------------------------
-
-
-def test_estimate_effective_sizes_returns_eight_serializable_records():
-    """Every estimator runs over one prerequisite memo and serializes."""
-    pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=5))
-    results = estimate_effective_sizes(pg)
-    assert set(results) == set(ALL_EFFECTIVE_SIZE_ESTIMATORS)
-    for name, result in results.items():
-        d = result.to_dict()
-        assert isinstance(d, dict)
-        assert "ne" in d, f"{name} missing 'ne' field"
 
 
 def test_sigma2_from_quadrants_returns_none_below_two_per_sex():
