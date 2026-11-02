@@ -128,12 +128,11 @@ class TestBoundary:
         assert re.fullmatch(r"[0-9a-f]{40}(-dirty)?", pedigree_graph.pg_core_rev())
 
 
-def test_facade_returns_read_only_depth_and_intp_maps():
+def test_oracle_topology_maps_are_intp():
+    """Read-only depth is pinned by test_properties.py[depth]; this keeps the oracle's map dtypes."""
     mother = np.array([3, -1, 0, -1], dtype=np.int32)
     father = np.array([1, -1, 1, -1], dtype=np.int32)
-    depth = structural_depth(mother, father)
-    assert not depth.flags.writeable
-    topo = build_topology(depth)
+    topo = build_topology(structural_depth(mother, father))
     assert topo.order is not None
     assert topo.order.dtype == np.intp
     assert topo.inverse.dtype == np.intp

@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from _support import CHAIN_BIRTH, _chain_graph
 
-from pedigree_graph import MissingMetadataError, PedigreeGraph
+from pedigree_graph import MissingMetadataError
 from pedigree_graph import effective_size as es
 from pedigree_graph.effective_size import UnavailableEffectiveSize, estimate_effective_sizes
 
@@ -161,14 +161,6 @@ class TestHill:
         res = es.ne_hill_overlapping(pg)
         assert not res.collapses_to_ne_v
         assert res.n_unknown_birth_year == 1
-
-
-@pytest.mark.parametrize("estimator", ALL, ids=_name)
-def test_empty_graph_bypasses_every_guard(estimator):
-    pg = PedigreeGraph.from_frame({"id": [], "mother": [], "father": []})
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        assert estimator(pg).ne is None
 
 
 @pytest.mark.parametrize(

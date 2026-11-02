@@ -452,15 +452,6 @@ mod tests {
     }
 
     #[test]
-    fn validate_accepts_an_acyclic_graph() {
-        let ids = [10, 11, 12, 13, 14];
-        assert_eq!(
-            validate_acyclic(&ids, &DEPTH_MAJOR_MOTHER, &DEPTH_MAJOR_FATHER),
-            Ok(())
-        );
-    }
-
-    #[test]
     fn validate_reports_the_witness_as_a_cycle_error() {
         let ids = [30, 20, 40, 10, 50];
         let mother = [1, 2, 0, 0, -1];

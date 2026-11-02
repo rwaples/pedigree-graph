@@ -284,17 +284,10 @@ def test_co_twins_in_different_cohorts_keep_the_cohort_alignment():
     assert result.mean_group_coancestry_per_gen[0] == 0.25
 
 
-def test_an_empty_graph_yields_no_estimate():
-    """Same shape as the sibling rate estimators: no estimate, no warning, empty series."""
+def test_an_empty_graph_uses_as_many_generations_as_its_sibling():
+    """The empty no-estimate record matches ``ne_coancestry``'s; ``test_effective_size_api`` covers the rest."""
     pg = PedigreeGraph.from_arrays(ids=[], mother_ids=[], father_ids=[], sex=[])
-
-    result = ne_group_coancestry(pg)
-    sibling = ne_coancestry(pg)
-
-    assert result.ne is sibling.ne is None
-    assert result.n_generations_used == sibling.n_generations_used
-    for name in ("generations", "mean_group_coancestry_per_gen", "n_genomes_per_gen", "ne_per_gen"):
-        assert getattr(result, name).shape == (0,), name
+    assert ne_group_coancestry(pg).n_generations_used == ne_coancestry(pg).n_generations_used
 
 
 def test_the_evaluator_rejects_a_prerequisite_for_other_cohorts():

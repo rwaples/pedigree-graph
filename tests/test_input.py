@@ -385,14 +385,10 @@ class TestCycles:
         data = {"id": np.array([0, 1, 2]), "mother": np.array([-1, 0, -1]), "father": np.array([2, -1, 1])}
         assert _raises(data, "cycle").fields["ids"] == (0, 2, 1)
 
-    def test_acyclic_reordered_rows_pass_the_parser(self):
+    def test_acyclic_reordered_rows_parse_and_construct_with_structural_depth(self):
         data = {"id": np.array([0, 1]), "mother": np.array([1, -1]), "father": np.array([-1, -1])}
-        parsed = _parse(data)
-        assert parsed.mother_rows.tolist() == [1, -1]
-
-    def test_acyclic_reordered_rows_construct_with_structural_depth(self):
-        data = {"id": np.array([0, 1]), "mother": np.array([1, -1]), "father": np.array([-1, -1])}
-        pg = PedigreeGraph.from_frame(data)
+        pg = _parse(data)
+        assert pg.mother_rows.tolist() == [1, -1]
         assert pg.depth.tolist() == [1, 0]
 
 

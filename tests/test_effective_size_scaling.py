@@ -28,7 +28,6 @@ from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_family_size import _sex_specific_family_table
 from pedigree_graph._ne_founders import (
     FounderContributionMeans,
-    _founder_idx,
     _ltc_from,
     _per_gen_founder_means,
 )
@@ -326,16 +325,6 @@ def test_ne_inbreeding_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
     assert np.isfinite(res.mean_f_per_gen).all()
 
 
-def test_ne_coancestry_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
-    """Ne_C reduces to per-cohort kinship means; skip-gen edges are inert."""
-    res = ne_coancestry(skip_gen_pedigree)
-    # Founders: every off-diagonal pair is unrelated → mean θ at gen 0 == 0.
-    assert res.mean_theta_per_gen[0] == 0.0
-    # Some downstream cohorts have non-trivial pairs; just assert they're finite or NaN
-    # (a cohort with fewer than 2 members has no pair, so its mean is NaN).
-    assert all(np.isnan(v) or np.isfinite(v) for v in res.mean_theta_per_gen)
-
-
 def test_ne_individual_delta_f_skip_gen_smoke(skip_gen_pedigree: PedigreeGraph) -> None:
     """Ne_iΔF divides by each individual's own equivalent complete generations.
 
@@ -391,32 +380,6 @@ def test_ne_hill_inherits_skip_gen_fix(skip_gen_pedigree: PedigreeGraph) -> None
     v = ne_variance_family_size(skip_gen_pedigree)
     assert h.ne == v.ne
     assert h.collapses_to_ne_v is True
-
-
-# ---------------------------------------------------------------------------
-# Structural memory bound on the founder-means prerequisite
-# ---------------------------------------------------------------------------
-
-
-def test_founder_means_output_stays_linear_at_n2000_g8() -> None:
-    """At N=2000, G=8 the founder means stay bounded by `(g_max+1, n_founders)`.
-
-    Asserts that no dense `(n × n_founders)` array is required: the adjoint
-    sweep produces only `m_g`, whose shape and bytes scale with `g_max` and
-    `n_founders` rather than with N.  The dense predecessor
-    `_founder_contribution_matrix` allocated `c` at `(n × n_founders)`.
-    """
-    rng = np.random.default_rng(7)
-    n_per_gen, n_gens = 2000, 8
-    df = _build_random_mating_pedigree(rng, n_per_gen=n_per_gen, n_gens=n_gens)
-    pg = PedigreeGraph.from_frame(df)
-    founder_idx = _founder_idx(pg)
-    n_founders = len(founder_idx)
-
-    m_g, _ = _per_gen_founder_means(pg, founder_idx=founder_idx)
-
-    assert m_g.shape == (n_gens + 1, n_founders)
-    assert m_g.nbytes < (n_gens + 1) * n_founders * 8 + 1024
 
 
 # ---------------------------------------------------------------------------

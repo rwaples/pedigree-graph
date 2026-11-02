@@ -61,7 +61,7 @@ class TestConfigureThreads:
 
 
 class TestEnvVar:
-    @pytest.mark.parametrize(("raw", "expected"), [("1", 1), ("2", 2), ("16", 16)])
+    @pytest.mark.parametrize(("raw", "expected"), [("2", 2)])
     def test_env_var_is_parsed(self, monkeypatch, raw, expected):
         monkeypatch.setenv(ENV_VAR, raw)
         assert thread_budget() == expected

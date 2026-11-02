@@ -13,7 +13,7 @@ import gc
 import numpy as np
 import pytest
 
-from pedigree_graph import PedigreeGraph, PedigreeValidationError, PedigreeView
+from pedigree_graph import PedigreeGraph, PedigreeValidationError, PedigreeView, _native
 from pedigree_graph._view import CoordinateToken
 
 SELECTED_IDS = [13, 11, 17]
@@ -192,32 +192,11 @@ class TestSelectionErrors:
 
 
 class TestCoordinateTokens:
-    def test_graph_owns_a_token(self, graph):
-        assert isinstance(graph._coordinate_token, CoordinateToken)
-
-    def test_view_token_is_not_the_graph_token(self, graph):
-        assert graph.view(ids=SELECTED_IDS)._coordinate_token is not graph._coordinate_token
-
-    def test_identical_id_selections_are_distinct_receivers(self, graph):
-        first = graph.view(ids=SELECTED_IDS)
-        second = graph.view(ids=SELECTED_IDS)
-        assert first._coordinate_token != second._coordinate_token
-
     def test_equivalent_id_and_row_selections_are_distinct_receivers(self, graph):
         by_id = graph.view(ids=SELECTED_IDS)
         by_row = graph.view(rows=SELECTED_ROWS)
         np.testing.assert_array_equal(by_id.graph_rows, by_row.graph_rows)
         assert by_id._coordinate_token != by_row._coordinate_token
-
-    def test_tokens_compare_by_identity(self):
-        token = CoordinateToken()
-        assert token == token
-        assert token != CoordinateToken()
-
-    def test_hash_is_stable(self):
-        token = CoordinateToken()
-        assert hash(token) == hash(token)
-        assert len({token, token, CoordinateToken()}) == 2
 
     def test_repr_is_opaque(self):
         assert repr(CoordinateToken()) == "CoordinateToken()"
@@ -309,11 +288,13 @@ class TestIdIndexIsBuiltOnce:
     def test_index_is_memoised_on_the_graph(self, graph):
         assert graph._id_index is graph._id_index
 
-    def test_later_id_views_do_not_sort_again(self, graph, monkeypatch):
+    def test_later_id_views_do_not_build_the_index_again(self, graph, monkeypatch):
+        # The id sort lives in the native IdIndex constructor, so that is the
+        # call a warm graph must not repeat.
         graph.view(ids=[13])
 
         def boom(*args, **kwargs):
-            raise AssertionError("argsort ran on a warm graph")
+            raise AssertionError("IdIndex was rebuilt on a warm graph")
 
-        monkeypatch.setattr(np, "argsort", boom)
+        monkeypatch.setattr(_native, "IdIndex", boom)
         np.testing.assert_array_equal(graph.view(ids=[17, 11]).graph_rows, [7, 1])

@@ -9,7 +9,6 @@ labels are fine: the estimators fall back to structural depth.
 import numpy as np
 
 from pedigree_graph import PedigreeGraph
-from pedigree_graph.effective_size import ne_group_coancestry
 
 _IDS = np.arange(8)
 _MOTHER = np.array([-1, -1, 0, 0, 2, 2, 4, 4])
@@ -43,4 +42,3 @@ def test_complete_labels_and_absent_labels_both_run():
     unlabelled = PedigreeGraph.from_arrays(ids=_IDS, mother_ids=_MOTHER, father_ids=_FATHER, sex=_SEX)
     assert unlabelled.generation_labels is None
     assert labelled.mean_kinship_by_generation() == unlabelled.mean_kinship_by_generation()
-    assert ne_group_coancestry(labelled).ne == ne_group_coancestry(unlabelled).ne

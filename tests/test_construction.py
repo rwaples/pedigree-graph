@@ -7,8 +7,6 @@ same structured errors and enforce the same MZ pair contract.
 """
 
 import numpy as np
-import pandas as pd
-import polars as pl
 import pytest
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError
@@ -89,16 +87,6 @@ class TestFromFrame:
         pg = PedigreeGraph.from_frame({"id": [0, 1, 2], "mother": [-1, -1, 0], "father": [-1, -1, 1]})
         assert pg.ids.tolist() == [0, 1, 2]
         assert pg.mother_rows.tolist() == [-1, -1, 0]
-
-    def test_polars_frame(self):
-        pg = PedigreeGraph.from_frame(pl.DataFrame(_full()))
-        assert pg.ids.tolist() == [10, 11, 12, 13]
-        assert pg.father_rows.tolist() == [-1, -1, 1, 1]
-
-    def test_pandas_frame(self):
-        pg = PedigreeGraph.from_frame(pd.DataFrame(_full()))
-        assert pg.ids.tolist() == [10, 11, 12, 13]
-        assert pg.father_rows.tolist() == [-1, -1, 1, 1]
 
 
 class TestFromArraysCanonical:

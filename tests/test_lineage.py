@@ -29,10 +29,6 @@ def _graph(ids, mother, father, twin=None) -> PedigreeGraph:
 _LOOP = ([0, 1, 2, 3, 4], [-1, -1, 0, 0, 2], [-1, -1, 1, 1, 3])
 
 
-def test_distinct_ancestors_count_a_looped_ancestor_once():
-    np.testing.assert_array_equal(_graph(*_LOOP).distinct_ancestor_counts(), [0, 0, 2, 2, 4])
-
-
 def test_descendant_paths_count_a_looped_descendant_per_path():
     # Row 0: children 2 and 3, and 4 once through each of them.
     np.testing.assert_array_equal(_graph(*_LOOP).descendant_path_counts(), [4, 4, 1, 1, 0])

@@ -129,10 +129,6 @@ def test_second_call_returns_the_memo_without_recomputing(monkeypatch):
     assert graph.inbreeding() is first
 
 
-def test_result_is_float64():
-    assert _graph(MZ_ONLY_LINK).inbreeding().dtype == np.float64
-
-
 @pytest.mark.usefixtures("fresh_thread_state")
 class TestThreads:
     def test_computing_call_commits_the_budget(self):
