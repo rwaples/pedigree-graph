@@ -830,64 +830,14 @@ impl std::fmt::Display for Message<'_> {
     }
 }
 
-impl std::fmt::Display for Error {
-    /// The message as Python and Rust count, from 0.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let message = Message {
-            err: self,
-            base: IndexBase::Zero,
-        };
-        message.fmt(f)
-    }
-}
-
-impl std::error::Error for Error {}
-
-#[cfg(test)]
-mod tests {
-    use super::{Error, ErrorClass, FieldValue, IndexBase, ParentRole, Position, MAX_ROWS};
-
-    /// How many variants `Error` has.
-    const VARIANTS: usize = 27;
-
-    /// Each variant's slot in [`samples`]; the exhaustive match makes a new
-    /// variant fail to compile until it is counted here.
-    fn variant_index(err: &Error) -> usize {
-        match err {
-            Error::LengthMismatch { .. } => 0,
-            Error::ValueOutOfRange { .. } => 1,
-            Error::DuplicateId { .. } => 2,
-            Error::SameParentId { .. } => 3,
-            Error::Cycle { .. } => 4,
-            Error::MzSelfReference { .. } => 5,
-            Error::MzNonreciprocal { .. } => 6,
-            Error::MzParentMismatch { .. } => 7,
-            Error::MzSexMismatch { .. } => 8,
-            Error::BirthYearTopology { .. } => 9,
-            Error::PedigreeTooLarge { .. } => 10,
-            Error::AllocationFailed { .. } => 11,
-            Error::ArithmeticOverflow { .. } => 12,
-            Error::ThreadPoolConflict { .. } => 13,
-            Error::ThreadPoolUnavailable { .. } => 14,
-            Error::MaxDegreeOutOfRange { .. } => 15,
-            Error::KinshipSupportUnsorted { .. } => 16,
-            Error::KinshipSupportAsymmetric { .. } => 17,
-            Error::CscIndexOverflow { .. } => 18,
-            Error::KinshipThresholdOutOfRange { .. } => 19,
-            Error::InvalidViewMap { .. } => 20,
-            Error::UnknownSexEncoding { .. } => 21,
-            Error::MemoryBudgetExceeded { .. } => 22,
-            Error::NonFiniteValue { .. } => 23,
-            Error::NotRepresentable { .. } => 24,
-            Error::InvalidMomentsTable { .. } => 25,
-            Error::Cancelled => 26,
-        }
-    }
-
-    /// One error of every variant.  Positions are 61 and 93, numbers no
-    /// other operand contains, so a field or message shows which base wrote
-    /// them.
-    fn samples() -> Vec<Error> {
+impl Error {
+    /// One error of every variant, for tests and hosts that cross-check
+    /// their code tables against [`Error::code`] and [`Error::fields`].
+    ///
+    /// Positions are 61 and 93, numbers no other operand contains, so a
+    /// field or message shows which base wrote them.  The core's tests hold
+    /// the list to every variant.
+    pub fn samples() -> Vec<Error> {
         let (p, q) = (Position(61), Position(93));
         vec![
             Error::LengthMismatch {
@@ -1006,11 +956,66 @@ mod tests {
             Error::Cancelled,
         ]
     }
+}
+
+impl std::fmt::Display for Error {
+    /// The message as Python and Rust count, from 0.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let message = Message {
+            err: self,
+            base: IndexBase::Zero,
+        };
+        message.fmt(f)
+    }
+}
+
+impl std::error::Error for Error {}
+
+#[cfg(test)]
+mod tests {
+    use super::{Error, ErrorClass, FieldValue, IndexBase, MAX_ROWS};
+
+    /// How many variants `Error` has.
+    const VARIANTS: usize = 27;
+
+    /// Each variant's slot in [`Error::samples`]; the exhaustive match makes a new
+    /// variant fail to compile until it is counted here.
+    fn variant_index(err: &Error) -> usize {
+        match err {
+            Error::LengthMismatch { .. } => 0,
+            Error::ValueOutOfRange { .. } => 1,
+            Error::DuplicateId { .. } => 2,
+            Error::SameParentId { .. } => 3,
+            Error::Cycle { .. } => 4,
+            Error::MzSelfReference { .. } => 5,
+            Error::MzNonreciprocal { .. } => 6,
+            Error::MzParentMismatch { .. } => 7,
+            Error::MzSexMismatch { .. } => 8,
+            Error::BirthYearTopology { .. } => 9,
+            Error::PedigreeTooLarge { .. } => 10,
+            Error::AllocationFailed { .. } => 11,
+            Error::ArithmeticOverflow { .. } => 12,
+            Error::ThreadPoolConflict { .. } => 13,
+            Error::ThreadPoolUnavailable { .. } => 14,
+            Error::MaxDegreeOutOfRange { .. } => 15,
+            Error::KinshipSupportUnsorted { .. } => 16,
+            Error::KinshipSupportAsymmetric { .. } => 17,
+            Error::CscIndexOverflow { .. } => 18,
+            Error::KinshipThresholdOutOfRange { .. } => 19,
+            Error::InvalidViewMap { .. } => 20,
+            Error::UnknownSexEncoding { .. } => 21,
+            Error::MemoryBudgetExceeded { .. } => 22,
+            Error::NonFiniteValue { .. } => 23,
+            Error::NotRepresentable { .. } => 24,
+            Error::InvalidMomentsTable { .. } => 25,
+            Error::Cancelled => 26,
+        }
+    }
 
     #[test]
     fn samples_cover_every_variant() {
         let mut seen = [false; VARIANTS];
-        for err in samples() {
+        for err in Error::samples() {
             seen[variant_index(&err)] = true;
         }
         let missing: Vec<usize> = (0..VARIANTS).filter(|&i| !seen[i]).collect();
@@ -1028,7 +1033,7 @@ mod tests {
 
     #[test]
     fn positions_count_from_the_hosts_base() {
-        for err in samples() {
+        for err in Error::samples() {
             let (zero, one) = (err.fields(IndexBase::Zero), err.fields(IndexBase::One));
             assert_eq!(zero.len(), one.len(), "{err:?}");
             for ((name, v0), (name1, v1)) in zero.iter().zip(&one) {

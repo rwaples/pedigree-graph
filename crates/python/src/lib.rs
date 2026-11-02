@@ -108,6 +108,64 @@ fn field_object<'py>(py: Python<'py>, value: FieldValue) -> PyResult<Bound<'py, 
     })
 }
 
+/// The `pedigree_graph._errors` class an error class raises; `None` for
+/// `Usage`, which raises a plain `ValueError`.
+fn class_name(class: ErrorClass) -> Option<&'static str> {
+    match class {
+        ErrorClass::Validation => Some("PedigreeValidationError"),
+        ErrorClass::Metadata => Some("MissingMetadataError"),
+        ErrorClass::Resource => Some("ResourceError"),
+        ErrorClass::Usage => None,
+    }
+}
+
+/// `(code, class name, field names)` of every structured code the core
+/// raises, from one error of each variant, so tests can hold the
+/// `_errors.py` tables to the core.
+#[pyfunction]
+fn error_codes() -> Vec<(&'static str, &'static str, Vec<&'static str>)> {
+    Error::samples()
+        .into_iter()
+        .filter_map(|err| {
+            let class = class_name(err.class())?;
+            let fields = err
+                .fields(IndexBase::Zero)
+                .into_iter()
+                .map(|(name, _)| name);
+            Some((err.code(), class, fields.collect()))
+        })
+        .collect()
+}
+
+/// `(code, degree, first_role, second_role, nominal_kinship)` of one category.
+type CategoryRow = (
+    &'static str,
+    u8,
+    Option<&'static str>,
+    Option<&'static str>,
+    f64,
+);
+
+/// Every category's row in `Category::ALL` order, as the R binding's
+/// `relationship_categories` builds them.
+#[pyfunction]
+fn relationship_categories() -> Vec<CategoryRow> {
+    Category::ALL
+        .iter()
+        .map(|c| {
+            let roles = c.roles();
+            (
+                c.code(),
+                c.degree(),
+                roles.map(|r| r.0),
+                roles.map(|r| r.1),
+                // Every registry row's nominal kinship is 2^-(degree + 1).
+                0.5f64.powi(i32::from(c.degree()) + 1),
+            )
+        })
+        .collect()
+}
+
 fn to_pyerr(py: Python<'_>, err: Error) -> PyErr {
     // A pool already built for a different budget is the native half of the
     // rule `_threads.configure_threads` states, so it raises what that
@@ -115,11 +173,8 @@ fn to_pyerr(py: Python<'_>, err: Error) -> PyErr {
     if matches!(err, Error::ThreadPoolConflict { .. }) {
         return PyRuntimeError::new_err(err.message(IndexBase::Zero));
     }
-    let class_name = match err.class() {
-        ErrorClass::Validation => "PedigreeValidationError",
-        ErrorClass::Metadata => "MissingMetadataError",
-        ErrorClass::Resource => "ResourceError",
-        ErrorClass::Usage => return PyValueError::new_err(err.message(IndexBase::Zero)),
+    let Some(class_name) = class_name(err.class()) else {
+        return PyValueError::new_err(err.message(IndexBase::Zero));
     };
     let raise = || -> PyResult<PyErr> {
         let fields = PyDict::new(py);
@@ -1471,6 +1526,8 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(core_version, m)?)?;
     m.add_function(wrap_pyfunction!(core_rev, m)?)?;
     m.add_function(wrap_pyfunction!(max_degree_max, m)?)?;
+    m.add_function(wrap_pyfunction!(error_codes, m)?)?;
+    m.add_function(wrap_pyfunction!(relationship_categories, m)?)?;
     m.add_function(wrap_pyfunction!(is_topological, m)?)?;
     m.add_function(wrap_pyfunction!(structural_depth, m)?)?;
     m.add_function(wrap_pyfunction!(depth_major_order, m)?)?;
