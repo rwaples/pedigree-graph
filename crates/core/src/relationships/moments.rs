@@ -752,21 +752,35 @@ pub fn relationship_moments(
     progress: &Progress,
 ) -> Result<Moments, Error> {
     input.check(receiver_len(ped, receiver)?)?;
+    moments_pass(requested, input, threads, budget_bytes, |reducer, lanes| {
+        on_receiver(ped, receiver, progress, |ped, view| {
+            reduce_pairs_in(
+                ped,
+                max_degree,
+                requested,
+                view,
+                symmetric,
+                lanes,
+                reducer,
+                progress,
+                RowOrder::Families,
+            )
+        })
+    })
+}
+
+/// Plan a moments call, run its pass through `walk` (given the reducer and
+/// the planned lanes), and encode the merged lane.  `input` is checked.
+pub(super) fn moments_pass<'a>(
+    requested: CategorySet,
+    input: &MomentsInput<'a>,
+    threads: NonZeroUsize,
+    budget_bytes: u64,
+    walk: impl FnOnce(&CellReducer<'a>, NonZeroUsize) -> Result<Reduced<Vec<i128>>, Error>,
+) -> Result<Moments, Error> {
     let plan = MomentsPlan::new(input.shape(requested), threads, budget_bytes)?;
     let reducer = CellReducer::new(*input, requested, plan);
-    let reduced = on_receiver(ped, receiver, progress, |ped, view| {
-        reduce_pairs_in(
-            ped,
-            max_degree,
-            requested,
-            view,
-            symmetric,
-            plan.lanes,
-            &reducer,
-            progress,
-            RowOrder::Families,
-        )
-    })?;
+    let reduced = walk(&reducer, plan.lanes)?;
     let (width, table) = reducer.finish(&reduced.lane)?;
     drop(reduced.lane);
     Ok(Moments {
@@ -778,6 +792,35 @@ pub fn relationship_moments(
         lane_pairs: reduced.lane_pairs,
         estimated_peak_bytes: plan.estimated_peak_bytes,
     })
+}
+
+impl Moments {
+    /// The moments of a call with no pairs to reduce: no categories, or a
+    /// receiver of fewer than two rows (ADR 0013).  The call is planned like
+    /// any other, so a budget that cannot fit one lane is refused the same
+    /// way and the plan's peak is reported; every accumulator is zero at
+    /// width 1, and no lane ran.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::MemoryBudgetExceeded`] as for [`MomentsPlan::new`];
+    /// [`Error::AllocationFailed`] for the table.
+    pub fn degenerate(
+        shape: MomentsShape,
+        threads: NonZeroUsize,
+        budget_bytes: u64,
+    ) -> Result<Moments, Error> {
+        let plan = MomentsPlan::new(shape, threads, budget_bytes)?;
+        Ok(Moments {
+            width: 1,
+            table: alloc::filled(0u8, plan.accumulators, Family::MomentOutput)?,
+            stride: plan.stride(),
+            cells: plan.cells,
+            lanes: 0,
+            lane_pairs: Vec::new(),
+            estimated_peak_bytes: plan.estimated_peak_bytes,
+        })
+    }
 }
 
 #[cfg(test)]

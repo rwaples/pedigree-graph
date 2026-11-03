@@ -1,4 +1,4 @@
-# ADR 0019: An id is a mother or a father, never both
+# ADR 0020: An id is a mother or a father, never both
 
 **Status:** accepted
 **Date:** 2026-11-03

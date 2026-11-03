@@ -179,7 +179,7 @@ pub enum Error {
         /// The id named twice.
         parent_id: i64,
     },
-    /// An id is the mother of one row and the father of another (ADR 0019).
+    /// An id is the mother of one row and the father of another (ADR 0020).
     ParentInBothRoles {
         /// The smallest id in both roles.
         parent_id: i64,
@@ -334,11 +334,17 @@ pub enum Error {
         /// The threshold as given, rendered.
         value: String,
     },
-    /// The graph-to-view map is not a partial permutation of view rows.
+    /// A view's selection is not a partial permutation: in a graph-to-view
+    /// map (`view_rows`), two graph rows map to one view row or one maps
+    /// past the view; in a view's `graph_rows`, one graph row is selected
+    /// twice.
     InvalidViewMap {
-        /// The graph row carrying the offending entry.
+        /// The column the selection came in.
+        field: &'static str,
+        /// The entry of `field` carrying the offending value.
         position: Position,
-        /// The offending view row.
+        /// The offending value: a view row of `view_rows`, a graph row of
+        /// `graph_rows`.
         value: Position,
         /// Why it is rejected.
         reason: &'static str,
@@ -863,12 +869,13 @@ impl std::fmt::Display for Message<'_> {
                 write!(f, "could not start the thread pool: {reason}")
             }
             Error::InvalidViewMap {
+                field,
                 position,
                 value,
                 reason,
             } => write!(
                 f,
-                "view_rows[{}] is {}: {reason}",
+                "{field}[{}] is {}: {reason}",
                 position.at(base),
                 value.at(base)
             ),
@@ -1060,6 +1067,7 @@ impl Error {
                 value: "1.5".to_string(),
             },
             Error::InvalidViewMap {
+                field: "view_rows",
                 position: p,
                 value: q,
                 reason: "two graph rows map to this view row",

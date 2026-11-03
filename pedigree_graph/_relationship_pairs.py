@@ -2,13 +2,15 @@
 
 ``PedigreeGraph.relationship_pairs`` and ``PedigreeView.relationship_pairs``
 end here.  The selector is parsed at the public boundary; this module hands
-the graph's own ``BuiltPedigree`` to ``_native.relationship_pairs`` at the
-selection's top degree, on the package pool, and wraps the int32 arrays the
-core moved out, without copying them, as the owned read-only blocks of a
-:class:`~pedigree_graph.relationships.RelationshipPairs`.  A view crosses as
-the int32 view row of every graph row, ``-1`` where unselected; the core
-keeps pairs with both rows selected, relabels, re-canonicalises symmetric
-blocks, and sorts by the view-space key.
+the graph's own ``BuiltPedigree`` and the requested codes to
+``_native.relationship_pairs`` on the package pool, and wraps the int32
+arrays the core moved out, without copying them, as the owned read-only
+blocks of a :class:`~pedigree_graph.relationships.RelationshipPairs`.  A view
+crosses as its ``graph_rows``; the core (``relationships::query``, issue #52)
+decides the walk's depth, answers a call with nothing to walk, chooses
+whether the view runs on its compact pedigree, keeps pairs with both rows
+selected, relabels, re-canonicalises symmetric blocks, and sorts by the
+view-space key.
 
 ``execution`` selects resource use only: ``"speed"`` buffers every task's
 pairs then copies once, ``"memory"`` counts first and fills exact blocks in
@@ -40,16 +42,6 @@ logger = logging.getLogger(__name__)
 EXECUTIONS = ("speed", "memory")
 
 
-def _should_compact_view(n_graph: int, n_view: int) -> bool:
-    """Use the measured compact path for sparse views of substantial graphs.
-
-    On random_30k, views through 10% were faster and used less peak RSS;
-    the 50% view had no reliable RAM advantage. Small graphs do not carry
-    enough full-engine setup cost to justify an extra closure build.
-    """
-    return n_graph >= 20_000 and n_view * 10 <= n_graph
-
-
 def check_execution(execution: str) -> str:
     """Return *execution* once it is one of :data:`EXECUTIONS`; raise ``ValueError`` otherwise."""
     if execution not in EXECUTIONS:
@@ -68,72 +60,57 @@ def relationship_pairs(
 def view_relationship_pairs(
     view: PedigreeView, selection: RelationshipSelection, execution: str, progress: ProgressArg = None
 ) -> RelationshipPairs:
-    """The :class:`RelationshipPairs` of *view* for a parsed *selection*, in view rows.
-
-    A view of fewer than two rows has no pairs and skips the engine, after
-    committing the thread budget like every other call.
-    """
+    """The :class:`RelationshipPairs` of *view* for a parsed *selection*, in view rows."""
     watch = _progress.resolve(progress, logger, "relationship_pairs")
-    if len(view) < 2:
-        thread_budget()
-        return _build_result({}, selection, view._coordinate_token)
-    blocks = _native_blocks(
-        view._graph,
-        selection,
-        view._graph_to_view(),
-        execution,
-        watch,
-        compact=_should_compact_view(view._graph.n_individuals, len(view)),
-    )
+    blocks = _native_blocks(view._graph, selection, view._graph_rows, execution, watch)
     return _build_result(blocks, selection, view._coordinate_token)
 
 
 def _native_blocks(
     graph: PedigreeGraph,
     selection: RelationshipSelection,
-    view_rows: np.ndarray | None,
+    graph_rows: np.ndarray | None,
     execution: str,
     watch: NativeCallback | None,
-    *,
-    compact: bool = False,
 ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """The requested blocks from the core, or nothing when the selection is empty.
+    """Every block from the core; unrequested and degenerate ones are empty.
 
     The thread budget is committed on every call, an empty selection
     included, like every public operation of the package.
     """
     threads = thread_budget()
-    if selection.top_degree is None:
-        return {}
     requested = list(selection.ordered)
     # One native call covers every degree, so an operator watching a long run
     # sees it start and finish rather than nothing at all; the matrix engine
     # this replaced logged once per degree.
-    logger.info(
-        "relationship_pairs: max_degree=%d, %d categories, execution=%s, threads=%d%s",
-        selection.top_degree,
-        len(requested),
-        execution,
-        threads,
-        ", view" if view_rows is not None else "",
-    )
+    # Log arguments are computed even when INFO is off; a call with nothing
+    # to walk costs microseconds, so skip them unless they are shown.
+    verbose = logger.isEnabledFor(logging.INFO)
+    if verbose:
+        logger.info(
+            "relationship_pairs: max_degree=%s, %d categories, execution=%s, threads=%d%s",
+            selection.top_degree,
+            len(requested),
+            execution,
+            threads,
+            ", view" if graph_rows is not None else "",
+        )
     start = time.perf_counter()
     blocks = _native.relationship_pairs(
         graph._built,
-        max_degree=selection.top_degree,
         requested=requested,
         threads=threads,
         execution=execution,
-        view_rows=view_rows,
-        compact=compact,
+        graph_rows=graph_rows,
         progress=watch,
         tick=_progress.TICK_S,
     )
-    logger.info(
-        "relationship_pairs total: %d pairs in %.3fs",
-        sum(len(first) for first, _ in blocks.values()),
-        time.perf_counter() - start,
-    )
+    if verbose:
+        logger.info(
+            "relationship_pairs total: %d pairs in %.3fs",
+            sum(len(first) for first, _ in blocks.values()),
+            time.perf_counter() - start,
+        )
     return blocks
 
 

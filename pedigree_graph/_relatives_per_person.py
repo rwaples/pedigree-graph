@@ -29,7 +29,6 @@ from pedigree_graph import _native, _progress
 from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._input import _own_native
 from pedigree_graph._relationship_moments import MAX_COLUMNS, _check_names
-from pedigree_graph._relationship_pairs import _should_compact_view
 from pedigree_graph._threads import thread_budget
 
 if TYPE_CHECKING:
@@ -202,8 +201,8 @@ def relatives_per_person(
 ) -> RelativesPerPerson:
     """Validate the columns, run the engine and wrap the counts for *graph* or *view*.
 
-    A receiver of fewer than two rows or an empty selection has no pairs
-    and gets zero counts without running the engine.
+    A receiver of fewer than two rows or an empty selection has no pairs;
+    the core answers it with zero counts without running the engine.
     """
     watch = _progress.resolve(progress, logger, "relatives_per_person")
     thresholds = {} if thresholds is None else thresholds
@@ -219,38 +218,36 @@ def relatives_per_person(
     names = (RELATIVES, *thresholds)
 
     threads = thread_budget()
-    if selection.top_degree is None or n < 2:
-        counts = np.zeros((n, len(codes), len(names)), dtype=np.uint32)
-        counts.setflags(write=False)
-        return RelativesPerPerson(codes, names, counts)
-    view_rows = None if view is None else view._graph_to_view()
-    compact = view is not None and _should_compact_view(graph.n_individuals, n)
-    logger.info(
-        "relatives_per_person: max_degree=%d, %d categories, %d threshold columns, threads=%d%s",
-        selection.top_degree,
-        len(codes),
-        len(columns),
-        threads,
-        ", view" if view_rows is not None else "",
-    )
+    graph_rows = None if view is None else view._graph_rows
+    # Log arguments are computed even when INFO is off; a call with nothing
+    # to walk costs microseconds, so skip them unless they are shown.
+    verbose = logger.isEnabledFor(logging.INFO)
+    if verbose:
+        logger.info(
+            "relatives_per_person: max_degree=%s, %d categories, %d threshold columns, threads=%d%s",
+            selection.top_degree,
+            len(codes),
+            len(columns),
+            threads,
+            ", view" if graph_rows is not None else "",
+        )
     start = time.perf_counter()
     flat, rows, n_categories, stride, lanes, lane_pairs = _native.relatives_per_person(
         graph._built,
-        max_degree=selection.top_degree,
         requested=list(codes),
         threads=threads,
         columns=columns,
-        view_rows=view_rows,
-        compact=compact,
+        graph_rows=graph_rows,
         progress=watch,
         tick=_progress.TICK_S,
     )
     assert (rows, n_categories, stride) == (n, len(codes), len(names)), "native layout disagrees with the request"
-    logger.info(
-        "relatives_per_person total: %d pairs in %.3fs on %d lane(s), pairs per lane %s",
-        sum(lane_pairs),
-        time.perf_counter() - start,
-        lanes,
-        lane_pairs,
-    )
+    if verbose:
+        logger.info(
+            "relatives_per_person total: %d pairs in %.3fs on %d lane(s), pairs per lane %s",
+            sum(lane_pairs),
+            time.perf_counter() - start,
+            lanes,
+            lane_pairs,
+        )
     return RelativesPerPerson(codes, names, _own_native(flat, np.uint32).reshape(rows, n_categories, stride))

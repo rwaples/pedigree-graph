@@ -66,7 +66,7 @@ GOLDEN = REPO / "r" / "tests" / "testthat" / "golden"
 MAX_ROWS = 20
 # Larger fixtures cut to their first rows, which are topological.  The
 # inbred0..4 fixtures have ids in both parent roles, which construction
-# refuses (ADR 0019).
+# refuses (ADR 0020).
 EXTRA = {"deep_inbred_60g": 240}
 
 

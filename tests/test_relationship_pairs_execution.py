@@ -151,12 +151,13 @@ class TestHandOver:
             print(len(graph.relationship_pairs(max_degree=1)["FS"]))
             """
         stdout = _run_child(body)
-        # The view family's first reservation is the map's permutation check,
-        # which precedes the packed sort keys.
+        # The view family's first reservation is the graph-to-view map the
+        # core builds from the view's graph rows, which precedes the packed
+        # sort keys.
         assert stdout.splitlines() == [
             "speed allocation_failed pair_block int32",
-            "speed allocation_failed view_sort_scratch bool",
+            "speed allocation_failed view_sort_scratch int32",
             "memory allocation_failed pair_block int32",
-            "memory allocation_failed view_sort_scratch bool",
+            "memory allocation_failed view_sort_scratch int32",
             "1",
         ]

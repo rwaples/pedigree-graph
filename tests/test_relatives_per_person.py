@@ -8,6 +8,7 @@ credits a relative when ``relative[relative] <= threshold[person]``.
 
 from __future__ import annotations
 
+import functools
 import tracemalloc
 
 import numpy as np
@@ -22,7 +23,6 @@ from pedigree_graph import (
     RelativesPerPerson,
     _native,
 )
-from pedigree_graph import _relatives_per_person as boundary
 
 CODES = tuple(RELATIONSHIPS)
 DIRECTIONAL = frozenset(code for code, cat in RELATIONSHIPS.items() if cat.first_role is not None)
@@ -131,15 +131,17 @@ class TestParity:
         np.testing.assert_array_equal(got.counts, _oracle(graph, got.categories, thresholds))
 
     def test_compact_and_full_view_execution_are_identical(self, monkeypatch):
+        """The core chooses the path (``query::Compaction::Auto``); the binding's hook forces each."""
         graph = _synthetic(20_000, 3)
         view = graph.view(rows=np.random.default_rng(6).permutation(graph.n_individuals)[:2_000])
-        assert boundary._should_compact_view(graph.n_individuals, len(view))
         thresholds = _thresholds(len(view), 9)
+        native = _native.relatives_per_person
         results = []
-        for compact in (False, True):
-            monkeypatch.setattr(boundary, "_should_compact_view", lambda *_, flag=compact: flag)
+        for compaction in ("auto", "full", "compact"):
+            monkeypatch.setattr(_native, "relatives_per_person", functools.partial(native, compaction=compaction))
             results.append(view.relatives_per_person(max_degree=5, thresholds=thresholds).counts)
         assert np.array_equal(results[0], results[1])
+        assert np.array_equal(results[0], results[2])
         assert results[0].sum() > 0
 
 
@@ -503,13 +505,24 @@ class TestBoundaryErrors:
             graph.relatives_per_person(categories="FS")
 
 
+def _spy_lanes(monkeypatch) -> list[int]:
+    """Record the lanes each native call ran on; the core answers a call with nothing to walk on none."""
+    native = _native.relatives_per_person
+    lanes: list[int] = []
+
+    def spy(*args, **kwargs):
+        out = native(*args, **kwargs)
+        lanes.append(out[4])
+        return out
+
+    monkeypatch.setattr(_native, "relatives_per_person", spy)
+    return lanes
+
+
 class TestEmptyReceivers:
     def test_fewer_than_two_rows_skip_the_engine(self, monkeypatch):
-        def refuse(*_, **__):
-            raise AssertionError("the engine ran")
-
         graph = _graph("random_1k")
-        monkeypatch.setattr(_native, "relatives_per_person", refuse)
+        lanes = _spy_lanes(monkeypatch)
         for rows in ([], [7]):
             view = graph.view(rows=np.array(rows, dtype=np.int64))
             x = np.zeros(len(rows))
@@ -519,18 +532,17 @@ class TestEmptyReceivers:
             assert got.counts.dtype == np.uint32
             assert not got.counts.any()
             assert not got.counts.flags.writeable
+        assert lanes == [0, 0]
         with pytest.raises(PedigreeValidationError, match="length"):
             graph.view(rows=np.array([7])).relatives_per_person(max_degree=2, thresholds={"t": (np.zeros(2), 0.0)})
 
     def test_an_empty_selection_skips_the_engine(self, monkeypatch):
-        def refuse(*_, **__):
-            raise AssertionError("the engine ran")
-
         graph = _graph("random_1k")
-        monkeypatch.setattr(_native, "relatives_per_person", refuse)
+        lanes = _spy_lanes(monkeypatch)
         got = graph.relatives_per_person(categories=[], thresholds={"t": (np.zeros(graph.n_individuals), 0.0)})
         assert got.categories == ()
         assert got.counts.shape == (graph.n_individuals, 0, 2)
+        assert lanes == [0]
 
 
 def test_repr_names_rows_totals_and_columns():

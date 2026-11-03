@@ -77,7 +77,7 @@ def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False, complete=Fa
     such graphs may be inbred.  ``non_inbred`` and ``complete`` are not meant
     to be combined.  Sex is drawn per row first, and mothers come from earlier
     females (0) and fathers from earlier males (1), so every id plays one
-    parent role (ADR 0019).
+    parent role (ADR 0020).
     """
     n = draw(st.integers(min_value=1, max_value=max_n))
     sex = np.array(draw(st.lists(st.integers(min_value=0, max_value=1), min_size=n, max_size=n)), dtype=np.int8)

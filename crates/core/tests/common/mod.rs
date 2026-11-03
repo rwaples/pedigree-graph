@@ -178,7 +178,7 @@ enum Parent {
 const WINDOW: usize = 10;
 
 /// Even individuals are mothers and odd ones fathers, so no id plays both
-/// parent roles (ADR 0019).
+/// parent roles (ADR 0020).
 fn is_mother(i: usize) -> bool {
     i % 2 == 0
 }

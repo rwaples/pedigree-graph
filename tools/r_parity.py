@@ -49,7 +49,7 @@ FIXTURES = REPO / "crates" / "core" / "tests" / "fixtures"
 # are the ones slice 14's gate ran; baseline100K and the 50k pedigree have
 # no complete matrix there and no pairwise walk here (minutes and GiB each).
 # The inbred0..4 fixtures are left out: they have ids in both parent roles,
-# which construction refuses (ADR 0019).
+# which construction refuses (ADR 0020).
 CELLS: dict[str, tuple[str, int, bool, bool]] = {
     **{
         name: (name, 5, True, True)

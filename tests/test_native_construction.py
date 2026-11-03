@@ -63,7 +63,7 @@ def structured_input(draw, defects=_DEFECTS):
     # Rows 0..n-1 in a topological order first; parents come from earlier rows
     # or are external (an id no row carries) or missing.  Each row and each
     # external id has one parent role, so the base has no id in both roles
-    # (ADR 0019); that and same_parent are planted defects.
+    # (ADR 0020); that and same_parent are planted defects.
     mother = [-1] * n
     father = [-1] * n
     is_mother = draw(st.lists(st.booleans(), min_size=n, max_size=n))

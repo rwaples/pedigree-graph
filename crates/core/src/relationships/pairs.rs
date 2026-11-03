@@ -88,7 +88,8 @@ impl PairBlock {
 pub struct PairBlocks(pub Vec<PairBlock>);
 
 impl PairBlocks {
-    fn empty() -> PairBlocks {
+    /// One empty block per category: what a query that walks nothing returns.
+    pub fn empty() -> PairBlocks {
         PairBlocks(vec![PairBlock::default(); N_CATEGORIES])
     }
 
@@ -220,7 +221,7 @@ pub fn pair_blocks(
 }
 
 /// [`pair_blocks`] on the pedigree the engine walks, `view` already checked.
-fn emit(
+pub(super) fn emit(
     ped: &Pedigree,
     max_degree: MaxDegree,
     requested: CategorySet,
@@ -391,6 +392,7 @@ pub(super) fn check_view_map(map: &[i32]) -> Result<(), Error> {
             continue;
         };
         return Err(Error::InvalidViewMap {
+            field: "view_rows",
             position: position.into(),
             value: view_row.into(),
             reason,

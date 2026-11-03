@@ -6,7 +6,7 @@ against main (`fff1a0f`), built from a `git archive` of main with
 repetitions per arm, one thread, on 2026-11-03 (the host also ran another
 session's jobs; spreads below).
 
-ADR 0019's check marks each resolved parent row's role while the parent
+ADR 0020's check marks each resolved parent row's role while the parent
 columns resolve and merges the distinct external parent ids of the two roles.
 On sparse ids the merged lookup lists those ids in order as it walks, so the
 check costs a scan of one byte a row. On dense ids the lookup is a table, and

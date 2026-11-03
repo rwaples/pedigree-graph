@@ -113,7 +113,8 @@ under the new family `relative_counts`, as `relationship_burden` does.
 A view credits view rows, and every column has one entry per view row.
 Selection, closest-category precedence and the compact view path are
 those of `relationship_moments`. A receiver of fewer than two rows, or an
-empty selection, returns zeros without running the engine.
+empty selection, returns zeros without running the engine; the core owns
+that result and the compaction choice (`relationships::query`, ADR 0019).
 
 ## Rejected
 

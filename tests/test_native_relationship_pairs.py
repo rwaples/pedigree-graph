@@ -33,11 +33,9 @@ def _native_pairs(graph: PedigreeGraph, execution: str, **selector):
     selection = RelationshipSelection.parse(selector.get("max_degree"), selector.get("categories"))
     return _native.relationship_pairs(
         graph._built,
-        max_degree=selection.top_degree or 0,
         requested=list(selection.ordered),
         threads=thread_budget(),
         execution=execution,
-        view_rows=None,
     )
 
 
@@ -69,17 +67,18 @@ class TestBoundary:
 
     def test_malformed_arguments_raise_before_any_work(self, small_pedigree):
         graph = PedigreeGraph.from_frame(small_pedigree)
-        call = {"max_degree": 5, "requested": ["FS"], "threads": thread_budget(), "execution": "speed"}
+        call = {"requested": ["FS"], "threads": thread_budget(), "execution": "speed"}
         with pytest.raises(ValueError, match="execution"):
             _native.relationship_pairs(graph._built, **{**call, "execution": "buffered"})
         with pytest.raises(ValueError, match="unknown relationship code"):
             _native.relationship_pairs(graph._built, **{**call, "requested": ["cousin"]})
-        with pytest.raises(ValueError, match="view_rows"):
-            _native.relationship_pairs(graph._built, **call, view_rows=np.array([0], dtype=np.int32))
+        rows = np.array([0, graph.n_individuals], dtype=np.int32)
+        with pytest.raises(PedigreeValidationError, match="graph_rows"):
+            _native.relationship_pairs(graph._built, **call, graph_rows=rows)
+        with pytest.raises(ValueError, match="compaction"):
+            _native.relationship_pairs(graph._built, **call, compaction="never")
         with pytest.raises(ValueError, match="threads"):
             _native.relationship_pairs(graph._built, **{**call, "threads": 0})
-        with pytest.raises(PedigreeValidationError, match="max_degree"):
-            _native.relationship_pairs(graph._built, **{**call, "max_degree": 6})
         with pytest.raises(RuntimeError, match="test seam is off"):
             _native.fail_next_allocation("heap")
 
@@ -152,10 +151,9 @@ class TestProcessWidePool:
         body = """
             codes = list(graph.relationship_counts(max_degree=5))
             digest = hashlib.sha256()
-            for view_rows in (None, view):
+            for graph_rows in (None, view):
                 pairs = _native.relationship_pairs(
-                    graph._built, max_degree=5, requested=codes, threads=thread_budget(), execution="speed",
-                    view_rows=view_rows,
+                    graph._built, requested=codes, threads=thread_budget(), execution="speed", graph_rows=graph_rows
                 )
                 for code, (first, second) in pairs.items():
                     digest.update(first.tobytes()); digest.update(second.tobytes())
@@ -174,9 +172,9 @@ class TestProcessWidePool:
                 _native.configure_pool(3)
             except RuntimeError as e:
                 print("conflict:", e)
-            _native.relationship_counts(graph._built, max_degree=2, threads=2)
+            _native.relationship_counts(graph._built, requested=["FS"], threads=2)
             try:
-                _native.relationship_counts(graph._built, max_degree=2, threads=5)
+                _native.relationship_counts(graph._built, requested=["FS"], threads=5)
             except RuntimeError as e:
                 print("conflict:", e)
         """
@@ -255,10 +253,10 @@ def test_a_refused_allocation_raises_a_resource_error(family):
         floor = {SEAM_MIN_ELEMENTS}
         def pairs():
             return _native.relationship_pairs(
-                graph._built, max_degree=5, requested=["FS", "2C"], threads=1, execution="speed", view_rows=view
+                graph._built, requested=["FS", "2C"], threads=1, execution="speed", graph_rows=view
             )
         def counts():
-            return _native.relationship_counts(graph._built, max_degree=5, threads=1)
+            return _native.relationship_counts(graph._built, requested=["FS", "2C"], threads=1)
         expect_failure = {{
             "pairs": family not in {sorted(KINSHIP_FAMILIES | MOMENT_FAMILIES | RELATIVE_FAMILIES)!r},
             "counts": family in {sorted(COUNT_FAMILIES)!r},

@@ -424,7 +424,7 @@ fn check_same_parent(ids: &[i64], mother: &[i64], father: &[i64]) -> Result<(), 
 }
 
 /// `parent_in_both_roles` for the smallest id that is the mother of one row
-/// and the father of another (ADR 0019), external ids included.
+/// and the father of another (ADR 0020), external ids included.
 ///
 /// A row's parent roles in `IdIndex::resolve_parents`'s marks, one bit each.
 const AS_MOTHER: u8 = 1;

@@ -13,7 +13,7 @@
 //! fewer than `2^32`, so no counter can wrap.
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
-use super::moments::{reduce_pairs_in, Reducer, RowOrder, Symmetric};
+use super::moments::{reduce_pairs_in, Reduced, Reducer, RowOrder, Symmetric};
 use super::progress::Progress;
 use super::{check_column_length, on_receiver, receiver_len, MaxDegree, Pedigree, Receiver};
 use crate::alloc::{self, Family};
@@ -51,7 +51,7 @@ pub struct ThresholdColumn<'a> {
 }
 
 /// Credits the first member of each pair in a shared counter array.
-struct PersonReducer<'a> {
+pub(super) struct PersonReducer<'a> {
     /// `[receiver row][requested category slot][1 + K]`.
     counts: &'a [AtomicU32],
     columns: &'a [ThresholdColumn<'a>],
@@ -131,21 +131,57 @@ pub fn relatives_per_person(
     progress: &Progress,
 ) -> Result<RelativesPerPerson, Error> {
     let rows = receiver_len(ped, receiver)?;
+    check_columns(rows, columns)?;
+    relatives_pass(rows, requested, columns, threads, |reducer| {
+        on_receiver(ped, receiver, progress, |ped, view| {
+            reduce_pairs_in(
+                ped,
+                max_degree,
+                requested,
+                view,
+                Symmetric::Both,
+                threads,
+                reducer,
+                progress,
+                RowOrder::Families,
+            )
+        })
+    })
+}
+
+/// Check that every column has one entry per receiver row.
+pub(super) fn check_columns(rows: usize, columns: &[ThresholdColumn<'_>]) -> Result<(), Error> {
     for column in columns {
         check_column_length("relative", column.relative.len(), rows)?;
         if let Threshold::Rows(threshold) = column.threshold {
             check_column_length("threshold", threshold.len(), rows)?;
         }
     }
-    let n_categories = requested.iter().count();
-    let stride = 1 + columns.len();
-    let len = rows
-        .checked_mul(n_categories)
+    Ok(())
+}
+
+/// The counter array's length, `rows × n_categories × stride`.
+fn counter_len(rows: usize, n_categories: usize, stride: usize) -> Result<usize, Error> {
+    rows.checked_mul(n_categories)
         .and_then(|c| c.checked_mul(stride))
         .ok_or(Error::ArithmeticOverflow {
             operation: OPERATION,
             dtype: "uint32",
-        })?;
+        })
+}
+
+/// Allocate the counters, run the pass through `walk` (given the reducer
+/// that credits them), and settle them.  `columns` are checked.
+pub(super) fn relatives_pass(
+    rows: usize,
+    requested: CategorySet,
+    columns: &[ThresholdColumn<'_>],
+    threads: NonZeroUsize,
+    walk: impl FnOnce(&PersonReducer<'_>) -> Result<Reduced<()>, Error>,
+) -> Result<RelativesPerPerson, Error> {
+    let n_categories = requested.iter().count();
+    let stride = 1 + columns.len();
+    let len = counter_len(rows, n_categories, stride)?;
     let mut counts = alloc::with_capacity(len, Family::RelativeCounts)?;
     counts.extend((0..len).map(|_| AtomicU32::new(0)));
     let mut slot = [0usize; N_CATEGORIES];
@@ -158,19 +194,7 @@ pub fn relatives_per_person(
         n_categories,
         slot,
     };
-    let reduced = on_receiver(ped, receiver, progress, |ped, view| {
-        reduce_pairs_in(
-            ped,
-            max_degree,
-            requested,
-            view,
-            Symmetric::Both,
-            threads,
-            &reducer,
-            progress,
-            RowOrder::Families,
-        )
-    })?;
+    let reduced = walk(&reducer)?;
     Ok(RelativesPerPerson {
         counts: into_counts(counts),
         rows,
@@ -179,6 +203,32 @@ pub fn relatives_per_person(
         lanes: threads.get(),
         lane_pairs: reduced.lane_pairs,
     })
+}
+
+impl RelativesPerPerson {
+    /// The counts of a call with no pairs to credit: no categories, or a
+    /// receiver of fewer than two rows (ADR 0014).  Every count is zero and
+    /// no lane ran.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ArithmeticOverflow`] when the array's length is not
+    /// representable; [`Error::AllocationFailed`] for the array.
+    pub fn zeros(
+        rows: usize,
+        n_categories: usize,
+        stride: usize,
+    ) -> Result<RelativesPerPerson, Error> {
+        let len = counter_len(rows, n_categories, stride)?;
+        Ok(RelativesPerPerson {
+            counts: alloc::filled(0u32, len, Family::RelativeCounts)?,
+            rows,
+            n_categories,
+            stride,
+            lanes: 0,
+            lane_pairs: Vec::new(),
+        })
+    }
 }
 
 /// The settled counters as plain integers.  `AtomicU32` and `u32` share

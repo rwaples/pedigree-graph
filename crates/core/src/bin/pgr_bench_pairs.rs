@@ -19,8 +19,9 @@
     reason = "a developer tool, never reached from a host: a panic is its error report"
 )]
 
+use pedigree_graph_core::relationships::query::{self, Compaction, Receiver};
 use pedigree_graph_core::relationships::{
-    pair_blocks, Category, CategorySet, Execution, MaxDegree, PedigreeColumns, Progress, Receiver,
+    Category, CategorySet, Execution, MaxDegree, PedigreeColumns, Progress,
 };
 use std::path::Path;
 use std::time::Instant;
@@ -32,6 +33,23 @@ fn peak_rss_mib() -> f64 {
         .find_map(|l| l.strip_prefix("VmHWM:"))
         .and_then(|v| v.split_whitespace().next()?.parse::<f64>().ok())
         .map_or(f64::NAN, |kb| kb / 1024.0)
+}
+
+/// The view's graph rows in view order, from its map (one view row per
+/// graph row, `-1` unselected), so the driver keeps reading the map that
+/// `bench_pair_emitters.py` writes for every build.
+fn graph_rows(map: &[i32]) -> Vec<i32> {
+    let mut rows = vec![-1i32; map.iter().filter(|&&v| v >= 0).count()];
+    for (row, &v) in map.iter().enumerate() {
+        if v >= 0 {
+            rows[v as usize] = row as i32;
+        }
+    }
+    assert!(
+        rows.iter().all(|&r| r >= 0),
+        "the view map skips a view row"
+    );
+    rows
 }
 
 fn read_view(path: &Path) -> Vec<i32> {
@@ -94,7 +112,9 @@ fn main() {
         Execution::parse(execution).unwrap_or_else(|| panic!("unknown execution {execution}"));
 
     let ped = PedigreeColumns::read_tsv(Path::new(&path)).unwrap_or_else(|e| panic!("{e}"));
-    let view = view_path.map(|p| read_view(Path::new(&p)));
+    // Inverted before the timer, and run on the full pedigree as before
+    // the core chose compaction, so builds stay comparable.
+    let view = view_path.map(|p| graph_rows(&read_view(Path::new(&p))));
     let n = ped.mother.len();
     let baseline_mib = peak_rss_mib();
     let pool = pedigree_graph_core::pool::configure(
@@ -105,11 +125,16 @@ fn main() {
     let t0 = Instant::now();
     let blocks = pool
         .install(|| {
-            pair_blocks(
+            query::pairs(
                 &ped.try_borrow().expect("pedigree columns"),
-                max_degree,
                 requested,
-                Receiver::from(view.as_deref()),
+                match view.as_deref() {
+                    Some(graph_rows) => Receiver::View {
+                        graph_rows,
+                        compaction: Compaction::Full,
+                    },
+                    None => Receiver::Graph,
+                },
                 execution,
                 &Progress::default(),
             )

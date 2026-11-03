@@ -1,6 +1,6 @@
 """``PedigreeGraph.from_arrays`` construction across builds (issue #58).
 
-ADR 0019 adds a validation pass to construction: a byte per row marks the
+ADR 0020 adds a validation pass to construction: a byte per row marks the
 represented parents' roles, and the distinct external parent ids of each role
 are intersected.  Sparse ids put the id index on its sorted layout, whose
 lookup lists the external ids in order as it goes; dense ids use a table, and

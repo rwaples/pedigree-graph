@@ -78,7 +78,8 @@ CHILD_PRELUDE = """
         rows = np.arange(max(0, i - 60), i)
         mother[i], father[i] = rng.choice(rows[rows % 2 == 0]), rng.choice(rows[rows % 2 == 1])
     graph = PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
-    view = np.where(np.arange(n) % 3 == 0, -1, np.arange(n) // 3 * 2 + np.arange(n) % 3 - 1).astype(np.int32)
+    view_map = np.where(np.arange(n) % 3 == 0, -1, np.arange(n) // 3 * 2 + np.arange(n) % 3 - 1)
+    view = np.argsort(np.where(view_map < 0, n, view_map))[: int((view_map >= 0).sum())].astype(np.int32)
 """
 
 

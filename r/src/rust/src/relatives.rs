@@ -10,9 +10,9 @@ use crate::job;
 use crate::kernels::{package_pool, selection, walk_of, Native};
 use crate::moments::{check_length, named_columns};
 use extendr_api::prelude::*;
+use pedigree_graph_core::relationships::query::{self, Receiver};
 use pedigree_graph_core::relationships::{
-    relatives_per_person as relatives_of, Progress, Receiver, Threshold, ThresholdColumn,
-    MAX_VALUE_COLUMNS,
+    Progress, RelativesPerPerson, Threshold, ThresholdColumn, MAX_VALUE_COLUMNS,
 };
 
 /// The pair-count column, always first; no threshold column may take its name.
@@ -124,9 +124,9 @@ pub fn start_relatives(
     let stride = 1 + columns.len();
 
     let (threads, pool) = package_pool()?;
-    let walk = walk_of(&graph, requested)?;
+    let walk = walk_of(&graph, requested);
     let work = move |progress: &Progress| match walk {
-        Some((max_degree, rows)) => {
+        Some(rows) => {
             let borrowed: Vec<ThresholdColumn<'_>> = columns
                 .iter()
                 .map(|c| ThresholdColumn {
@@ -137,9 +137,8 @@ pub fn start_relatives(
                     },
                 })
                 .collect();
-            let relatives = relatives_of(
+            let relatives = query::relatives(
                 &rows.pedigree()?,
-                max_degree,
                 requested,
                 Receiver::Graph,
                 &borrowed,
@@ -148,7 +147,7 @@ pub fn start_relatives(
             )?;
             Ok(relatives.counts)
         }
-        None => Ok(vec![0u32; n * n_categories * stride]),
+        None => Ok(RelativesPerPerson::zeros(n, n_categories, stride)?.counts),
     };
     Ok(job::spawn(pool, work, move |counts| {
         let codes: Vec<&str> = requested.iter().map(|c| c.code()).collect();

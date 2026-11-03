@@ -13,10 +13,10 @@ use crate::job;
 use crate::kernels::{exact_double, package_pool, selection, walk_of, Native};
 use extendr_api::prelude::*;
 use num_bigint::BigInt;
+use pedigree_graph_core::relationships::query::{self, Receiver};
 use pedigree_graph_core::relationships::{
-    encode_big, pack_labels, quantize_column, relationship_moments as moments_of, Moments,
-    MomentsInput, MomentsPlan, MomentsTable, Operand, PackedLabels, Product, Progress, Receiver,
-    Side, Statistic, Symmetric, MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
+    encode_big, pack_labels, quantize_column, Moments, MomentsInput, MomentsTable, Operand,
+    PackedLabels, Product, Progress, Side, Statistic, Symmetric, MAX_SAME_KEYS, MAX_VALUE_COLUMNS,
 };
 use std::borrow::Cow;
 use std::str::FromStr;
@@ -337,7 +337,7 @@ pub fn start_moments(
     }
 
     let (threads, pool) = package_pool()?;
-    let walk = walk_of(&graph, requested)?;
+    let walk = walk_of(&graph, requested);
     let operands: Vec<i32> = resolved
         .iter()
         .flat_map(|p| [p.a, p.b])
@@ -369,9 +369,8 @@ pub fn start_moments(
             n_same: s,
         };
         match walk {
-            Some((max_degree, rows)) => moments_of(
+            Some(rows) => query::moments(
                 &rows.pedigree()?,
-                max_degree,
                 requested,
                 Receiver::Graph,
                 &input,
@@ -380,19 +379,8 @@ pub fn start_moments(
                 budget,
                 progress,
             ),
-            None => {
-                let plan = MomentsPlan::new(input.shape(requested), threads, budget)?;
-                let accumulators = requested.iter().count() * plan.cells() * plan.stride();
-                Ok(Moments {
-                    width: 1,
-                    table: vec![0u8; accumulators],
-                    stride: plan.stride(),
-                    cells: plan.cells(),
-                    lanes: 0,
-                    lane_pairs: Vec::new(),
-                    estimated_peak_bytes: plan.estimated_peak_bytes,
-                })
-            }
+            // The host checked the inputs against the graph's rows.
+            None => Moments::degenerate(input.shape(requested), threads, budget),
         }
     };
     let finish = move |moments: Moments| {
