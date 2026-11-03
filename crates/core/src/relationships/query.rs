@@ -367,7 +367,7 @@ pub fn relatives(
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::random_pedigree;
+    use super::super::testing::{random_pedigree, receiver};
     use super::super::{Category, MomentsPlan, Snapshot, Threshold, MAX_QUANTIZED};
     use super::*;
 
@@ -386,13 +386,6 @@ mod tests {
         }
         order.truncate(k);
         order
-    }
-
-    fn view(graph_rows: &[i32], compaction: Compaction) -> Receiver<'_> {
-        Receiver::View {
-            graph_rows,
-            compaction,
-        }
     }
 
     fn close() -> CategorySet {
@@ -539,11 +532,11 @@ mod tests {
         for requested in [close(), CategorySet::EMPTY] {
             for mode in MODES {
                 assert!(matches!(
-                    counts(&ped, requested, view(&[3, 9, 3], mode), &progress),
+                    counts(&ped, requested, receiver(Some(&[3, 9, 3]), mode), &progress),
                     Err(Error::InvalidViewMap { .. })
                 ));
                 assert!(matches!(
-                    counts(&ped, requested, view(&[50], mode), &progress),
+                    counts(&ped, requested, receiver(Some(&[50]), mode), &progress),
                     Err(Error::ValueOutOfRange {
                         field: "graph_rows",
                         ..
@@ -566,9 +559,13 @@ mod tests {
         let (rows0, rows1) = (Vec::new(), vec![7]);
         let calls: [(CategorySet, Receiver<'_>, usize); 4] = [
             (CategorySet::EMPTY, Receiver::Graph, 300),
-            (CategorySet::EMPTY, view(&rows1, Compaction::Auto), 1),
-            (close(), view(&rows0, Compaction::Compact), 0),
-            (close(), view(&rows1, Compaction::Full), 1),
+            (
+                CategorySet::EMPTY,
+                receiver(Some(&rows1), Compaction::Auto),
+                1,
+            ),
+            (close(), receiver(Some(&rows0), Compaction::Compact), 0),
+            (close(), receiver(Some(&rows1), Compaction::Full), 1),
         ];
         for (requested, receiver, rows) in calls {
             let label = format!("{requested:?} on {receiver:?}");
@@ -640,13 +637,13 @@ mod tests {
         let ped = cols.try_borrow().unwrap();
         let progress = Progress::default();
         let rows = vec![3];
-        let receiver = view(&rows, Compaction::Auto);
+        let one_row = receiver(Some(&rows), Compaction::Auto);
         let bad = [60];
         assert!(matches!(
             pairs(
                 &ped,
                 CategorySet::EMPTY,
-                view(&bad, Compaction::Auto),
+                receiver(Some(&bad), Compaction::Auto),
                 Execution::Speed,
                 &progress
             ),
@@ -661,7 +658,7 @@ mod tests {
             moments(
                 &ped,
                 requested,
-                receiver,
+                one_row,
                 input,
                 Symmetric::Both,
                 ONE,
@@ -704,7 +701,7 @@ mod tests {
             threshold: Threshold::Scalar(0.0),
         }];
         assert!(matches!(
-            relatives(&ped, CategorySet::EMPTY, receiver, &columns, ONE, &progress),
+            relatives(&ped, CategorySet::EMPTY, one_row, &columns, ONE, &progress),
             Err(Error::LengthMismatch {
                 field: "relative",
                 ..
@@ -752,33 +749,107 @@ mod tests {
         )
     }
 
-    /// `Compaction::Full` and `Compaction::Compact` give identical blocks,
-    /// counts (the row-mask path against the compact one), moments and
-    /// relatives on every view, and a view of every row in graph order
-    /// gives the graph's.  Before issue #52 step 6 deleted the former entry
-    /// points, each path was also compared against them.
+    /// The view `graph_rows` of the whole graph's `graph` pairs, built
+    /// without the engine's view map: pairs with both rows selected, mapped
+    /// to view rows, a symmetric category's pairs reordered to `first <
+    /// second` and an asymmetric one's keeping their semantic orientation
+    /// (`Engine::emit_row`), each block in view-space canonical-key order
+    /// (`min`, `max`); blocks outside `requested` empty.
+    /// The counts are every category's kept pairs, so `graph` must hold
+    /// every category up to `requested`'s top degree.
+    fn restricted(
+        graph: &PairBlocks,
+        requested: CategorySet,
+        graph_rows: &[i32],
+        n: usize,
+    ) -> (PairBlocks, Counts) {
+        let mut to_view: Vec<Option<i32>> = vec![None; n];
+        for (view_row, &row) in graph_rows.iter().enumerate() {
+            to_view[row as usize] = Some(view_row as i32);
+        }
+        let mut blocks = PairBlocks::empty();
+        let mut counts = Counts::default();
+        for cat in Category::ALL {
+            let block = graph.get(cat);
+            let mut kept: Vec<(i32, i32)> = block
+                .first
+                .iter()
+                .zip(&block.second)
+                .filter_map(|(&a, &b)| {
+                    let (a, b) = (to_view[a as usize]?, to_view[b as usize]?);
+                    Some(if cat.symmetric() && a > b {
+                        (b, a)
+                    } else {
+                        (a, b)
+                    })
+                })
+                .collect();
+            kept.sort_unstable_by_key(|&(a, b)| (a.min(b), a.max(b)));
+            counts.0[cat.index()] = kept.len() as u64;
+            if requested.contains(cat) {
+                let out = &mut blocks.0[cat.index()];
+                out.first = kept.iter().map(|p| p.0).collect();
+                out.second = kept.iter().map(|p| p.1).collect();
+            }
+        }
+        (blocks, counts)
+    }
+
+    /// On every view, `Compaction::Full` gives the whole graph's pairs and
+    /// counts restricted to the view ([`restricted`]).  On the shuffled
+    /// selections of 2, a tenth, a half and all of the rows,
+    /// `Compaction::Compact` gives Full's blocks, counts (the row-mask path
+    /// against the compact one), moments and relatives, and
+    /// `Compaction::Auto` Full's blocks and counts; every row in graph order
+    /// gives the graph's results.
     #[test]
-    fn full_and_compact_give_identical_results_on_every_view() {
+    fn every_view_matches_the_graph_restricted_to_it_on_every_path() {
+        let progress = Progress::default();
         for (n, seed) in [(400usize, 1u64), (2_500, 9)] {
             let cols = random_pedigree(n, seed);
             let ped = cols.try_borrow().unwrap();
+            let every_row: Vec<i32> = (0..n as i32).collect();
             for requested in [close(), CategorySet::up_to_degree(MaxDegree::MAX.get())] {
-                for k in [2, n / 10, n / 2, n] {
-                    let rows = selection(n, k, seed + k as u64);
-                    let full = every_result(&ped, requested, view(&rows, Compaction::Full), k);
-                    let compact =
-                        every_result(&ped, requested, view(&rows, Compaction::Compact), k);
-                    assert_eq!(full, compact, "n={n} k={k} {requested:?}");
+                let top = CategorySet::up_to_degree(requested.top_degree().unwrap());
+                let graph = pairs(&ped, top, Receiver::Graph, Execution::Speed, &progress).unwrap();
+                let shuffled = [2, n / 10, n / 2, n].map(|k| selection(n, k, seed + k as u64));
+                for rows in shuffled.iter().chain([&every_row]) {
+                    let k = rows.len();
+                    let label = format!("n={n} k={k} {requested:?}");
+                    let full =
+                        every_result(&ped, requested, receiver(Some(rows), Compaction::Full), k);
+                    let (want_blocks, want_counts) = restricted(&graph, requested, rows, n);
+                    assert_eq!(full.0, [want_blocks.clone(), want_blocks], "{label}");
+                    assert_eq!(full.1, want_counts, "{label}");
                     if k >= n / 2 {
-                        assert!(full.0[0].total() > 0, "n={n} k={k} {requested:?}");
+                        assert!(full.0[0].total() > 0, "{label}");
                     }
+                    if rows == &every_row {
+                        let graph_result = every_result(&ped, requested, Receiver::Graph, n);
+                        assert_eq!(full, graph_result, "{label} in graph order");
+                        continue;
+                    }
+                    if k > 2 {
+                        assert!(rows.windows(2).any(|w| w[0] > w[1]), "{label}: in order");
+                    }
+                    let compact = every_result(
+                        &ped,
+                        requested,
+                        receiver(Some(rows), Compaction::Compact),
+                        k,
+                    );
+                    assert_eq!(full, compact, "{label} Compact");
+                    let auto = receiver(Some(rows), Compaction::Auto);
+                    for (e, execution) in [Execution::Speed, Execution::Memory]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        let blocks = pairs(&ped, requested, auto, execution, &progress).unwrap();
+                        assert_eq!(blocks, full.0[e], "{label} Auto {execution:?}");
+                    }
+                    let got = counts(&ped, requested, auto, &progress).unwrap();
+                    assert_eq!(got, full.1, "{label} Auto");
                 }
-                let every_row: Vec<i32> = (0..n as i32).collect();
-                assert_eq!(
-                    every_result(&ped, requested, view(&every_row, Compaction::Full), n),
-                    every_result(&ped, requested, Receiver::Graph, n),
-                    "n={n} {requested:?}"
-                );
             }
         }
     }
@@ -802,17 +873,20 @@ mod tests {
         };
         for k in [2, n / 10, n / 10 + 1, n / 2] {
             let rows = selection(n, k, k as u64);
-            let compact = total(view(&rows, Compaction::Compact), Execution::Speed);
-            assert_eq!(total(view(&rows, Compaction::Full), Execution::Speed), n);
+            let compact = total(receiver(Some(&rows), Compaction::Compact), Execution::Speed);
+            assert_eq!(
+                total(receiver(Some(&rows), Compaction::Full), Execution::Speed),
+                n
+            );
             assert!(compact < n, "{k}: {compact}");
             let want = if compacts(n, k) { compact } else { n };
             assert_eq!(
-                total(view(&rows, Compaction::Auto), Execution::Speed),
+                total(receiver(Some(&rows), Compaction::Auto), Execution::Speed),
                 want,
                 "{k}"
             );
             assert_eq!(
-                total(view(&rows, Compaction::Auto), Execution::Memory),
+                total(receiver(Some(&rows), Compaction::Auto), Execution::Memory),
                 2 * want,
                 "{k}"
             );

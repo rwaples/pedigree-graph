@@ -944,8 +944,12 @@ mod tests {
                     .chunks_exact(1 + 4 * 2 + 3)
                     .map(|acc| acc[0] as u64)
                     .sum();
-                for (threads, compact) in [(1, false), (4, false), (4, true)] {
-                    if compact && v.is_none() {
+                for (threads, compaction) in [
+                    (1, Compaction::Full),
+                    (4, Compaction::Full),
+                    (4, Compaction::Compact),
+                ] {
+                    if compaction == Compaction::Compact && v.is_none() {
                         continue;
                     }
                     let pool = rayon::ThreadPoolBuilder::new()
@@ -957,14 +961,7 @@ mod tests {
                             query::moments(
                                 &ped,
                                 requested,
-                                receiver(
-                                    v,
-                                    if compact {
-                                        Compaction::Compact
-                                    } else {
-                                        Compaction::Full
-                                    },
-                                ),
+                                receiver(v, compaction),
                                 &input,
                                 symmetric,
                                 NonZeroUsize::new(threads).unwrap(),
@@ -978,7 +975,7 @@ mod tests {
                     assert_eq!(got.lane_pairs.iter().sum::<u64>(), total);
                     assert!(
                         decoded(&(got.width, got.table.clone())) == want,
-                        "threads={threads} compact={compact} {symmetric:?}"
+                        "threads={threads} {compaction:?} {symmetric:?}"
                     );
                 }
             }

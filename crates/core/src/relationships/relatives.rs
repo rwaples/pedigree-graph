@@ -307,7 +307,7 @@ mod tests {
         cols: &PedigreeColumns,
         requested: CategorySet,
         view: Option<&[i32]>,
-        compact: bool,
+        compaction: Compaction,
         columns: &[ThresholdColumn<'_>],
         threads: usize,
     ) -> RelativesPerPerson {
@@ -320,14 +320,7 @@ mod tests {
             query::relatives(
                 &ped,
                 requested,
-                receiver(
-                    view,
-                    if compact {
-                        Compaction::Compact
-                    } else {
-                        Compaction::Full
-                    },
-                ),
+                receiver(view, compaction),
                 columns,
                 NonZeroUsize::new(threads).unwrap(),
                 &Progress::default(),
@@ -358,7 +351,7 @@ mod tests {
             for requested in [CategorySet::up_to_degree(MaxDegree::MAX.get()), subset()] {
                 let n_cat = requested.iter().count();
                 for columns in column_sets(&a, &b, &t) {
-                    let got = run(&cols, requested, None, false, &columns, 1);
+                    let got = run(&cols, requested, None, Compaction::Full, &columns, 1);
                     let want = oracle(&cols, requested, None, &columns, n);
                     assert_eq!(
                         (got.rows, got.n_categories, got.stride),
@@ -398,8 +391,15 @@ mod tests {
         for requested in [CategorySet::up_to_degree(MaxDegree::MAX.get()), subset()] {
             for columns in column_sets(&a, &b, &t) {
                 let want = oracle(&cols, requested, Some(&view), &columns, rows);
-                let full = run(&cols, requested, Some(&view), false, &columns, 2);
-                let compact = run(&cols, requested, Some(&view), true, &columns, 2);
+                let full = run(&cols, requested, Some(&view), Compaction::Full, &columns, 2);
+                let compact = run(
+                    &cols,
+                    requested,
+                    Some(&view),
+                    Compaction::Compact,
+                    &columns,
+                    2,
+                );
                 assert_eq!(full.rows, rows);
                 assert!(full.counts == want, "K={}", columns.len());
                 assert!(full.counts == compact.counts, "K={}", columns.len());
@@ -418,9 +418,9 @@ mod tests {
         let (a, b, t) = (floats(n, 1), floats(n, 2), floats(n, 3));
         let columns = &column_sets(&a, &b, &t)[2];
         let requested = CategorySet::up_to_degree(MaxDegree::MAX.get());
-        let serial = run(&cols, requested, None, false, columns, 1);
+        let serial = run(&cols, requested, None, Compaction::Full, columns, 1);
         for lanes in [2, 4] {
-            let got = run(&cols, requested, None, false, columns, lanes);
+            let got = run(&cols, requested, None, Compaction::Full, columns, lanes);
             assert!(got.counts == serial.counts, "lanes={lanes}");
             assert_eq!(got.lanes, lanes);
             assert_eq!(got.lane_pairs.len(), lanes);
@@ -445,7 +445,7 @@ mod tests {
         let requested: CategorySet = [Category::MO, Category::FO, Category::FS]
             .into_iter()
             .collect();
-        let got = run(&cols, requested, None, false, &[], 1);
+        let got = run(&cols, requested, None, Compaction::Full, &[], 1);
         assert_eq!(got.counts, [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1]);
     }
 

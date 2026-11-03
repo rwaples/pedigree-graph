@@ -691,8 +691,8 @@ mod tests {
             )
         };
 
-        // One graph row on two view rows would give equal sort keys, and an
-        // unstable parallel sort would then order them by thread count.
+        // A repeated graph row would overwrite its earlier view row in the
+        // view map, so that view row would silently get no relatives.
         assert!(matches!(
             run(vec![0, 2, 0]),
             Err(Error::InvalidViewMap { position, .. }) if position == 2.into()
@@ -792,7 +792,7 @@ mod tests {
     /// The body of one seam case; a no-op unless `PG_SEAM_FAMILY` is set.
     #[test]
     fn seam_child() {
-        use crate::alloc::fail_next;
+        use crate::alloc::{fail_next, fail_next_above};
         let Ok(name) = std::env::var("PG_SEAM_FAMILY") else {
             return;
         };
@@ -803,7 +803,14 @@ mod tests {
         let ped = cols.try_borrow().unwrap();
         let graph_rows: Vec<i32> = (0..300).step_by(2).collect();
         let all_cats = CategorySet::up_to_degree(5);
-        fail_next(Some(family));
+        // A view reserves this family first for its 300-row view map; a
+        // floor above that aims the plant at the category sort's scratch.
+        let floor = if view && family == Family::ViewSortScratch {
+            301
+        } else {
+            0
+        };
+        fail_next_above(Some(family), floor);
         let result = match execution {
             None => count_pairs(&ped, MaxDegree::MAX, None, &Progress::default())
                 .map(|c| c.get(Category::FS) as usize),

@@ -68,11 +68,11 @@ walks: the compact pedigree's rows for a compact view. `finish()` moves to
 
 | Path | Walking | Finishing |
 |---|---|---|
-| `count_pairs` | rows; per-task counts merged inside the walk | nothing material |
+| `query::counts` | rows; per-task counts merged inside the walk | nothing material |
 | `relationship_burden` | rows; atomic counters | moving the counters out |
 | `reduce_pairs` (moments, relatives) | rows | lane merges |
-| `pair_blocks`, `"speed"` | rows | per-category copy (categories in parallel); view sort |
-| `pair_blocks`, `"memory"` | pass 1; per-category allocate and zero-fill; pass 2 | view sort only |
+| `query::pairs`, `"speed"` | rows | per-category copy (categories in parallel); view sort |
+| `query::pairs`, `"memory"` | pass 1; per-category allocate and zero-fill; pass 2 | view sort only |
 
 A **row visit** is one row walked once. The `"memory"` execution walks
 every row twice, so its total is `2n`. Between its passes `done == n` and
