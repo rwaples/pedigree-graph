@@ -265,18 +265,20 @@ pub fn cancel(handle: &Robj) -> HostResult<Robj> {
 /// Whether `progress` was cancelled.  `Progress` has no getter, so this asks
 /// the engine itself: a walk over two rows fails at once once cancelled.
 #[cfg(any(test, feature = "test-hooks"))]
-#[expect(
-    clippy::expect_used,
-    reason = "two founder rows are a valid pedigree, and 1 a valid degree"
-)]
+#[expect(clippy::expect_used, reason = "two founder rows are a valid pedigree")]
 pub(crate) fn cancelled(progress: &Progress) -> bool {
-    use pedigree_graph_core::relationships::{count_pairs, MaxDegree, Pedigree};
+    use pedigree_graph_core::relationships::query::{self, Receiver};
+    use pedigree_graph_core::relationships::{CategorySet, Pedigree};
     let none = [-1i32; 2];
     let ids = [0i64; 2];
     let ped = Pedigree::try_new(&none, &none, &none, &ids, &ids).expect("a two-row pedigree");
-    let degree = MaxDegree::try_new(1).expect("degree 1");
     matches!(
-        count_pairs(&ped, degree, None, progress),
+        query::counts(
+            &ped,
+            CategorySet::up_to_degree(1),
+            Receiver::Graph,
+            progress
+        ),
         Err(Error::Cancelled)
     )
 }
