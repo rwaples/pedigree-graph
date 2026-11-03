@@ -14,8 +14,9 @@
     reason = "a developer tool, never reached from a host: a panic is its error report"
 )]
 
+use pedigree_graph_core::relationships::query::{self, Receiver};
 use pedigree_graph_core::relationships::{
-    count_pairs, Category, MaxDegree, PedigreeColumns, Progress,
+    Category, CategorySet, MaxDegree, PedigreeColumns, Progress,
 };
 use std::time::Instant;
 
@@ -67,10 +68,10 @@ fn main() {
     let t0 = Instant::now();
     let counts = pool
         .install(|| {
-            count_pairs(
+            query::counts(
                 &ped.try_borrow().expect("pedigree columns"),
-                max_degree,
-                None,
+                CategorySet::up_to_degree(max_degree.get()),
+                Receiver::Graph,
                 &Progress::default(),
             )
         })

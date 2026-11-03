@@ -13,8 +13,9 @@
     reason = "test helpers outside #[test] functions: a panic fails the test"
 )]
 
+use pedigree_graph_core::relationships::query::{self, Receiver};
 use pedigree_graph_core::relationships::{
-    count_pairs, Category, Counts, MaxDegree, PedigreeColumns, Progress,
+    Category, CategorySet, Counts, MaxDegree, PedigreeColumns, Progress,
 };
 use std::path::{Path, PathBuf};
 
@@ -61,10 +62,10 @@ fn run_all(threads: usize) {
         let ped = PedigreeColumns::read_tsv(tsv).unwrap();
         let got = pool
             .install(|| {
-                count_pairs(
+                query::counts(
                     &ped.try_borrow().unwrap(),
-                    MaxDegree::MAX,
-                    None,
+                    CategorySet::up_to_degree(MaxDegree::MAX.get()),
+                    Receiver::Graph,
                     &Progress::default(),
                 )
             })

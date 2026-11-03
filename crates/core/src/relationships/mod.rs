@@ -10,6 +10,7 @@ mod moments_table;
 mod multiplicity;
 mod pairs;
 mod progress;
+pub mod query;
 mod relatives;
 mod sets;
 mod sibling_index;
@@ -385,19 +386,28 @@ fn on_receiver<T>(
     query: impl FnOnce(&Pedigree, Option<&[i32]>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     match receiver {
-        Receiver::Graph => query(ped, None),
-        Receiver::View {
-            rows,
-            compact: false,
-        } => query(ped, Some(rows)),
-        Receiver::View {
-            rows,
-            compact: true,
-        } => {
+        Receiver::Graph => run_on(ped, None, false, progress, query),
+        Receiver::View { rows, compact } => run_on(ped, Some(rows), compact, progress, query),
+    }
+}
+
+/// Run `query` on `ped` and the view map `view`, or with `compact` on the
+/// view's ancestry-compact pedigree and its view rows.  `view` is a checked
+/// partial permutation, and `compact` needs one.
+fn run_on<T>(
+    ped: &Pedigree,
+    view: Option<&[i32]>,
+    compact: bool,
+    progress: &Progress,
+    query: impl FnOnce(&Pedigree, Option<&[i32]>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    match (view, compact) {
+        (Some(rows), true) => {
             let compact = CompactView::build(ped, rows)?;
             progress.checkpoint(Checkpoint::Compacted)?;
             query(&compact.columns.try_borrow()?, Some(&compact.view_rows))
         }
+        (view, _) => query(ped, view),
     }
 }
 
