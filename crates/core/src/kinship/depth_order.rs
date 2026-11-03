@@ -120,7 +120,19 @@ impl Buckets {
 }
 
 /// Every depth is non-negative and strictly above both parents'.
-fn check_structural(mother: &[i32], father: &[i32], depth: &[i32]) -> Result<(), Error> {
+///
+/// `mother` and `father` must already be `-1` or rows of the pedigree.
+pub(crate) fn check_structural(mother: &[i32], father: &[i32], depth: &[i32]) -> Result<(), Error> {
+    check_structural_below(mother, father, depth, i64::from(i32::MAX))
+}
+
+/// [`check_structural`] with every depth also at most `maximum`.
+pub(crate) fn check_structural_below(
+    mother: &[i32],
+    father: &[i32],
+    depth: &[i32],
+    maximum: i64,
+) -> Result<(), Error> {
     for (row, &d) in depth.iter().enumerate() {
         let floor = [mother[row], father[row]]
             .into_iter()
@@ -128,13 +140,13 @@ fn check_structural(mother: &[i32], father: &[i32], depth: &[i32]) -> Result<(),
             .map(|p| i64::from(depth[p as usize]) + 1)
             .max()
             .unwrap_or(0);
-        if i64::from(d) < floor {
+        if i64::from(d) < floor || i64::from(d) > maximum {
             return Err(Error::ValueOutOfRange {
                 field: "depth",
                 position: row.into(),
                 value: i64::from(d),
                 minimum: floor,
-                maximum: i64::from(i32::MAX),
+                maximum,
             });
         }
     }

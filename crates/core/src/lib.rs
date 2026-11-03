@@ -7,7 +7,8 @@
 //!
 //! Alongside it live the pairwise kinship recurrence and the depth-major
 //! sweeps built beside it ([`kinship`]), the lineage counts ([`lineage`]), native
-//! construction ([`graph`]), the stable depth-major
+//! construction ([`graph`]), the one borrow of a built pedigree's columns
+//! every kernel input is drawn from ([`columns`]), the stable depth-major
 //! topological order every order-dependent kernel sweeps in ([`topology`]),
 //! and the structured error enum each host maps onto its own exception
 //! classes ([`error`]).
@@ -19,6 +20,7 @@
 pub const CORE_REV: &str = env!("PG_CORE_REV");
 
 pub mod alloc;
+pub mod columns;
 pub mod error;
 pub mod graph;
 pub mod kinship;
@@ -33,6 +35,7 @@ pub mod topology;
 const _: () = {
     const fn send_sync<T: Send + Sync>() {}
     send_sync::<error::Error>();
+    send_sync::<columns::GraphColumns<'static>>();
     send_sync::<graph::PedigreeGraph>();
     send_sync::<graph::IdIndex>();
     send_sync::<graph::Columns<'static>>();

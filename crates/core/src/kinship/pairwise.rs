@@ -27,6 +27,7 @@
 //! output is the same bits for every thread count.
 
 use super::ancestry::AncestorSignatures;
+use super::depth_order::check_structural;
 use super::memo::PairMemo;
 use crate::alloc::{self, Family};
 use crate::error::{Error, PAIR_FIRST, PAIR_SECOND};
@@ -36,7 +37,7 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 /// The columns the recurrence reads, borrowed from the host for one call.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct KinshipPedigree<'a> {
     mother: &'a [i32],
     father: &'a [i32],
@@ -46,7 +47,9 @@ pub struct KinshipPedigree<'a> {
 
 impl<'a> KinshipPedigree<'a> {
     /// Check the four columns have one entry per row and every parent or
-    /// twin row is `-1` or a row of the pedigree.
+    /// twin row is `-1` or a row of the pedigree.  Whether `depth` orders
+    /// the rows is checked where a kernel reads it: [`KinshipIndex::new`]
+    /// for the walk, the depth-major sort for the sweeps.
     ///
     /// # Errors
     ///
@@ -171,19 +174,37 @@ impl alloc::Dtype for Row {
 struct KinshipRows(Vec<Row>);
 
 impl KinshipRows {
-    /// Pack `ped`'s depth, parent and twin columns.
+    /// Pack `ped`'s depth, parent and twin columns, checking in the same pass
+    /// that `depth` orders the rows: the walk peels the deeper endpoint, so a
+    /// depth at or below a parent's would give a wrong value, not an error.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::AllocationFailed`] (`kinship_columns`), then
+    /// [`Error::ValueOutOfRange`] on `depth` at the first row that is
+    /// negative or not above both parents'.
     fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
+        let depth = ped.depth;
+        let above = |d: i32, parent: i32| parent < 0 || d > depth[parent as usize];
+        let mut ordered = true;
         let mut rows = Vec::new();
         alloc::extend(
             &mut rows,
-            (0..ped.len()).map(|i| Row {
-                depth: ped.depth[i],
-                mother: ped.mother[i],
-                father: ped.father[i],
-                twin: ped.twin[i],
+            (0..ped.len()).map(|i| {
+                let (d, mother, father) = (depth[i], ped.mother[i], ped.father[i]);
+                ordered &= d >= 0 && above(d, mother) && above(d, father);
+                Row {
+                    depth: d,
+                    mother,
+                    father,
+                    twin: ped.twin[i],
+                }
             }),
             Family::KinshipColumns,
         )?;
+        if !ordered {
+            check_structural(ped.mother, ped.father, depth)?;
+        }
         Ok(KinshipRows(rows))
     }
 }
@@ -202,7 +223,8 @@ impl KinshipIndex {
     /// # Errors
     ///
     /// [`Error::AllocationFailed`] with operation `kinship_signatures` or
-    /// `kinship_columns`.
+    /// `kinship_columns`, and [`Error::ValueOutOfRange`] on `depth` when it
+    /// does not order the rows (see `KinshipRows::new`).
     pub fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
         let signatures = AncestorSignatures::build(ped)?;
         let rows = KinshipRows::new(ped)?;
@@ -309,7 +331,23 @@ impl Walker<'_> {
 
     /// Kinship of rows `a` and `b`, walking whatever the memo lacks.  Only
     /// keys whose rule is `Rule::Walk` are pushed or stored.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::PairRowOutOfRange`] when `a` or `b` is not a row, then
+    /// [`Error::AllocationFailed`] for the memo or the stack.
     pub fn resolve(&mut self, a: i32, b: i32) -> Result<f32, Error> {
+        let n = self.rows.len();
+        for (argument, row) in [(PAIR_FIRST, a), (PAIR_SECOND, b)] {
+            if row < 0 || row as usize >= n {
+                return Err(Error::PairRowOutOfRange {
+                    argument,
+                    row: i64::from(row),
+                    position: 0.into(),
+                    n_individuals: n,
+                });
+            }
+        }
         let root = canon(a, b);
         let walk = match self.rule(root) {
             Rule::Known(v) => return Ok(v),
@@ -718,6 +756,44 @@ mod tests {
             &[(0, 0), (0, 1), (0, 2), (2, 3), (3, 2), (3, 4), (4, 4)],
         );
         assert_eq!(got, vec![0.5, 0.0, 0.25, 0.25, 0.25, 0.125, 0.5]);
+    }
+
+    #[test]
+    fn a_walker_refuses_an_endpoint_outside_the_pedigree() {
+        let cols = ped(&[(-1, -1), (-1, -1), (0, 1)], &[]);
+        let ped = KinshipPedigree::try_new(&cols.0, &cols.1, &cols.2, &cols.3).unwrap();
+        let index = KinshipIndex::new(&ped).unwrap();
+        let mut walker = index.walker().unwrap();
+        for (a, b, argument, row) in [(-1, 0, PAIR_FIRST, -1), (0, 3, PAIR_SECOND, 3)] {
+            let err = walker.resolve(a, b).unwrap_err();
+            assert!(
+                matches!(err, Error::PairRowOutOfRange { argument: got, row: r, n_individuals: 3, .. }
+                    if got == argument && r == row),
+                "{err:?}"
+            );
+        }
+        assert_eq!(walker.resolve(0, 2).unwrap(), 0.25);
+    }
+
+    #[test]
+    fn a_depth_that_misorders_parent_and_child_is_refused() {
+        // Parent-child kinship is 0.25; with the child's depth equal to its
+        // parent's, the walk would peel the parent and return 0.
+        let (mother, father, twin) = (vec![1, -1], vec![-1, -1], vec![-1, -1]);
+        let flat = KinshipPedigree::try_new(&mother, &father, &twin, &[0, 0]).unwrap();
+        assert!(pair_kinship(flat, &[], &[]).unwrap().is_empty());
+        let err = pair_kinship(flat, &[0], &[1]).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::ValueOutOfRange {
+                field: "depth",
+                value: 0,
+                minimum: 1,
+                ..
+            }
+        ));
+        let ped = KinshipPedigree::try_new(&mother, &father, &twin, &[1, 0]).unwrap();
+        assert_eq!(pair_kinship(ped, &[0], &[1]).unwrap(), [0.25]);
     }
 
     #[test]

@@ -276,7 +276,12 @@ mod tests {
 
     /// Every entry point, on the graph and through a compact view where it
     /// has one, with the checkpoints it must reach in order.
-    fn paths<'a>(ped: &'a Pedigree<'a>, view: &'a [i32], zeros: &'a [i32]) -> Vec<Path<'a>> {
+    fn paths<'a>(
+        ped: &'a Pedigree<'a>,
+        view: &'a [i32],
+        zeros: &'a [i32],
+        depth: &'a [i32],
+    ) -> Vec<Path<'a>> {
         use super::super::{
             count_view_pairs_compact, pair_blocks, relationship_burden, relationship_moments,
             relatives_per_person, CategorySet, CompactView, Execution, MomentsInput, Receiver,
@@ -353,7 +358,7 @@ mod tests {
             },
             Path {
                 name: "relationship_burden",
-                run: Box::new(move |p| relationship_burden(ped, zeros, p).map(drop)),
+                run: Box::new(move |p| relationship_burden(ped, depth, p).map(drop)),
                 expected: vec![Walk, Finish],
                 total: N,
             },
@@ -512,12 +517,13 @@ mod tests {
             })
             .collect();
         let zeros = vec![0i32; N];
+        let depth = crate::topology::structural_depth(&cols.mother, &cols.father);
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(1)
             .build()
             .unwrap();
         pool.install(|| {
-            for path in paths(&ped, &view, &zeros) {
+            for path in paths(&ped, &view, &zeros, &depth) {
                 body(&path);
             }
         });
