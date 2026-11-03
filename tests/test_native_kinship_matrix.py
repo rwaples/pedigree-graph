@@ -111,6 +111,16 @@ def test_mz_and_inbred_constructions_match_the_oracle(build):
     assert _bytes(_native.approximate_kinship_csc(graph._built, graph.depth, 0.2)) == _oracle_csc(graph, 0.2)
 
 
+def test_a_depth_above_the_row_count_is_refused_before_allocating():
+    """A depth sizes the sweep's buckets, so it is held to n - 1 (issue #53)."""
+    graph = PedigreeGraph.from_frame({"id": [1, 2], "mother": [-1, 1], "father": [-1, -1], "sex": [0, 1]})
+    with pytest.raises(PedigreeValidationError) as info:
+        _native.kinship_csc(graph._built, np.array([0, 2_000_000_000], dtype=np.int32))
+    assert info.value.code == "value_out_of_range"
+    assert info.value.fields["field"] == "depth"
+    assert info.value.fields["maximum"] == 1
+
+
 def test_a_parentless_row_above_depth_zero_keeps_its_diagonal():
     """The raw binding accepts any structural depth; a founder raised above 0 is still a founder.
 

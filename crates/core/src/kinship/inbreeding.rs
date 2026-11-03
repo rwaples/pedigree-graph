@@ -31,7 +31,7 @@
 //! graph-row parents, not the genome nodes: children of co-twin mothers share
 //! genome parents but can count different ancestor rows.
 
-use super::depth_order::DepthOrder;
+use super::depth_order::{check_twins, DepthOrder};
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -455,39 +455,6 @@ pub(super) fn genome_node(twin: &[i32], row: usize) -> usize {
     } else {
         row
     }
-}
-
-/// Co-twins are one node, swept at one depth: each names the other, and
-/// they share a depth.  Graph construction refuses a non-reciprocal pair,
-/// and structural depth always puts co-twins at one depth, since they share
-/// their parents; a raised depth handed to the bindings need not.
-fn check_twins(twin: &[i32], depth: &[i32]) -> Result<(), Error> {
-    for (row, &t) in twin.iter().enumerate() {
-        if t < 0 {
-            continue;
-        }
-        let partner = t as usize;
-        if twin[partner] != row as i32 {
-            return Err(Error::ValueOutOfRange {
-                field: "twin",
-                position: partner.into(),
-                value: i64::from(twin[partner]),
-                minimum: row as i64,
-                maximum: row as i64,
-            });
-        }
-        if depth[partner] != depth[row] {
-            let partner = i64::from(depth[partner]);
-            return Err(Error::ValueOutOfRange {
-                field: "depth",
-                position: row.into(),
-                value: i64::from(depth[row]),
-                minimum: partner,
-                maximum: partner,
-            });
-        }
-    }
-    Ok(())
 }
 
 /// Each row's parents as genome nodes; the input columns themselves when

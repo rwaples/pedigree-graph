@@ -7,7 +7,7 @@ use super::{
 };
 use crate::alloc::{self, Family};
 use crate::error::Error;
-use crate::kinship::depth_order::check_structural_below;
+use crate::kinship::depth_order::check_structural;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -43,7 +43,7 @@ pub fn relationship_burden(
 ) -> Result<Burden, Error> {
     let n = ped.len();
     check_column_length("depth", depth.len(), n)?;
-    check_structural_below(ped.mother, ped.father, depth, n as i64 - 1)?;
+    check_structural(ped.mother, ped.father, depth)?;
     let n_depths = depth.iter().copied().max().map_or(0, |d| d as usize + 1);
     let mut cells = alloc::with_capacity(n * DEGREES, Family::RowSet)?;
     cells.extend((0..n * DEGREES).map(|_| AtomicU32::new(0)));

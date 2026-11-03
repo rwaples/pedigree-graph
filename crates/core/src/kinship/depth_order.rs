@@ -55,8 +55,9 @@ impl DepthOrder {
     ///
     /// # Errors
     ///
-    /// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative
-    /// or not above both parents', before anything is allocated, and
+    /// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative,
+    /// above `n - 1` or not above both parents', before anything is
+    /// allocated, and
     /// [`Error::AllocationFailed`] for either array.
     pub(crate) fn build(
         mother: &[i32],
@@ -119,20 +120,13 @@ impl Buckets {
     }
 }
 
-/// Every depth is non-negative and strictly above both parents'.
+/// Every depth is non-negative, at most `n - 1`, and strictly above both
+/// parents'.  The cap is what any ordering of `n` rows needs, and it keeps a
+/// buffer sized by the deepest depth within the pedigree's size.
 ///
 /// `mother` and `father` must already be `-1` or rows of the pedigree.
 pub(crate) fn check_structural(mother: &[i32], father: &[i32], depth: &[i32]) -> Result<(), Error> {
-    check_structural_below(mother, father, depth, i64::from(i32::MAX))
-}
-
-/// [`check_structural`] with every depth also at most `maximum`.
-pub(crate) fn check_structural_below(
-    mother: &[i32],
-    father: &[i32],
-    depth: &[i32],
-    maximum: i64,
-) -> Result<(), Error> {
+    let maximum = depth.len() as i64 - 1;
     for (row, &d) in depth.iter().enumerate() {
         let floor = [mother[row], father[row]]
             .into_iter()
@@ -147,6 +141,41 @@ pub(crate) fn check_structural_below(
                 value: i64::from(d),
                 minimum: floor,
                 maximum,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Co-twins are one node, at one depth: each names the other, and they
+/// share a depth.  Graph construction refuses a non-reciprocal pair, and
+/// structural depth always puts co-twins at one depth, since they share
+/// their parents; a raised depth handed to the bindings need not.
+///
+/// `twin` must already be `-1` or rows of the pedigree.
+pub(crate) fn check_twins(twin: &[i32], depth: &[i32]) -> Result<(), Error> {
+    for (row, &t) in twin.iter().enumerate() {
+        if t < 0 {
+            continue;
+        }
+        let partner = t as usize;
+        if twin[partner] != row as i32 {
+            return Err(Error::ValueOutOfRange {
+                field: "twin",
+                position: partner.into(),
+                value: i64::from(twin[partner]),
+                minimum: row as i64,
+                maximum: row as i64,
+            });
+        }
+        if depth[partner] != depth[row] {
+            let partner = i64::from(depth[partner]);
+            return Err(Error::ValueOutOfRange {
+                field: "depth",
+                position: row.into(),
+                value: i64::from(depth[row]),
+                minimum: partner,
+                maximum: partner,
             });
         }
     }

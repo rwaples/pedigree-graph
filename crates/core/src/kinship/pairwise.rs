@@ -27,7 +27,7 @@
 //! output is the same bits for every thread count.
 
 use super::ancestry::AncestorSignatures;
-use super::depth_order::check_structural;
+use super::depth_order::{check_structural, check_twins};
 use super::memo::PairMemo;
 use crate::alloc::{self, Family};
 use crate::error::{Error, PAIR_FIRST, PAIR_SECOND};
@@ -175,35 +175,46 @@ struct KinshipRows(Vec<Row>);
 
 impl KinshipRows {
     /// Pack `ped`'s depth, parent and twin columns, checking in the same pass
-    /// that `depth` orders the rows: the walk peels the deeper endpoint, so a
-    /// depth at or below a parent's would give a wrong value, not an error.
+    /// that `depth` orders the rows and puts co-twins level: the walk peels
+    /// the deeper endpoint, so a depth at or below a parent's, or co-twins at
+    /// two depths, would give a wrong value, not an error.
     ///
     /// # Errors
     ///
     /// [`Error::AllocationFailed`] (`kinship_columns`), then
     /// [`Error::ValueOutOfRange`] on `depth` at the first row that is
-    /// negative or not above both parents'.
+    /// negative, above `n - 1` or not above both parents', then on `twin` or
+    /// `depth` at the first co-twin pair that is not reciprocal or level.
     fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
-        let depth = ped.depth;
+        let (depth, twin) = (ped.depth, ped.twin);
+        let n = ped.len() as i64;
         let above = |d: i32, parent: i32| parent < 0 || d > depth[parent as usize];
+        let level = |i: usize, t: i32| {
+            t < 0 || (twin[t as usize] == i as i32 && depth[t as usize] == depth[i])
+        };
         let mut ordered = true;
         let mut rows = Vec::new();
         alloc::extend(
             &mut rows,
             (0..ped.len()).map(|i| {
-                let (d, mother, father) = (depth[i], ped.mother[i], ped.father[i]);
-                ordered &= d >= 0 && above(d, mother) && above(d, father);
+                let (d, mother, father, t) = (depth[i], ped.mother[i], ped.father[i], twin[i]);
+                ordered &= d >= 0
+                    && i64::from(d) < n
+                    && above(d, mother)
+                    && above(d, father)
+                    && level(i, t);
                 Row {
                     depth: d,
                     mother,
                     father,
-                    twin: ped.twin[i],
+                    twin: t,
                 }
             }),
             Family::KinshipColumns,
         )?;
         if !ordered {
             check_structural(ped.mother, ped.father, depth)?;
+            check_twins(twin, depth)?;
         }
         Ok(KinshipRows(rows))
     }
@@ -223,11 +234,15 @@ impl KinshipIndex {
     /// # Errors
     ///
     /// [`Error::AllocationFailed`] with operation `kinship_signatures` or
-    /// `kinship_columns`, and [`Error::ValueOutOfRange`] on `depth` when it
-    /// does not order the rows (see `KinshipRows::new`).
+    /// `kinship_columns`, and [`Error::ValueOutOfRange`] on `depth` or `twin`
+    /// when depth does not order the rows (see `KinshipRows::new`).
+    ///
+    /// The rows are packed and checked first: the signatures' parent walk
+    /// assumes the parents are acyclic, and a depth that orders every row
+    /// proves it, so a cyclic pedigree is refused instead of walked.
     pub fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
-        let signatures = AncestorSignatures::build(ped)?;
         let rows = KinshipRows::new(ped)?;
+        let signatures = AncestorSignatures::build(ped)?;
         Ok(KinshipIndex { rows, signatures })
     }
 
@@ -335,7 +350,9 @@ impl Walker<'_> {
     /// # Errors
     ///
     /// [`Error::PairRowOutOfRange`] when `a` or `b` is not a row, then
-    /// [`Error::AllocationFailed`] for the memo or the stack.
+    /// [`Error::AllocationFailed`] for the memo or the stack.  A call
+    /// resolves one pair, so the error's position is always 0; a caller
+    /// walking many pairs knows which one it passed.
     pub fn resolve(&mut self, a: i32, b: i32) -> Result<f32, Error> {
         let n = self.rows.len();
         for (argument, row) in [(PAIR_FIRST, a), (PAIR_SECOND, b)] {
@@ -348,6 +365,13 @@ impl Walker<'_> {
                 });
             }
         }
+        self.walk(a, b)
+    }
+
+    /// [`Walker::resolve`] for endpoints the caller has already checked are
+    /// rows, as `pair_kinship` and `support_values` check every one before
+    /// the walk.
+    fn walk(&mut self, a: i32, b: i32) -> Result<f32, Error> {
         let root = canon(a, b);
         let walk = match self.rule(root) {
             Rule::Known(v) => return Ok(v),
@@ -562,10 +586,7 @@ fn resolve_pairs(
     let index = KinshipIndex::new(&ped)?;
     run_chunks(&index, first.len(), PAIR_CHUNK, |walker, pairs| {
         for k in pairs {
-            out.set(
-                k,
-                walker.resolve(graph_row(first[k]), graph_row(second[k]))?,
-            );
+            out.set(k, walker.walk(graph_row(first[k]), graph_row(second[k]))?);
         }
         Ok(())
     })?;
@@ -602,7 +623,7 @@ fn support_with(
                 if row as usize > column {
                     break;
                 }
-                let value = walker.resolve(row, column as i32)?;
+                let value = walker.walk(row, column as i32)?;
                 data.set(position, value);
                 if row as usize == column {
                     continue;
@@ -772,7 +793,7 @@ mod tests {
                 "{err:?}"
             );
         }
-        assert_eq!(walker.resolve(0, 2).unwrap(), 0.25);
+        assert!((walker.resolve(0, 2).unwrap() - 0.25).abs() < 1e-6);
     }
 
     #[test]
@@ -793,7 +814,58 @@ mod tests {
             }
         ));
         let ped = KinshipPedigree::try_new(&mother, &father, &twin, &[1, 0]).unwrap();
-        assert_eq!(pair_kinship(ped, &[0], &[1]).unwrap(), [0.25]);
+        assert!((pair_kinship(ped, &[0], &[1]).unwrap()[0] - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn co_twins_at_two_depths_are_refused() {
+        // 0, 1 founders; MZ twins 2 and 3; 4 a child of 3 and 1.  Twin 2
+        // raised to depth 5 orders every parent but would peel 2 first and
+        // return 0.125 for (2, 4) instead of the co-twin's 0.25.
+        let (mother, father) = (vec![-1, -1, 0, 0, 3], vec![-1, -1, 1, 1, 1]);
+        let twin = vec![-1, -1, 3, 2, -1];
+        let raised = KinshipPedigree::try_new(&mother, &father, &twin, &[0, 0, 4, 1, 2]).unwrap();
+        let err = pair_kinship(raised, &[2], &[4]).unwrap_err();
+        assert!(
+            matches!(
+                err,
+                Error::ValueOutOfRange {
+                    field: "depth",
+                    value: 4,
+                    minimum: 1,
+                    maximum: 1,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        let level = KinshipPedigree::try_new(&mother, &father, &twin, &[0, 0, 1, 1, 2]).unwrap();
+        assert!((pair_kinship(level, &[2], &[4]).unwrap()[0] - 0.375).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_cyclic_pedigree_is_refused_not_walked() {
+        // Rows 0 and 1 are each other's mother; no depth orders them.
+        let (mother, father, twin) = (vec![1, 0], vec![-1, -1], vec![-1, -1]);
+        let ped = KinshipPedigree::try_new(&mother, &father, &twin, &[1, 0]).unwrap();
+        assert!(matches!(
+            KinshipIndex::new(&ped),
+            Err(Error::ValueOutOfRange { field: "depth", .. })
+        ));
+    }
+
+    #[test]
+    fn a_depth_above_the_row_count_is_refused() {
+        let (mother, father, twin) = (vec![-1, 0], vec![-1, -1], vec![-1, -1]);
+        let ped = KinshipPedigree::try_new(&mother, &father, &twin, &[0, 2_000_000_000]).unwrap();
+        assert!(matches!(
+            pair_kinship(ped, &[0], &[1]),
+            Err(Error::ValueOutOfRange {
+                field: "depth",
+                maximum: 1,
+                ..
+            })
+        ));
     }
 
     #[test]
