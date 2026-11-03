@@ -81,8 +81,12 @@ moved to `query`, then go.
   each have one home and are tested once, in the core.
 - An R view binding needs no heuristic: it passes `graph_rows` and `Auto`.
 - Calls that walk nothing cross into native once more than before in
-  Python (about 1 µs). The perf gate holds those cells to an absolute bound
-  rather than the 5% ratio, by the issue's decision.
+  Python. The perf gate held those cells to an absolute bound (+5 µs per
+  call) rather than the 5% ratio. Pairs and counts meet it; relatives costs
+  +8 to +12 µs per call and moments +5 to +10 µs (measured against
+  0.14.0-13, random_30k and random_300k). That is the native call's fixed
+  cost and the result wrapping, and it was accepted for calls that do no
+  work rather than keep a second copy of the rule in Python.
 - A zero-row view's moments report the zero cells their axes span. Before,
   Python's degenerate path reported a plan of one label cell for the peak.
 
