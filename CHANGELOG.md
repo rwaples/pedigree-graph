@@ -4,6 +4,28 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Breaking (R): `pair_kinship` reports Python's error codes** (issue
+  #51). The core now checks the endpoints of every `pair_kinship` call, so
+  both hosts report one contract with rows and positions in their own index
+  base. A row outside the graph was `value_out_of_range` in R and is now
+  `pair_row_out_of_range` with fields `argument` (`"first_rows"` or
+  `"second_rows"`), `row`, `position` and `n_individuals`. Arguments of
+  different lengths were an untyped usage error and are now
+  `pair_length_mismatch` (`first_length`, `second_length`). `NA`, a
+  fractional double or a non-numeric vector is `invalid_integer_value`, as
+  in Python, and `bit64::integer64` rows are accepted. Python codes and
+  fields are unchanged. Checks run as each argument's coercion, then
+  `first_rows`' range, `second_rows`' range, then the lengths; in Python a
+  coercion failure in `second_rows` now wins over an out-of-range row in
+  `first_rows`.
+- **Breaking (Rust): `kinship::pair_kinship` returns
+  `Error::PairRowOutOfRange` and `Error::PairLengthMismatch`** instead of
+  `ValueOutOfRange` and `LengthMismatch`, rows checked before lengths.
+  `kinship::view_pair_kinship(ped, graph_rows, first, second)` takes
+  endpoints in view rows and checks them against the view.
+
 ## v0.14.0
 
 - **Breaking: full and half are decided by path count for every collateral

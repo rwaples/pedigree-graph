@@ -5,12 +5,12 @@
 
 use crate::errors::{HostError, HostResult};
 use crate::graph;
-use crate::input::IdType;
+use crate::input::{coerce_with, reject_nulls, IdType};
 use crate::job;
 use crate::threads;
 use extendr_api::prelude::*;
 use extendr_api::AsTypedSlice;
-use pedigree_graph_core::error::Error;
+use pedigree_graph_core::error::{Error, PAIR_FIRST, PAIR_SECOND};
 use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::{
@@ -495,70 +495,45 @@ fn burden_list(n: usize, burden: Burden) -> HostResult<Robj> {
     ))
 }
 
-/// 1-based R rows to 0-based graph rows, or the first one that is not a row.
-fn graph_rows(name: &'static str, rows: &Robj, n: usize) -> HostResult<Vec<i32>> {
-    let bad = |position: usize, value: Robj| {
+/// 1-based R rows as 0-based int32 rows for the core to range-check, the
+/// coercion Python's `_coerce_rows` applies: no lossless integer form or `NA`
+/// is `invalid_integer_value`, and a row with no int32 form, which is outside
+/// every receiver, is `pair_row_out_of_range` here rather than in the core.
+fn pair_rows(argument: &'static str, rows: &Robj, n: usize) -> HostResult<Vec<i32>> {
+    let outside = |position: usize, row: f64| {
         HostError::validation(
-            "value_out_of_range",
+            "pair_row_out_of_range",
             format!(
-                "'{name}' value at position {} is not a row from 1 to {n}",
+                "{argument} row {row} at position {} is outside the {n}-row receiver",
                 position + 1
             ),
             vec![
-                ("field", name.into()),
+                ("argument", argument.into()),
+                ("row", row.into()),
                 ("position", ((position + 1) as f64).into()),
-                ("value", value),
-                ("minimum", 1.0.into()),
-                ("maximum", (n as f64).into()),
+                ("n_individuals", (n as f64).into()),
             ],
         )
     };
-    if let Some(slice) = rows.as_integer_slice() {
-        return slice
-            .iter()
-            .enumerate()
-            .map(|(p, &r)| {
-                if r >= 1 && (r as usize) <= n {
-                    Ok(r - 1)
-                } else if r == i32::MIN {
-                    Err(bad(p, Rint::na().into()))
-                } else {
-                    Err(bad(p, r.into()))
-                }
-            })
-            .collect();
-    }
-    if let (Some(slice), false) = (rows.as_real_slice(), rows.inherits("integer64")) {
-        return slice
-            .iter()
-            .enumerate()
-            .map(|(p, &r)| {
-                if r >= 1.0 && r <= n as f64 && r == r.trunc() {
-                    Ok(r as i32 - 1)
-                } else {
-                    Err(bad(p, r.into()))
-                }
-            })
-            .collect();
-    }
-    Err(HostError::usage(format!(
-        "{name} must be integer or whole-number double rows"
-    )))
+    let coerced = reject_nulls(argument, coerce_with(argument, rows, outside)?)?;
+    coerced
+        .values
+        .iter()
+        .enumerate()
+        .map(|(position, &row)| {
+            row.checked_sub(1)
+                .and_then(|row| i32::try_from(row).ok())
+                .ok_or_else(|| outside(position, row as f64))
+        })
+        .collect()
 }
 
 /// Kinship per `(first[k], second[k])`, 1-based rows, as doubles.
 pub fn pair_kinship(native: &Robj, seal: &Robj, first: &Robj, second: &Robj) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
     let n = graph.len();
-    let first = graph_rows("first", first, n)?;
-    let second = graph_rows("second", second, n)?;
-    if first.len() != second.len() {
-        return Err(HostError::usage(format!(
-            "first and second must have the same length, got {} and {}",
-            first.len(),
-            second.len()
-        )));
-    }
+    let first = pair_rows(PAIR_FIRST, first, n)?;
+    let second = pair_rows(PAIR_SECOND, second, n)?;
     let (_, pool) = package_pool()?;
     let ped = graph.kinship()?;
     let values = pool.install(|| kinship::pair_kinship(ped, &first, &second))?;

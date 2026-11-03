@@ -194,6 +194,13 @@ relatives_per_person <- function(pg, max_degree = NULL, categories = NULL, thres
 #'   example the `first` and `second` columns of [relationship_pairs()]).
 #' @return A double vector, one kinship per pair; values are the core's
 #'   float32 recurrence, exactly representable as doubles.
+#' @section Errors:
+#' A `pedigree_graph_validation_error` with code `invalid_integer_value` for
+#' `NA` or a value with no integer form; then `pair_row_out_of_range`
+#' (`argument` `"first_rows"` or `"second_rows"`, `row`, `position`,
+#' `n_individuals`) for a row outside the graph, `first` before `second`; then
+#' `pair_length_mismatch` (`first_length`, `second_length`).  The codes and
+#' fields are Python's, with rows and positions 1-based.
 #' @examples
 #' pg <- pedigree_graph(data.frame(
 #'   id = 1:6, mother = c(NA, NA, 1, 1, NA, 3), father = c(NA, NA, 2, 2, NA, 5)

@@ -12,13 +12,20 @@
 //! Every row, column or position that locates the failure is a [`Position`],
 //! so neither can show one raw.  An offending value and its bounds are
 //! reported as given, even when the field itself holds rows
-//! ([`Error::ValueOutOfRange`]).
+//! ([`Error::ValueOutOfRange`]); [`Error::PairRowOutOfRange`]'s `row` is a
+//! row of the receiver, so it counts from the host's base too.
 //!
 //! The prose is not part of the contract; most of it began as the Python
 //! raise site it replaced.
 
 /// Row coordinates are int32, so the row count is the hard capacity limit.
 pub const MAX_ROWS: usize = i32::MAX as usize;
+
+/// The first `pair_kinship` endpoint argument, as both hosts name it.
+pub const PAIR_FIRST: &str = "first_rows";
+
+/// The second `pair_kinship` endpoint argument, as both hosts name it.
+pub const PAIR_SECOND: &str = "second_rows";
 
 /// The host exception family a variant maps onto.
 ///
@@ -135,6 +142,24 @@ pub enum Error {
         minimum: i64,
         /// The reported upper bound.
         maximum: i64,
+    },
+    /// A `pair_kinship` endpoint is not a row of the receiver.
+    PairRowOutOfRange {
+        /// The endpoint argument, [`PAIR_FIRST`] or [`PAIR_SECOND`].
+        argument: &'static str,
+        /// The offending row, counted from 0; negative when given so.
+        row: i64,
+        /// Its position in the argument.
+        position: Position,
+        /// The receiver's row count.
+        n_individuals: usize,
+    },
+    /// The two `pair_kinship` endpoint arguments differ in length.
+    PairLengthMismatch {
+        /// The first argument's length.
+        first_length: usize,
+        /// The second argument's length.
+        second_length: usize,
     },
     /// An id appears on more than one row.
     DuplicateId {
@@ -351,6 +376,8 @@ impl Error {
         match self {
             Error::LengthMismatch { .. }
             | Error::ValueOutOfRange { .. }
+            | Error::PairRowOutOfRange { .. }
+            | Error::PairLengthMismatch { .. }
             | Error::DuplicateId { .. }
             | Error::SameParentId { .. }
             | Error::Cycle { .. }
@@ -386,6 +413,8 @@ impl Error {
         match self {
             Error::LengthMismatch { .. } => "length_mismatch",
             Error::ValueOutOfRange { .. } => "value_out_of_range",
+            Error::PairRowOutOfRange { .. } => "pair_row_out_of_range",
+            Error::PairLengthMismatch { .. } => "pair_length_mismatch",
             Error::DuplicateId { .. } => "duplicate_id",
             Error::SameParentId { .. } => "same_parent_id",
             Error::Cycle { .. } => "cycle",
@@ -441,6 +470,24 @@ impl Error {
                 ("value", Int(*value)),
                 ("minimum", Int(*minimum)),
                 ("maximum", Int(*maximum)),
+            ],
+            Error::PairRowOutOfRange {
+                argument,
+                row,
+                position,
+                n_individuals,
+            } => vec![
+                ("argument", Str(argument)),
+                ("row", Int(row + base.offset())),
+                ("position", at(position)),
+                ("n_individuals", int(*n_individuals)),
+            ],
+            Error::PairLengthMismatch {
+                first_length,
+                second_length,
+            } => vec![
+                ("first_length", int(*first_length)),
+                ("second_length", int(*second_length)),
             ],
             Error::DuplicateId {
                 id,
@@ -669,6 +716,24 @@ impl std::fmt::Display for Message<'_> {
                 python_str(field),
                 position.at(base)
             ),
+            Error::PairRowOutOfRange {
+                argument,
+                row,
+                position,
+                n_individuals,
+            } => write!(
+                f,
+                "{argument} row {} at position {} is outside the {n_individuals}-row receiver",
+                row + base.offset(),
+                position.at(base)
+            ),
+            Error::PairLengthMismatch {
+                first_length,
+                second_length,
+            } => write!(
+                f,
+                "{PAIR_FIRST} has {first_length} entries but {PAIR_SECOND} has {second_length}"
+            ),
             Error::DuplicateId {
                 id,
                 rows,
@@ -853,6 +918,16 @@ impl Error {
                 minimum: -1,
                 maximum: 5,
             },
+            Error::PairRowOutOfRange {
+                argument: PAIR_SECOND,
+                row: 93,
+                position: p,
+                n_individuals: 5,
+            },
+            Error::PairLengthMismatch {
+                first_length: 3,
+                second_length: 2,
+            },
             Error::DuplicateId {
                 id: 5,
                 rows: vec![p, q],
@@ -977,7 +1052,7 @@ mod tests {
     use super::{Error, ErrorClass, FieldValue, IndexBase, MAX_ROWS};
 
     /// How many variants `Error` has.
-    const VARIANTS: usize = 27;
+    const VARIANTS: usize = 29;
 
     /// Each variant's slot in [`Error::samples`]; the exhaustive match makes a new
     /// variant fail to compile until it is counted here.
@@ -985,31 +1060,33 @@ mod tests {
         match err {
             Error::LengthMismatch { .. } => 0,
             Error::ValueOutOfRange { .. } => 1,
-            Error::DuplicateId { .. } => 2,
-            Error::SameParentId { .. } => 3,
-            Error::Cycle { .. } => 4,
-            Error::MzSelfReference { .. } => 5,
-            Error::MzNonreciprocal { .. } => 6,
-            Error::MzParentMismatch { .. } => 7,
-            Error::MzSexMismatch { .. } => 8,
-            Error::BirthYearTopology { .. } => 9,
-            Error::PedigreeTooLarge { .. } => 10,
-            Error::AllocationFailed { .. } => 11,
-            Error::ArithmeticOverflow { .. } => 12,
-            Error::ThreadPoolConflict { .. } => 13,
-            Error::ThreadPoolUnavailable { .. } => 14,
-            Error::MaxDegreeOutOfRange { .. } => 15,
-            Error::KinshipSupportUnsorted { .. } => 16,
-            Error::KinshipSupportAsymmetric { .. } => 17,
-            Error::CscIndexOverflow { .. } => 18,
-            Error::KinshipThresholdOutOfRange { .. } => 19,
-            Error::InvalidViewMap { .. } => 20,
-            Error::UnknownSexEncoding { .. } => 21,
-            Error::MemoryBudgetExceeded { .. } => 22,
-            Error::NonFiniteValue { .. } => 23,
-            Error::NotRepresentable { .. } => 24,
-            Error::InvalidMomentsTable { .. } => 25,
-            Error::Cancelled => 26,
+            Error::PairRowOutOfRange { .. } => 2,
+            Error::PairLengthMismatch { .. } => 3,
+            Error::DuplicateId { .. } => 4,
+            Error::SameParentId { .. } => 5,
+            Error::Cycle { .. } => 6,
+            Error::MzSelfReference { .. } => 7,
+            Error::MzNonreciprocal { .. } => 8,
+            Error::MzParentMismatch { .. } => 9,
+            Error::MzSexMismatch { .. } => 10,
+            Error::BirthYearTopology { .. } => 11,
+            Error::PedigreeTooLarge { .. } => 12,
+            Error::AllocationFailed { .. } => 13,
+            Error::ArithmeticOverflow { .. } => 14,
+            Error::ThreadPoolConflict { .. } => 15,
+            Error::ThreadPoolUnavailable { .. } => 16,
+            Error::MaxDegreeOutOfRange { .. } => 17,
+            Error::KinshipSupportUnsorted { .. } => 18,
+            Error::KinshipSupportAsymmetric { .. } => 19,
+            Error::CscIndexOverflow { .. } => 20,
+            Error::KinshipThresholdOutOfRange { .. } => 21,
+            Error::InvalidViewMap { .. } => 22,
+            Error::UnknownSexEncoding { .. } => 23,
+            Error::MemoryBudgetExceeded { .. } => 24,
+            Error::NonFiniteValue { .. } => 25,
+            Error::NotRepresentable { .. } => 26,
+            Error::InvalidMomentsTable { .. } => 27,
+            Error::Cancelled => 28,
         }
     }
 

@@ -93,6 +93,18 @@ fn describe(column: &Robj) -> Robj {
 
 /// Coerce one column to int64, nulls to `-1`.
 pub fn coerce(field: &'static str, column: &Robj) -> HostResult<Coerced> {
+    coerce_with(field, column, |position, value| {
+        out_of_range(field, position, value)
+    })
+}
+
+/// [`coerce`], with a double outside the int64 range reported by
+/// `out_of_range(position, value)`, so a caller names its own code.
+pub fn coerce_with(
+    field: &'static str,
+    column: &Robj,
+    out_of_range: impl Fn(usize, f64) -> HostError,
+) -> HostResult<Coerced> {
     let n = column.len();
     // An empty column of any atomic type has a lossless (empty) form, as in Python.
     if n == 0 && column.rtype() == Rtype::Strings {
@@ -145,7 +157,7 @@ pub fn coerce(field: &'static str, column: &Robj) -> HostResult<Coerced> {
                 return Err(invalid(field, position, v.into()));
             }
             if !(-TWO_POW_63..TWO_POW_63).contains(&v) {
-                return Err(out_of_range(field, position, v));
+                return Err(out_of_range(position, v));
             }
             values.push(v as i64);
             nulls.push(false);
@@ -174,10 +186,14 @@ pub fn coerce(field: &'static str, column: &Robj) -> HostResult<Coerced> {
 
 /// Coerce the required `id` column, which has no null form.
 pub fn coerce_ids(column: &Robj) -> HostResult<Coerced> {
-    let coerced = coerce("id", column)?;
+    reject_nulls("id", coerce("id", column)?)
+}
+
+/// `coerced` unless it holds a null, which is `invalid_integer_value`.
+pub fn reject_nulls(field: &'static str, coerced: Coerced) -> HostResult<Coerced> {
     if let Some(position) = coerced.nulls.iter().position(|&null| null) {
         let na = Strings::from_values([Rstr::na()]).into_robj();
-        return Err(invalid("id", position, na));
+        return Err(invalid(field, position, na));
     }
     Ok(coerced)
 }

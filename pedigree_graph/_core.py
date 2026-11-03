@@ -846,9 +846,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             TypeError: A block or collection with a second argument, or row
                 arrays without one.
             PedigreeValidationError: ``coordinate_space_mismatch`` for a block
-                from another receiver; ``invalid_shape``,
-                ``invalid_integer_value``, or ``pair_row_out_of_range`` per row
-                argument; ``pair_length_mismatch``.
+                from another receiver; ``invalid_shape`` or
+                ``invalid_integer_value`` per row argument; then
+                ``pair_row_out_of_range`` for ``first_rows``, then for
+                ``second_rows``; then ``pair_length_mismatch``.
             ResourceError: ``allocation_failed`` when the memo, the walk's
                 stack, or the output cannot be allocated.
         """

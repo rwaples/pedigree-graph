@@ -161,11 +161,22 @@ class TestBoundary:
         n = graph.n_individuals
         with pytest.raises(PedigreeValidationError) as info:
             _native_kinship(graph, [0, n], [0, 0])
-        assert info.value.code == "value_out_of_range"
-        assert info.value.fields["field"] == "first"
+        assert info.value.code == "pair_row_out_of_range"
+        assert dict(info.value.fields) == {"argument": "first_rows", "row": n, "position": 1, "n_individuals": n}
         with pytest.raises(PedigreeValidationError) as info:
             _native_kinship(graph, [0], [0, 1])
-        assert info.value.code == "length_mismatch"
+        assert info.value.code == "pair_length_mismatch"
+        with pytest.raises(PedigreeValidationError) as info:
+            _native.pair_kinship(
+                graph._built,
+                graph.depth,
+                np.zeros(1, np.int32),
+                np.zeros(1, np.int32),
+                threads=thread_budget(),
+                graph_rows=np.array([0, n], np.int32),
+            )
+        assert info.value.code == "value_out_of_range"
+        assert info.value.fields["field"] == "graph_rows"
         with pytest.raises(PedigreeValidationError) as info:
             _native.pair_kinship(
                 graph._built, graph.depth[:-1], np.zeros(1, np.int32), np.zeros(1, np.int32), threads=thread_budget()

@@ -163,6 +163,7 @@ def pair_kinship(
     /,
     *,
     threads: int,
+    graph_rows: NDArray[np.int32] | None = None,
 ) -> NDArray[np.float32]: ...
 def kinship_support_values(
     pedigree: BuiltPedigree,

@@ -13,6 +13,7 @@ from types import MappingProxyType
 
 import numpy as np
 import pedigrees
+import polars as pl
 import pytest
 import scipy.sparse as sp
 from _support import (
@@ -298,6 +299,61 @@ class TestErrors:
             graph.pair_kinship([0, None], [0, 0])
         assert info.value.code == "invalid_integer_value"
         assert info.value.fields["value"] == "null"
+
+
+def _three_gen() -> PedigreeGraph:
+    """The R suite's ``three_gen()`` (``r/tests/testthat/test-kernels.R``), ids 1-6 as rows 0-5."""
+    return PedigreeGraph.from_frame(
+        pl.DataFrame(
+            {
+                "id": np.arange(6),
+                "mother": np.array([-1, -1, 0, 0, -1, 2]),
+                "father": np.array([-1, -1, 1, 1, -1, 4]),
+            }
+        )
+    )
+
+
+class TestCrossHostErrors:
+    """The mistakes R's ``pair_kinship`` tests make, in 0-based rows.
+
+    The core reports both codes, so the R suite expects these fields with rows
+    and positions one higher.
+    """
+
+    def test_first_row_out_of_range(self):
+        with pytest.raises(PedigreeValidationError) as info:
+            _three_gen().pair_kinship([0, 6], [0, 0])
+        assert info.value.code == "pair_row_out_of_range"
+        assert dict(info.value.fields) == {"argument": "first_rows", "row": 6, "position": 1, "n_individuals": 6}
+        assert "first_rows row 6 at position 1 is outside the 6-row receiver" in str(info.value)
+
+    def test_second_row_out_of_range(self):
+        with pytest.raises(PedigreeValidationError) as info:
+            _three_gen().pair_kinship([0, 0], [0, -1])
+        assert dict(info.value.fields) == {"argument": "second_rows", "row": -1, "position": 1, "n_individuals": 6}
+
+    def test_length_mismatch(self):
+        with pytest.raises(PedigreeValidationError) as info:
+            _three_gen().pair_kinship([0, 1, 2], [0, 1])
+        assert info.value.code == "pair_length_mismatch"
+        assert dict(info.value.fields) == {"first_length": 3, "second_length": 2}
+
+    @pytest.mark.parametrize(
+        ("first", "second", "argument"),
+        [([0, 8], [-1], "first_rows"), ([0, 0], [-1], "second_rows")],
+    )
+    def test_rows_are_checked_before_lengths(self, first, second, argument):
+        with pytest.raises(PedigreeValidationError) as info:
+            _three_gen().pair_kinship(first, second)
+        assert info.value.code == "pair_row_out_of_range"
+        assert info.value.fields["argument"] == argument
+
+    def test_view_rows_are_checked_against_the_view(self):
+        view = _three_gen().view(rows=[5, 2])
+        with pytest.raises(PedigreeValidationError) as info:
+            view.pair_kinship([0, 1], [2, 0])
+        assert dict(info.value.fields) == {"argument": "second_rows", "row": 2, "position": 0, "n_individuals": 2}
 
 
 @pytest.mark.usefixtures("fresh_thread_state")

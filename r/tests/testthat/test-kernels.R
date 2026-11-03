@@ -95,12 +95,37 @@ test_that("pair_kinship takes 1-based integer or double rows and validates them"
   expect_identical(pair_kinship(pg, c(3L, 1L, 6L), c(4L, 1L, 1L)), c(0.25, 0.5, 0.125))
   expect_identical(pair_kinship(pg, c(3, 1), c(4, 1)), c(0.25, 0.5))
   expect_identical(pair_kinship(pg, integer(), integer()), numeric())
-  err <- expect_pg_error(pair_kinship(pg, c(1L, 7L), c(1L, 1L)), "validation", "value_out_of_range")
-  expect_identical(err$fields[c("field", "position", "value")], list(field = "first", position = 2, value = 7L))
-  expect_pg_error(pair_kinship(pg, c(1L, NA), c(1L, 1L)), "validation", "value_out_of_range")
-  expect_pg_error(pair_kinship(pg, 0.5, 1), "validation", "value_out_of_range")
-  expect_pg_error(pair_kinship(pg, 1:2, 1L), "usage")
-  expect_pg_error(pair_kinship(pg, "1", "1"), "usage")
+})
+
+# The same mistakes as tests/test_pair_kinship.py::TestCrossHostErrors, in 1-based rows.
+test_that("pair_kinship reports Python's codes and fields, rows and positions 1-based", {
+  pg <- pedigree_graph(three_gen())
+  err <- expect_pg_error(pair_kinship(pg, c(1L, 7L), c(1L, 1L)), "validation", "pair_row_out_of_range")
+  expect_identical(err$fields, list(argument = "first_rows", row = 7, position = 2, n_individuals = 6))
+  expect_match(conditionMessage(err), "first_rows row 7 at position 2 is outside the 6-row receiver")
+  err <- expect_pg_error(pair_kinship(pg, c(1, 1), c(1, 0)), "validation", "pair_row_out_of_range")
+  expect_identical(err$fields, list(argument = "second_rows", row = 0, position = 2, n_individuals = 6))
+  err <- expect_pg_error(pair_kinship(pg, c(1L, 2L, 3L), c(1L, 2L)), "validation", "pair_length_mismatch")
+  expect_identical(err$fields, list(first_length = 3, second_length = 2))
+})
+
+test_that("pair_kinship checks first's rows, then second's, then the lengths", {
+  pg <- pedigree_graph(three_gen())
+  err <- expect_pg_error(pair_kinship(pg, c(1L, 9L), 0L), "validation", "pair_row_out_of_range")
+  expect_identical(err$fields$argument, "first_rows")
+  err <- expect_pg_error(pair_kinship(pg, c(1L, 1L), 0L), "validation", "pair_row_out_of_range")
+  expect_identical(err$fields$argument, "second_rows")
+})
+
+test_that("pair_kinship rows with no int32 row form are refused as Python refuses them", {
+  pg <- pedigree_graph(three_gen())
+  err <- expect_pg_error(pair_kinship(pg, c(1L, NA), c(1L, 1L)), "validation", "invalid_integer_value")
+  expect_identical(err$fields[c("field", "position")], list(field = "first_rows", position = 2))
+  err <- expect_pg_error(pair_kinship(pg, 1, 0.5), "validation", "invalid_integer_value")
+  expect_identical(err$fields[c("field", "position", "value")], list(field = "second_rows", position = 1, value = 0.5))
+  expect_pg_error(pair_kinship(pg, "1", "1"), "validation", "invalid_integer_value")
+  err <- expect_pg_error(pair_kinship(pg, 1e10, 1), "validation", "pair_row_out_of_range")
+  expect_identical(err$fields, list(argument = "first_rows", row = 1e10, position = 1, n_individuals = 6))
 })
 
 test_that("inbreeding is 2 * self-kinship - 1", {

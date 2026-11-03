@@ -1136,14 +1136,16 @@ impl<'py> KinshipColumns<'py> {
     }
 }
 
-/// Pedigree-expected kinship per requested pair (ADR 0009), in graph rows.
+/// Pedigree-expected kinship per requested pair (ADR 0009).
 ///
 /// `pedigree` is the graph's own [`BuiltPedigree`] and `depth` its structural
-/// depth.  `first` and `second` are validated graph rows of one length.  The
+/// depth.  `first` and `second` are receiver rows: graph rows, or with
+/// `graph_rows` (a view's graph row per view row) view rows.  The core checks
+/// them and reports `pair_row_out_of_range` and `pair_length_mismatch`.  The
 /// walk runs in the package pool at `threads` with the GIL released, one
 /// memo per worker, each freed before the call returns.
 #[pyfunction]
-#[pyo3(signature = (pedigree, depth, first, second, /, *, threads))]
+#[pyo3(signature = (pedigree, depth, first, second, /, *, threads, graph_rows=None))]
 fn pair_kinship<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
@@ -1151,14 +1153,24 @@ fn pair_kinship<'py>(
     first: PyReadonlyArray1<'py, i32>,
     second: PyReadonlyArray1<'py, i32>,
     threads: usize,
+    graph_rows: Option<PyReadonlyArray1<'py, i32>>,
 ) -> PyResult<Bound<'py, PyArray1<f32>>> {
     let columns = KinshipColumns::borrow(py, pedigree, depth);
     let ped = columns.pedigree(py)?;
     let first = first.as_slice()?;
     let second = second.as_slice()?;
+    let graph_rows = graph_rows
+        .as_ref()
+        .map(|rows| rows.as_slice())
+        .transpose()?;
     let pool = checked_pool(py, threads)?;
     let values = py
-        .detach(|| pool.install(|| kinship::pair_kinship(ped, first, second)))
+        .detach(|| {
+            pool.install(|| match graph_rows {
+                Some(rows) => kinship::view_pair_kinship(ped, rows, first, second),
+                None => kinship::pair_kinship(ped, first, second),
+            })
+        })
         .map_err(|e| to_pyerr(py, e))?;
     Ok(values.into_pyarray(py))
 }

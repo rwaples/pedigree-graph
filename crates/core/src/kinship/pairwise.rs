@@ -29,7 +29,7 @@
 use super::ancestry::AncestorSignatures;
 use super::memo::PairMemo;
 use crate::alloc::{self, Family};
-use crate::error::Error;
+use crate::error::{Error, PAIR_FIRST, PAIR_SECOND};
 use crate::relationships::{check_column_length, check_row_range};
 use rayon::prelude::*;
 use std::ops::Range;
@@ -429,40 +429,83 @@ const PAIR_CHUNK: usize = 4096;
 /// Columns per chunk of a [`support_values`] call.
 const COLUMN_CHUNK: usize = 256;
 
-fn check_pairs(ped: &KinshipPedigree<'_>, first: &[i32], second: &[i32]) -> Result<(), Error> {
-    check_column_length("second", second.len(), first.len())?;
-    let n = ped.len();
-    let maximum = n as i64 - 1;
-    for (field, rows) in [("first", first), ("second", second)] {
-        if let Some(position) = rows
-            .iter()
-            .position(|&row| row < 0 || i64::from(row) > maximum)
-        {
-            return Err(Error::ValueOutOfRange {
-                field,
+/// Reject an endpoint outside the receiver's `n` rows, `first`'s before
+/// `second`'s, then arguments of different lengths.
+fn check_pairs(n: usize, first: &[i32], second: &[i32]) -> Result<(), Error> {
+    for (argument, rows) in [(PAIR_FIRST, first), (PAIR_SECOND, second)] {
+        if let Some(position) = rows.iter().position(|&row| row < 0 || row as usize >= n) {
+            return Err(Error::PairRowOutOfRange {
+                argument,
+                row: i64::from(rows[position]),
                 position: position.into(),
-                value: i64::from(rows[position]),
-                minimum: 0,
-                maximum,
+                n_individuals: n,
             });
         }
+    }
+    if first.len() != second.len() {
+        return Err(Error::PairLengthMismatch {
+            first_length: first.len(),
+            second_length: second.len(),
+        });
     }
     Ok(())
 }
 
-/// Kinship per requested pair, positionally aligned to `first` and `second`.
+/// Kinship per requested pair, positionally aligned to `first` and `second`,
+/// both in graph rows.
 ///
 /// # Errors
 ///
-/// [`Error::LengthMismatch`] when `second` is not as long as `first`,
-/// [`Error::ValueOutOfRange`] at the first endpoint outside `0..n`, and
+/// [`Error::PairRowOutOfRange`] at the first endpoint outside `0..n`,
+/// `first`'s before `second`'s; then [`Error::PairLengthMismatch`]; then
 /// [`Error::AllocationFailed`] for the memo, the stack or the output.
 pub fn pair_kinship(
     ped: KinshipPedigree<'_>,
     first: &[i32],
     second: &[i32],
 ) -> Result<Vec<f32>, Error> {
-    check_pairs(&ped, first, second)?;
+    check_pairs(ped.len(), first, second)?;
+    resolve_pairs(ped, first, second, |row| row)
+}
+
+/// [`pair_kinship`] with `first` and `second` in the rows of a view, where
+/// `graph_rows[v]` is view row `v`'s graph row.
+///
+/// # Errors
+///
+/// As [`pair_kinship`], against the view's `graph_rows.len()` rows, and
+/// [`Error::ValueOutOfRange`] on `graph_rows` when an entry is not a graph
+/// row.
+pub fn view_pair_kinship(
+    ped: KinshipPedigree<'_>,
+    graph_rows: &[i32],
+    first: &[i32],
+    second: &[i32],
+) -> Result<Vec<f32>, Error> {
+    check_pairs(graph_rows.len(), first, second)?;
+    let n = ped.len();
+    if let Some(position) = graph_rows
+        .iter()
+        .position(|&row| row < 0 || row as usize >= n)
+    {
+        return Err(Error::ValueOutOfRange {
+            field: "graph_rows",
+            position: position.into(),
+            value: i64::from(graph_rows[position]),
+            minimum: 0,
+            maximum: n as i64 - 1,
+        });
+    }
+    resolve_pairs(ped, first, second, |row| graph_rows[row as usize])
+}
+
+/// Evaluate checked pairs, each endpoint taken to its graph row by `graph_row`.
+fn resolve_pairs(
+    ped: KinshipPedigree<'_>,
+    first: &[i32],
+    second: &[i32],
+    graph_row: impl Fn(i32) -> i32 + Sync,
+) -> Result<Vec<f32>, Error> {
     if first.is_empty() {
         return Ok(Vec::new());
     }
@@ -470,7 +513,10 @@ pub fn pair_kinship(
     let index = KinshipIndex::new(&ped)?;
     run_chunks(&index, first.len(), PAIR_CHUNK, |walker, pairs| {
         for k in pairs {
-            out.set(k, walker.resolve(first[k], second[k])?);
+            out.set(
+                k,
+                walker.resolve(graph_row(first[k]), graph_row(second[k]))?,
+            );
         }
         Ok(())
     })?;
@@ -853,22 +899,56 @@ mod tests {
         let cols = ped(&[(-1, -1), (-1, -1), (0, 1)], &[]);
         let ped = KinshipPedigree::try_new(&cols.0, &cols.1, &cols.2, &cols.3).unwrap();
         let err = pair_kinship(ped, &[0, 3], &[1, 1]).unwrap_err();
+        assert_eq!(
+            err,
+            Error::PairRowOutOfRange {
+                argument: "first_rows",
+                row: 3,
+                position: 1.into(),
+                n_individuals: 3,
+            }
+        );
+        let err = pair_kinship(ped, &[0], &[1, -1]).unwrap_err();
         assert!(matches!(
             err,
-            Error::ValueOutOfRange {
-                field: "first",
-                position,
-                value: 3,
-                ..
-            } if position == 1.into()
-        ));
-        let err = pair_kinship(ped, &[0], &[1, 1]).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::LengthMismatch {
-                field: "second",
+            Error::PairRowOutOfRange {
+                argument: "second_rows",
+                row: -1,
                 ..
             }
         ));
+        let err = pair_kinship(ped, &[0], &[1, 1]).unwrap_err();
+        assert_eq!(
+            err,
+            Error::PairLengthMismatch {
+                first_length: 1,
+                second_length: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn view_endpoints_count_in_view_rows() {
+        let cols = ped(&[(-1, -1), (-1, -1), (0, 1)], &[]);
+        let ped = KinshipPedigree::try_new(&cols.0, &cols.1, &cols.2, &cols.3).unwrap();
+        let graph_rows = [2, 0];
+        let values = view_pair_kinship(ped, &graph_rows, &[0, 0], &[0, 1]).unwrap();
+        assert_eq!(values, pair_kinship(ped, &[2, 2], &[2, 0]).unwrap());
+        let err = view_pair_kinship(ped, &graph_rows, &[0], &[2]).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::PairRowOutOfRange {
+                row: 2,
+                n_individuals: 2,
+                ..
+            }
+        ));
+        for bad in [3, -1] {
+            let err = view_pair_kinship(ped, &[0, bad], &[0], &[1]).unwrap_err();
+            assert!(matches!(
+                err,
+                Error::ValueOutOfRange { field: "graph_rows", value, .. } if value == i64::from(bad)
+            ));
+        }
     }
 }
