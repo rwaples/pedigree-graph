@@ -59,9 +59,14 @@ male may be a mother.
   Validation tools must find and repair such ids before construction. pedsum
   tolerates an unsexed id in both roles under `--allow-missing-sex`; with
   this rule its graph construction refuses that input.
-- The check marks represented parents in a byte per row and sorts only the
-  external parent references, so it adds O(n + u log u) time for u external
-  references.
+- The check marks each resolved parent row's role, one byte a row, while
+  the parent columns resolve, and merges the distinct external parent ids of
+  the two roles. On sparse ids the merged lookup lists those ids in order as
+  it walks; on dense ids they are sorted, O(u log u) for u external parent
+  references. `benchmarks/bench_construction.md` measures both: inputs
+  without external parents and inputs on sparse ids stay within the 5% gate,
+  while dense ids with 60% external parents over 5M rows go from 0.17 s to
+  0.35 s.
 - The core fixtures `inbred0` to `inbred4` have ids in both roles. The Rust
   engine tests that read them as engine columns keep them; the R goldens and
   `tools/r_parity.py`, which build graphs, no longer use them.

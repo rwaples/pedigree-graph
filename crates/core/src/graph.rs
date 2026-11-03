@@ -271,9 +271,40 @@ impl IdIndex {
     pub fn resolve(&self, query: &[i64]) -> Vec<i32> {
         match &self.layout {
             Layout::Sorted { ids, rows } if ids.len().min(query.len()) >= MERGE_MIN => {
-                resolve_sorted(ids, rows, query)
+                resolve_sorted(ids, rows, query, |_| {}).0
             }
             _ => query.iter().map(|&id| self.row(id)).collect(),
+        }
+    }
+
+    /// [`IdIndex::resolve`] for a parent column, setting `role` in `roles`
+    /// at every row it resolves to, and the distinct nonnegative query ids
+    /// no row has, ascending.  The merged lookup visits the query in id
+    /// order, so it lists them as it goes; the per-id lookup sorts them after.
+    fn resolve_parents(&self, query: &[i64], roles: &mut [u8], role: u8) -> (Vec<i32>, Vec<i64>) {
+        let mut mark = |row: i32| roles[row as usize] |= role;
+        match &self.layout {
+            Layout::Sorted { ids, rows } if ids.len().min(query.len()) >= MERGE_MIN => {
+                resolve_sorted(ids, rows, query, mark)
+            }
+            _ => {
+                let mut external = Vec::new();
+                let resolved = query
+                    .iter()
+                    .map(|&id| {
+                        let row = self.row(id);
+                        if row >= 0 {
+                            mark(row);
+                        } else if id >= 0 {
+                            external.push(id);
+                        }
+                        row
+                    })
+                    .collect();
+                external.sort_unstable();
+                external.dedup();
+                (resolved, external)
+            }
         }
     }
 }
@@ -281,8 +312,15 @@ impl IdIndex {
 /// Look up `query` in ascending order, each search galloping forward from the
 /// last hit.  A binary search per query missed cache at almost every probe:
 /// `build` on 20M rows of sparse ids took 24.8 s that way and 5.1 s this way.
-/// The sort holds 16 bytes per nonnegative query while it runs.
-fn resolve_sorted(ids: &[i64], rows: &[i32], query: &[i64]) -> Vec<i32> {
+/// The sort holds 16 bytes per nonnegative query while it runs.  Calls `mark`
+/// with each resolved row, and also returns the distinct query ids no row has,
+/// ascending.
+fn resolve_sorted(
+    ids: &[i64],
+    rows: &[i32],
+    query: &[i64],
+    mut mark: impl FnMut(i32),
+) -> (Vec<i32>, Vec<i64>) {
     let mut order: Vec<(i64, usize)> = query
         .iter()
         .enumerate()
@@ -291,14 +329,18 @@ fn resolve_sorted(ids: &[i64], rows: &[i32], query: &[i64]) -> Vec<i32> {
         .collect();
     order.sort_unstable();
     let mut resolved = vec![-1; query.len()];
+    let mut external = Vec::new();
     let mut start = 0;
     for (id, at) in order {
         start += first_at_least(&ids[start..], id);
         if ids.get(start) == Some(&id) {
             resolved[at] = rows[start];
+            mark(rows[start]);
+        } else if external.last() != Some(&id) {
+            external.push(id);
         }
     }
-    resolved
+    (resolved, external)
 }
 
 /// The first position in ascending `ids` holding `id` or more: double the
@@ -384,49 +426,36 @@ fn check_same_parent(ids: &[i64], mother: &[i64], father: &[i64]) -> Result<(), 
 /// `parent_in_both_roles` for the smallest id that is the mother of one row
 /// and the father of another (ADR 0019), external ids included.
 ///
-/// Represented parents are marked per row from the resolved columns, one
-/// byte a row; only external ids are sorted.  The witness rows are found by
-/// one more scan, run only when there is a violation.
+/// A row's parent roles in `IdIndex::resolve_parents`'s marks, one bit each.
+const AS_MOTHER: u8 = 1;
+const AS_FATHER: u8 = 2;
+const AS_BOTH: u8 = AS_MOTHER | AS_FATHER;
+
+/// `roles` holds each row's marks from `IdIndex::resolve_parents`, and the
+/// external slices the ascending distinct ids it lists per column.  A valid
+/// pedigree costs one scan of the marks and a merge of the external ids; the
+/// witness is found by more scans, run only on a violation.
 fn check_parent_roles(
     ids: &[i64],
-    mother: &[i64],
-    father: &[i64],
-    mother_rows: &[i32],
-    father_rows: &[i32],
+    roles: &[u8],
+    (mother, mother_external): (&[i64], &[i64]),
+    (father, father_external): (&[i64], &[i64]),
 ) -> Result<(), Error> {
-    const AS_MOTHER: u8 = 1;
-    const AS_FATHER: u8 = 2;
-    let mut roles = vec![0u8; ids.len()];
-    let mut external: Vec<(i64, u8)> = Vec::new();
-    for (parents, parent_rows, role) in [
-        (mother, mother_rows, AS_MOTHER),
-        (father, father_rows, AS_FATHER),
-    ] {
-        for (&id, &row) in parents.iter().zip(parent_rows) {
-            if row >= 0 {
-                roles[row as usize] |= role;
-            } else if id >= 0 {
-                external.push((id, role));
-            }
-        }
+    if !roles.contains(&AS_BOTH)
+        && common_ascending(mother_external, father_external)
+            .next()
+            .is_none()
+    {
+        return Ok(());
     }
     let represented = roles
         .iter()
         .zip(ids)
-        .filter(|&(&r, _)| r == AS_MOTHER | AS_FATHER)
+        .filter(|&(&r, _)| r == AS_BOTH)
         .map(|(_, &id)| id);
-    external.sort_unstable();
-    external.dedup();
-    let external = external
-        .windows(2)
-        .filter(|pair| pair[0].0 == pair[1].0)
-        .map(|pair| pair[0].0);
     let (parent_count, smallest) = represented
-        .chain(external)
+        .chain(common_ascending(mother_external, father_external))
         .fold((0usize, i64::MAX), |(n, low), id| (n + 1, low.min(id)));
-    if parent_count == 0 {
-        return Ok(());
-    }
     let first = |parents: &[i64]| parents.iter().position(|&id| id == smallest);
     match first(mother).zip(first(father)) {
         Some((mother_of, father_of)) => Err(Error::ParentInBothRoles {
@@ -439,6 +468,15 @@ fn check_parent_roles(
         }),
         None => Ok(()),
     }
+}
+
+/// The ids in both ascending, distinct slices, ascending.
+fn common_ascending<'a>(a: &'a [i64], b: &'a [i64]) -> impl Iterator<Item = i64> + 'a {
+    let mut at = 0;
+    a.iter().copied().filter(move |&id| {
+        at += first_at_least(&b[at..], id);
+        b.get(at) == Some(&id)
+    })
 }
 
 /// Reject represented MZ references that break the ADR 0006 pair contract.
@@ -627,15 +665,18 @@ pub fn build(
     check_duplicate_ids(columns.ids, &index)?;
     check_same_parent(columns.ids, columns.mother, columns.father)?;
 
-    let mother_rows = index.resolve(columns.mother);
-    let father_rows = index.resolve(columns.father);
+    let mut roles = vec![0u8; n];
+    let (mother_rows, mother_external) =
+        index.resolve_parents(columns.mother, &mut roles, AS_MOTHER);
+    let (father_rows, father_external) =
+        index.resolve_parents(columns.father, &mut roles, AS_FATHER);
     check_parent_roles(
         columns.ids,
-        columns.mother,
-        columns.father,
-        &mother_rows,
-        &father_rows,
+        &roles,
+        (columns.mother, &mother_external),
+        (columns.father, &father_external),
     )?;
+    drop((roles, mother_external, father_external));
     let (twin_ids, twin_rows) = match columns.twin {
         Some(twin) => (twin.to_vec(), index.resolve(twin)),
         None => (vec![-1; n], vec![-1; n]),
@@ -1233,10 +1274,19 @@ mod tests {
                 let Layout::Sorted { ids: sorted, rows } = &index.layout else {
                     panic!("built sorted");
                 };
-                for resolved in [
-                    index.resolve(&query),
-                    super::resolve_sorted(sorted, rows, &query),
+                let mut expected_external: Vec<i64> = query
+                    .iter()
+                    .copied()
+                    .filter(|&id| id >= 0 && !ids.contains(&id))
+                    .collect();
+                expected_external.sort_unstable();
+                expected_external.dedup();
+                for (resolved, external) in [
+                    (index.resolve(&query), expected_external.clone()),
+                    index.resolve_parents(&query, &mut vec![0; ids.len()], super::AS_MOTHER),
+                    super::resolve_sorted(sorted, rows, &query, |_| {}),
                 ] {
+                    assert_eq!(external, expected_external);
                     for (&id, &row) in query.iter().zip(&resolved) {
                         assert_eq!(row, index.row(id), "id {id}");
                         let first = ids.iter().position(|&x| x == id && id >= 0);
