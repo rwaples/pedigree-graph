@@ -11,6 +11,8 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 import pytest
+from _support import _PROFILE
+from hypothesis import settings
 from hypothesis import strategies as st
 
 from pedigree_graph import PedigreeGraph
@@ -25,6 +27,13 @@ sys.path.insert(0, str(_TESTS_DIR.parent))
 sys.path.insert(0, str(_TESTS_DIR / "parity"))
 
 import pedigrees  # noqa: E402
+
+# Every property test sets its budget through ``_support.property_budget``,
+# which scales it by ``HYPOTHESIS_PROFILE``; the profiles cover any test that
+# does not, with Hypothesis's default 100 examples and ten times that.
+settings.register_profile("fast", deadline=None)
+settings.register_profile("thorough", deadline=None, max_examples=1000)
+settings.load_profile(_PROFILE)
 
 # Pedigree builders are capped small: degree-5 pair extraction is ~quadratic
 # and the property tests check it against pure-Python oracles, so large random

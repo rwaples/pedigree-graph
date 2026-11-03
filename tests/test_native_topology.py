@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from _support import property_budget
+from hypothesis import given
 from hypothesis import strategies as st
 from oracle.remap import build_topology
 
@@ -49,7 +50,7 @@ def _witness(ids, mother, father):
     return None
 
 
-@settings(max_examples=300, deadline=None)
+@property_budget(300)
 @given(parent_arrays(allow_cycle=True))
 def test_cycle_witness_matches_the_oracle(arrays):
     ids, mother, father = arrays
@@ -57,7 +58,7 @@ def test_cycle_witness_matches_the_oracle(arrays):
     assert _witness(ids, mother, father) == (None if expected is None else ("cycle", expected))
 
 
-@settings(max_examples=300, deadline=None)
+@property_budget(300)
 @given(parent_arrays())
 def test_acyclic_kernels_match_the_oracle(arrays):
     _ids, mother, father = arrays

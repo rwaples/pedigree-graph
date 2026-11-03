@@ -42,9 +42,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-from _support import ENVELOPE_UNIT, EXACT_DEPTH_SUM, EXACT_F_DEPTH
+from _support import ENVELOPE_UNIT, EXACT_DEPTH_SUM, EXACT_F_DEPTH, property_budget
 from conftest import FIXTURES, parity_columns, pedigree_columns
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 from oracle.exact_kinship import exact_kinship
 
@@ -53,7 +53,7 @@ from pedigree_graph import PedigreeGraph
 if TYPE_CHECKING:
     from oracle.exact_kinship import ExactKinship
 
-_SETTINGS = settings(deadline=None, max_examples=150)
+_SETTINGS = property_budget(150)
 
 #: A row id above every id ``pedigree_columns`` makes, for rows a test appends.
 _FRESH_ID = 50_000

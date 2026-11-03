@@ -11,13 +11,14 @@ shares, to the same invariants; these keep the Python binding covered.
 from __future__ import annotations
 
 import numpy as np
+from _support import property_budget
 from conftest import pedigree_arrays, random_pedigree, relabel_pedigree
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from pedigree_graph import PedigreeGraph
 
-_SETTINGS = settings(deadline=None, max_examples=50)
+_SETTINGS = property_budget(50)
 
 
 @_SETTINGS

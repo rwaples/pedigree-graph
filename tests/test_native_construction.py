@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from _support import property_budget
+from hypothesis import given
 from hypothesis import strategies as st
 
 from pedigree_graph import PedigreeValidationError, ResourceError, _native
@@ -214,14 +215,14 @@ def _outcome(build, columns, encoding):
     return columns_out
 
 
-@settings(max_examples=400, deadline=None)
+@property_budget(400)
 @given(structured_input())
 def test_structured_inputs_match_the_oracle(case):
     columns, encoding, _defect = case
     assert _outcome(_native.build_pedigree, columns, encoding) == _outcome(oracle.build, columns, encoding)
 
 
-@settings(max_examples=100, deadline=None)
+@property_budget(100)
 @given(structured_input(defects=_TWIN_DEFECTS))
 def test_a_planted_twin_defect_is_refused_with_its_code(case):
     # The plant targets a real co-twin, so the frame always differs from the
@@ -231,7 +232,7 @@ def test_a_planted_twin_defect_is_refused_with_its_code(case):
     assert outcome[:2] == ("PedigreeValidationError", defect)
 
 
-@settings(max_examples=400, deadline=None)
+@property_budget(400)
 @given(chaos_input())
 def test_chaos_inputs_match_the_oracle(case):
     columns, encoding = case
@@ -276,7 +277,7 @@ class TestBoundary:
 
 
 class TestIdIndex:
-    @settings(max_examples=200, deadline=None)
+    @property_budget(200)
     @given(data=st.data(), base=st.sampled_from([0, 2**40]), width=st.sampled_from([50, 2**40]))
     def test_resolve_matches_the_oracle(self, data, base, width):
         """A width of 50 draws mostly the table layout, 2**40 the sorted one."""

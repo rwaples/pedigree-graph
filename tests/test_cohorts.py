@@ -8,7 +8,8 @@ here keeps each estimator's own tests off the grouping contract.
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from _support import property_budget
+from hypothesis import given
 from hypothesis import strategies as st
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
@@ -130,7 +131,7 @@ def test_transitions_pair_adjacent_observed_cohorts(k, expected_from, expected_t
     assert oc.transition_from().size == oc.transition_to().size == max(k - 1, 0)
 
 
-@settings(deadline=None, max_examples=200)
+@property_budget(200)
 @given(st.lists(st.integers(min_value=-1, max_value=2**20), max_size=40))
 def test_densified_labels_round_trip_on_any_labels(raw):
     # Every labelled row's bucket maps back to its label, buckets follow label

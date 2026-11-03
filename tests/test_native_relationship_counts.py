@@ -13,9 +13,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from _support import _run_child
+from _support import _run_child, property_budget
 from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, pedigree_columns
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, _native
@@ -119,7 +119,7 @@ def test_a_view_of_one_row_counts_nothing(small_pedigree):
     assert set(counts.values()) == {0}
 
 
-@settings(max_examples=300, deadline=None)
+@property_budget(300)
 @given(pedigree_columns(), st.integers(min_value=0, max_value=5))
 def test_random_pedigrees_count_their_emitted_blocks(columns, max_degree):
     graph = PedigreeGraph.from_frame(columns)

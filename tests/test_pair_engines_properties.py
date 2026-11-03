@@ -10,14 +10,15 @@ above max_degree are Python, so only this file checks them.
 
 from __future__ import annotations
 
+from _support import property_budget
 from conftest import pedigree_arrays, random_pedigree
-from hypothesis import given, settings
+from hypothesis import given
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 from pedigree_graph._registry import estimate_exact_codes
 
-_SETTINGS = settings(deadline=None, max_examples=40)
-_HEAVY = settings(deadline=None, max_examples=25)
+_SETTINGS = property_budget(40)
+_HEAVY = property_budget(25)
 
 
 @_SETTINGS

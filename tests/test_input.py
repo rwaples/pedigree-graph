@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
+from _support import property_budget
 from conftest import pedigree_arrays
-from hypothesis import given, settings
+from hypothesis import given
 
 from pedigree_graph import PedigreeGraph, PedigreeValidationError, ResourceError, _native
 from pedigree_graph._input import host_columns
@@ -392,7 +393,7 @@ class TestCycles:
         assert pg.depth.tolist() == [1, 0]
 
 
-_SETTINGS = settings(deadline=None, max_examples=50)
+_SETTINGS = property_budget(50)
 
 
 @_SETTINGS

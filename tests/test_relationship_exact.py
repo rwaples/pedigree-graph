@@ -14,16 +14,16 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from _support import _SHARED_IS_FATHER, _motif
+from _support import _SHARED_IS_FATHER, _motif, property_budget
 from conftest import pedigree_columns
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 from oracle.exact_kinship import exact_kinship
 from oracle.relationship_paths import oracle_pairs, oracle_view_pairs, relationship_paths
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 
-_SETTINGS = settings(deadline=None, max_examples=100)
+_SETTINGS = property_budget(100)
 _MOTIF_OFFSET = 1_000_000
 
 
@@ -64,7 +64,7 @@ def _paths(columns: dict, max_degree: int = 5) -> dict[str, set[tuple[int, int]]
     )
 
 
-@settings(deadline=None, max_examples=150)
+@property_budget(150)
 @given(pedigree_columns(), st.integers(min_value=0, max_value=5))
 def test_engine_equals_the_path_oracle_on_generated_graphs_and_views(columns, max_degree):
     # Exact block arrays, order included, at every degree cutoff.  Rejects
@@ -84,7 +84,7 @@ def test_engine_equals_the_path_oracle_on_generated_graphs_and_views(columns, ma
 
 
 @pytest.mark.parametrize("code", list(RELATIONSHIPS))
-@settings(deadline=None, max_examples=25)
+@property_budget(25)
 @given(columns=pedigree_columns(max_n=30))
 def test_engine_equals_the_path_definitions(code, columns):
     # Rejects ``> 0`` in place of ``>= 2``, multiplicity collapsed before the
@@ -350,7 +350,7 @@ def test_appended_descendants_and_families_leave_original_pairs_unchanged(column
         assert not {(a, b) for a, b in pairs if (a < n <= b < n + m) or (b < n <= a < n + m)}, code
 
 
-@settings(deadline=None, max_examples=60)
+@property_budget(60)
 @given(pedigree_columns())
 def test_every_single_category_selection_equals_its_full_run_block(columns):
     # Today four codes are checked (test_relationship_pairs.py).  Rejects the

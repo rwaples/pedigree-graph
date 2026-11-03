@@ -13,8 +13,8 @@ import math
 
 import numpy as np
 import pytest
-from _support import _run_child
-from hypothesis import HealthCheck, given, settings
+from _support import _run_child, property_budget
+from hypothesis import HealthCheck, given
 from hypothesis import strategies as st
 from oracle import moments_arithmetic as oracle
 from oracle.moments_arithmetic import OracleTable
@@ -39,7 +39,7 @@ STATISTICS = (
 PER_PRODUCT = {"cross", "comoment", "pearson"}
 OPERANDS = ((0, 0, 1, 0), (0, 1, 1, 1), (0, 0, 0, 1), (1, 1, 0, 0))
 
-FAST = settings(max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+FAST = property_budget(200, suppress_health_check=[HealthCheck.too_slow])
 
 
 def _bits(values: np.ndarray) -> np.ndarray:

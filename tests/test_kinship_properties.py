@@ -14,15 +14,15 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from _support import ENVELOPE_UNIT, EXACT_DEPTH_SUM
+from _support import ENVELOPE_UNIT, EXACT_DEPTH_SUM, property_budget
 from conftest import non_inbred_pedigree, pedigree_arrays, random_pedigree, relabel_pedigree
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 
 from pedigree_graph import PedigreeGraph
 
-_SETTINGS = settings(deadline=None, max_examples=50)
-_HEAVY = settings(deadline=None, max_examples=30)
+_SETTINGS = property_budget(50)
+_HEAVY = property_budget(30)
 
 
 @_SETTINGS

@@ -10,13 +10,13 @@ shares, to the same invariants; these keep the Python binding covered.
 from __future__ import annotations
 
 import numpy as np
-from _support import ENVELOPE_UNIT, EXACT_DEPTH_SUM
+from _support import ENVELOPE_UNIT, EXACT_DEPTH_SUM, property_budget
 from conftest import pedigree_arrays, random_pedigree
-from hypothesis import example, given, settings
+from hypothesis import example, given
 
 from pedigree_graph import PedigreeGraph
 
-_SETTINGS = settings(deadline=None, max_examples=50)
+_SETTINGS = property_budget(50)
 
 # Full-sib mating: child 4 = (sib 2, sib 3) where 2,3 = (0,1); F[4] = phi(2,3) = 0.25.
 _FULL_SIB_MATING = (

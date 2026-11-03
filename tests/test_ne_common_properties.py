@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from _support import property_budget
+from hypothesis import given
 from hypothesis import strategies as st
 
 from pedigree_graph._ne_common import (
@@ -21,7 +22,7 @@ from pedigree_graph._ne_common import (
     _scalar_ne_from_log_regression,
 )
 
-_SETTINGS = settings(deadline=None, max_examples=100)
+_SETTINGS = property_budget(100)
 
 _positive = st.floats(min_value=1e-3, max_value=1e6, allow_nan=False, allow_infinity=False)
 _junk = st.sampled_from([0.0, -1.0, -1e9, np.nan, np.inf, -np.inf])

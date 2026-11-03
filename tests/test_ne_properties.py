@@ -14,13 +14,14 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import property_budget
 from conftest import (
     complete_parentage_pedigree,
     non_inbred_pedigree,
     pedigree_arrays,
     random_pedigree,
 )
-from hypothesis import given, settings
+from hypothesis import given
 
 from pedigree_graph import MissingMetadataError, PedigreeGraph
 from pedigree_graph._ne_founders import _per_gen_founder_means
@@ -33,8 +34,8 @@ from pedigree_graph.effective_size import (
     ne_sex_ratio,
 )
 
-_SETTINGS = settings(deadline=None, max_examples=50)
-_HEAVY = settings(deadline=None, max_examples=30)
+_SETTINGS = property_budget(50)
+_HEAVY = property_budget(30)
 
 # A randomly-generated pedigree can have uniform sex in/across a cohort; the
 # sex-aware estimators then legitimately return ne=None after a RuntimeWarning.

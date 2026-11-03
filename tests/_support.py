@@ -8,11 +8,12 @@ import subprocess
 import sys
 import textwrap
 from dataclasses import fields
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import polars as pl
 import pytest
+from hypothesis import settings
 
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph
 from pedigree_graph._cohorts import _densify_labels
@@ -23,6 +24,26 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from pedigree_graph.summaries import GenerationKinshipSummary
+
+# Hypothesis example budgets.  Each property test keeps the budget tuned to
+# its cost, and ``HYPOTHESIS_PROFILE`` scales every one: ``fast`` (the
+# default) runs it as written, ``thorough`` ten times over, for a release or
+# a property under suspicion (``pixi run test-thorough``).  simACE and fitACE
+# use the same two names.
+_PROFILE_SCALE = {"fast": 1, "thorough": 10}
+_PROFILE = os.environ.get("HYPOTHESIS_PROFILE", "fast")
+if _PROFILE not in _PROFILE_SCALE:
+    raise ValueError(f"HYPOTHESIS_PROFILE must be one of {sorted(_PROFILE_SCALE)}, got {_PROFILE!r}")
+
+
+def property_budget(max_examples: int, **kwargs: Any) -> settings:
+    """Hypothesis settings for *max_examples* examples, scaled by ``HYPOTHESIS_PROFILE``, with no deadline.
+
+    No deadline, because a per-example deadline flakes under pytest-xdist.
+    *kwargs* pass through to :class:`hypothesis.settings`.
+    """
+    return settings(deadline=None, max_examples=max_examples * _PROFILE_SCALE[_PROFILE], **kwargs)
+
 
 # Fresh-interpreter runs: the native pool is built once per process.
 

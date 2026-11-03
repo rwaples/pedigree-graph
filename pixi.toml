@@ -39,6 +39,10 @@ test-rust = "cargo test --release"
 # The core's property tests at release depth: 64x the 256 cases per property
 # an ordinary test-rust run draws (crates/core/tests/common/mod.rs), ~9 s.
 test-rust-thorough = { cmd = "cargo test --release -p pedigree-graph-core --test kinship_properties --test pair_properties", env = { PROPTEST_CASES = "16384" } }
+# Release depth: the whole Python suite, slow tests included, with every
+# Hypothesis budget ten times its ordinary size (tests/_support.py
+# property_budget), then the Rust property tests at 16384 cases.
+test-thorough = { cmd = "pytest -n 6 --dist worksteal", depends-on = ["build-dev", "test-rust-thorough"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1", HYPOTHESIS_PROFILE = "thorough" } }
 # `ci-local` runs the checks the CI push jobs run (.github/workflows/ci.yml calls
 # these tasks, except in the R job, which has no pixi), before a push. CI-only: the offline R tarball check (needs sudo unshare), the
 # wheel install matrix, and the publish workflow's macOS/Windows/ARM legs, so

@@ -12,14 +12,15 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _support import property_budget
 from conftest import pedigree_arrays, pedigree_columns
-from hypothesis import given, settings
+from hypothesis import given
 from hypothesis import strategies as st
 from oracle.closures import component_minimum, descendant_walks, distinct_ancestors, distinct_descendants
 
 from pedigree_graph import PedigreeGraph
 
-_SETTINGS = settings(deadline=None, max_examples=100)
+_SETTINGS = property_budget(100)
 
 
 def _append(columns: dict, rows: dict) -> dict:
