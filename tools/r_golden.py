@@ -4,8 +4,8 @@ The R binding and the Python one call the same Rust core, so these goldens
 catch binding bugs: a lost 1-based offset, a wrong order, a lossy promotion,
 a dropped category or id-type drift.  For every hand-built core fixture
 (``crates/core/tests/fixtures/*.tsv`` of at most ``MAX_ROWS`` rows: MZ
-twins, external parents, mating loops, cousins) plus ``inbred0``, an inbred
-pedigree at scale, the generator writes, under
+twins, external parents, mating loops, cousins) plus the first 240 rows of
+``deep_inbred_60g``, an inbred pedigree at scale, the generator writes, under
 ``r/tests/testthat/golden/<fixture>/``:
 
 * ``pedigree.tsv``: the ``id``/``mother``/``father``/``twin`` frame both hosts
@@ -64,7 +64,10 @@ GOLDEN = REPO / "r" / "tests" / "testthat" / "golden"
 # is compared by tools/r_parity.sh, which never ships.  Degree-5 pairs and the
 # kinship matrix of deep_inbred_60g or random_1k alone are 8 to 11 MB.
 MAX_ROWS = 20
-EXTRA = ("inbred0",)
+# Larger fixtures cut to their first rows, which are topological.  The
+# inbred0..4 fixtures have ids in both parent roles, which construction
+# refuses (ADR 0019).
+EXTRA = {"deep_inbred_60g": 240}
 
 
 def _frame(fixture: pl.DataFrame) -> pl.DataFrame:
@@ -102,8 +105,8 @@ def _write(frame: pl.DataFrame, path: Path) -> None:
     frame.write_csv(path, separator="\t", line_terminator="\n")
 
 
-def _golden(fixture: Path, out: Path) -> None:
-    frame = _frame(pl.read_csv(fixture, separator="\t"))
+def _golden(fixture: pl.DataFrame, out: Path) -> None:
+    frame = _frame(fixture)
     columns = {name: frame[name].to_numpy() for name in frame.columns}
     graph = PedigreeGraph.from_frame(columns)
     ids = columns["id"]
@@ -312,11 +315,18 @@ def generate(out: Path) -> list[str]:
     """Write every golden under *out*; return the fixture names used."""
     names = []
     out.mkdir(parents=True, exist_ok=True)
-    for fixture in sorted(FIXTURES.glob("*.tsv")):
-        if fixture.stem not in EXTRA and pl.read_csv(fixture, separator="\t").height > MAX_ROWS:
+    for path in sorted(FIXTURES.glob("*.tsv")):
+        fixture = pl.read_csv(path, separator="\t")
+        name = path.stem
+        if name in EXTRA:
+            fixture = fixture.head(EXTRA[name])
+            name = f"{name}_head{fixture.height}"
+            parents = fixture.select("mother", "father").to_numpy()
+            assert (parents < fixture.height).all(), f"{path.stem}'s first rows name a later parent"
+        elif fixture.height > MAX_ROWS:
             continue
-        _golden(fixture, out / fixture.stem)
-        names.append(fixture.stem)
+        _golden(fixture, out / name)
+        names.append(name)
     _categories(out)
     return names
 

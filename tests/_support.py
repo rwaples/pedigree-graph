@@ -74,11 +74,9 @@ CHILD_PRELUDE = """
     n = 400
     rng = np.random.default_rng(7)
     mother = np.full(n, -1); father = np.full(n, -1)
-    for i in range(20, n):
-        lo = max(0, i - 60)
-        mother[i], father[i] = rng.integers(lo, i), rng.integers(lo, i)
-        if father[i] == mother[i]:
-            father[i] = -1
+    for i in range(20, n):  # even rows are mothers, odd rows fathers
+        rows = np.arange(max(0, i - 60), i)
+        mother[i], father[i] = rng.choice(rows[rows % 2 == 0]), rng.choice(rows[rows % 2 == 1])
     graph = PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
     view = np.where(np.arange(n) % 3 == 0, -1, np.arange(n) // 3 * 2 + np.arange(n) % 3 - 1).astype(np.int32)
 """

@@ -193,7 +193,7 @@ fn row_order_does_not_change_pairs() {
 fn a_pair_avuncular_both_ways_is_led_by_the_lower_row() {
     let ped = Ped {
         ids: vec![10, 3, 17, 45, 38, 24, 31],
-        mother: vec![9_000_000_000, 10, 10, 38, -1, 17, -1],
+        mother: vec![9_000_000_000, 10, 10, -1, -1, 17, -1],
         father: vec![38, 31, 9_100_000_001, 9_100_000_000, -1, 38, -1],
         twin: vec![-1; 7],
     };

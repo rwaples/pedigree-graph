@@ -75,13 +75,12 @@ def _random_pedigree(rng: np.random.Generator, p_twin: float = 0.3) -> pl.DataFr
     next_id = n_founders
     for g in range(1, n_gen + 1):
         new_gen: list[int] = []
-        females = [i for i in cur if sex[i] == 0] or cur
-        males = [i for i in cur if sex[i] == 1] or cur
+        # Mothers are female and fathers male, so no id plays both roles.
+        females = [i for i in cur if sex[i] == 0]
+        males = [i for i in cur if sex[i] == 1]
         for _ in range(per_gen):
-            m = int(rng.choice(females))
-            # A child cannot name one individual in both parent roles.
-            mates = [i for i in males if i != m] or [i for i in cur if i != m]
-            f = int(rng.choice(mates)) if mates else -1
+            m = int(rng.choice(females)) if females else -1
+            f = int(rng.choice(males)) if males else -1
             ids.append(next_id)
             mother.append(m)
             father.append(f)
@@ -300,10 +299,8 @@ def test_both_entries_return_the_same_bits_under_every_thread_budget():
         rng = np.random.default_rng(11)
         mother = np.full(n, -1); father = np.full(n, -1)
         for i in range(60, n):
-            lo = max(0, i - 120)
-            mother[i], father[i] = rng.integers(lo, i), rng.integers(lo, i)
-            if father[i] == mother[i]:
-                father[i] = -1
+            rows = np.arange(max(0, i - 120), i)  # even rows are mothers, odd rows fathers
+            mother[i], father[i] = rng.choice(rows[rows % 2 == 0]), rng.choice(rows[rows % 2 == 1])
         graph = PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
         first = rng.integers(0, n, 20_000).astype(np.int32)
         second = rng.integers(0, n, 20_000).astype(np.int32)

@@ -75,35 +75,34 @@ def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False, complete=Fa
     every non-founder has *both* parents known (two distinct earlier rows) —
     no half-missing parentage — so founder contributions sum to 1 per cohort;
     such graphs may be inbred.  ``non_inbred`` and ``complete`` are not meant
-    to be combined.  Sex is role-consistent: an id used only as a mother is
-    female (0), only as a father is male (1), otherwise random.
+    to be combined.  Sex is drawn per row first, and mothers come from earlier
+    females (0) and fathers from earlier males (1), so every id plays one
+    parent role (ADR 0019).
     """
     n = draw(st.integers(min_value=1, max_value=max_n))
+    sex = np.array(draw(st.lists(st.integers(min_value=0, max_value=1), min_size=n, max_size=n)), dtype=np.int8)
     mother = np.full(n, -1, dtype=np.int64)
     father = np.full(n, -1, dtype=np.int64)
     closed: list[set[int]] = [{i} for i in range(n)]  # ancestors including self
 
     for i in range(1, n):
+        females = [c for c in range(i) if sex[c] == 0]
+        males = [c for c in range(i) if sex[c] == 1]
         if complete:
-            # A non-founder needs two distinct earlier rows, so i < 2 is forced
-            # to be a founder; otherwise draw both parents (distinct).
-            if i < 2 or not draw(st.booleans()):
+            # A non-founder needs an earlier female and an earlier male.
+            if not females or not males or not draw(st.booleans()):
                 continue  # founder
-            m = draw(st.integers(min_value=0, max_value=i - 1))
-            f = draw(st.sampled_from([c for c in range(i) if c != m]))
-            mother[i] = m
-            father[i] = f
+            mother[i] = draw(st.sampled_from(females))
+            father[i] = draw(st.sampled_from(males))
             continue  # closed[] is only consumed by the non_inbred branch
         if not draw(st.booleans()):
             continue  # founder
-        m = draw(st.integers(min_value=-1, max_value=i - 1))
+        m = draw(st.sampled_from([-1, *females]))
         if non_inbred and m != -1:
-            cands = [c for c in range(i) if c != m and closed[m].isdisjoint(closed[c])]
-            f = draw(st.sampled_from([-1, *cands])) if cands else -1
+            cands = [c for c in males if closed[m].isdisjoint(closed[c])]
         else:
-            f = draw(st.integers(min_value=-1, max_value=i - 1))
-            if f == m and f != -1:
-                f = -1
+            cands = males
+        f = draw(st.sampled_from([-1, *cands]))
         mother[i] = m
         father[i] = f
         anc = {i}
@@ -112,18 +111,6 @@ def pedigree_arrays(draw, *, max_n=PEDIGREE_MAX_N, non_inbred=False, complete=Fa
         if f != -1:
             anc |= closed[f]
         closed[i] = anc
-
-    used_mother = {int(x) for x in mother if x != -1}
-    used_father = {int(x) for x in father if x != -1}
-    sex = np.empty(n, dtype=np.int8)
-    for k in range(n):
-        in_m, in_f = k in used_mother, k in used_father
-        if in_m and not in_f:
-            sex[k] = 0
-        elif in_f and not in_m:
-            sex[k] = 1
-        else:
-            sex[k] = draw(st.integers(min_value=0, max_value=1))
 
     return np.arange(n, dtype=np.int64), mother, father, sex
 

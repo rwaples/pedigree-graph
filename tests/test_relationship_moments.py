@@ -380,10 +380,8 @@ MOMENTS_PRELUDE = """
     rng = np.random.default_rng(7)
     mother = np.full(n, -1); father = np.full(n, -1)
     for i in range(20, n):
-        lo = max(0, i - 60)
-        mother[i], father[i] = rng.integers(lo, i), rng.integers(lo, i)
-        if father[i] == mother[i]:
-            father[i] = -1
+        rows = np.arange(max(0, i - 60), i)  # even rows are mothers, odd rows fathers
+        mother[i], father[i] = rng.choice(rows[rows % 2 == 0]), rng.choice(rows[rows % 2 == 1])
     graph = PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
 """
 

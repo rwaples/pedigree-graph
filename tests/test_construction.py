@@ -277,13 +277,13 @@ class TestMzValidation:
 
     def test_parent_mismatch_in_both_roles(self):
         data = {
-            "id": [0, 1, 2, 3, 4],
-            "mother": [-1, -1, 0, 0, 1],
-            "father": [-1, -1, 1, 1, 0],
-            "twin": [-1, -1, -1, 4, 3],
+            "id": [0, 1, 2, 3, 4, 5],
+            "mother": [-1, -1, -1, -1, 0, 2],
+            "father": [-1, -1, -1, -1, 1, 3],
+            "twin": [-1, -1, -1, -1, 5, 4],
         }
         fields = _mz_fields(data, "mz_parent_mismatch")
-        assert fields == {"row": 3, "id": 3, "twin_id": 4, "parent_roles": ("mother", "father")}
+        assert fields == {"row": 4, "id": 4, "twin_id": 5, "parent_roles": ("mother", "father")}
 
     def test_shared_external_parent_is_not_a_mismatch(self):
         pg = PedigreeGraph.from_frame(_twins(mother=[-1, -1, 900, 900]))

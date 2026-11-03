@@ -182,8 +182,8 @@ class TestMemoryIsIndependentOfIdMagnitude:
     @staticmethod
     def _pedigree(base: int) -> dict[str, np.ndarray]:
         ids = np.arange(20, dtype=np.int64) + base
-        mother = np.array([-1] * 6 + [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 7])
-        father = np.array([-1] * 6 + [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 0, 0, 8, 9])
+        mother = np.array([-1] * 6 + [0, 0, 2, 2, 2, 2, 4, 4, 4, 4, 0, 0, 6, 7])
+        father = np.array([-1] * 6 + [1, 1, 1, 1, 3, 3, 3, 3, 5, 5, 5, 5, 8, 9])
         return {
             "id": ids,
             "mother": np.where(mother >= 0, ids[np.maximum(mother, 0)], -1),

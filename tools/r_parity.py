@@ -48,15 +48,13 @@ FIXTURES = REPO / "crates" / "core" / "tests" / "fixtures"
 # a core fixture name or a parquet path under the umbrella.  The matrix cells
 # are the ones slice 14's gate ran; baseline100K and the 50k pedigree have
 # no complete matrix there and no pairwise walk here (minutes and GiB each).
+# The inbred0..4 fixtures are left out: they have ids in both parent roles,
+# which construction refuses (ADR 0019).
 CELLS: dict[str, tuple[str, int, bool, bool]] = {
     **{
         name: (name, 5, True, True)
         for name in (
             "deep_inbred_60g",
-            "inbred1",
-            "inbred2",
-            "inbred3",
-            "inbred4",
             "random_1k",
             "small_pedigree",
             "sim_d2_n3000",

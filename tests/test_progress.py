@@ -22,15 +22,16 @@ from pedigree_graph._progress import format_progress
 
 
 def random_graph(n: int, seed: int = 7) -> PedigreeGraph:
-    """Overlapping generations: each row after the first 20 has parents among the 60 rows before it."""
+    """Overlapping generations: each row after the first 20 has parents among the 60 rows before it.
+
+    Even rows are mothers and odd rows fathers, so no id plays both roles.
+    """
     rng = np.random.default_rng(seed)
     mother = np.full(n, -1)
     father = np.full(n, -1)
     for i in range(20, n):
-        lo = max(0, i - 60)
-        mother[i], father[i] = rng.integers(lo, i), rng.integers(lo, i)
-        if father[i] == mother[i]:
-            father[i] = -1
+        rows = np.arange(max(0, i - 60), i)
+        mother[i], father[i] = rng.choice(rows[rows % 2 == 0]), rng.choice(rows[rows % 2 == 1])
     return PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
 
 

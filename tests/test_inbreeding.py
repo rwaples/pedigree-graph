@@ -76,7 +76,7 @@ def test_deep_inbred_60g_holds_the_identity_inside_the_envelope():
     ("mother", "father", "expected"),
     [
         ([-1, -1, -1], [-1, -1, -1], [0.0, 0.0, 0.0]),  # founders
-        ([-1, -1, 0, -1], [-1, -1, -1, 0], [0.0] * 4),  # one known parent breaks every path
+        ([-1, -1, 0, -1], [-1, -1, -1, 1], [0.0] * 4),  # one known parent breaks every path
         ([-1, -1, 0, 0, 2], [-1, -1, 1, 1, 3], [0, 0, 0, 0, 0.25]),  # full-sib mating
         ([-1, -1, -1, 0, 0, 3], [-1, -1, -1, 1, 2, 4], [0, 0, 0, 0, 0, 0.125]),  # half-sib mating
         ([-1, -1, 0, 0], [-1, -1, 1, 2], [0, 0, 0, 0.25]),  # mother x her child

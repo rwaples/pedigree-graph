@@ -177,13 +177,24 @@ enum Parent {
 /// Parents come from the last `WINDOW` individuals, so pedigrees run deep.
 const WINDOW: usize = 10;
 
-/// The parent a die picks for individual `i`: one of the last [`WINDOW`],
-/// missing, or (with `external`) one of three external ids.
-fn pick(dice: &mut Dice, i: usize, external: bool) -> Parent {
-    let w = i.min(WINDOW);
+/// Even individuals are mothers and odd ones fathers, so no id plays both
+/// parent roles (ADR 0019).
+fn is_mother(i: usize) -> bool {
+    i % 2 == 0
+}
+
+/// The parent a die picks for individual `i` in one role: one of the last
+/// [`WINDOW`] individuals of that role, missing, or (with `external`) one of
+/// three external ids of that role.
+fn pick(dice: &mut Dice, i: usize, external: bool, mother: bool) -> Parent {
+    let rows: Vec<usize> = (i - i.min(WINDOW)..i)
+        .rev()
+        .filter(|&j| is_mother(j) == mother)
+        .collect();
+    let w = rows.len();
     let v = dice.roll(w + 1 + if external { 3 } else { 0 });
     match v {
-        v if v < w => Parent::Row(i - 1 - v),
+        v if v < w => Parent::Row(rows[v]),
         v if v == w => Parent::Missing,
         v => Parent::External((v - w - 1) as i64),
     }
@@ -214,22 +225,19 @@ fn generate(n: usize, non_inbred: bool, dice: &[u32]) -> Ped {
         if dice.roll(4) == 0 {
             continue; // founder
         }
-        let m = pick(&mut dice, i, !non_inbred);
+        let m = pick(&mut dice, i, !non_inbred, true);
         let f = match m {
             Parent::Row(m) if non_inbred => {
                 // A mate unrelated to `m`, so the child is not inbred.
                 let mates: Vec<usize> = (0..i)
-                    .filter(|&c| c != m && closed[m].is_disjoint(&closed[c]))
+                    .filter(|&c| !is_mother(c) && closed[m].is_disjoint(&closed[c]))
                     .collect();
                 match dice.roll(mates.len() + 1) {
                     0 => Parent::Missing,
                     k => Parent::Row(mates[k - 1]),
                 }
             }
-            _ => match pick(&mut dice, i, !non_inbred) {
-                f if f == m => Parent::Missing,
-                f => f,
-            },
+            _ => pick(&mut dice, i, !non_inbred, false),
         };
         mother[i] = m;
         father[i] = f;

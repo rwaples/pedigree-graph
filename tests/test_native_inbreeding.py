@@ -150,10 +150,11 @@ THREAD_BODY = """
     for _ in range(6):
         earlier = len(mother)
         for _ in range(700):
-            m, f = int(rng.integers(earlier)), int(rng.integers(earlier))
+            # Even rows are mothers and odd rows fathers.
+            m, f = 2 * int(rng.integers((earlier + 1) // 2)), 2 * int(rng.integers(earlier // 2)) + 1
             first = len(mother)
             for _ in range(int(rng.integers(1, 5))):
-                mother.append(m); father.append(f if f != m else -1); twin.append(-1)
+                mother.append(m); father.append(f); twin.append(-1)
             if len(mother) - first >= 2 and rng.random() < 0.3:
                 twin[first], twin[first + 1] = first + 1, first
     rows = rng.permutation(len(mother))

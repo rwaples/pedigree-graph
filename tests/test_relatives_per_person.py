@@ -39,15 +39,21 @@ def _reordered_half(graph: PedigreeGraph, seed: int):
 
 
 def _synthetic(n: int, seed: int) -> PedigreeGraph:
-    """A random graph of *n* rows, each non-founder's parents drawn from the 60 rows before it."""
+    """A random graph of *n* rows, each non-founder's parents drawn from about the 60 rows before it.
+
+    A parent is rounded down to an even row for a mother and an odd row for a
+    father, so no id plays both roles.
+    """
     rng = np.random.default_rng(seed)
     rows = np.arange(n)
     lo = np.maximum(0, rows - 60)
     mother = lo + (rng.random(n) * (rows - lo)).astype(np.int64)
     father = lo + (rng.random(n) * (rows - lo)).astype(np.int64)
+    mother -= mother % 2
+    father -= 1 - father % 2
     founder = rows < 20
     mother[founder] = -1
-    father[founder | (father == mother)] = -1
+    father[founder] = -1
     return PedigreeGraph.from_frame({"id": rows, "mother": mother, "father": father})
 
 
@@ -233,10 +239,8 @@ THREAD_PRELUDE = """
     rng = np.random.default_rng(7)
     mother = np.full(n, -1); father = np.full(n, -1)
     for i in range(20, n):
-        lo = max(0, i - 60)
-        mother[i], father[i] = rng.integers(lo, i), rng.integers(lo, i)
-        if father[i] == mother[i]:
-            father[i] = -1
+        rows = np.arange(max(0, i - 60), i)  # even rows are mothers, odd rows fathers
+        mother[i], father[i] = rng.choice(rows[rows % 2 == 0]), rng.choice(rows[rows % 2 == 1])
     graph = PedigreeGraph.from_frame({"id": np.arange(n), "mother": mother, "father": father})
 """
 
