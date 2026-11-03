@@ -144,10 +144,11 @@ class TestSelectorsAndErrors:
         """The package pool is built once per process, so each budget runs in its own interpreter."""
         body = f"""
             import polars as pl
-            from pedigree_graph import PedigreeGraph, _native
+            from pedigree_graph import RELATIONSHIPS, PedigreeGraph, _native
             from pedigree_graph._threads import thread_budget
             graph = PedigreeGraph.from_frame(pl.read_parquet({str(SMALL_PEDIGREE)!r}))
-            print(thread_budget(), _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget()))
+            counts = _native.relationship_counts(graph._built, requested=list(RELATIONSHIPS), threads=thread_budget())
+            print(thread_budget(), counts)
         """
         outputs = {}
         for threads in ("1", "4"):
@@ -160,10 +161,10 @@ class TestSelectorsAndErrors:
         graph = PedigreeGraph.from_frame(small_pedigree)
         budget = thread_budget()
         assert _native.configure_pool(budget) == budget
-        _native.relationship_counts(graph._built, max_degree=2, threads=budget)
+        _native.relationship_counts(graph._built, requested=["FS"], threads=budget)
         # The same class `configure_threads` raises for the same reason.
         with pytest.raises(RuntimeError, match="already configured"):
-            _native.relationship_counts(graph._built, max_degree=2, threads=budget + 1)
+            _native.relationship_counts(graph._built, requested=["FS"], threads=budget + 1)
 
     def test_the_binding_keys_its_counts_by_code_in_registry_order(self, small_pedigree):
         """A reordering of the Rust ``Category::ALL`` must not silently repermute the counts.
@@ -171,7 +172,7 @@ class TestSelectorsAndErrors:
         The positional return this replaced could only be checked for length.
         """
         graph = PedigreeGraph.from_frame(small_pedigree)
-        counted = _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget())
+        counted = _native.relationship_counts(graph._built, requested=list(RELATIONSHIPS), threads=thread_budget())
         assert tuple(counted) == tuple(RELATIONSHIPS)
 
     def test_a_built_pedigree_cannot_be_constructed_from_python(self):
@@ -179,30 +180,38 @@ class TestSelectorsAndErrors:
         with pytest.raises(TypeError):
             _native.BuiltPedigree()
 
-    def test_the_binding_rejects_a_malformed_mask_or_thread_count(self, small_pedigree):
+    def test_the_binding_rejects_a_malformed_selection_or_thread_count(self, small_pedigree):
         """The loose arguments are the only ones a caller can still malform.
 
         The column invariants moved into the core's checked constructor and are
-        covered by the Rust unit tests of ``Pedigree::try_new``.
+        covered by the Rust unit tests of ``Pedigree::try_new``; the view's
+        graph rows are checked by the core's ``query::view_map``.
         """
         graph = PedigreeGraph.from_frame(small_pedigree)
-        with pytest.raises(ValueError, match="selected"):
-            _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget(), selected=np.array([True]))
-        with pytest.raises(ValueError, match="threads"):
-            _native.relationship_counts(graph._built, max_degree=5, threads=0)
-
-    @pytest.mark.parametrize("max_degree", [6, 9, 255])
-    def test_the_binding_rejects_an_out_of_range_max_degree(self, small_pedigree, max_degree):
-        """The core clamped instead of rejecting, so degree 9 returned degree-5 counts (issue #20).
-
-        The pure-Python path already raises this exact error from
-        ``_validate_max_degree``, so both surfaces report one code.
-        """
-        graph = PedigreeGraph.from_frame(small_pedigree)
+        call = {"requested": ["FS"], "threads": thread_budget()}
+        n = graph.n_individuals
         with pytest.raises(PedigreeValidationError) as info:
-            _native.relationship_counts(graph._built, max_degree=max_degree, threads=thread_budget())
-        assert info.value.code == "max_degree_out_of_range"
-        assert info.value.fields == {"value": max_degree, "minimum": 0, "maximum": 5}
+            _native.relationship_counts(graph._built, **call, graph_rows=np.array([0, n], dtype=np.int32))
+        assert info.value.code == "value_out_of_range"
+        with pytest.raises(ValueError, match=r"graph_rows\[2\] is 1: a graph row is selected twice"):
+            _native.relationship_counts(graph._built, **call, graph_rows=np.array([1, 0, 1], dtype=np.int32))
+        with pytest.raises(ValueError, match="compaction"):
+            _native.relationship_counts(graph._built, **call, compaction="sometimes")
+        with pytest.raises(ValueError, match="compaction requires graph_rows"):
+            _native.relationship_counts(graph._built, **call, compaction="compact")
+        with pytest.raises(ValueError, match="threads"):
+            _native.relationship_counts(graph._built, requested=["FS"], threads=0)
+
+    def test_a_call_with_nothing_to_walk_skips_the_graph(self, small_pedigree):
+        """No category, or fewer than two receiver rows: zeros, without borrowing or checking anything."""
+        graph = PedigreeGraph.from_frame(small_pedigree)
+        zeros = dict.fromkeys(RELATIONSHIPS, 0)
+        assert _native.relationship_counts(graph._built, requested=[], threads=thread_budget()) == zeros
+        one_bad_row = np.array([graph.n_individuals], dtype=np.int32)
+        got = _native.relationship_counts(
+            graph._built, requested=["FS"], threads=thread_budget(), graph_rows=one_bad_row
+        )
+        assert got == zeros
 
     def test_a_mutated_built_pedigree_raises_rather_than_panicking(self, small_pedigree):
         """The core rechecks its preconditions, so the one remaining way to forge bad columns is safe.
@@ -219,4 +228,4 @@ class TestSelectorsAndErrors:
         )
         built.mother_rows[0] = graph.n_individuals
         with pytest.raises(PedigreeValidationError):
-            _native.relationship_counts(built, max_degree=5, threads=thread_budget())
+            _native.relationship_counts(built, requested=list(RELATIONSHIPS), threads=thread_budget())

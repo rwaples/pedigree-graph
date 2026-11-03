@@ -18,10 +18,11 @@ use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
 use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree};
 use pedigree_graph_core::lineage::{self, ParentColumns};
 use pedigree_graph_core::pool;
+use pedigree_graph_core::relationships::query::{self, Compaction, Receiver};
 use pedigree_graph_core::relationships::{
-    self, Category, CategorySet, Execution, MomentsInput, MomentsPlan, MomentsShape, MomentsTable,
-    Operand, Pedigree, Product, Progress, Receiver, Side, Snapshot, Statistic, Symmetric,
-    Threshold, ThresholdColumn,
+    self, Category, CategorySet, Counts, Execution, Moments, MomentsInput, MomentsTable, Operand,
+    PairBlocks, Pedigree, Product, Progress, RelativesPerPerson, Side, Snapshot, Statistic,
+    Symmetric, Threshold, ThresholdColumn,
 };
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -86,15 +87,6 @@ fn check_rows(name: &str, rows: &[i32], n: usize) -> PyResult<()> {
         return Err(PyValueError::new_err(format!(
             "{name}[{position}] = {} is not -1 or a row below {n}",
             rows[position]
-        )));
-    }
-    Ok(())
-}
-
-fn check_same_length(name: &str, len: usize, n: usize) -> PyResult<()> {
-    if len != n {
-        return Err(PyValueError::new_err(format!(
-            "{name} must have the same length as mother_rows, got {len} and {n}"
         )));
     }
     Ok(())
@@ -505,71 +497,46 @@ impl<'py> EngineColumns<'py> {
     }
 }
 
-fn checked_max_degree(py: Python<'_>, max_degree: u8) -> PyResult<relationships::MaxDegree> {
-    relationships::MaxDegree::try_new(max_degree).map_err(|e| to_pyerr(py, e))
+/// The graph's row count, read without borrowing its columns.
+fn graph_len(py: Python<'_>, pedigree: &BuiltPedigree) -> usize {
+    pedigree.mother_rows.bind(py).len()
 }
 
-/// Exact closest-category pair counts, keyed by registry code in registry order.
+/// Exact closest-category pair counts, keyed by registry code in registry
+/// order; categories above the requested set's top degree are zero.
 ///
-/// `pedigree` is the graph's own [`BuiltPedigree`].  With `selected`, a bool
-/// per row, only pairs whose two rows are both selected are counted (the
-/// view contract).  `threads` configures the package pool (see
-/// `configure_pool`); the counts are the same for every value.  The GIL is
-/// released while counting.
+/// `pedigree` is the graph's own [`BuiltPedigree`].  With `graph_rows`, the
+/// graph row of each view row, only pairs whose two rows are both selected
+/// are counted (the view contract).  `threads` configures the package pool
+/// (see `configure_pool`); the counts are the same for every value.  The GIL
+/// is released while counting.  A call with nothing to walk (no requested
+/// category, or fewer than two receiver rows) returns zeros without
+/// borrowing the graph or checking `graph_rows`.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, threads, selected=None, progress=None, tick=1.0))]
+#[pyo3(signature = (pedigree, *, requested, threads, graph_rows=None, compaction="auto", progress=None, tick=1.0))]
+#[allow(clippy::too_many_arguments)]
 fn relationship_counts<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
-    max_degree: u8,
+    requested: Vec<String>,
     threads: usize,
-    selected: Option<PyReadonlyArray1<'py, bool>>,
+    graph_rows: Option<PyReadonlyArray1<'py, i32>>,
+    compaction: &str,
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.relationships(py)?;
-    let max_degree = checked_max_degree(py, max_degree)?;
-    let mask = match &selected {
-        Some(array) => {
-            let mask = array.as_slice()?;
-            check_same_length("selected", mask.len(), ped.len())?;
-            Some(mask)
-        }
-        None => None,
+    let categories = requested_categories(&requested)?;
+    let receiver = receiver(&graph_rows, compaction)?;
+    let counts = if query::walks(categories, receiver.rows(graph_len(py, pedigree))) {
+        let columns = EngineColumns::borrow(py, pedigree);
+        let ped = columns.relationships(py)?;
+        let pool = checked_pool(py, threads)?;
+        run_watched(py, pool, tick, progress, |progress| {
+            query::counts(&ped, categories, receiver, progress)
+        })?
+    } else {
+        Counts::default()
     };
-    let pool = checked_pool(py, threads)?;
-    let counts = run_watched(py, pool, tick, progress, |progress| {
-        relationships::count_pairs(&ped, max_degree, mask, progress)
-    })?;
-    let values = PyDict::new(py);
-    for &cat in Category::ALL.iter() {
-        values.set_item(cat.code(), counts.get(cat) as i64)?;
-    }
-    Ok(values)
-}
-
-/// Exact view counts after compacting to the view's represented ancestry.
-#[pyfunction]
-#[pyo3(signature = (pedigree, view_rows, *, max_degree, threads, progress=None, tick=1.0))]
-fn compact_view_counts<'py>(
-    py: Python<'py>,
-    pedigree: &BuiltPedigree,
-    view_rows: PyReadonlyArray1<'py, i32>,
-    max_degree: u8,
-    threads: usize,
-    progress: Option<Py<PyAny>>,
-    tick: f64,
-) -> PyResult<Bound<'py, PyDict>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.relationships(py)?;
-    let view = view_rows.as_slice()?;
-    check_same_length("view_rows", view.len(), ped.len())?;
-    let max_degree = checked_max_degree(py, max_degree)?;
-    let pool = checked_pool(py, threads)?;
-    let counts = run_watched(py, pool, tick, progress, |progress| {
-        relationships::count_view_pairs_compact(&ped, max_degree, view, progress)
-    })?;
     let values = PyDict::new(py);
     for &cat in Category::ALL.iter() {
         values.set_item(cat.code(), counts.get(cat) as i64)?;
@@ -578,45 +545,47 @@ fn compact_view_counts<'py>(
 }
 
 /// The oriented pairs of the `requested` categories, keyed by registry code
-/// in registry order, each an `(first, second)` pair of owned int32 arrays.
+/// in registry order, each an `(first, second)` pair of owned int32 arrays;
+/// unrequested blocks are empty.
 ///
-/// Every category up to `max_degree` is classified; only the requested
-/// blocks are filled, the rest are empty.  With `view_rows`, the int32 view
-/// row of every graph row (`-1` unselected), blocks are in view rows and
-/// sorted by the view-space key; without it they are graph rows in
+/// With `graph_rows`, the graph row of each view row, blocks are in view
+/// rows and sorted by the view-space key; without it they are graph rows in
 /// canonical-key order.  `execution` is `"speed"` or `"memory"` (ADR 0006
 /// as amended) and changes resource use only.  The arrays are moved out of
 /// the core without a copy and retain nothing else.  The GIL is released
-/// while classifying and assembling.
+/// while classifying and assembling.  A call with nothing to walk returns
+/// empty blocks without borrowing the graph or checking `graph_rows`.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, requested, threads, execution, view_rows=None, compact=false, progress=None, tick=1.0))]
+#[pyo3(signature = (pedigree, *, requested, threads, execution, graph_rows=None, compaction="auto", progress=None, tick=1.0))]
 #[allow(clippy::too_many_arguments)]
 fn relationship_pairs<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
-    max_degree: u8,
     requested: Vec<String>,
     threads: usize,
     execution: &str,
-    view_rows: Option<PyReadonlyArray1<'py, i32>>,
-    compact: bool,
+    graph_rows: Option<PyReadonlyArray1<'py, i32>>,
+    compaction: &str,
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.relationships(py)?;
-    let max_degree = checked_max_degree(py, max_degree)?;
     let categories = requested_categories(&requested)?;
     let execution = Execution::parse(execution).ok_or_else(|| {
         PyValueError::new_err(format!(
             "execution must be \"speed\" or \"memory\", got {execution:?}"
         ))
     })?;
-    let receiver = receiver(&view_rows, ped.len(), compact)?;
-    let pool = checked_pool(py, threads)?;
-    let blocks = run_watched(py, pool, tick, progress, |progress| {
-        relationships::pair_blocks(&ped, max_degree, categories, receiver, execution, progress)
-    })?;
+    let receiver = receiver(&graph_rows, compaction)?;
+    let blocks = if query::walks(categories, receiver.rows(graph_len(py, pedigree))) {
+        let columns = EngineColumns::borrow(py, pedigree);
+        let ped = columns.relationships(py)?;
+        let pool = checked_pool(py, threads)?;
+        run_watched(py, pool, tick, progress, |progress| {
+            query::pairs(&ped, categories, receiver, execution, progress)
+        })?
+    } else {
+        PairBlocks::empty()
+    };
     let values = PyDict::new(py);
     for (cat, block) in Category::ALL.iter().zip(blocks.0) {
         let first = block.first.into_pyarray(py);
@@ -626,7 +595,7 @@ fn relationship_pairs<'py>(
     Ok(values)
 }
 
-/// The requested categories of a pair query, from their registry codes.
+/// The requested categories of a query, from their registry codes.
 fn requested_categories(requested: &[String]) -> PyResult<CategorySet> {
     let mut categories = CategorySet::EMPTY;
     for code in requested {
@@ -637,21 +606,31 @@ fn requested_categories(requested: &[String]) -> PyResult<CategorySet> {
     Ok(categories)
 }
 
-/// The receiver of a query: the graph, or the view `view_rows` maps out,
-/// its map checked to have one entry per graph row, run on its compact
-/// pedigree with `compact`.
+/// The receiver of a query: the graph, or the view `graph_rows` selects.
+/// `compaction` is `"auto"`, the core's choice and what the package passes;
+/// `"full"` and `"compact"` force a path, for tests.
 fn receiver<'a>(
-    view_rows: &'a Option<PyReadonlyArray1<'_, i32>>,
-    n: usize,
-    compact: bool,
+    graph_rows: &'a Option<PyReadonlyArray1<'_, i32>>,
+    compaction: &str,
 ) -> PyResult<Receiver<'a>> {
-    match view_rows {
-        Some(array) => {
-            let rows = array.as_slice()?;
-            check_same_length("view_rows", rows.len(), n)?;
-            Ok(Receiver::View { rows, compact })
+    let compaction = match compaction {
+        "auto" => Compaction::Auto,
+        "full" => Compaction::Full,
+        "compact" => Compaction::Compact,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "compaction must be \"auto\", \"full\" or \"compact\", got {other:?}"
+            )))
         }
-        None if compact => Err(PyValueError::new_err("compact requires view_rows")),
+    };
+    match graph_rows {
+        Some(array) => Ok(Receiver::View {
+            graph_rows: array.as_slice()?,
+            compaction,
+        }),
+        None if compaction != Compaction::Auto => {
+            Err(PyValueError::new_err("compaction requires graph_rows"))
+        }
         None => Ok(Receiver::Graph),
     }
 }
@@ -670,38 +649,6 @@ type MomentsArrays<'py> = (
     u64,
 );
 
-/// The lane count and planned accumulator peak of a call of the given
-/// sizes, as `(lanes, estimated_peak_bytes)`, without running it; the same
-/// plan the pass makes, so a degenerate call can be refused the same way.
-#[pyfunction]
-#[pyo3(signature = (*, n_categories, n_labels_first, n_labels_second, n_columns, n_products, n_same, threads, memory_budget_bytes))]
-#[allow(clippy::too_many_arguments)]
-fn moments_plan(
-    py: Python<'_>,
-    n_categories: usize,
-    n_labels_first: usize,
-    n_labels_second: usize,
-    n_columns: usize,
-    n_products: usize,
-    n_same: usize,
-    threads: usize,
-    memory_budget_bytes: u64,
-) -> PyResult<(usize, u64)> {
-    let threads = NonZeroUsize::new(threads)
-        .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
-    let shape = MomentsShape {
-        n_categories,
-        n_labels_first,
-        n_labels_second,
-        n_columns,
-        n_products,
-        n_same,
-    };
-    let plan =
-        MomentsPlan::new(shape, threads, memory_budget_bytes).map_err(|e| to_pyerr(py, e))?;
-    Ok((plan.lanes.get(), plan.estimated_peak_bytes))
-}
-
 /// Relationship moments per requested category and pair-label cell (ADR
 /// 0013, ADR 0015): the exact accumulators `CellReducer::finish` describes,
 /// encoded at their minimal width, in a `(width, table, cells, stride,
@@ -717,12 +664,11 @@ fn moments_plan(
 /// a budget one lane cannot fit raises `ResourceError` before anything is
 /// allocated.  The GIL is released for the pass.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, requested, threads, labels_first, n_labels_first, labels_second, n_labels_second, values, products, same, symmetric, memory_budget_bytes, view_rows=None, compact=false, progress=None, tick=1.0))]
+#[pyo3(signature = (pedigree, *, requested, threads, labels_first, n_labels_first, labels_second, n_labels_second, values, products, same, symmetric, memory_budget_bytes, graph_rows=None, compaction="auto", progress=None, tick=1.0))]
 #[allow(clippy::too_many_arguments)]
 fn relationship_moments<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
-    max_degree: u8,
     requested: Vec<String>,
     threads: usize,
     labels_first: PyReadonlyArray1<'py, i32>,
@@ -734,21 +680,18 @@ fn relationship_moments<'py>(
     same: PyReadonlyArray2<'py, i64>,
     symmetric: &str,
     memory_budget_bytes: u64,
-    view_rows: Option<PyReadonlyArray1<'py, i32>>,
-    compact: bool,
+    graph_rows: Option<PyReadonlyArray1<'py, i32>>,
+    compaction: &str,
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<MomentsArrays<'py>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.relationships(py)?;
-    let max_degree = checked_max_degree(py, max_degree)?;
     let categories = requested_categories(&requested)?;
     let symmetric = Symmetric::parse(symmetric).ok_or_else(|| {
         PyValueError::new_err(format!(
             "symmetric must be \"canonical\" or \"both\", got {symmetric:?}"
         ))
     })?;
-    let receiver = receiver(&view_rows, ped.len(), compact)?;
+    let receiver = receiver(&graph_rows, compaction)?;
     let n_columns = values.shape()[1];
     let n_same = same.shape()[1];
     let resolved = resolve_products(products)?;
@@ -765,20 +708,28 @@ fn relationship_moments<'py>(
     };
     let threads = NonZeroUsize::new(threads)
         .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
-    let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
-    let moments = run_watched(py, pool, tick, progress, |progress| {
-        relationships::relationship_moments(
-            &ped,
-            max_degree,
-            categories,
-            receiver,
-            &input,
-            symmetric,
-            threads,
-            memory_budget_bytes,
-            progress,
-        )
-    })?;
+    // The host checked the inputs against the receiver, so a call with
+    // nothing to walk skips the core's O(n) input scan and the graph.
+    let moments = if query::walks(categories, receiver.rows(graph_len(py, pedigree))) {
+        let columns = EngineColumns::borrow(py, pedigree);
+        let ped = columns.relationships(py)?;
+        let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
+        run_watched(py, pool, tick, progress, |progress| {
+            query::moments(
+                &ped,
+                categories,
+                receiver,
+                &input,
+                symmetric,
+                threads,
+                memory_budget_bytes,
+                progress,
+            )
+        })?
+    } else {
+        Moments::degenerate(input.shape(categories), threads, memory_budget_bytes)
+            .map_err(|e| to_pyerr(py, e))?
+    };
     Ok((
         moments.width,
         moments.table.into_pyarray(py),
@@ -1071,25 +1022,21 @@ enum ThresholdArg<'py> {
 /// both members and directional ones the junior only.  The inputs are
 /// borrowed, and the GIL is released for the pass.
 #[pyfunction]
-#[pyo3(signature = (pedigree, *, max_degree, requested, threads, columns, view_rows=None, compact=false, progress=None, tick=1.0))]
+#[pyo3(signature = (pedigree, *, requested, threads, columns, graph_rows=None, compaction="auto", progress=None, tick=1.0))]
 #[allow(clippy::too_many_arguments)]
 fn relatives_per_person<'py>(
     py: Python<'py>,
     pedigree: &BuiltPedigree,
-    max_degree: u8,
     requested: Vec<String>,
     threads: usize,
     columns: Vec<(PyReadonlyArray1<'py, f64>, ThresholdArg<'py>)>,
-    view_rows: Option<PyReadonlyArray1<'py, i32>>,
-    compact: bool,
+    graph_rows: Option<PyReadonlyArray1<'py, i32>>,
+    compaction: &str,
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<RelativesArrays<'py>> {
-    let engine = EngineColumns::borrow(py, pedigree);
-    let ped = engine.relationships(py)?;
-    let max_degree = checked_max_degree(py, max_degree)?;
     let categories = requested_categories(&requested)?;
-    let receiver = receiver(&view_rows, ped.len(), compact)?;
+    let receiver = receiver(&graph_rows, compaction)?;
     let mut borrowed = Vec::with_capacity(columns.len());
     for (relative, threshold) in &columns {
         borrowed.push(ThresholdColumn {
@@ -1102,12 +1049,18 @@ fn relatives_per_person<'py>(
     }
     let threads = NonZeroUsize::new(threads)
         .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
-    let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
-    let relatives = run_watched(py, pool, tick, progress, |progress| {
-        relationships::relatives_per_person(
-            &ped, max_degree, categories, receiver, &borrowed, threads, progress,
-        )
-    })?;
+    let rows = receiver.rows(graph_len(py, pedigree));
+    let relatives = if query::walks(categories, rows) {
+        let engine = EngineColumns::borrow(py, pedigree);
+        let ped = engine.relationships(py)?;
+        let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
+        run_watched(py, pool, tick, progress, |progress| {
+            query::relatives(&ped, categories, receiver, &borrowed, threads, progress)
+        })?
+    } else {
+        RelativesPerPerson::zeros(rows, categories.iter().count(), 1 + borrowed.len())
+            .map_err(|e| to_pyerr(py, e))?
+    };
     Ok((
         relatives.counts.into_pyarray(py),
         relatives.rows,
@@ -1515,11 +1468,9 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(build_pedigree, m)?)?;
     m.add_function(wrap_pyfunction!(configure_pool, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_counts, m)?)?;
-    m.add_function(wrap_pyfunction!(compact_view_counts, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_pairs, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_burden, m)?)?;
     m.add_function(wrap_pyfunction!(relationship_moments, m)?)?;
-    m.add_function(wrap_pyfunction!(moments_plan, m)?)?;
     m.add(
         "MOMENTS_MAX_VALUE_COLUMNS",
         relationships::MAX_VALUE_COLUMNS,

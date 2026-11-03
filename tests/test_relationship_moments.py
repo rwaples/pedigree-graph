@@ -8,6 +8,7 @@ so counts, sums and centered moments are compared bit for bit.
 
 from __future__ import annotations
 
+import functools
 import math
 import tracemalloc
 from fractions import Fraction
@@ -19,7 +20,7 @@ import pytest
 from _support import _run_child
 from conftest import parity_columns, parity_fixtures
 
-from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, ResourceError
+from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, ResourceError, _native
 from pedigree_graph import _relationship_moments as boundary
 from pedigree_graph._threads import thread_budget
 from pedigree_graph.moments import MomentAxis, host_bytes
@@ -221,9 +222,10 @@ class TestParity:
         graph = _graph("random_1k")
         view = graph.view(rows=np.random.default_rng(2).permutation(graph.n_individuals)[:100])
         inputs = _inputs(len(view), 4, per_role=True)
+        native = _native.relationship_moments
         results = []
-        for compact in (False, True):
-            monkeypatch.setattr(boundary, "_should_compact_view", lambda *_, flag=compact: flag)
+        for compaction in ("full", "compact"):
+            monkeypatch.setattr(_native, "relationship_moments", functools.partial(native, compaction=compaction))
             results.append(_flat(view.relationship_moments(max_degree=5, **inputs)))
         _assert_same(results[1], results[0])
 

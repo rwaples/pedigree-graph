@@ -33,7 +33,6 @@ import numpy as np
 from pedigree_graph import _native, _progress
 from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._input import _INT64_MAX
-from pedigree_graph._relationship_pairs import _should_compact_view
 from pedigree_graph._threads import thread_budget
 from pedigree_graph.moments import MomentAxis, RelationshipMoments, side_column
 
@@ -104,14 +103,20 @@ def _check_names(kind: str, names: Iterable[str]) -> None:
 
 
 def _pack(kind: str, factors: Mapping[str, object] | None, n: int) -> tuple[np.ndarray, int, list[MomentAxis]]:
-    """Pack named factors by mixed radix into one label per row (core); return (labels, n_labels, axes)."""
+    """Pack named factors by mixed radix into one label per row (core); return (labels, n_labels, axes).
+
+    ``n_labels`` is the number of label cells the axes span.  It is the
+    packing's radix product whenever there is a row; with no rows a factor
+    has no levels, so there are no cells, though the packing still counts
+    one label (it never takes a zero radix).
+    """
     if factors is None:
         factors = {}
     _check_names(f"{kind} factor", factors)
     columns = [np.ascontiguousarray(_coerce_column(kind, name, v, n, integer=True)) for name, v in factors.items()]
     labels, n_labels, levels = _native.moments_pack(columns, n, kind)
     axes = [MomentAxis(f"{kind}_{name}", level) for name, level in zip(factors, levels, strict=True)]
-    return labels, n_labels, axes
+    return labels, n_labels if n else math.prod(len(axis.levels) for axis in axes), axes
 
 
 def _quantize(columns: dict[str, np.ndarray], n: int) -> tuple[np.ndarray, np.ndarray]:
@@ -176,9 +181,9 @@ def relationship_moments(
 ) -> RelationshipMoments:
     """Validate, pack, quantize, run the engine and label the result for *graph* or *view*.
 
-    A view of fewer than two rows or an empty selection has no pairs and
-    skips the engine, after committing the thread budget and planning the
-    same sizes and budget the pass would, so it is refused the same way.
+    A view of fewer than two rows or an empty selection has no pairs; the
+    core answers it without running the engine, after planning the same
+    sizes and budget the pass would, so it is refused the same way.
     """
     watch = _progress.resolve(progress, logger, "relationship_moments")
     if symmetric not in SYMMETRIC:
@@ -226,64 +231,47 @@ def relationship_moments(
     stride = 1 + 4 * k + p
 
     threads = thread_budget()
-    if selection.top_degree is None or n < 2:
-        _, peak = _native.moments_plan(
-            n_categories=len(codes),
-            n_labels_first=n_first,
-            n_labels_second=n_second,
-            n_columns=k,
-            n_products=p,
-            n_same=len(same),
-            threads=threads,
-            memory_budget_bytes=memory_budget_bytes,
-        )
-        width, table = 1, np.zeros(len(codes) * cells * stride, dtype=np.uint8)
-        lanes, lane_pairs = 0, ()
-    else:
-        view_rows = None if view is None else view._graph_to_view()
-        compact = view is not None and _should_compact_view(graph.n_individuals, n)
-        logger.info(
-            "relationship_moments: max_degree=%d, %d categories, %d x %d labels, %d columns, %d products, "
-            "%d same keys, symmetric=%s, threads=%d%s",
-            selection.top_degree,
-            len(codes),
-            n_first,
-            n_second,
-            k,
-            p,
-            len(same),
-            symmetric,
-            threads,
-            ", view" if view_rows is not None else "",
-        )
-        start = time.perf_counter()
-        width, table, native_cells, native_stride, lanes, lane_pairs, peak = _native.relationship_moments(
-            graph._built,
-            max_degree=selection.top_degree,
-            requested=list(codes),
-            threads=threads,
-            labels_first=labels_first,
-            n_labels_first=n_first,
-            labels_second=labels_second,
-            n_labels_second=n_second,
-            values=np.ascontiguousarray(quantized),
-            products=product_indices,
-            same=np.ascontiguousarray(keys),
-            symmetric=symmetric,
-            memory_budget_bytes=memory_budget_bytes,
-            view_rows=view_rows,
-            compact=compact,
-            progress=watch,
-            tick=_progress.TICK_S,
-        )
-        assert (native_cells, native_stride) == (cells, stride), "native layout disagrees with the packing"
-        logger.info(
-            "relationship_moments total: %d pairs in %.3fs on %d lane(s), estimated accumulator peak %d bytes",
-            sum(lane_pairs),
-            time.perf_counter() - start,
-            lanes,
-            peak,
-        )
+    graph_rows = None if view is None else view._graph_rows
+    logger.info(
+        "relationship_moments: max_degree=%s, %d categories, %d x %d labels, %d columns, %d products, "
+        "%d same keys, symmetric=%s, threads=%d%s",
+        selection.top_degree,
+        len(codes),
+        n_first,
+        n_second,
+        k,
+        p,
+        len(same),
+        symmetric,
+        threads,
+        ", view" if graph_rows is not None else "",
+    )
+    start = time.perf_counter()
+    width, table, native_cells, native_stride, lanes, lane_pairs, peak = _native.relationship_moments(
+        graph._built,
+        requested=list(codes),
+        threads=threads,
+        labels_first=labels_first,
+        n_labels_first=n_first,
+        labels_second=labels_second,
+        n_labels_second=n_second,
+        values=np.ascontiguousarray(quantized),
+        products=product_indices,
+        same=np.ascontiguousarray(keys),
+        symmetric=symmetric,
+        memory_budget_bytes=memory_budget_bytes,
+        graph_rows=graph_rows,
+        progress=watch,
+        tick=_progress.TICK_S,
+    )
+    assert (native_cells, native_stride) == (cells, stride), "native layout disagrees with the packing"
+    logger.info(
+        "relationship_moments total: %d pairs in %.3fs on %d lane(s), estimated accumulator peak %d bytes",
+        sum(lane_pairs),
+        time.perf_counter() - start,
+        lanes,
+        peak,
+    )
 
     return RelationshipMoments(
         axes=axes,

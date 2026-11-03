@@ -135,8 +135,8 @@ impl Compaction {
 /// # Errors
 ///
 /// [`Error::ValueOutOfRange`] on `graph_rows` at the first entry that is
-/// not a graph row; [`Error::InvalidViewMap`] at the graph row selected a
-/// second time, with the view row that repeats it;
+/// not a graph row; [`Error::InvalidViewMap`] on `graph_rows` at the
+/// entry that selects a graph row a second time;
 /// [`Error::AllocationFailed`] for the map.
 pub fn view_map(graph_rows: &[i32], n: usize) -> Result<Vec<i32>, Error> {
     let mut map = alloc::filled(-1i32, n, Family::ViewSortScratch)?;
@@ -178,8 +178,9 @@ fn select(
         }
         if mark(row as usize, view_row) {
             return Err(Error::InvalidViewMap {
-                position: (row as usize).into(),
-                value: view_row.into(),
+                field: "graph_rows",
+                position: view_row.into(),
+                value: (row as usize).into(),
                 reason: "a graph row is selected twice",
             });
         }
@@ -522,8 +523,9 @@ mod tests {
             vec![true, false, true, false]
         );
         let duplicate = Error::InvalidViewMap {
-            position: 3usize.into(),
-            value: 2usize.into(),
+            field: "graph_rows",
+            position: 2usize.into(),
+            value: 3usize.into(),
             reason: "a graph row is selected twice",
         };
         for (rows, value) in [(&[0, 4][..], 4), (&[-1][..], -1)] {

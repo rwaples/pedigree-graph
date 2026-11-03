@@ -392,6 +392,7 @@ pub(super) fn check_view_map(map: &[i32]) -> Result<(), Error> {
             continue;
         };
         return Err(Error::InvalidViewMap {
+            field: "view_rows",
             position: position.into(),
             value: view_row.into(),
             reason,
