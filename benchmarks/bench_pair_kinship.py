@@ -12,6 +12,9 @@ it; slice 13 moves the walk to the Rust core with one memo per call (ADR
 query again on the same graph, prepared outside the timed region.  ``matrix``
 is ``relationship_kinship_matrix(max_degree=3)`` on a fresh graph and
 ``matrix_after_pairs`` the same matrix after a degree-3 ``pair_kinship``.
+``one_pair`` and ``empty`` time one pair and no pairs on a graph whose depth
+is already cached: the per-call floor, where checks on the whole pedigree
+show first (issue #53).
 Every arm checksums its values, so the cells also show each path returning
 the same bits.
 
@@ -81,6 +84,24 @@ def _pairs5_setup(graph) -> Prepared:
     return Prepared(payload=pairs, facts={"pairs": sum(len(block) for block in pairs.values())})
 
 
+def _floor_setup(graph) -> Prepared:
+    import numpy as np
+
+    _ = graph.depth  # cached outside the timed region, as a warm graph holds it
+    last = np.array([graph.n_individuals - 1], dtype=np.int32)
+    return Prepared(payload=last, facts={})
+
+
+def _one_pair(graph, last) -> Measurement:
+    values = graph.pair_kinship(last, last - 1)
+    return Measurement(checksum_values(values), {})
+
+
+def _empty(graph, last) -> Measurement:
+    values = graph.pair_kinship(last[:0], last[:0])
+    return Measurement(len(values), {})
+
+
 def _matrix(graph, _prepared) -> Measurement:
     matrix = graph.relationship_kinship_matrix(max_degree=MAX_DEGREE)
     return Measurement(checksum_matrix_upper(matrix), {"nnz": int(matrix.nnz)})
@@ -100,6 +121,8 @@ SUITE = Suite(
         Arm("pairs5", _pair_kinship, label="degree-5 pair_kinship, fresh graph", setup=_pairs5_setup),
         Arm("warm", _pair_kinship, label="the same query again on the same graph", setup=_warm_setup),
         Arm("matrix", _matrix, label="relationship_kinship_matrix(max_degree=3), fresh graph"),
+        Arm("one_pair", _one_pair, label="one pair_kinship pair, depth cached: the per-call floor", setup=_floor_setup),
+        Arm("empty", _empty, label="pair_kinship with no pairs, depth cached", setup=_floor_setup),
         Arm(
             "matrix_after_pairs",
             _matrix,
@@ -119,6 +142,10 @@ SUITE = Suite(
         "baseline100K/self",
         "baseline100K/matrix",
         "dev_mean_n10k/pairs5",
+        "random_300k/one_pair",
+        "random_300k/empty",
+        "baseline100K/one_pair",
+        "baseline100K/empty",
     ),
     gate=Gate(baseline="cold"),
     order=RunOrder.INTERLEAVED,
