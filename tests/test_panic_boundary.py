@@ -68,7 +68,7 @@ def test_a_watched_call_returns_when_its_job_ends_not_on_the_next_tick():
     body = """
         import time
         start = time.perf_counter()
-        _native.relationship_counts(graph._built, max_degree=5, threads=thread_budget(), tick=30.0)
+        _native.relationship_counts(graph._built, requested=["FS", "2C"], threads=thread_budget(), tick=30.0)
         print(time.perf_counter() - start)
     """
     assert float(_run_child(CHILD_PRELUDE, body, timeout=60)) < 5

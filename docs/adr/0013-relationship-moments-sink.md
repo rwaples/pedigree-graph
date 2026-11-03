@@ -178,7 +178,8 @@ thread count; the merge is in place into the first lane. Rayon
 split and their live count is not bounded by `W`. The effective `W`, the
 planned peak and the pairs each lane reduced are returned and logged. A
 degenerate call (no categories, fewer than two receiver rows) plans the
-same sizes and is refused the same way without running the engine.
+same sizes and is refused the same way without running the engine; the
+core builds that result (`Moments::degenerate`, ADR 0019).
 
 Outside the estimate, as part of the job's RSS: the graph, the input
 arrays and the quantized values, and one engine workspace per lane (about

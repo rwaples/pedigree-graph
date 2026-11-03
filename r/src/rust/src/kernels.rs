@@ -14,9 +14,10 @@ use pedigree_graph_core::columns::GraphColumns;
 use pedigree_graph_core::error::{Error, PAIR_FIRST, PAIR_SECOND};
 use pedigree_graph_core::kinship::{self, KinshipPedigree};
 use pedigree_graph_core::pool;
+use pedigree_graph_core::relationships::query::{self, Receiver};
 use pedigree_graph_core::relationships::{
-    count_pairs, pair_blocks, relationship_burden as burden_of, Burden, Category, CategorySet,
-    Counts, Execution, MaxDegree, PairBlock, Pedigree, Progress, Receiver, DEGREES, N_CATEGORIES,
+    relationship_burden as burden_of, Burden, Category, CategorySet, Counts, Execution, MaxDegree,
+    PairBlock, PairBlocks, Pedigree, Progress, DEGREES,
 };
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
@@ -159,16 +160,11 @@ impl OwnedRows {
     }
 }
 
-/// The walk a selection needs: its top degree and the graph's rows, or
-/// `None` when it selects no category or the graph has fewer than two rows.
-pub fn walk_of(
-    graph: &Native,
-    requested: CategorySet,
-) -> HostResult<Option<(MaxDegree, OwnedRows)>> {
-    match (requested.top_degree(), graph.len() >= 2) {
-        (Some(top), true) => Ok(Some((MaxDegree::try_new(top)?, graph.copy_rows()))),
-        _ => Ok(None),
-    }
+/// The graph's rows for a query of `requested` on the whole graph, or
+/// `None` when the core has nothing to walk (`query::walks`): the rows are
+/// copied only for a call that reads them.
+pub fn walk_of(graph: &Native, requested: CategorySet) -> Option<OwnedRows> {
+    query::walks(requested, graph.len()).then(|| graph.copy_rows())
 }
 
 /// An iterator whose length is known up front, for extendr's exact-size
@@ -296,18 +292,19 @@ pub fn start_pairs(
     })?;
     // Every public operation commits the budget, as in Python.
     let (_, pool) = package_pool()?;
-    let walk = walk_of(&graph, requested)?;
-    let work = move |progress: &Progress| match walk {
-        Some((max_degree, rows)) => Ok(pair_blocks(
-            &rows.pedigree()?,
-            max_degree,
-            requested,
-            Receiver::Graph,
-            execution,
-            progress,
-        )?
-        .0),
-        None => Ok(vec![PairBlock::default(); N_CATEGORIES]),
+    let walk = walk_of(&graph, requested);
+    let work = move |progress: &Progress| {
+        let blocks = match walk {
+            Some(rows) => query::pairs(
+                &rows.pedigree()?,
+                requested,
+                Receiver::Graph,
+                execution,
+                progress,
+            )?,
+            None => PairBlocks::empty(),
+        };
+        Ok(blocks.0)
     };
     Ok(job::spawn(pool, work, move |blocks| {
         pairs_list(&graph, requested, ids, blocks)
@@ -409,9 +406,9 @@ pub fn start_counts(
     let graph = Native::verified(native, seal)?;
     let requested = selection(max_degree, categories)?;
     let (_, pool) = package_pool()?;
-    let walk = walk_of(&graph, requested)?;
+    let walk = walk_of(&graph, requested);
     let work = move |progress: &Progress| match walk {
-        Some((max_degree, rows)) => count_pairs(&rows.pedigree()?, max_degree, None, progress),
+        Some(rows) => query::counts(&rows.pedigree()?, requested, Receiver::Graph, progress),
         None => Ok(Counts::default()),
     };
     Ok(job::spawn(pool, work, move |counts| {

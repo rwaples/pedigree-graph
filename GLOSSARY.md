@@ -28,8 +28,9 @@ _Avoid_: view id, space id, handle
 
 **Receiver**:
 The graph or view a query is called on. It fixes the coordinate space the
-results come back in; whether a view query runs on a **compact view** is an
-execution choice the receiver carries, not a third kind of receiver.
+results come back in. Whether a view query runs on a **compact view** is an
+execution choice the core makes from the view's size, not a third kind of
+receiver; tests and benchmarks can force either path (ADR 0019).
 _Avoid_: target, scope, input
 
 ### Pedigree structure

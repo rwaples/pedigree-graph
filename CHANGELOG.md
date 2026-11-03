@@ -6,6 +6,29 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Relationship queries are total in the core** (issue #52, ADR 0019).
+  `relationships::query::{pairs, counts, moments, relatives}` take the
+  requested `CategorySet` and a `query::Receiver`. They derive the walk's
+  depth from the set, answer a call with nothing to walk (an empty set, or
+  fewer than two receiver rows), and choose whether a view runs on its
+  compact pedigree (`Compaction::Auto`, the rule Python applied; `Full` and
+  `Compact` force a path). A view crosses as its `graph_rows`.
+  `query::walks` lets a host skip borrowing columns for a call that walks
+  nothing; `Moments::degenerate` and `RelativesPerPerson::zeros` are the
+  results both hosts used to build. Python and R both call `query`. The
+  former entry points (`pair_blocks`, `relationship_moments`,
+  `relatives_per_person`, `count_pairs`, `count_view_pairs_compact`) are
+  unchanged until pg-phenotype moves, then removed.
+- **Fix: an empty-selection `relationship_counts` commits the thread
+  budget** (issue #52), on a graph and on a view, like every other call and
+  like R. A later `configure_threads` with another value now raises.
+- **`_native` (private)**: the relationship bindings take `requested` codes
+  and `graph_rows`, not `max_degree` and a view map;
+  `compact_view_counts`, `relationship_counts(selected=)` and
+  `moments_plan` are gone. `InvalidViewMap` names the column it describes.
+  A zero-row view's moments report a peak of zero rather than one label
+  cell's plan.
+
 - **Kernel inputs are drawn from one core borrow, `columns::GraphColumns`**
   (issue #53). It holds a graph's parent and twin rows; `relationships(ids)`,
   `kinship(depth)` and `lineage(depth, rows_topological)` take the further

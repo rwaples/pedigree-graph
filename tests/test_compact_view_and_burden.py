@@ -29,29 +29,14 @@ def test_compact_view_pairs_match_full_graph(fixture: dict[str, np.ndarray]) -> 
     selected = np.arange(n - 1, -1, -3, dtype=np.int32)
     if len(selected) < 2:
         return
-    view_map = graph.view(rows=selected)._graph_to_view()
-    mask = view_map >= 0
-    counts = _native.relationship_counts(graph._built, max_degree=5, threads=1, selected=mask)
-    compact_counts = _native.compact_view_counts(graph._built, view_map, max_degree=5, threads=1)
+    rows = graph.view(rows=selected).graph_rows
+    call = {"requested": list(RELATIONSHIPS), "threads": 1, "graph_rows": rows}
+    counts = _native.relationship_counts(graph._built, **call, compaction="full")
+    compact_counts = _native.relationship_counts(graph._built, **call, compaction="compact")
     assert compact_counts == counts
     for execution in ("speed", "memory"):
-        old = _native.relationship_pairs(
-            graph._built,
-            max_degree=5,
-            requested=list(RELATIONSHIPS),
-            threads=1,
-            execution=execution,
-            view_rows=view_map,
-        )
-        compact = _native.relationship_pairs(
-            graph._built,
-            max_degree=5,
-            requested=list(RELATIONSHIPS),
-            threads=1,
-            execution=execution,
-            view_rows=view_map,
-            compact=True,
-        )
+        old = _native.relationship_pairs(graph._built, **call, execution=execution, compaction="full")
+        compact = _native.relationship_pairs(graph._built, **call, execution=execution, compaction="compact")
         for code in RELATIONSHIPS:
             np.testing.assert_array_equal(compact[code][0], old[code][0], err_msg=code)
             np.testing.assert_array_equal(compact[code][1], old[code][1], err_msg=code)
@@ -129,9 +114,13 @@ def test_sparse_large_view_uses_compact_path_without_changing_public_results() -
     )
     selected = np.random.default_rng(42).permutation(graph.n_individuals)[:303]
     view = graph.view(rows=selected)
-    map_rows = view._graph_to_view()
     expected = _native.relationship_pairs(
-        graph._built, max_degree=5, requested=list(RELATIONSHIPS), threads=1, execution="speed", view_rows=map_rows
+        graph._built,
+        requested=list(RELATIONSHIPS),
+        threads=1,
+        execution="speed",
+        graph_rows=view.graph_rows,
+        compaction="full",
     )
     got = view.relationship_pairs(max_degree=5)
     counts = view.relationship_counts(max_degree=5)
