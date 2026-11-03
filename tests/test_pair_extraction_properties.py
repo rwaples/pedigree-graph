@@ -3,6 +3,9 @@
 Pair keys are canonical and duplicate-free; full vs half sibling classification
 is consistent with the parent arrays (the >=2-shared-ancestors rule); and pair
 counts are invariant under id relabelling (incl. large/sparse ids).
+
+crates/core/tests/pair_properties.rs holds the core, which the R binding
+shares, to the same invariants; these keep the Python binding covered.
 """
 
 from __future__ import annotations

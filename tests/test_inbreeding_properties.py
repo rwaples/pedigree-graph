@@ -2,6 +2,9 @@
 
 F is non-negative, agrees with the matrix-DP diagonal (no twins), and equals
 phi(mother, father) for individuals with both parents known (0 otherwise).
+
+crates/core/tests/kinship_properties.rs holds the core, which the R binding
+shares, to the same invariants; these keep the Python binding covered.
 """
 
 from __future__ import annotations

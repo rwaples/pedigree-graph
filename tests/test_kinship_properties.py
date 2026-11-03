@@ -5,6 +5,9 @@ symmetry, bounds, founder base cases, the Mendelian quarter for
 parent-offspring, the kinship recursion, the matrix-DP vs
 pairwise-recurrence consistency, and id-relabel invariance.  The diagonal's
 F identity is in test_inbreeding_properties.py.
+
+crates/core/tests/kinship_properties.rs holds the core, which the R binding
+shares, to the same invariants; these keep the Python binding covered.
 """
 
 from __future__ import annotations

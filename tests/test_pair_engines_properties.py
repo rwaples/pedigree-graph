@@ -2,6 +2,10 @@
 
 The scalar close-relative counts match the exact reference on all six codes
 in estimate_exact_codes(). Also checks pairs<->counts agreement and degree-gating.
+
+crates/core/tests/pair_properties.rs holds the core, which the R binding
+shares, to the last two invariants; close_relative_counts and the None
+above max_degree are Python, so only this file checks them.
 """
 
 from __future__ import annotations
