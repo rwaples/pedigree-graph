@@ -278,21 +278,25 @@ mod tests {
     /// has one, with the checkpoints it must reach in order.
     fn paths<'a>(
         ped: &'a Pedigree<'a>,
-        view: &'a [i32],
+        graph_rows: &'a [i32],
         zeros: &'a [i32],
         depth: &'a [i32],
     ) -> Vec<Path<'a>> {
+        use super::super::query::{self, Compaction, Receiver};
         use super::super::{
-            count_view_pairs_compact, pair_blocks, relationship_burden, relationship_moments,
-            relatives_per_person, CategorySet, CompactView, Execution, MomentsInput, Receiver,
-            Symmetric,
+            relationship_burden, CategorySet, CompactView, Execution, MomentsInput, Symmetric,
         };
         use std::num::NonZeroUsize;
         use Checkpoint::*;
         let degree = MaxDegree::try_new(3).unwrap();
         let all = CategorySet::up_to_degree(degree.get());
         let lanes = NonZeroUsize::new(LANES).unwrap();
-        let compact_n = CompactView::build(ped, view).unwrap().columns.mother.len();
+        let map = query::view_map(graph_rows, N).unwrap();
+        let compact_n = CompactView::build(ped, &map).unwrap().columns.mother.len();
+        let view = Receiver::View {
+            graph_rows,
+            compaction: Compaction::Compact,
+        };
         assert!(compact_n < N, "the view must compact the pedigree");
         let graph_input = MomentsInput {
             labels_first: zeros,
@@ -305,35 +309,15 @@ mod tests {
             same: &[],
             n_same: 0,
         };
-        let n_view = view.iter().filter(|&&v| v >= 0).count();
+        let n_view = graph_rows.len();
         let view_input = MomentsInput {
             labels_first: &zeros[..n_view],
             labels_second: &zeros[..n_view],
             ..graph_input
         };
-        let copies = |v: Option<&[i32]>| -> Vec<Checkpoint> {
-            let blocks = match v {
-                None => pair_blocks(
-                    ped,
-                    degree,
-                    all,
-                    Receiver::Graph,
-                    Execution::Speed,
-                    &Progress::default(),
-                ),
-                Some(v) => pair_blocks(
-                    ped,
-                    degree,
-                    all,
-                    Receiver::View {
-                        rows: v,
-                        compact: true,
-                    },
-                    Execution::Speed,
-                    &Progress::default(),
-                ),
-            }
-            .unwrap();
+        let copies = |receiver: Receiver<'_>| -> Vec<Checkpoint> {
+            let blocks =
+                query::pairs(ped, all, receiver, Execution::Speed, &Progress::default()).unwrap();
             Category::ALL
                 .into_iter()
                 .filter(|&c| !blocks.get(c).is_empty())
@@ -351,8 +335,8 @@ mod tests {
                 total: N,
             },
             Path {
-                name: "count_view_pairs_compact",
-                run: Box::new(move |p| count_view_pairs_compact(ped, degree, view, p).map(drop)),
+                name: "counts compact view",
+                run: Box::new(move |p| query::counts(ped, all, view, p).map(drop)),
                 expected: vec![Compacted, Walk, Finish],
                 total: compact_n,
             },
@@ -363,59 +347,35 @@ mod tests {
                 total: N,
             },
             Path {
-                name: "pair_blocks speed",
+                name: "pairs speed",
                 run: Box::new(move |p| {
-                    pair_blocks(ped, degree, all, Receiver::Graph, Execution::Speed, p).map(drop)
+                    query::pairs(ped, all, Receiver::Graph, Execution::Speed, p).map(drop)
                 }),
-                expected: cat(&[&[Walk, Finish], &copies(None)]),
+                expected: cat(&[&[Walk, Finish], &copies(Receiver::Graph)]),
                 total: N,
             },
             Path {
-                name: "pair_blocks memory",
+                name: "pairs memory",
                 run: Box::new(move |p| {
-                    pair_blocks(ped, degree, all, Receiver::Graph, Execution::Memory, p).map(drop)
+                    query::pairs(ped, all, Receiver::Graph, Execution::Memory, p).map(drop)
                 }),
                 expected: cat(&[&[Walk, BetweenPasses], &per_cat(CategoryAlloc), &[Finish]]),
                 total: 2 * N,
             },
             Path {
-                name: "pair_blocks compact view speed",
-                run: Box::new(move |p| {
-                    pair_blocks(
-                        ped,
-                        degree,
-                        all,
-                        Receiver::View {
-                            rows: view,
-                            compact: true,
-                        },
-                        Execution::Speed,
-                        p,
-                    )
-                    .map(drop)
-                }),
+                name: "pairs compact view speed",
+                run: Box::new(move |p| query::pairs(ped, all, view, Execution::Speed, p).map(drop)),
                 expected: cat(&[
                     &[Compacted, Walk, Finish],
-                    &copies(Some(view)),
+                    &copies(view),
                     &per_cat(CategorySort),
                 ]),
                 total: compact_n,
             },
             Path {
-                name: "pair_blocks compact view memory",
+                name: "pairs compact view memory",
                 run: Box::new(move |p| {
-                    pair_blocks(
-                        ped,
-                        degree,
-                        all,
-                        Receiver::View {
-                            rows: view,
-                            compact: true,
-                        },
-                        Execution::Memory,
-                        p,
-                    )
-                    .map(drop)
+                    query::pairs(ped, all, view, Execution::Memory, p).map(drop)
                 }),
                 expected: cat(&[
                     &[Compacted, Walk, BetweenPasses],
@@ -426,12 +386,11 @@ mod tests {
                 total: 2 * compact_n,
             },
             Path {
-                name: "relationship_moments",
+                name: "moments",
                 run: Box::new(move |p| {
                     let input = graph_input;
-                    relationship_moments(
+                    query::moments(
                         ped,
-                        degree,
                         all,
                         Receiver::Graph,
                         &input,
@@ -446,17 +405,13 @@ mod tests {
                 total: N,
             },
             Path {
-                name: "relationship_moments compact",
+                name: "moments compact view",
                 run: Box::new(move |p| {
                     let input = view_input;
-                    relationship_moments(
+                    query::moments(
                         ped,
-                        degree,
                         all,
-                        Receiver::View {
-                            rows: view,
-                            compact: true,
-                        },
+                        view,
                         &input,
                         Symmetric::Canonical,
                         lanes,
@@ -469,30 +424,16 @@ mod tests {
                 total: compact_n,
             },
             Path {
-                name: "relatives_per_person",
+                name: "relatives",
                 run: Box::new(move |p| {
-                    relatives_per_person(ped, degree, all, Receiver::Graph, &[], lanes, p).map(drop)
+                    query::relatives(ped, all, Receiver::Graph, &[], lanes, p).map(drop)
                 }),
                 expected: cat(&[&[Walk, Finish], &merges]),
                 total: N,
             },
             Path {
-                name: "relatives_per_person compact",
-                run: Box::new(move |p| {
-                    relatives_per_person(
-                        ped,
-                        degree,
-                        all,
-                        Receiver::View {
-                            rows: view,
-                            compact: true,
-                        },
-                        &[],
-                        lanes,
-                        p,
-                    )
-                    .map(drop)
-                }),
+                name: "relatives compact view",
+                run: Box::new(move |p| query::relatives(ped, all, view, &[], lanes, p).map(drop)),
                 expected: cat(&[&[Compacted, Walk, Finish], &merges]),
                 total: compact_n,
             },
@@ -505,17 +446,7 @@ mod tests {
         let cols = random_pedigree(N, 9);
         let ped = cols.try_borrow().unwrap();
         // Rows below 500 only, so no ancestor lies past them.
-        let mut next = 0;
-        let view: Vec<i32> = (0..N)
-            .map(|r| {
-                if r % 7 == 0 && r < 500 {
-                    next += 1;
-                    next - 1
-                } else {
-                    -1
-                }
-            })
-            .collect();
+        let view: Vec<i32> = (0..500).step_by(7).collect();
         let zeros = vec![0i32; N];
         let depth = crate::topology::structural_depth(&cols.mother, &cols.father);
         let pool = rayon::ThreadPoolBuilder::new()

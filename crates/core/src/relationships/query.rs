@@ -368,10 +368,7 @@ pub fn relatives(
 #[cfg(test)]
 mod tests {
     use super::super::testing::random_pedigree;
-    use super::super::{
-        count_view_pairs_compact, pair_blocks, relationship_moments, relatives_per_person,
-        Category, MomentsPlan, Snapshot, Threshold, MAX_QUANTIZED,
-    };
+    use super::super::{Category, MomentsPlan, Snapshot, Threshold, MAX_QUANTIZED};
     use super::*;
 
     const MODES: [Compaction; 3] = [Compaction::Auto, Compaction::Full, Compaction::Compact];
@@ -395,14 +392,6 @@ mod tests {
         Receiver::View {
             graph_rows,
             compaction,
-        }
-    }
-
-    /// The same view as the former entry points' receiver.
-    fn legacy(map: &[i32], compaction: Compaction) -> super::super::Receiver<'_> {
-        super::super::Receiver::View {
-            rows: map,
-            compact: compaction == Compaction::Compact,
         }
     }
 
@@ -723,121 +712,72 @@ mod tests {
         ));
     }
 
-    /// Every entry point on every receiver and compaction equals the
-    /// former entry point on the same view map: identical blocks, counts,
-    /// moments tables and per-person counts.
-    #[test]
-    fn query_results_match_the_former_entry_points_on_every_path() {
+    /// Every entry point's result on `receiver`: the blocks of both
+    /// executions, the counts, the moments and the relatives, the last two
+    /// settled.  `rows` is the receiver's row count.
+    fn every_result(
+        ped: &Pedigree,
+        requested: CategorySet,
+        receiver: Receiver<'_>,
+        rows: usize,
+    ) -> ([PairBlocks; 2], Counts, Moments, RelativesPerPerson) {
         let progress = Progress::default();
         let threads = NonZeroUsize::new(3).unwrap();
+        let inputs = Inputs::new(rows);
+        let relative: Vec<f64> = (0..rows).map(|r| (r % 5) as f64).collect();
+        let columns = [ThresholdColumn {
+            relative: &relative,
+            threshold: Threshold::Scalar(2.0),
+        }];
+        (
+            [Execution::Speed, Execution::Memory]
+                .map(|e| pairs(ped, requested, receiver, e, &progress).unwrap()),
+            counts(ped, requested, receiver, &progress).unwrap(),
+            settled_moments(
+                moments(
+                    ped,
+                    requested,
+                    receiver,
+                    &inputs.input(),
+                    Symmetric::Canonical,
+                    threads,
+                    1 << 30,
+                    &progress,
+                )
+                .unwrap(),
+            ),
+            settled_relatives(
+                relatives(ped, requested, receiver, &columns, threads, &progress).unwrap(),
+            ),
+        )
+    }
+
+    /// `Compaction::Full` and `Compaction::Compact` give identical blocks,
+    /// counts (the row-mask path against the compact one), moments and
+    /// relatives on every view, and a view of every row in graph order
+    /// gives the graph's.  Before issue #52 step 6 deleted the former entry
+    /// points, each path was also compared against them.
+    #[test]
+    fn full_and_compact_give_identical_results_on_every_view() {
         for (n, seed) in [(400usize, 1u64), (2_500, 9)] {
             let cols = random_pedigree(n, seed);
             let ped = cols.try_borrow().unwrap();
             for requested in [close(), CategorySet::up_to_degree(MaxDegree::MAX.get())] {
-                let max_degree = depth(requested, n).unwrap();
                 for k in [2, n / 10, n / 2, n] {
                     let rows = selection(n, k, seed + k as u64);
-                    let map = view_map(&rows, n).unwrap();
-                    let mut selected = vec![false; n];
-                    for &row in &rows {
-                        selected[row as usize] = true;
-                    }
-                    let want_counts =
-                        count_pairs(&ped, max_degree, Some(&selected), &progress).unwrap();
-                    assert_eq!(
-                        count_view_pairs_compact(&ped, max_degree, &map, &progress).unwrap(),
-                        want_counts
-                    );
-                    let inputs = Inputs::new(k);
-                    let input = inputs.input();
-                    let relative: Vec<f64> = (0..k).map(|r| (r % 5) as f64).collect();
-                    let columns = [ThresholdColumn {
-                        relative: &relative,
-                        threshold: Threshold::Scalar(2.0),
-                    }];
-                    for mode in MODES {
-                        let label = format!("n={n} k={k} {mode:?} {requested:?}");
-                        let (new, old) = (view(&rows, mode), legacy(&map, mode));
-                        for execution in [Execution::Speed, Execution::Memory] {
-                            assert_eq!(
-                                pairs(&ped, requested, new, execution, &progress).unwrap(),
-                                pair_blocks(&ped, max_degree, requested, old, execution, &progress)
-                                    .unwrap(),
-                                "{label} {execution:?}"
-                            );
-                        }
-                        assert_eq!(
-                            counts(&ped, requested, new, &progress).unwrap(),
-                            want_counts,
-                            "{label}"
-                        );
-                        assert_eq!(
-                            settled_moments(
-                                moments(
-                                    &ped,
-                                    requested,
-                                    new,
-                                    &input,
-                                    Symmetric::Canonical,
-                                    threads,
-                                    1 << 30,
-                                    &progress
-                                )
-                                .unwrap()
-                            ),
-                            settled_moments(
-                                relationship_moments(
-                                    &ped,
-                                    max_degree,
-                                    requested,
-                                    old,
-                                    &input,
-                                    Symmetric::Canonical,
-                                    threads,
-                                    1 << 30,
-                                    &progress,
-                                )
-                                .unwrap()
-                            ),
-                            "{label}"
-                        );
-                        assert_eq!(
-                            settled_relatives(
-                                relatives(&ped, requested, new, &columns, threads, &progress)
-                                    .unwrap()
-                            ),
-                            settled_relatives(
-                                relatives_per_person(
-                                    &ped, max_degree, requested, old, &columns, threads, &progress
-                                )
-                                .unwrap()
-                            ),
-                            "{label}"
-                        );
+                    let full = every_result(&ped, requested, view(&rows, Compaction::Full), k);
+                    let compact =
+                        every_result(&ped, requested, view(&rows, Compaction::Compact), k);
+                    assert_eq!(full, compact, "n={n} k={k} {requested:?}");
+                    if k >= n / 2 {
+                        assert!(full.0[0].total() > 0, "n={n} k={k} {requested:?}");
                     }
                 }
+                let every_row: Vec<i32> = (0..n as i32).collect();
                 assert_eq!(
-                    pairs(
-                        &ped,
-                        requested,
-                        Receiver::Graph,
-                        Execution::Speed,
-                        &progress
-                    )
-                    .unwrap(),
-                    pair_blocks(
-                        &ped,
-                        max_degree,
-                        requested,
-                        super::super::Receiver::Graph,
-                        Execution::Speed,
-                        &progress
-                    )
-                    .unwrap()
-                );
-                assert_eq!(
-                    counts(&ped, requested, Receiver::Graph, &progress).unwrap(),
-                    count_pairs(&ped, max_degree, None, &progress).unwrap()
+                    every_result(&ped, requested, view(&every_row, Compaction::Full), n),
+                    every_result(&ped, requested, Receiver::Graph, n),
+                    "n={n} {requested:?}"
                 );
             }
         }

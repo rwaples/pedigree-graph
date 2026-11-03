@@ -23,7 +23,8 @@ use common::{
     check, non_inbred_pedigree, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped,
 };
 use pedigree_graph_core::kinship::{inbreeding, pair_kinship};
-use pedigree_graph_core::relationships::{count_pairs, MaxDegree, Progress};
+use pedigree_graph_core::relationships::query::{self, Receiver};
+use pedigree_graph_core::relationships::{CategorySet, Progress};
 use proptest::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -204,9 +205,14 @@ fn ids_do_not_change_kinship_or_counts() {
             prop_assert_eq!(&a.graph.father_rows, &b.graph.father_rows);
             prop_assert_eq!(&a.graph.twin_rows, &b.graph.twin_rows);
             prop_assert_eq!(a.dense_kinship(), b.dense_kinship());
-            let degree = MaxDegree::try_new(3).expect("a counted degree");
             let count = |x: &Built| {
-                count_pairs(&x.relationships(), degree, None, &Progress::default()).expect("counts")
+                query::counts(
+                    &x.relationships(),
+                    CategorySet::up_to_degree(3),
+                    Receiver::Graph,
+                    &Progress::default(),
+                )
+                .expect("counts")
             };
             prop_assert_eq!(count(&a).0, count(&b).0);
             tally(checked, 1);

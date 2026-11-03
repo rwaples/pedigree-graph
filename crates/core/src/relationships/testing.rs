@@ -1,6 +1,15 @@
 //! Pedigree builders shared by the relationship unit tests.
 
+use super::query::{Compaction, Receiver};
 use super::PedigreeColumns;
+
+/// The graph, or the view whose graph rows are `graph_rows`.
+pub(crate) fn receiver(graph_rows: Option<&[i32]>, compaction: Compaction) -> Receiver<'_> {
+    graph_rows.map_or(Receiver::Graph, |graph_rows| Receiver::View {
+        graph_rows,
+        compaction,
+    })
+}
 
 /// Rows with parent rows; original ids equal rows, `-1` missing.
 pub(super) fn pedigree(parents: &[(i32, i32)], twins: &[(usize, usize)]) -> PedigreeColumns {

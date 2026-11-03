@@ -25,10 +25,7 @@
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
 use super::progress::{Checkpoint, Progress};
-use super::{
-    check_column_length, on_receiver, receiver_len, task_ranges, walk_rows, MaxDegree, Pedigree,
-    Receiver,
-};
+use super::{check_column_length, task_ranges, walk_rows, MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
@@ -130,9 +127,9 @@ pub enum RowOrder {
 /// Each lane takes task ranges in graph row order, so with one lane the
 /// pairs reach the reducer in it.
 ///
-/// `view` is the int32 view row of every graph row (`-1` unselected), as for
-/// [`super::pair_blocks`], already checked to be a partial permutation by
-/// the caller; pairs then arrive in view rows.  With `Symmetric::Both`
+/// `view` is the int32 view row of every graph row (`-1` unselected), as
+/// [`super::query::view_map`] builds it, already checked to be a partial
+/// permutation by the caller; pairs then arrive in view rows.  With `Symmetric::Both`
 /// every symmetric pair is reduced twice, once per orientation.  Once any
 /// lane fails, the others stop taking task ranges.
 ///
@@ -721,54 +718,6 @@ pub struct Moments {
     pub estimated_peak_bytes: u64,
 }
 
-/// The relationship moments of every requested category, using the current
-/// Rayon pool.
-///
-/// `receiver` is as for [`super::pair_blocks`]; `input` is in its rows.
-/// `threads` caps the lane count; the budget caps it further.
-///
-/// # Errors
-///
-/// [`Error::MemoryBudgetExceeded`] before any accumulator is allocated when
-/// one lane does not fit `budget_bytes`; the input errors of
-/// [`MomentsInput::check`]; [`Error::InvalidViewMap`] when the view map is
-/// not a partial permutation; [`Error::ArithmeticOverflow`] when a cell exceeds
-/// [`MAX_CELL_PAIRS`] pairs; [`Error::Cancelled`] once `progress` is
-/// cancelled.
-///
-/// # Panics
-///
-/// If the view map does not have one entry per graph row.
-#[allow(clippy::too_many_arguments)]
-pub fn relationship_moments(
-    ped: &Pedigree,
-    max_degree: MaxDegree,
-    requested: CategorySet,
-    receiver: Receiver<'_>,
-    input: &MomentsInput<'_>,
-    symmetric: Symmetric,
-    threads: NonZeroUsize,
-    budget_bytes: u64,
-    progress: &Progress,
-) -> Result<Moments, Error> {
-    input.check(receiver_len(ped, receiver)?)?;
-    moments_pass(requested, input, threads, budget_bytes, |reducer, lanes| {
-        on_receiver(ped, receiver, progress, |ped, view| {
-            reduce_pairs_in(
-                ped,
-                max_degree,
-                requested,
-                view,
-                symmetric,
-                lanes,
-                reducer,
-                progress,
-                RowOrder::Families,
-            )
-        })
-    })
-}
-
 /// Plan a moments call, run its pass through `walk` (given the reducer and
 /// the planned lanes), and encode the merged lane.  `input` is checked.
 pub(super) fn moments_pass<'a>(
@@ -825,8 +774,9 @@ impl Moments {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::random_pedigree;
-    use super::super::{pair_blocks, Execution, PedigreeColumns};
+    use super::super::query::{self, Compaction, Receiver};
+    use super::super::testing::{random_pedigree, receiver};
+    use super::super::{Execution, PedigreeColumns};
     use super::*;
 
     /// Brute force from the emitted pair blocks, for the same inputs.
@@ -838,11 +788,10 @@ mod tests {
         symmetric: Symmetric,
     ) -> Vec<i128> {
         let ped = cols.try_borrow().unwrap();
-        let blocks = pair_blocks(
+        let blocks = query::pairs(
             &ped,
-            MaxDegree::MAX,
             requested,
-            Receiver::from(view),
+            receiver(view, Compaction::Full),
             Execution::Speed,
             &Progress::default(),
         )
@@ -973,16 +922,8 @@ mod tests {
         let cols = random_pedigree(3000, 5);
         let ped = cols.try_borrow().unwrap();
         let n = ped.len();
-        let view: Vec<i32> = (0..n as i32)
-            .map(|r| {
-                if r % 3 == 0 {
-                    -1
-                } else {
-                    r / 3 * 2 + r % 3 - 1
-                }
-            })
-            .collect();
-        let n_view = view.iter().filter(|&&v| v >= 0).count();
+        let view: Vec<i32> = (0..n as i32).filter(|r| r % 3 != 0).collect();
+        let n_view = view.len();
         let requested = CategorySet::up_to_degree(5);
         for (v, len) in [(None, n), (Some(view.as_slice()), n_view)] {
             let (first, second, values, same) = inputs(len, 9);
@@ -1013,11 +954,17 @@ mod tests {
                         .unwrap();
                     let got = pool
                         .install(|| {
-                            relationship_moments(
+                            query::moments(
                                 &ped,
-                                MaxDegree::MAX,
                                 requested,
-                                v.map_or(Receiver::Graph, |rows| Receiver::View { rows, compact }),
+                                receiver(
+                                    v,
+                                    if compact {
+                                        Compaction::Compact
+                                    } else {
+                                        Compaction::Full
+                                    },
+                                ),
                                 &input,
                                 symmetric,
                                 NonZeroUsize::new(threads).unwrap(),
@@ -1336,9 +1283,8 @@ mod tests {
             .build()
             .unwrap();
         let requested = CategorySet::up_to_degree(3);
-        let total = pair_blocks(
+        let total = query::pairs(
             &ped,
-            MaxDegree::MAX,
             requested,
             Receiver::Graph,
             Execution::Speed,

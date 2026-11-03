@@ -15,9 +15,9 @@
 mod common;
 
 use common::{check, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped};
+use pedigree_graph_core::relationships::query::{self, Receiver};
 use pedigree_graph_core::relationships::{
-    count_pairs, pair_blocks, Category, CategorySet, Counts, Execution, MaxDegree, PairBlocks,
-    Progress, Receiver,
+    Category, CategorySet, Counts, Execution, MaxDegree, PairBlocks, Progress,
 };
 use proptest::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -27,15 +27,20 @@ fn tally(checked: &AtomicUsize, n: usize) {
     checked.fetch_add(n, Ordering::Relaxed);
 }
 
+/// Every category's counts up to `degree`, the categories above it zero.
 fn counts(b: &Built, degree: u8) -> Counts {
-    let degree = MaxDegree::try_new(degree).expect("a counted degree");
-    count_pairs(&b.relationships(), degree, None, &Progress::default()).expect("counts")
+    query::counts(
+        &b.relationships(),
+        CategorySet::up_to_degree(degree),
+        Receiver::Graph,
+        &Progress::default(),
+    )
+    .expect("counts")
 }
 
 fn blocks(b: &Built, execution: Execution) -> PairBlocks {
-    pair_blocks(
+    query::pairs(
         &b.relationships(),
-        MaxDegree::MAX,
         CategorySet::up_to_degree(MaxDegree::MAX.get()),
         Receiver::Graph,
         execution,

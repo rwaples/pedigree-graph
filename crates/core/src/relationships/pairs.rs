@@ -23,7 +23,7 @@
 use super::category::{Category, CategorySet, N_CATEGORIES};
 use super::engine::{Engine, WorkspacePool};
 use super::progress::{Checkpoint, Progress};
-use super::{on_receiver, receiver_len, task_ranges, walk_task, MaxDegree, Pedigree, Receiver};
+use super::{task_ranges, walk_task, MaxDegree, Pedigree};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use rayon::prelude::*;
@@ -179,48 +179,12 @@ impl Query<'_> {
     }
 }
 
-/// The oriented pairs of every requested category, using the current Rayon pool.
+/// The oriented pairs of every requested category on the pedigree the
+/// engine walks, `view` a checked graph-to-view map ([`super::query::pairs`]).
 ///
-/// `requested` names the blocks to fill; every category up to `max_degree`
-/// is still classified, because a closest-category block depends on the
-/// closer ones.  On a [`Receiver::View`] the blocks are in view rows,
-/// filtered to pairs with both rows selected, and sorted by the view-space
-/// canonical key; on the graph they are in graph rows and canonical-key
-/// order.
-///
-/// # Errors
-///
-/// [`Error::AllocationFailed`] from any buffer the pedigree or its pairs
-/// size: the engine, a workspace, a row set, a task chunk or table, a final
-/// block, or the view-sort scratch.
-///
-/// [`Error::InvalidViewMap`] when the view map is not a partial permutation: an
-/// entry outside `-1 .. n`, or two graph rows mapped to one view row.  The
-/// view-space sort relies on the keys being distinct, so a repeated view row
-/// would make the order depend on the thread count.
-///
-/// [`Error::Cancelled`] once `progress` is cancelled.  [`Execution::Memory`]
-/// walks every row twice, so its progress total is twice the row count.
-///
-/// # Panics
-///
-/// If the view map does not have one entry per graph row; the host binding
-/// checks that before calling.
-pub fn pair_blocks(
-    ped: &Pedigree,
-    max_degree: MaxDegree,
-    requested: CategorySet,
-    receiver: Receiver<'_>,
-    execution: Execution,
-    progress: &Progress,
-) -> Result<PairBlocks, Error> {
-    receiver_len(ped, receiver)?;
-    on_receiver(ped, receiver, progress, |ped, view| {
-        emit(ped, max_degree, requested, view, execution, progress)
-    })
-}
-
-/// [`pair_blocks`] on the pedigree the engine walks, `view` already checked.
+/// Every category up to `max_degree` is classified, because a
+/// closest-category block depends on the closer ones; `requested` names the
+/// blocks to fill.
 pub(super) fn emit(
     ped: &Pedigree,
     max_degree: MaxDegree,
@@ -373,34 +337,6 @@ fn two_pass(query: &Query, ranges: &[(usize, usize)]) -> Result<PairBlocks, Erro
     Ok(out)
 }
 
-/// Reject a graph-to-view map that is not a partial permutation.
-///
-/// One pass, one byte per graph row.  Entries are `-1` for an unselected row,
-/// else the row's view index, each used once.
-pub(super) fn check_view_map(map: &[i32]) -> Result<(), Error> {
-    let mut seen = alloc::filled(false, map.len(), Family::ViewSortScratch)?;
-    for (position, &value) in map.iter().enumerate() {
-        if value < 0 {
-            continue;
-        }
-        let view_row = value as usize;
-        let reason = if view_row >= map.len() {
-            "the graph has no view row that far"
-        } else if std::mem::replace(&mut seen[view_row], true) {
-            "two graph rows map to this view row"
-        } else {
-            continue;
-        };
-        return Err(Error::InvalidViewMap {
-            field: "view_rows",
-            position: position.into(),
-            value: view_row.into(),
-            reason,
-        });
-    }
-    Ok(())
-}
-
 /// Sort a block by the canonical unordered key `min * n + max` in place.
 ///
 /// Each pair is packed with its orientation into one `u64`, sorted, and
@@ -429,7 +365,8 @@ fn sort_by_view_key(block: &mut PairBlock, n: u64) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::pedigree;
+    use super::super::query::{self, Compaction, Receiver};
+    use super::super::testing::{pedigree, receiver};
     use super::super::{count_pairs, MaxDegree, PedigreeColumns};
     use super::*;
 
@@ -440,11 +377,10 @@ mod tests {
         let blocks: Vec<PairBlocks> = EXECUTIONS
             .iter()
             .map(|&e| {
-                pair_blocks(
+                query::pairs(
                     &ped,
-                    MaxDegree::MAX,
                     CategorySet::up_to_degree(5),
-                    Receiver::from(view),
+                    receiver(view, Compaction::Full),
                     e,
                     &Progress::default(),
                 )
@@ -613,7 +549,7 @@ mod tests {
             vec![(2, 4), (3, 4), (4, 6), (4, 7)]
         );
         // A view listing 4 before 2 reverses the graph order.
-        let view = [-1, -1, 1, -1, 0, -1, -1, -1];
+        let view = [4, 2];
         let got = all(&cols, Some(&view));
         assert_eq!(pairs(&got, Category::MHS), vec![(0, 1)]);
     }
@@ -622,7 +558,7 @@ mod tests {
     fn a_view_keeps_pairs_through_unselected_intermediates_and_sorts_in_view_space() {
         // 0 -> 2 -> 3 -> 4 (mothers); view [4, 0, 3] selects rows 4, 0, 3.
         let cols = pedigree(&[(-1, -1), (-1, -1), (0, 1), (2, -1), (3, -1)], &[]);
-        let view = [1, -1, -1, 2, 0];
+        let view = [4, 0, 3];
         let got = all(&cols, Some(&view));
         // (4, 3) is MO in view rows (0, 2); (3, 0) is GP through the
         // unselected 2, view rows (2, 1); (4, 0) is GGP, view rows (0, 1).
@@ -672,9 +608,8 @@ mod tests {
             assert_eq!(got.get(cat).len() as u64, counts.get(cat), "{}", cat.code());
         }
         let only: CategorySet = [Category::C1, Category::Av].into_iter().collect();
-        let some = pair_blocks(
+        let some = query::pairs(
             &ped,
-            MaxDegree::MAX,
             only,
             Receiver::Graph,
             Execution::Speed,
@@ -695,13 +630,7 @@ mod tests {
         let cols = crate::relationships::testing::random_pedigree(5000, 11);
         let ped = cols.try_borrow().unwrap();
         let view: Vec<i32> = (0..cols.mother.len() as i32)
-            .map(|r| {
-                if r % 3 == 0 {
-                    -1
-                } else {
-                    r / 3 * 2 + r % 3 - 1
-                }
-            })
+            .filter(|r| r % 3 != 0)
             .collect();
         let mut seen = Vec::new();
         for threads in [1, 4] {
@@ -713,11 +642,10 @@ mod tests {
                 for v in [None, Some(view.as_slice())] {
                     let blocks = pool
                         .install(|| {
-                            pair_blocks(
+                            query::pairs(
                                 &ped,
-                                MaxDegree::MAX,
                                 CategorySet::up_to_degree(5),
-                                Receiver::from(v),
+                                receiver(v, Compaction::Full),
                                 execution,
                                 &Progress::default(),
                             )
@@ -749,41 +677,33 @@ mod tests {
     use crate::alloc::Family;
 
     #[test]
-    fn a_view_map_that_repeats_or_overruns_a_row_is_rejected() {
+    fn a_view_that_repeats_or_overruns_a_row_is_rejected() {
         let cols = crate::relationships::testing::random_pedigree(40, 3);
         let ped = cols.try_borrow().unwrap();
         let cats = CategorySet::up_to_degree(3);
-        let run = |map: Vec<i32>| {
-            pair_blocks(
+        let run = |graph_rows: Vec<i32>| {
+            query::pairs(
                 &ped,
-                MaxDegree::MAX,
                 cats,
-                Receiver::from(Some(map.as_slice())),
+                receiver(Some(&graph_rows), Compaction::Full),
                 Execution::Speed,
                 &Progress::default(),
             )
         };
 
-        // Two graph rows on one view row would give equal sort keys, and an
+        // One graph row on two view rows would give equal sort keys, and an
         // unstable parallel sort would then order them by thread count.
-        let mut repeated: Vec<i32> = (0..40)
-            .map(|r| if r % 2 == 0 { r / 2 } else { -1 })
-            .collect();
-        repeated[2] = 0;
         assert!(matches!(
-            run(repeated),
+            run(vec![0, 2, 0]),
             Err(Error::InvalidViewMap { position, .. }) if position == 2.into()
         ));
-
-        let mut overrun: Vec<i32> = vec![-1; 40];
-        overrun[7] = 40;
         assert!(matches!(
-            run(overrun),
-            Err(Error::InvalidViewMap { position, .. }) if position == 7.into()
+            run(vec![3, 40]),
+            Err(Error::ValueOutOfRange { position, .. }) if position == 1.into()
         ));
 
         // Selecting nothing is legal and has no pairs.
-        assert_eq!(run(vec![-1; 40]).unwrap().total(), 0);
+        assert_eq!(run(Vec::new()).unwrap().total(), 0);
     }
 
     /// Which families each mode reserves.
@@ -881,21 +801,18 @@ mod tests {
         let (_, execution, view) = SEAM_MODES.into_iter().find(|m| m.0 == mode).unwrap();
         let cols = crate::relationships::testing::random_pedigree(300, 5);
         let ped = cols.try_borrow().unwrap();
-        let view_map: Vec<i32> = (0..300)
-            .map(|r| if r % 2 == 0 { r / 2 } else { -1 })
-            .collect();
+        let graph_rows: Vec<i32> = (0..300).step_by(2).collect();
         let all_cats = CategorySet::up_to_degree(5);
         fail_next(Some(family));
         let result = match execution {
             None => count_pairs(&ped, MaxDegree::MAX, None, &Progress::default())
                 .map(|c| c.get(Category::FS) as usize),
             Some(execution) => {
-                let v = view.then_some(view_map.as_slice());
-                pair_blocks(
+                let v = view.then_some(graph_rows.as_slice());
+                query::pairs(
                     &ped,
-                    MaxDegree::MAX,
                     all_cats,
-                    Receiver::from(v),
+                    receiver(v, Compaction::Full),
                     execution,
                     &Progress::default(),
                 )
@@ -913,9 +830,8 @@ mod tests {
             (_, other) => panic!("{name}/{mode} expecting {expect_failure} gave {other:?}"),
         }
         fail_next(None);
-        assert!(pair_blocks(
+        assert!(query::pairs(
             &ped,
-            MaxDegree::MAX,
             all_cats,
             Receiver::Graph,
             Execution::Speed,

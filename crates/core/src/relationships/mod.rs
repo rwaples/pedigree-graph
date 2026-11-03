@@ -22,18 +22,18 @@ pub use category::{Category, CategorySet, Counts, N_CATEGORIES};
 pub use compact::CompactView;
 pub use engine::{Engine, Workspace, WorkspacePool, EXCLUSIONS};
 pub use moments::{
-    host_bytes, reduce_pairs, reduce_pairs_in, relationship_moments, CellReducer, Moments,
-    MomentsInput, MomentsPlan, MomentsShape, Operand, Product, Reduced, Reducer, RowOrder, Side,
-    Symmetric, HOST_BYTES_PER_ACCUMULATOR, MAX_CELL_PAIRS, MAX_QUANTIZED,
+    host_bytes, reduce_pairs, reduce_pairs_in, CellReducer, Moments, MomentsInput, MomentsPlan,
+    MomentsShape, Operand, Product, Reduced, Reducer, RowOrder, Side, Symmetric,
+    HOST_BYTES_PER_ACCUMULATOR, MAX_CELL_PAIRS, MAX_QUANTIZED,
 };
 pub use moments_table::{
     encode_big, encode_i128, pack_labels, quantize_column, ratio, MomentsTable, PackedLabels,
     Statistic, MAX_EXPONENT, MAX_SAME_KEYS, MAX_VALUE_COLUMNS, QUANTIZED_BITS,
 };
 pub use multiplicity::Mult;
-pub use pairs::{pair_blocks, Execution, PairBlock, PairBlocks};
+pub use pairs::{Execution, PairBlock, PairBlocks};
 pub use progress::{Checkpoint, Progress, Snapshot};
-pub use relatives::{relatives_per_person, RelativesPerPerson, Threshold, ThresholdColumn};
+pub use relatives::{RelativesPerPerson, Threshold, ThresholdColumn};
 
 use crate::error::Error;
 use rayon::prelude::*;
@@ -268,7 +268,7 @@ const _: () = assert!(ROWS_PER_TASK % progress::CHECK_EVERY == 0);
 ///
 /// [`Error::AllocationFailed`] from the engine, a workspace, or a row set;
 /// [`Error::Cancelled`] once `progress` is cancelled.
-pub fn count_pairs(
+pub(crate) fn count_pairs(
     ped: &Pedigree,
     max_degree: MaxDegree,
     selected: Option<&[bool]>,
@@ -296,99 +296,6 @@ pub fn count_pairs(
         .try_reduce(Counts::default, |a, b| Ok(a.merge(b)))?;
     progress.finish()?;
     Ok(counts)
-}
-
-/// Count view pairs after restricting engine storage to their ancestry.
-/// The compact pedigree is call-local; no result escapes in compact rows.
-pub fn count_view_pairs_compact(
-    ped: &Pedigree,
-    max_degree: MaxDegree,
-    view: &[i32],
-    progress: &Progress,
-) -> Result<Counts, Error> {
-    assert_eq!(ped.len(), view.len());
-    pairs::check_view_map(view)?;
-    let compact = CompactView::build(ped, view)?;
-    progress.checkpoint(Checkpoint::Compacted)?;
-    let mut selected =
-        crate::alloc::with_capacity(compact.view_rows.len(), crate::alloc::Family::RowSet)?;
-    selected.extend(compact.view_rows.iter().map(|&row| row >= 0));
-    count_pairs(
-        &compact.columns.try_borrow()?,
-        max_degree,
-        Some(&selected),
-        progress,
-    )
-}
-
-/// The graph or view a query runs on; it fixes the result's coordinate
-/// space.  A view query comes back in view rows whether or not it runs on
-/// the view's ancestry-compact pedigree, which changes nothing but resource
-/// use.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Receiver<'a> {
-    Graph,
-    /// `rows` maps each graph row to its view row, `-1` when unselected.
-    View {
-        rows: &'a [i32],
-        compact: bool,
-    },
-}
-
-impl<'a> From<Option<&'a [i32]>> for Receiver<'a> {
-    /// The graph, or the view `rows` maps out, run on the full pedigree.
-    fn from(rows: Option<&'a [i32]>) -> Receiver<'a> {
-        match rows {
-            Some(rows) => Receiver::View {
-                rows,
-                compact: false,
-            },
-            None => Receiver::Graph,
-        }
-    }
-}
-
-/// The receiver's row count: graph rows, or view rows.
-///
-/// # Errors
-///
-/// [`Error::InvalidViewMap`] when the view map is not a partial permutation.
-///
-/// # Panics
-///
-/// If the view map does not have one entry per graph row.
-fn receiver_len(ped: &Pedigree, receiver: Receiver<'_>) -> Result<usize, Error> {
-    let Receiver::View { rows: map, .. } = receiver else {
-        return Ok(ped.len());
-    };
-    assert_eq!(
-        map.len(),
-        ped.len(),
-        "view map must have one entry per graph row"
-    );
-    pairs::check_view_map(map)?;
-    Ok(map
-        .iter()
-        .copied()
-        .filter(|&m| m >= 0)
-        .max()
-        .map_or(0, |m| m as usize + 1))
-}
-
-/// Run `query` on the pedigree and view map the engine walks for
-/// `receiver`: `ped` itself, or for a compact view the view's
-/// ancestry-compact pedigree and its view rows.  The caller has checked the
-/// view map with [`receiver_len`].
-fn on_receiver<T>(
-    ped: &Pedigree,
-    receiver: Receiver<'_>,
-    progress: &Progress,
-    query: impl FnOnce(&Pedigree, Option<&[i32]>) -> Result<T, Error>,
-) -> Result<T, Error> {
-    match receiver {
-        Receiver::Graph => run_on(ped, None, false, progress, query),
-        Receiver::View { rows, compact } => run_on(ped, Some(rows), compact, progress, query),
-    }
 }
 
 /// Run `query` on `ped` and the view map `view`, or with `compact` on the

@@ -2,20 +2,19 @@
 //! how many relatives the row has, and how many of them pass each threshold
 //! column.
 //!
-//! One pass of [`reduce_pairs_in`] in family order with [`Symmetric::Both`]
-//! credits the `first` member of every oriented pair, so a symmetric
-//! category credits both members and a directional one only its first
-//! (junior) member.  Every lane
-//! adds into one shared `[rows][categories][1 + K]` array of relaxed
+//! One pass of [`reduce_pairs_in`](super::reduce_pairs_in) in family order
+//! with [`Symmetric::Both`](super::Symmetric::Both) credits the `first`
+//! member of every oriented pair, so a symmetric category credits both
+//! members and a directional one only its first (junior) member.  Every
+//! lane adds into one shared `[rows][categories][1 + K]` array of relaxed
 //! `AtomicU32` counters, so the lanes carry nothing and there is nothing to
 //! merge; integer adds commute, so the counts are the same for every lane
 //! and thread count.  A row's relatives in one category are distinct rows,
 //! fewer than `2^32`, so no counter can wrap.
 
 use super::category::{Category, CategorySet, N_CATEGORIES};
-use super::moments::{reduce_pairs_in, Reduced, Reducer, RowOrder, Symmetric};
-use super::progress::Progress;
-use super::{check_column_length, on_receiver, receiver_len, MaxDegree, Pedigree, Receiver};
+use super::check_column_length;
+use super::moments::{Reduced, Reducer};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use std::num::NonZeroUsize;
@@ -102,52 +101,6 @@ pub struct RelativesPerPerson {
 }
 
 const OPERATION: &str = "relative_counts";
-
-/// Every requested category's relatives of every receiver row, using the
-/// current Rayon pool.
-///
-/// `receiver` is as for [`super::pair_blocks`], and every column is in its
-/// rows.  The pass runs on `threads` lanes.
-///
-/// # Errors
-///
-/// [`Error::InvalidViewMap`] when the view map is not a partial permutation;
-/// [`Error::LengthMismatch`] when a column's `relative`, or its
-/// `threshold` rows, do not have one entry per receiver row;
-/// [`Error::ArithmeticOverflow`] when the counter array's length is not
-/// representable; [`Error::AllocationFailed`] for the counters or from the
-/// engine; [`Error::Cancelled`] once `progress` is cancelled.
-///
-/// # Panics
-///
-/// If the view map does not have one entry per graph row.
-pub fn relatives_per_person(
-    ped: &Pedigree,
-    max_degree: MaxDegree,
-    requested: CategorySet,
-    receiver: Receiver<'_>,
-    columns: &[ThresholdColumn<'_>],
-    threads: NonZeroUsize,
-    progress: &Progress,
-) -> Result<RelativesPerPerson, Error> {
-    let rows = receiver_len(ped, receiver)?;
-    check_columns(rows, columns)?;
-    relatives_pass(rows, requested, columns, threads, |reducer| {
-        on_receiver(ped, receiver, progress, |ped, view| {
-            reduce_pairs_in(
-                ped,
-                max_degree,
-                requested,
-                view,
-                Symmetric::Both,
-                threads,
-                reducer,
-                progress,
-                RowOrder::Families,
-            )
-        })
-    })
-}
 
 /// Check that every column has one entry per receiver row.
 pub(super) fn check_columns(rows: usize, columns: &[ThresholdColumn<'_>]) -> Result<(), Error> {
@@ -240,9 +193,11 @@ fn into_counts(counts: Vec<AtomicU32>) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::testing::{pedigree, random_pedigree};
-    use super::super::{pair_blocks, Execution, PedigreeColumns, ROWS_PER_TASK};
+    use super::super::query::{self, Compaction};
+    use super::super::testing::{pedigree, random_pedigree, receiver};
+    use super::super::{Execution, MaxDegree, PedigreeColumns, Progress, ROWS_PER_TASK};
     use super::*;
+    use std::num::NonZeroUsize;
 
     fn xorshift(seed: u64) -> impl FnMut() -> u64 {
         let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
@@ -270,15 +225,12 @@ mod tests {
     /// Half the graph rows, in a shuffled view order.
     fn partial_view(n: usize, seed: u64) -> Vec<i32> {
         let mut next = xorshift(seed);
-        let mut order: Vec<usize> = (0..n).collect();
+        let mut order: Vec<i32> = (0..n as i32).collect();
         for i in (1..n).rev() {
             order.swap(i, next() as usize % (i + 1));
         }
-        let mut view = vec![-1i32; n];
-        for (v, &row) in order.iter().take(n / 2).enumerate() {
-            view[row] = v as i32;
-        }
-        view
+        order.truncate(n / 2);
+        order
     }
 
     /// K = 0, 1, 3, 3: scalar thresholds of `+inf`, `-inf`, NaN and a finite
@@ -315,11 +267,10 @@ mod tests {
         rows: usize,
     ) -> Vec<u32> {
         let ped = cols.try_borrow().unwrap();
-        let blocks = pair_blocks(
+        let blocks = query::pairs(
             &ped,
-            MaxDegree::MAX,
             requested,
-            Receiver::from(view),
+            receiver(view, Compaction::Full),
             Execution::Speed,
             &Progress::default(),
         )
@@ -366,11 +317,17 @@ mod tests {
             .build()
             .unwrap();
         pool.install(|| {
-            relatives_per_person(
+            query::relatives(
                 &ped,
-                MaxDegree::MAX,
                 requested,
-                view.map_or(Receiver::Graph, |rows| Receiver::View { rows, compact }),
+                receiver(
+                    view,
+                    if compact {
+                        Compaction::Compact
+                    } else {
+                        Compaction::Full
+                    },
+                ),
                 columns,
                 NonZeroUsize::new(threads).unwrap(),
                 &Progress::default(),
@@ -508,11 +465,10 @@ mod tests {
         let one = NonZeroUsize::new(1).unwrap();
         let requested = subset();
         let call = |view: Option<&[i32]>, columns: &[ThresholdColumn<'_>]| {
-            relatives_per_person(
+            query::relatives(
                 &ped,
-                MaxDegree::MAX,
                 requested,
-                Receiver::from(view),
+                receiver(view, Compaction::Full),
                 columns,
                 one,
                 &Progress::default(),
@@ -557,12 +513,9 @@ mod tests {
                 actual_length: 99,
             }
         );
-        let mut view = vec![-1i32; 100];
-        view[3] = 0;
-        view[8] = 0;
         assert!(matches!(
-            call(Some(&view), &[]).unwrap_err(),
-            Error::InvalidViewMap { position, .. } if position == 8.into()
+            call(Some(&[3, 8, 3]), &[]).unwrap_err(),
+            Error::InvalidViewMap { position, .. } if position == 2.into()
         ));
     }
 }

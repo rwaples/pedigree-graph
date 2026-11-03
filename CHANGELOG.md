@@ -6,6 +6,17 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking (Rust): the former relationship entry points are removed**
+  from `pedigree-graph-core` (issue #52 step 6, ADR 0019). Call
+  `relationships::query` instead: `pair_blocks` → `query::pairs`;
+  `count_pairs` and `count_view_pairs_compact` → `query::counts` (a view's
+  compact path is `Compaction::Compact`, or `Auto`'s choice);
+  `relationship_moments` → `query::moments`; `relatives_per_person` →
+  `query::relatives`; `relationships::Receiver` → `query::Receiver`, whose
+  view is its `graph_rows` (`graph_rows[v]` is view row `v`'s graph row)
+  rather than a graph-to-view map. None takes a `MaxDegree`: the walk's
+  depth is the requested set's top degree. Python and R are unchanged; no
+  known consumer (pg-phenotype, pedsum, fitACE, simACE) called these.
 - **Breaking: an id in both parent roles is refused at construction**
   (issue #58, ADR 0020). An id that is the mother of one row and the father
   of another, external ids included, raises the validation error

@@ -74,6 +74,8 @@ The former entry points (`pair_blocks`, `relationship_moments`,
 `relatives_per_person`, `count_pairs`, `count_view_pairs_compact` and the
 top-level `relationships::Receiver`) stay unchanged until pg-phenotype has
 moved to `query`, then go.
+Issue #52 step 6 removed them; `count_pairs` remains as a crate-private
+helper of `query::counts`.
 
 ## Consequences
 

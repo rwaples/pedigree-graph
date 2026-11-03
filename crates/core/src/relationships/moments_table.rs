@@ -1,6 +1,6 @@
 //! The relationship-moments boundary arithmetic every host shares (ADR 0015).
 //!
-//! The engine pass ([`super::relationship_moments`]) takes packed labels and
+//! The engine pass ([`super::query::moments`]) takes packed labels and
 //! quantized integers and hands back exact `i128` accumulators.  Everything
 //! on either side of it lives here, so Python and R compute it by one
 //! implementation: packing named factors into labels ([`pack_labels`]),
