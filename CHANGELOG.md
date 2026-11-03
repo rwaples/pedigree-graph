@@ -6,6 +6,30 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Kernel inputs are drawn from one core borrow, `columns::GraphColumns`**
+  (issue #53). Its `relationships()`, `kinship()` and `lineage()` run the
+  checks each kernel always ran, in the same order. Both bindings now use it
+  in place of their own adapters.
+- **Breaking: pairwise kinship refuses a depth that misorders a parent and
+  child** (issue #53). `pair_kinship`, the relationship matrix's value fill
+  (`support_values`) and `KinshipIndex::new` raise `value_out_of_range` on
+  `depth` at the first row that is negative or not strictly above both
+  parents'. Before this they checked only the length, so such a depth
+  returned wrong values. The check runs in the pass that packs the walk's
+  rows, so a call with no pairs costs nothing extra. The depth-sorted
+  kernels (kinship matrix, inbreeding, generation summary) already refused
+  it. Any valid ordering is accepted, not only structural depth. The public
+  graph methods always pass structural depth, so only direct `_native` and
+  Rust callers can see this.
+- **Breaking: `relationship_burden`'s depth errors are structured** (issue
+  #53). The core checks the depth (one per row, strictly above both parents',
+  below the row count) and returns `length_mismatch` or `value_out_of_range`
+  on `depth`. It no longer panics on a short depth. Python's native binding
+  raised a plain `ValueError` ("depth must be in the graph row range"); it
+  now raises `PedigreeValidationError`.
+- **Rust: `kinship::Walker::resolve` checks its endpoints** (issue #53) and
+  returns `Error::PairRowOutOfRange` for a row outside the pedigree, where it
+  used to panic.
 - **Breaking (R): `pair_kinship` reports Python's error codes** (issue
   #51). The core now checks the endpoints of every `pair_kinship` call, so
   both hosts report one contract with rows and positions in their own index
