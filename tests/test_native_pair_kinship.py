@@ -184,6 +184,17 @@ class TestBoundary:
         assert info.value.code == "length_mismatch"
         assert info.value.fields["field"] == "depth"
 
+    def test_a_depth_that_misorders_parent_and_child_is_refused(self):
+        # A right-length depth that puts a child level with its parents
+        # would peel the wrong endpoint and return a wrong value, so the
+        # core refuses it as it draws the kinship input (issue #53).
+        graph = parity_graph("nuclear_full_sibs")
+        flat = np.zeros(graph.n_individuals, dtype=np.int32)
+        with pytest.raises(PedigreeValidationError) as info:
+            _native.pair_kinship(graph._built, flat, np.zeros(1, np.int32), np.zeros(1, np.int32), threads=1)
+        assert info.value.code == "value_out_of_range"
+        assert info.value.fields["field"] == "depth"
+
     def test_the_stub_names_both_entries(self):
         from pathlib import Path
 

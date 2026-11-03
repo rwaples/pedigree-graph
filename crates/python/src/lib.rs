@@ -12,6 +12,7 @@ use numpy::{
     PyUntypedArrayMethods,
 };
 use pedigree_graph_core::alloc::{self, Family};
+use pedigree_graph_core::columns::GraphColumns;
 use pedigree_graph_core::error::{Error, ErrorClass, FieldValue, IndexBase, MAX_ROWS};
 use pedigree_graph_core::graph::{self, Columns, IdIndex, Limits, SexEncoding};
 use pedigree_graph_core::kinship::{self, Csc, KinshipPedigree};
@@ -438,37 +439,61 @@ fn checked_pool(py: Python<'_>, threads: usize) -> PyResult<&'static rayon::Thre
     pool::configure(threads).map_err(|e| to_pyerr(py, e))
 }
 
-/// A graph's engine columns, borrowed from its [`BuiltPedigree`] for one call.
-struct EngineColumns<'py> {
+/// A graph's columns, borrowed from its [`BuiltPedigree`] and, for kernels
+/// that sort by it, its cached depth, for one call.  The core checks what
+/// each kernel input needs as it is drawn ([`GraphColumns`]).
+struct BuiltColumns<'py> {
     mother_rows: PyReadonlyArray1<'py, i32>,
     father_rows: PyReadonlyArray1<'py, i32>,
     twin_rows: PyReadonlyArray1<'py, i32>,
     mother_ids: PyReadonlyArray1<'py, i64>,
     father_ids: PyReadonlyArray1<'py, i64>,
+    depth: Option<PyReadonlyArray1<'py, i32>>,
+    rows_topological: bool,
 }
 
-impl<'py> EngineColumns<'py> {
-    fn borrow(py: Python<'py>, pedigree: &BuiltPedigree) -> EngineColumns<'py> {
-        EngineColumns {
+impl<'py> BuiltColumns<'py> {
+    fn borrow(
+        py: Python<'py>,
+        pedigree: &BuiltPedigree,
+        depth: Option<PyReadonlyArray1<'py, i32>>,
+    ) -> BuiltColumns<'py> {
+        BuiltColumns {
             mother_rows: pedigree.mother_rows.bind(py).readonly(),
             father_rows: pedigree.father_rows.bind(py).readonly(),
             twin_rows: pedigree.twin_rows.bind(py).readonly(),
             mother_ids: pedigree.mother_ids.bind(py).readonly(),
             father_ids: pedigree.father_ids.bind(py).readonly(),
+            depth,
+            rows_topological: pedigree.rows_topological,
         }
     }
 
-    /// The columns as checked engine input; `build_pedigree` validated them,
-    /// and the core rechecks its own preconditions as it borrows.
-    fn pedigree(&self, py: Python<'py>) -> PyResult<Pedigree<'_>> {
-        Pedigree::try_new(
-            self.mother_rows.as_slice()?,
-            self.father_rows.as_slice()?,
-            self.twin_rows.as_slice()?,
-            self.mother_ids.as_slice()?,
-            self.father_ids.as_slice()?,
-        )
-        .map_err(|e| to_pyerr(py, e))
+    fn columns(&self) -> PyResult<GraphColumns<'_>> {
+        Ok(GraphColumns {
+            mother: self.mother_rows.as_slice()?,
+            father: self.father_rows.as_slice()?,
+            twin: self.twin_rows.as_slice()?,
+            orig_mother: self.mother_ids.as_slice()?,
+            orig_father: self.father_ids.as_slice()?,
+            depth: match &self.depth {
+                Some(depth) => Some(depth.as_slice()?),
+                None => None,
+            },
+            rows_topological: self.rows_topological,
+        })
+    }
+
+    fn relationships(&self, py: Python<'py>) -> PyResult<Pedigree<'_>> {
+        self.columns()?.relationships().map_err(|e| to_pyerr(py, e))
+    }
+
+    fn kinship(&self, py: Python<'py>) -> PyResult<KinshipPedigree<'_>> {
+        self.columns()?.kinship().map_err(|e| to_pyerr(py, e))
+    }
+
+    fn lineage(&self, py: Python<'py>) -> PyResult<ParentColumns<'_>> {
+        self.columns()?.lineage().map_err(|e| to_pyerr(py, e))
     }
 }
 
@@ -494,8 +519,8 @@ fn relationship_counts<'py>(
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, None);
+    let ped = columns.relationships(py)?;
     let max_degree = checked_max_degree(py, max_degree)?;
     let mask = match &selected {
         Some(array) => {
@@ -528,8 +553,8 @@ fn compact_view_counts<'py>(
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, None);
+    let ped = columns.relationships(py)?;
     let view = view_rows.as_slice()?;
     check_same_length("view_rows", view.len(), ped.len())?;
     let max_degree = checked_max_degree(py, max_degree)?;
@@ -570,8 +595,8 @@ fn relationship_pairs<'py>(
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, None);
+    let ped = columns.relationships(py)?;
     let max_degree = checked_max_degree(py, max_degree)?;
     let categories = requested_categories(&requested)?;
     let execution = Execution::parse(execution).ok_or_else(|| {
@@ -706,8 +731,8 @@ fn relationship_moments<'py>(
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<MomentsArrays<'py>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, None);
+    let ped = columns.relationships(py)?;
     let max_degree = checked_max_degree(py, max_degree)?;
     let categories = requested_categories(&requested)?;
     let symmetric = Symmetric::parse(symmetric).ok_or_else(|| {
@@ -998,15 +1023,10 @@ fn relationship_burden<'py>(
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<BurdenArrays<'py>> {
-    let columns = EngineColumns::borrow(py, pedigree);
-    let ped = columns.pedigree(py)?;
-    let depth = depth.as_slice()?;
-    check_same_length("depth", depth.len(), ped.len())?;
-    if depth.iter().any(|&d| d < 0 || d as usize >= ped.len()) {
-        return Err(PyValueError::new_err(
-            "depth must be in the graph row range",
-        ));
-    }
+    let columns = BuiltColumns::borrow(py, pedigree, Some(depth));
+    let borrowed = columns.columns()?;
+    let ped = borrowed.relationships().map_err(|e| to_pyerr(py, e))?;
+    let depth = borrowed.depth.unwrap_or(&[]);
     let pool = checked_pool(py, threads)?;
     let burden = run_watched(py, pool, tick, progress, |progress| {
         relationships::relationship_burden(&ped, depth, progress)
@@ -1058,8 +1078,8 @@ fn relatives_per_person<'py>(
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<RelativesArrays<'py>> {
-    let engine = EngineColumns::borrow(py, pedigree);
-    let ped = engine.pedigree(py)?;
+    let engine = BuiltColumns::borrow(py, pedigree, None);
+    let ped = engine.relationships(py)?;
     let max_degree = checked_max_degree(py, max_degree)?;
     let categories = requested_categories(&requested)?;
     let receiver = receiver(&view_rows, ped.len(), compact)?;
@@ -1102,40 +1122,6 @@ type RelativesArrays<'py> = (
     Vec<u64>,
 );
 
-/// The recurrence's columns, borrowed from a graph's [`BuiltPedigree`] and
-/// its cached depth for one call.
-struct KinshipColumns<'py> {
-    mother_rows: PyReadonlyArray1<'py, i32>,
-    father_rows: PyReadonlyArray1<'py, i32>,
-    twin_rows: PyReadonlyArray1<'py, i32>,
-    depth: PyReadonlyArray1<'py, i32>,
-}
-
-impl<'py> KinshipColumns<'py> {
-    fn borrow(
-        py: Python<'py>,
-        pedigree: &BuiltPedigree,
-        depth: PyReadonlyArray1<'py, i32>,
-    ) -> KinshipColumns<'py> {
-        KinshipColumns {
-            mother_rows: pedigree.mother_rows.bind(py).readonly(),
-            father_rows: pedigree.father_rows.bind(py).readonly(),
-            twin_rows: pedigree.twin_rows.bind(py).readonly(),
-            depth,
-        }
-    }
-
-    fn pedigree(&self, py: Python<'py>) -> PyResult<KinshipPedigree<'_>> {
-        KinshipPedigree::try_new(
-            self.mother_rows.as_slice()?,
-            self.father_rows.as_slice()?,
-            self.twin_rows.as_slice()?,
-            self.depth.as_slice()?,
-        )
-        .map_err(|e| to_pyerr(py, e))
-    }
-}
-
 /// Check `pair_kinship` endpoints against a receiver of `n` rows before the
 /// call commits the thread budget; `pair_kinship` repeats the check.
 #[pyfunction]
@@ -1168,8 +1154,8 @@ fn pair_kinship<'py>(
     threads: usize,
     graph_rows: Option<PyReadonlyArray1<'py, i32>>,
 ) -> PyResult<Bound<'py, PyArray1<f32>>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, Some(depth));
+    let ped = columns.kinship(py)?;
     let first = first.as_slice()?;
     let second = second.as_slice()?;
     let graph_rows = graph_rows
@@ -1205,8 +1191,8 @@ fn kinship_support_values<'py>(
     indices: PyReadonlyArray1<'py, i32>,
     threads: usize,
 ) -> PyResult<Bound<'py, PyArray1<f32>>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, Some(depth));
+    let ped = columns.kinship(py)?;
     let indptr = indptr.as_slice()?;
     let indices = indices.as_slice()?;
     let pool = checked_pool(py, threads)?;
@@ -1246,8 +1232,8 @@ fn kinship_csc<'py>(
     pedigree: &BuiltPedigree,
     depth: PyReadonlyArray1<'py, i32>,
 ) -> PyResult<CscArrays<'py>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, Some(depth));
+    let ped = columns.kinship(py)?;
     let csc = py
         .detach(|| kinship::kinship_csc(ped))
         .map_err(|e| to_pyerr(py, e))?;
@@ -1266,8 +1252,8 @@ fn approximate_kinship_csc<'py>(
     depth: PyReadonlyArray1<'py, i32>,
     threshold: f64,
 ) -> PyResult<CscArrays<'py>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, Some(depth));
+    let ped = columns.kinship(py)?;
     let csc = py
         .detach(|| kinship::approximate_kinship_csc(ped, threshold))
         .map_err(|e| to_pyerr(py, e))?;
@@ -1289,8 +1275,8 @@ fn generation_kinship_sums<'py>(
     labels: PyReadonlyArray1<'py, i32>,
     n_buckets: usize,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, Some(depth));
+    let ped = columns.kinship(py)?;
     let inbreeding = inbreeding.as_slice()?;
     let labels = labels.as_slice()?;
     let sums = py
@@ -1311,53 +1297,13 @@ fn inbreeding<'py>(
     depth: PyReadonlyArray1<'py, i32>,
     threads: usize,
 ) -> PyResult<InbreedingArrays<'py>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, Some(depth));
+    let ped = columns.kinship(py)?;
     let pool = checked_pool(py, threads)?;
     let (f, ancestors) = py
         .detach(|| kinship::inbreeding_and_ancestor_counts_in(ped, pool))
         .map_err(|e| to_pyerr(py, e))?;
     Ok((f.into_pyarray(py), ancestors.into_pyarray(py)))
-}
-
-/// The parent columns of a graph's [`BuiltPedigree`] and, when the host has
-/// it, its structural depth, borrowed for one parents-first sweep.  The
-/// columns and the parents-first flag are construction's, so they are not
-/// re-validated.
-struct ParentColumnsRef<'py> {
-    mother_rows: PyReadonlyArray1<'py, i32>,
-    father_rows: PyReadonlyArray1<'py, i32>,
-    depth: Option<PyReadonlyArray1<'py, i32>>,
-    rows_topological: bool,
-}
-
-impl<'py> ParentColumnsRef<'py> {
-    fn borrow(
-        py: Python<'py>,
-        pedigree: &BuiltPedigree,
-        depth: Option<PyReadonlyArray1<'py, i32>>,
-    ) -> ParentColumnsRef<'py> {
-        ParentColumnsRef {
-            mother_rows: pedigree.mother_rows.bind(py).readonly(),
-            father_rows: pedigree.father_rows.bind(py).readonly(),
-            depth,
-            rows_topological: pedigree.rows_topological,
-        }
-    }
-
-    fn columns(&self, py: Python<'py>) -> PyResult<ParentColumns<'_>> {
-        let depth = match &self.depth {
-            Some(depth) => Some(depth.as_slice()?),
-            None => None,
-        };
-        ParentColumns::validated(
-            self.mother_rows.as_slice()?,
-            self.father_rows.as_slice()?,
-            depth,
-            self.rows_topological,
-        )
-        .map_err(|e| to_pyerr(py, e))
-    }
 }
 
 /// Distinct strict ancestors per graph row, int32.
@@ -1372,8 +1318,8 @@ fn distinct_ancestor_counts<'py>(
     pedigree: &BuiltPedigree,
     depth: Option<PyReadonlyArray1<'py, i32>>,
 ) -> PyResult<Bound<'py, PyArray1<i32>>> {
-    let columns = ParentColumnsRef::borrow(py, pedigree, depth);
-    let ped = columns.columns(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, depth);
+    let ped = columns.lineage(py)?;
     let counts = py
         .detach(|| lineage::distinct_ancestor_counts(ped))
         .map_err(|e| to_pyerr(py, e))?;
@@ -1389,8 +1335,8 @@ fn descendant_path_counts<'py>(
     pedigree: &BuiltPedigree,
     depth: Option<PyReadonlyArray1<'py, i32>>,
 ) -> PyResult<Bound<'py, PyArray1<i64>>> {
-    let columns = ParentColumnsRef::borrow(py, pedigree, depth);
-    let ped = columns.columns(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, depth);
+    let ped = columns.lineage(py)?;
     let counts = py
         .detach(|| lineage::descendant_path_counts(ped))
         .map_err(|e| to_pyerr(py, e))?;
@@ -1405,8 +1351,8 @@ fn equivalent_generations<'py>(
     pedigree: &BuiltPedigree,
     depth: Option<PyReadonlyArray1<'py, i32>>,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-    let columns = ParentColumnsRef::borrow(py, pedigree, depth);
-    let ped = columns.columns(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, depth);
+    let ped = columns.lineage(py)?;
     let values = py
         .detach(|| kinship::equivalent_generations(ped))
         .map_err(|e| to_pyerr(py, e))?;
@@ -1428,8 +1374,8 @@ fn founder_contribution_means<'py>(
     founder_column: PyReadonlyArray1<'py, i64>,
     n_genomes: usize,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
-    let columns = KinshipColumns::borrow(py, pedigree, depth);
-    let ped = columns.pedigree(py)?;
+    let columns = BuiltColumns::borrow(py, pedigree, Some(depth));
+    let ped = columns.kinship(py)?;
     let cohort = cohort.as_slice()?;
     let founder_column = founder_column.as_slice()?;
     let means = py

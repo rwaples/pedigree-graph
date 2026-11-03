@@ -7,7 +7,7 @@ import pedigrees
 import pytest
 from _support import CHILD_PRELUDE, _run_child
 
-from pedigree_graph import RELATIONSHIPS, PedigreeGraph, _native
+from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, _native
 
 
 @pytest.mark.parametrize(
@@ -90,8 +90,29 @@ def test_burden_matches_pair_blocks(name: str) -> None:
 def test_burden_rejects_depth_outside_graph_before_allocating() -> None:
     """The native boundary cannot allocate an array sized by arbitrary depth input."""
     graph = PedigreeGraph.from_frame({"id": [1, 2], "mother": [-1, 1], "father": [-1, -1], "sex": [0, 1]})
-    with pytest.raises(ValueError, match="graph row range"):
+    with pytest.raises(PedigreeValidationError) as info:
         _native.relationship_burden(graph._built, np.array([0, 2_000_000_000], dtype=np.int32), threads=1)
+    assert info.value.code == "value_out_of_range"
+    assert dict(info.value.fields) == {
+        "field": "depth",
+        "position": 1,
+        "value": 2_000_000_000,
+        "minimum": 1,
+        "maximum": 1,
+    }
+
+
+def test_burden_checks_depth_in_the_core() -> None:
+    """A short or misordered depth is a structured error, never a panic (issue #53)."""
+    graph = PedigreeGraph.from_frame({"id": [1, 2], "mother": [-1, 1], "father": [-1, -1], "sex": [0, 1]})
+    with pytest.raises(PedigreeValidationError) as info:
+        _native.relationship_burden(graph._built, np.zeros(1, dtype=np.int32), threads=1)
+    assert info.value.code == "length_mismatch"
+    assert info.value.fields["field"] == "depth"
+    with pytest.raises(PedigreeValidationError) as info:
+        _native.relationship_burden(graph._built, np.zeros(2, dtype=np.int32), threads=1)
+    assert info.value.code == "value_out_of_range"
+    assert info.value.fields["field"] == "depth"
 
 
 def test_sparse_large_view_uses_compact_path_without_changing_public_results() -> None:
