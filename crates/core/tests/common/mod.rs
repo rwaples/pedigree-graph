@@ -55,6 +55,17 @@ impl Ped {
             twin: map(&self.twin),
         }
     }
+
+    /// The rows in `order`: row `r` of the result is row `order[r]`, ids kept.
+    pub fn permuted(&self, order: &[usize]) -> Ped {
+        let pick = |v: &[i64]| order.iter().map(|&r| v[r]).collect();
+        Ped {
+            ids: pick(&self.ids),
+            mother: pick(&self.mother),
+            father: pick(&self.father),
+            twin: pick(&self.twin),
+        }
+    }
 }
 
 /// A built pedigree with its structural depth.
@@ -271,28 +282,49 @@ pub fn non_inbred_pedigree() -> impl Strategy<Value = Ped> {
     (1usize..=25, dice()).prop_map(|(n, dice)| generate(n, true, &dice))
 }
 
-/// A pedigree with a row permutation and an id multiplier for relabelling.
-pub fn relabelled_pedigree() -> impl Strategy<Value = (Ped, Vec<usize>, i64)> {
+/// A pedigree and a permutation of its rows.
+pub fn shuffled_pedigree() -> impl Strategy<Value = (Ped, Vec<usize>)> {
     pedigree().prop_flat_map(|ped| {
-        let perm = Just((0..ped.len()).collect::<Vec<_>>()).prop_shuffle();
-        let mult = prop_oneof![Just(1i64), Just(1000), Just(1_000_000)];
-        (Just(ped), perm, mult)
+        let order = Just((0..ped.len()).collect::<Vec<_>>()).prop_shuffle();
+        (Just(ped), order)
     })
 }
 
-/// Run `test` on `cases` draws of `strategy`, then require that it found
-/// something to check at least `floor` times: `test` adds what it checked to
-/// the counter, so a strategy that stops making such cases fails instead of
-/// passing vacuously.  A failing case is saved beside the calling test file,
-/// as `proptest!` does.
+/// A pedigree with a row permutation and an id multiplier for relabelling.
+pub fn relabelled_pedigree() -> impl Strategy<Value = (Ped, Vec<usize>, i64)> {
+    shuffled_pedigree().prop_flat_map(|(ped, perm)| {
+        let mult = prop_oneof![Just(1i64), Just(1000), Just(1_000_000)];
+        (Just(ped), Just(perm), mult)
+    })
+}
+
+/// Cases per property in an ordinary run.
+const CASES: u32 = 256;
+
+/// Cases per property: `PROPTEST_CASES` when set (proptest's own variable,
+/// which its config would ignore here because the runner sets `cases`),
+/// else [`CASES`].
+fn cases() -> u32 {
+    std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(CASES)
+}
+
+/// Run `test` on [`cases()`] draws of `strategy`, then require that it found
+/// something to check at least `per_case` times per case on average: `test`
+/// adds what it checked to the counter, so a strategy that stops making such
+/// cases fails instead of passing vacuously.  A failing case is saved beside
+/// the calling test file, as `proptest!` does.
 #[track_caller]
 pub fn check<S: Strategy>(
     name: &str,
-    cases: u32,
-    floor: usize,
+    per_case: f64,
     strategy: S,
     test: impl Fn(S::Value, &AtomicUsize) -> Result<(), TestCaseError>,
 ) {
+    let cases = cases();
+    let floor = (per_case * f64::from(cases)).ceil() as usize;
     let checked = AtomicUsize::new(0);
     let config = ProptestConfig {
         cases,

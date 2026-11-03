@@ -36,6 +36,9 @@ build-dev = "maturin develop --release --features test-hooks"
 test = { cmd = "pytest -n 6 --dist worksteal -m 'not slow'", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
 test-all = { cmd = "pytest -n 6 --dist worksteal", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
 test-rust = "cargo test --release"
+# The core's property tests at release depth: 64x the 256 cases per property
+# an ordinary test-rust run draws (crates/core/tests/common/mod.rs), ~9 s.
+test-rust-thorough = { cmd = "cargo test --release -p pedigree-graph-core --test kinship_properties --test pair_properties", env = { PROPTEST_CASES = "16384" } }
 # `ci-local` runs the checks the CI push jobs run (.github/workflows/ci.yml calls
 # these tasks, except in the R job, which has no pixi), before a push. CI-only: the offline R tarball check (needs sudo unshare), the
 # wheel install matrix, and the publish workflow's macOS/Windows/ARM legs, so

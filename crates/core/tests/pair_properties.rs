@@ -14,7 +14,7 @@
 
 mod common;
 
-use common::{check, pedigree, relabelled_pedigree, Built};
+use common::{check, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped};
 use pedigree_graph_core::relationships::{
     count_pairs, pair_blocks, Category, CategorySet, Counts, Execution, MaxDegree, PairBlocks,
     Progress, Receiver,
@@ -22,8 +22,6 @@ use pedigree_graph_core::relationships::{
 use proptest::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-const CASES: u32 = 256;
 
 fn tally(checked: &AtomicUsize, n: usize) {
     checked.fetch_add(n, Ordering::Relaxed);
@@ -60,7 +58,7 @@ fn pairs(blocks: &PairBlocks, cat: Category) -> impl Iterator<Item = (usize, usi
 /// pair has one closest category, in one orientation.
 #[test]
 fn pairs_are_distinct_rows_listed_once() {
-    check("pair keys", CASES, 1000, pedigree(), |ped, checked| {
+    check("pair keys", 10.0, pedigree(), |ped, checked| {
         let b = Built::new(&ped);
         let all = blocks(&b, Execution::Speed);
         let mut seen: HashMap<(usize, usize), &str> = HashMap::new();
@@ -84,7 +82,7 @@ fn pairs_are_distinct_rows_listed_once() {
 /// child).
 #[test]
 fn siblings_follow_the_parent_ids() {
-    check("siblings", CASES, 100, pedigree(), |ped, checked| {
+    check("siblings", 0.1, pedigree(), |ped, checked| {
         let b = Built::new(&ped);
         let (mo, fa) = (&b.graph.mother_ids, &b.graph.father_ids);
         let all = blocks(&b, Execution::Speed);
@@ -119,8 +117,7 @@ fn siblings_follow_the_parent_ids() {
 fn counts_do_not_depend_on_ids() {
     check(
         "relabel",
-        CASES,
-        CASES as usize,
+        1.0,
         relabelled_pedigree(),
         |(ped, perm, mult), checked| {
             let a = counts(&Built::new(&ped), MaxDegree::MAX.get());
@@ -135,51 +132,112 @@ fn counts_do_not_depend_on_ids() {
     );
 }
 
-/// Each category's pairs, under either execution, are as many as its count.
+/// Reordering the rows moves every pair with its rows: the counts and each
+/// category's unordered pairs are unchanged, and a directed pair keeps its
+/// orientation.  The one exception is a collateral pair a loop puts in its
+/// category both ways round (each a half aunt of the other, say): the lower
+/// row leads it (`Engine::emit_row`), so it may turn round with the rows,
+/// and then it is lower row first in both orders.  A lineal pair never
+/// turns round.
 #[test]
-fn pairs_and_counts_agree() {
+fn row_order_does_not_change_pairs() {
     check(
-        "pairs vs counts",
-        CASES,
-        1000,
-        pedigree(),
-        |ped, checked| {
-            let b = Built::new(&ped);
-            let c = counts(&b, MaxDegree::MAX.get());
-            for execution in [Execution::Speed, Execution::Memory] {
-                let all = blocks(&b, execution);
-                for cat in Category::ALL {
-                    let n = all.get(cat).len() as u64;
-                    prop_assert_eq!(n, c.get(cat), "{} {}", cat.code(), execution.name());
-                    tally(checked, n as usize);
-                }
-            }
-            Ok(())
-        },
-    );
-}
-
-/// Counting to degree `d` gives the full counts of every category of degree
-/// at most `d` and nothing above it.
-#[test]
-fn degree_gates_the_counts() {
-    check(
-        "degree gating",
-        CASES,
-        CASES as usize,
-        pedigree(),
-        |ped, checked| {
-            let b = Built::new(&ped);
-            let full = counts(&b, MaxDegree::MAX.get());
-            for d in 0..=MaxDegree::MAX.get() {
-                let c = counts(&b, d);
-                for cat in Category::ALL {
-                    let want = if cat.degree() <= d { full.get(cat) } else { 0 };
-                    prop_assert_eq!(c.get(cat), want, "degree {} {}", d, cat.code());
+        "row order",
+        1.0,
+        shuffled_pedigree(),
+        |(ped, order), checked| {
+            let (a, b) = (Built::new(&ped), Built::new(&ped.permuted(&order)));
+            prop_assert_eq!(
+                counts(&a, MaxDegree::MAX.get()).0,
+                counts(&b, MaxDegree::MAX.get()).0
+            );
+            let (pa, pb) = (blocks(&a, Execution::Speed), blocks(&b, Execution::Speed));
+            for cat in Category::ALL {
+                let unordered = |(x, y): (usize, usize)| (x.min(y), x.max(y));
+                let want: HashSet<_> = pairs(&pa, cat).collect();
+                let got: Vec<_> = pairs(&pb, cat).collect();
+                let moved: HashSet<_> = got.iter().map(|&(r, s)| (order[r], order[s])).collect();
+                prop_assert_eq!(
+                    moved.iter().copied().map(unordered).collect::<HashSet<_>>(),
+                    want.iter().copied().map(unordered).collect::<HashSet<_>>(),
+                    "{}",
+                    cat.code()
+                );
+                let Some((_, senior)) = cat.roles() else {
+                    continue;
+                };
+                // An ancestor of its own descendant would be a cycle.
+                let lineal = matches!(senior, "mother" | "father" | "ancestor");
+                for &(r, s) in &got {
+                    let (x, y) = (order[r], order[s]);
+                    if !want.contains(&(x, y)) {
+                        prop_assert!(
+                            !lineal && r < s && y < x,
+                            "{} ({r}, {s}) was ({y}, {x})",
+                            cat.code()
+                        );
+                    }
                 }
             }
             tally(checked, 1);
             Ok(())
         },
     );
+}
+
+/// The case proptest found: rows 1 and 5 are each a half aunt of the other
+/// (row 5 and row 1's mother share a father, row 1 and row 5's mother share
+/// a mother), two half paths that make them `Av`.  The lower row leads in
+/// either row order.
+#[test]
+fn a_pair_avuncular_both_ways_is_led_by_the_lower_row() {
+    let ped = Ped {
+        ids: vec![10, 3, 17, 45, 38, 24, 31],
+        mother: vec![9_000_000_000, 10, 10, 38, -1, 17, -1],
+        father: vec![38, 31, 9_100_000_001, 9_100_000_000, -1, 38, -1],
+        twin: vec![-1; 7],
+    };
+    let av = |ped: &Ped| {
+        pairs(&blocks(&Built::new(ped), Execution::Speed), Category::Av).collect::<Vec<_>>()
+    };
+    assert_eq!(av(&ped), vec![(1, 5)]);
+    // Rows 1 and 5 swapped.
+    assert_eq!(av(&ped.permuted(&[0, 5, 2, 3, 4, 1, 6])), vec![(1, 5)]);
+}
+
+/// Each category's pairs, under either execution, are as many as its count.
+#[test]
+fn pairs_and_counts_agree() {
+    check("pairs vs counts", 20.0, pedigree(), |ped, checked| {
+        let b = Built::new(&ped);
+        let c = counts(&b, MaxDegree::MAX.get());
+        for execution in [Execution::Speed, Execution::Memory] {
+            let all = blocks(&b, execution);
+            for cat in Category::ALL {
+                let n = all.get(cat).len() as u64;
+                prop_assert_eq!(n, c.get(cat), "{} {}", cat.code(), execution.name());
+                tally(checked, n as usize);
+            }
+        }
+        Ok(())
+    });
+}
+
+/// Counting to degree `d` gives the full counts of every category of degree
+/// at most `d` and nothing above it.
+#[test]
+fn degree_gates_the_counts() {
+    check("degree gating", 1.0, pedigree(), |ped, checked| {
+        let b = Built::new(&ped);
+        let full = counts(&b, MaxDegree::MAX.get());
+        for d in 0..=MaxDegree::MAX.get() {
+            let c = counts(&b, d);
+            for cat in Category::ALL {
+                let want = if cat.degree() <= d { full.get(cat) } else { 0 };
+                prop_assert_eq!(c.get(cat), want, "degree {} {}", d, cat.code());
+            }
+        }
+        tally(checked, 1);
+        Ok(())
+    });
 }

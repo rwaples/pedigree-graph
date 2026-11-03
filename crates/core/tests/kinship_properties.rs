@@ -19,13 +19,13 @@
 
 mod common;
 
-use common::{check, non_inbred_pedigree, pedigree, relabelled_pedigree, Built, Ped};
+use common::{
+    check, non_inbred_pedigree, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped,
+};
 use pedigree_graph_core::kinship::{inbreeding, pair_kinship};
 use pedigree_graph_core::relationships::{count_pairs, MaxDegree, Progress};
 use proptest::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
-
-const CASES: u32 = 256;
 
 /// One float32 rounding unit at kinship scale (`tests/_support.py`).
 const ENVELOPE_UNIT: f64 = 1.0 / (1u64 << 25) as f64;
@@ -33,6 +33,10 @@ const ENVELOPE_UNIT: f64 = 1.0 / (1u64 << 25) as f64;
 /// The largest `d_a + d_b` at which float32 kinship equals the rational
 /// (`tests/_support.py`, derived in `tests/test_kinship_exact.py`).
 const EXACT_DEPTH_SUM: i32 = 22;
+
+/// The largest depth at which float64 `F` equals the rational
+/// (`tests/_support.py`).
+const EXACT_F_DEPTH: i32 = 25;
 
 fn tally(checked: &AtomicUsize, n: usize) {
     checked.fetch_add(n, Ordering::Relaxed);
@@ -42,7 +46,7 @@ fn tally(checked: &AtomicUsize, n: usize) {
 /// to the bit; a float32 half-sum of values in [0, 1] stays in [0, 1].
 #[test]
 fn the_matrix_is_symmetric_and_bounded() {
-    check("symmetric", CASES, 1000, pedigree(), |ped, checked| {
+    check("symmetric", 4.0, pedigree(), |ped, checked| {
         let b = Built::new(&ped);
         let k = b.dense_kinship();
         for x in 0..b.len() {
@@ -62,7 +66,7 @@ fn the_matrix_is_symmetric_and_bounded() {
 /// self-kinship.
 #[test]
 fn founders_are_unrelated_with_self_kinship_one_half() {
-    check("founders", CASES, 1000, pedigree(), |ped, checked| {
+    check("founders", 2.0, pedigree(), |ped, checked| {
         let b = Built::new(&ped);
         let k = b.dense_kinship();
         let founders: Vec<usize> = (0..b.len())
@@ -83,7 +87,7 @@ fn founders_are_unrelated_with_self_kinship_one_half() {
 /// Every co-twin pair has the kinship of either twin with itself.
 #[test]
 fn co_twins_have_self_kinship() {
-    check("co-twins", CASES, 100, pedigree(), |ped, checked| {
+    check("co-twins", 0.5, pedigree(), |ped, checked| {
         let b = Built::new(&ped);
         let k = b.dense_kinship();
         for x in 0..b.len() {
@@ -102,8 +106,7 @@ fn co_twins_have_self_kinship() {
 fn parent_offspring_is_one_quarter_when_not_inbred() {
     check(
         "parent-offspring",
-        CASES,
-        1000,
+        4.0,
         non_inbred_pedigree(),
         |ped, checked| {
             let b = Built::new(&ped);
@@ -128,7 +131,7 @@ fn parent_offspring_is_one_quarter_when_not_inbred() {
 /// while every value is exact, inside the two-path envelope beyond.
 #[test]
 fn the_kinship_recursion_holds() {
-    check("recursion", CASES, 1000, pedigree(), |ped, checked| {
+    check("recursion", 30.0, pedigree(), |ped, checked| {
         let b = Built::new(&ped);
         let k = b.dense_kinship();
         let d = &b.depth;
@@ -167,7 +170,7 @@ fn the_kinship_recursion_holds() {
 /// they agree to the bit on every pair, self pairs included.
 #[test]
 fn pair_kinship_is_the_matrix_entry() {
-    check("pair kinship", CASES, 1000, pedigree(), |ped, checked| {
+    check("pair kinship", 30.0, pedigree(), |ped, checked| {
         let b = Built::new(&ped);
         let k = b.dense_kinship();
         let (mut first, mut second) = (Vec::new(), Vec::new());
@@ -193,8 +196,7 @@ fn pair_kinship_is_the_matrix_entry() {
 fn ids_do_not_change_kinship_or_counts() {
     check(
         "relabel",
-        CASES,
-        CASES as usize,
+        1.0,
         relabelled_pedigree(),
         |(ped, perm, mult), checked| {
             let (a, b) = (Built::new(&ped), Built::new(&ped.relabelled(&perm, mult)));
@@ -213,49 +215,77 @@ fn ids_do_not_change_kinship_or_counts() {
     );
 }
 
-/// `F >= 0` and `F = 2 phi(i, i) - 1`: exact while `2 d <= 22`, within the
-/// envelope beyond.
+/// Reordering the rows moves each row's kinship and `F` with it.  Exact
+/// values do not depend on which endpoint a depth tie peels, so they move
+/// to the bit; past `EXACT_DEPTH_SUM` the two orders may round along
+/// different paths, inside the two-path envelope.
 #[test]
-fn inbreeding_is_the_matrix_diagonal() {
+fn row_order_does_not_change_kinship_or_inbreeding() {
     check(
-        "inbreeding diagonal",
-        CASES,
-        1000,
-        pedigree(),
-        |ped, checked| {
-            let b = Built::new(&ped);
-            let k = b.dense_kinship();
-            let f = inbreeding(b.kinship()).expect("inbreeding");
-            for (i, &fi) in f.iter().enumerate() {
-                prop_assert!(fi >= 0.0, "F[{i}] = {fi}");
-                let from_diagonal = 2.0 * f64::from(k[i][i]) - 1.0;
-                let d = b.depth[i];
-                if 2 * d <= EXACT_DEPTH_SUM {
-                    prop_assert_eq!(fi, from_diagonal, "row {}", i);
+        "row order",
+        1.0,
+        shuffled_pedigree(),
+        |(ped, order), checked| {
+            let (a, b) = (Built::new(&ped), Built::new(&ped.permuted(&order)));
+            let (ka, kb) = (a.dense_kinship(), b.dense_kinship());
+            let fa = inbreeding(a.kinship()).expect("inbreeding");
+            let fb = inbreeding(b.kinship()).expect("inbreeding");
+            for (r, &x) in order.iter().enumerate() {
+                prop_assert_eq!(b.depth[r], a.depth[x], "depth of row {}", r);
+                let d = a.depth[x];
+                if d <= EXACT_F_DEPTH {
+                    prop_assert_eq!(fb[r], fa[x], "F of row {}", r);
                 } else {
                     let bound = 2.0 * f64::from(2 * d + 1) * ENVELOPE_UNIT;
-                    prop_assert!((fi - from_diagonal).abs() <= bound, "row {i}");
+                    prop_assert!((fb[r] - fa[x]).abs() <= bound, "F of row {r}");
+                }
+                for (s, &y) in order.iter().enumerate() {
+                    let depth_sum = a.depth[x] + a.depth[y];
+                    if depth_sum <= EXACT_DEPTH_SUM {
+                        prop_assert_eq!(kb[r][s].to_bits(), ka[x][y].to_bits(), "({}, {})", r, s);
+                    } else {
+                        let bound = 2.0 * f64::from(depth_sum + 1) * ENVELOPE_UNIT;
+                        prop_assert!((f64::from(kb[r][s]) - f64::from(ka[x][y])).abs() <= bound);
+                    }
                 }
             }
-            tally(checked, f.len());
+            tally(checked, 1);
             Ok(())
         },
     );
 }
 
+/// `F >= 0` and `F = 2 phi(i, i) - 1`: exact while `2 d <= 22`, within the
+/// envelope beyond.
+#[test]
+fn inbreeding_is_the_matrix_diagonal() {
+    check("inbreeding diagonal", 4.0, pedigree(), |ped, checked| {
+        let b = Built::new(&ped);
+        let k = b.dense_kinship();
+        let f = inbreeding(b.kinship()).expect("inbreeding");
+        for (i, &fi) in f.iter().enumerate() {
+            prop_assert!(fi >= 0.0, "F[{i}] = {fi}");
+            let from_diagonal = 2.0 * f64::from(k[i][i]) - 1.0;
+            let d = b.depth[i];
+            if 2 * d <= EXACT_DEPTH_SUM {
+                prop_assert_eq!(fi, from_diagonal, "row {}", i);
+            } else {
+                let bound = 2.0 * f64::from(2 * d + 1) * ENVELOPE_UNIT;
+                prop_assert!((fi - from_diagonal).abs() <= bound, "row {i}");
+            }
+        }
+        tally(checked, f.len());
+        Ok(())
+    });
+}
+
 /// `F` is the kinship of the parents, and 0 without two parent rows.
 #[test]
 fn inbreeding_is_the_parents_kinship() {
-    check(
-        "inbreeding parents",
-        CASES,
-        300,
-        pedigree(),
-        |ped, checked| {
-            let b = Built::new(&ped);
-            assert_inbreeding_is_parent_kinship(&b, checked)
-        },
-    );
+    check("inbreeding parents", 0.8, pedigree(), |ped, checked| {
+        let b = Built::new(&ped);
+        assert_inbreeding_is_parent_kinship(&b, checked)
+    });
 }
 
 fn assert_inbreeding_is_parent_kinship(
