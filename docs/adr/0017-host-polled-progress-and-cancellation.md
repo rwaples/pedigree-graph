@@ -53,11 +53,12 @@ reaches only the main thread, which is blocked in the native call.
 
 `crates/core/src/relationships/progress.rs` holds four atomics: the phase,
 rows done, rows total and a cancel flag. Every entry point takes a trailing
-`&Progress`: `count_pairs`, `count_view_pairs_compact`,
-`relationship_burden`, `reduce_pairs` (and so `relationship_moments` and
-`relatives_per_person`), and `pair_blocks`, whose compact view runs are a
-`Receiver` choice rather than a second entry point. The R host polls the
-same `Progress` through a job handle (see "Binding: R").
+`&Progress`: the four `relationships::query` queries (`pairs`, `counts`,
+`moments`, `relatives`; ADR 0019), whose compact view runs are the core's
+choice rather than a second entry point, `relationship_burden` and
+`reduce_pairs`. A query with nothing to walk returns before `walk`, so its
+progress stays in *preparing*. The R host polls the same `Progress` through
+a job handle (see "Binding: R").
 
 **Phases (D9).** A call starts in *preparing*: view compaction and engine
 setup, before the total is known. `walk(n)` publishes the number of row
