@@ -53,7 +53,7 @@ lint-rust = "cargo fmt --check && cargo clippy --all-targets --all-features -- -
 # Private items are not in the public docs, so name them in backticks without a link.
 doc-rust = "RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace"
 lint-python = "ruff check && ruff format --check && ty check"
-ci-local = { depends-on = ["check-core", "lint-rust", "doc-rust", "test-rust", "lint-python", "test", { task = "ci-r", environment = "r" }] }
+ci-local = { depends-on = ["check-core", "lint-rust", "doc-rust", "test-rust", { task = "check-msrv", environment = "msrv" }, "lint-python", "test", { task = "ci-r", environment = "r" }] }
 
 # The R package under r/ (slice 16, plans/pedigree-graph-slice-16-r-package.md
 # in simACE, a session-local draft). Its own environment so the default one never pulls in R; it
@@ -82,5 +82,18 @@ doc-r-rust = { cmd = "cargo doc --no-deps", cwd = "r/src/rust", env = { RUSTDOCF
 test-r-rust = { cmd = "cargo test --release", cwd = "r/src/rust" }
 ci-r = { depends-on = ["lint-r-rust", "doc-r-rust", "test-r-rust", "r-test"] }
 
+# The declared floor, `rust-version` in Cargo.toml: users build the sdist and
+# the R source package with their own rustc, so the workspace, its tests and
+# their dev-dependencies must compile on it.  The default env resolves a newer
+# rustc, which would hide a dependency that needs one (proptest 1.12 needs
+# 1.88).  The R binding crate is its own workspace and is not checked here.
+[feature.msrv.dependencies]
+python = "3.14.*"
+rust = "1.85.*"
+
+[feature.msrv.tasks]
+check-msrv = { cmd = "cargo check --workspace --all-targets --locked", env = { CARGO_TARGET_DIR = "target/msrv" } }
+
 [environments]
 r = { features = ["r"], no-default-feature = false }
+msrv = { features = ["msrv"], no-default-feature = true }
