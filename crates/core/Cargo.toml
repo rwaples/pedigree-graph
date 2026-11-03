@@ -27,3 +27,8 @@ num-bigint = "0.4"
 num-integer = "0.1"
 num-traits = "0.2"
 rayon = "1.10"
+
+[dev-dependencies]
+# No default features: the property tests need no regex strategies, forking
+# or timeouts, and the defaults would add a dozen crates to Cargo.lock.
+proptest = { version = "1", default-features = false, features = ["std"] }
