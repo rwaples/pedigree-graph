@@ -128,6 +128,16 @@ test_that("pair_kinship rows with no int32 row form are refused as Python refuse
   expect_identical(err$fields, list(argument = "first_rows", row = 1e10, position = 1, n_individuals = 6))
 })
 
+test_that("pair_kinship takes integer64 rows and reports one past 2^53 exactly", {
+  pg <- pedigree_graph(three_gen())
+  expect_identical(pair_kinship(pg, as_int64(3), as_int64(4)), 0.25)
+  big <- structure(readBin(writeBin(as.integer(c(1, 2^28)), raw(), endian = "little"),
+                           "double", 1L, endian = "little"), class = "integer64")
+  err <- expect_pg_error(pair_kinship(pg, 1L, big), "validation", "pair_row_out_of_range")
+  expect_identical(err$fields$row, big)
+  expect_identical(err$fields$argument, "second_rows")
+})
+
 test_that("inbreeding is 2 * self-kinship - 1", {
   df <- data.frame(id = 1:5, mother = c(NA, NA, 1L, 1L, 3L), father = c(NA, NA, 2L, 2L, 4L))
   pg <- pedigree_graph(df)

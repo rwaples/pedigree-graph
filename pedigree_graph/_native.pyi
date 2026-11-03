@@ -155,6 +155,7 @@ def relationship_burden(
     progress: _ProgressCallback | None = None,
     tick: float = 1.0,
 ) -> tuple[dict[str, int], NDArray[np.uint32], NDArray[np.uint64]]: ...
+def check_pair_rows(n: int, first: NDArray[np.int32], second: NDArray[np.int32], /) -> None: ...
 def pair_kinship(
     pedigree: BuiltPedigree,
     depth: NDArray[np.int32],

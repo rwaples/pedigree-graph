@@ -498,24 +498,25 @@ fn burden_list(n: usize, burden: Burden) -> HostResult<Robj> {
 /// 1-based R rows as 0-based int32 rows for the core to range-check, the
 /// coercion Python's `_coerce_rows` applies: no lossless integer form or `NA`
 /// is `invalid_integer_value`, and a row with no int32 form, which is outside
-/// every receiver, is `pair_row_out_of_range` here rather than in the core.
+/// every receiver, is the core's `pair_row_out_of_range`, reported in this
+/// argument's turn.
 fn pair_rows(argument: &'static str, rows: &Robj, n: usize) -> HostResult<Vec<i32>> {
-    let outside = |position: usize, row: f64| {
-        HostError::validation(
-            "pair_row_out_of_range",
-            format!(
-                "{argument} row {row} at position {} is outside the {n}-row receiver",
-                position + 1
-            ),
-            vec![
-                ("argument", argument.into()),
-                ("row", row.into()),
-                ("position", ((position + 1) as f64).into()),
-                ("n_individuals", (n as f64).into()),
-            ],
-        )
+    let outside = |position: usize, row: i64| {
+        HostError::from(Error::PairRowOutOfRange {
+            argument,
+            row: row.saturating_sub(1),
+            position: position.into(),
+            n_individuals: n,
+        })
     };
-    let coerced = reject_nulls(argument, coerce_with(argument, rows, outside)?)?;
+    // A double past the int64 range has no exact i64; the nearest one is
+    // still outside every receiver.
+    let coerced = reject_nulls(
+        argument,
+        coerce_with(argument, rows, |position, row| {
+            outside(position, row as i64)
+        })?,
+    )?;
     coerced
         .values
         .iter()
@@ -523,7 +524,7 @@ fn pair_rows(argument: &'static str, rows: &Robj, n: usize) -> HostResult<Vec<i3
         .map(|(position, &row)| {
             row.checked_sub(1)
                 .and_then(|row| i32::try_from(row).ok())
-                .ok_or_else(|| outside(position, row as f64))
+                .ok_or_else(|| outside(position, row))
         })
         .collect()
 }
@@ -534,6 +535,8 @@ pub fn pair_kinship(native: &Robj, seal: &Robj, first: &Robj, second: &Robj) -> 
     let n = graph.len();
     let first = pair_rows(PAIR_FIRST, first, n)?;
     let second = pair_rows(PAIR_SECOND, second, n)?;
+    // Before the pool, so rejected rows leave the thread budget uncommitted.
+    kinship::check_pair_rows(n, &first, &second)?;
     let (_, pool) = package_pool()?;
     let ped = graph.kinship()?;
     let values = pool.install(|| kinship::pair_kinship(ped, &first, &second))?;

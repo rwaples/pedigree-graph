@@ -363,6 +363,14 @@ class TestThreads:
         with pytest.raises(RuntimeError):
             configure_threads(3)
 
+    def test_rejected_rows_leave_the_budget_uncommitted(self, monkeypatch):
+        monkeypatch.setenv("PEDIGREE_GRAPH_THREADS", "two")
+        graph = _sib_mating()
+        for receiver, first, second in [(graph, [0, 1, 2], [0, 1]), (graph.view(rows=[0]), [5], [0])]:
+            with pytest.raises(PedigreeValidationError):
+                receiver.pair_kinship(first, second)
+        configure_threads(3)
+
     def test_view_call_commits_the_budget(self):
         _sib_mating().view(rows=[0, 1]).pair_kinship([0], [1])
         with pytest.raises(RuntimeError):

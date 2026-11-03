@@ -32,5 +32,5 @@ pub use inbreeding::{
 };
 pub use matrix::{approximate_kinship_csc, kinship_csc, kinship_csc_upper, Csc, MAX_CSC_NNZ};
 pub use pairwise::{
-    pair_kinship, support_values, view_pair_kinship, KinshipIndex, KinshipPedigree,
+    check_pair_rows, pair_kinship, support_values, view_pair_kinship, KinshipIndex, KinshipPedigree,
 };

@@ -17,14 +17,18 @@ live on the corresponding GitHub release pages.
   fractional double or a non-numeric vector is `invalid_integer_value`, as
   in Python, and `bit64::integer64` rows are accepted. Python codes and
   fields are unchanged. Checks run as each argument's coercion, then
-  `first_rows`' range, `second_rows`' range, then the lengths; in Python a
-  coercion failure in `second_rows` now wins over an out-of-range row in
-  `first_rows`.
+  `first_rows`' range, `second_rows`' range, then the lengths. A row with no
+  int32 form fails in its argument's coercion, as `pair_row_out_of_range`.
+  In Python a coercion failure in `second_rows` now wins over an int32 row
+  out of range in `first_rows`. A call whose rows are rejected leaves the
+  thread budget uncommitted, in both hosts.
 - **Breaking (Rust): `kinship::pair_kinship` returns
   `Error::PairRowOutOfRange` and `Error::PairLengthMismatch`** instead of
   `ValueOutOfRange` and `LengthMismatch`, rows checked before lengths.
   `kinship::view_pair_kinship(ped, graph_rows, first, second)` takes
-  endpoints in view rows and checks them against the view.
+  endpoints in view rows and checks them against the view, and
+  `kinship::check_pair_rows(n, first, second)` runs the check alone, for a
+  host to call before it commits a thread budget.
 
 ## v0.14.0
 

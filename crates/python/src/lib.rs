@@ -1136,6 +1136,19 @@ impl<'py> KinshipColumns<'py> {
     }
 }
 
+/// Check `pair_kinship` endpoints against a receiver of `n` rows before the
+/// call commits the thread budget; `pair_kinship` repeats the check.
+#[pyfunction]
+#[pyo3(signature = (n, first, second, /))]
+fn check_pair_rows<'py>(
+    py: Python<'py>,
+    n: usize,
+    first: PyReadonlyArray1<'py, i32>,
+    second: PyReadonlyArray1<'py, i32>,
+) -> PyResult<()> {
+    kinship::check_pair_rows(n, first.as_slice()?, second.as_slice()?).map_err(|e| to_pyerr(py, e))
+}
+
 /// Pedigree-expected kinship per requested pair (ADR 0009).
 ///
 /// `pedigree` is the graph's own [`BuiltPedigree`] and `depth` its structural
@@ -1566,6 +1579,7 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(moments_table_merge, m)?)?;
     m.add_function(wrap_pyfunction!(moments_table_derive, m)?)?;
     m.add_function(wrap_pyfunction!(relatives_per_person, m)?)?;
+    m.add_function(wrap_pyfunction!(check_pair_rows, m)?)?;
     m.add_function(wrap_pyfunction!(pair_kinship, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_support_values, m)?)?;
     m.add_function(wrap_pyfunction!(kinship_csc, m)?)?;

@@ -429,9 +429,17 @@ const PAIR_CHUNK: usize = 4096;
 /// Columns per chunk of a [`support_values`] call.
 const COLUMN_CHUNK: usize = 256;
 
-/// Reject an endpoint outside the receiver's `n` rows, `first`'s before
-/// `second`'s, then arguments of different lengths.
-fn check_pairs(n: usize, first: &[i32], second: &[i32]) -> Result<(), Error> {
+/// Reject a `pair_kinship` endpoint outside the receiver's `n` rows,
+/// `first`'s before `second`'s, then arguments of different lengths.
+///
+/// [`pair_kinship`] and [`view_pair_kinship`] run it themselves.  A host
+/// calls it first as well when the call would otherwise commit its thread
+/// budget, so rejected rows leave the budget open.
+///
+/// # Errors
+///
+/// [`Error::PairRowOutOfRange`], then [`Error::PairLengthMismatch`].
+pub fn check_pair_rows(n: usize, first: &[i32], second: &[i32]) -> Result<(), Error> {
     for (argument, rows) in [(PAIR_FIRST, first), (PAIR_SECOND, second)] {
         if let Some(position) = rows.iter().position(|&row| row < 0 || row as usize >= n) {
             return Err(Error::PairRowOutOfRange {
@@ -464,7 +472,7 @@ pub fn pair_kinship(
     first: &[i32],
     second: &[i32],
 ) -> Result<Vec<f32>, Error> {
-    check_pairs(ped.len(), first, second)?;
+    check_pair_rows(ped.len(), first, second)?;
     resolve_pairs(ped, first, second, |row| row)
 }
 
@@ -475,14 +483,17 @@ pub fn pair_kinship(
 ///
 /// As [`pair_kinship`], against the view's `graph_rows.len()` rows, and
 /// [`Error::ValueOutOfRange`] on `graph_rows` when an entry is not a graph
-/// row.
+/// row, checked only when there is a pair to evaluate.
 pub fn view_pair_kinship(
     ped: KinshipPedigree<'_>,
     graph_rows: &[i32],
     first: &[i32],
     second: &[i32],
 ) -> Result<Vec<f32>, Error> {
-    check_pairs(graph_rows.len(), first, second)?;
+    check_pair_rows(graph_rows.len(), first, second)?;
+    if first.is_empty() {
+        return Ok(Vec::new());
+    }
     let n = ped.len();
     if let Some(position) = graph_rows
         .iter()

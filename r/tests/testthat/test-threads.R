@@ -50,3 +50,14 @@ test_that("a budget beyond an R integer is a usage error, not a wrapped value", 
   )
   expect_identical(out, "usage")
 })
+
+test_that("a pair_kinship call its rows reject leaves the budget uncommitted", {
+  out <- run_rscript(c(
+    "pg <- pedigree_graph(data.frame(id = 1:3, mother = NA, father = NA))",
+    "e <- tryCatch(pair_kinship(pg, 1:3, 1:2), pedigree_graph_validation_error = function(e) e$code)",
+    "f <- tryCatch(pair_kinship(pg, 4L, 1L), pedigree_graph_validation_error = function(e) e$code)",
+    "configure_threads(2)",
+    "cat(e, f, thread_budget())"
+  ), env = "PEDIGREE_GRAPH_THREADS=two")
+  expect_identical(out, "pair_length_mismatch pair_row_out_of_range 2")
+})

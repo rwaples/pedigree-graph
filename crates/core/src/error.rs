@@ -478,7 +478,7 @@ impl Error {
                 n_individuals,
             } => vec![
                 ("argument", Str(argument)),
-                ("row", Int(row + base.offset())),
+                ("row", Int(row.saturating_add(base.offset()))),
                 ("position", at(position)),
                 ("n_individuals", int(*n_individuals)),
             ],
@@ -724,7 +724,7 @@ impl std::fmt::Display for Message<'_> {
             } => write!(
                 f,
                 "{argument} row {} at position {} is outside the {n_individuals}-row receiver",
-                row + base.offset(),
+                row.saturating_add(base.offset()),
                 position.at(base)
             ),
             Error::PairLengthMismatch {

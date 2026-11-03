@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 _INT64_MAX = int(np.iinfo(np.int64).max)
 _INT64_MIN = int(np.iinfo(np.int64).min)
 _INT32_MAX = int(np.iinfo(np.int32).max)
+_INT32_MIN = int(np.iinfo(np.int32).min)
 
 
 @dataclass(frozen=True, slots=True)

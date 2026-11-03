@@ -30,7 +30,7 @@ import numpy as np
 
 from pedigree_graph import _native
 from pedigree_graph._errors import PedigreeValidationError
-from pedigree_graph._input import _INT32_MAX, _coerce_selection, _FieldSpec, _own_native
+from pedigree_graph._input import _INT32_MAX, _INT32_MIN, _coerce_selection, _FieldSpec, _own_native
 from pedigree_graph._threads import thread_budget
 from pedigree_graph._topology import readonly
 from pedigree_graph.relationships import RelationshipPairBlock, RelationshipPairs
@@ -41,8 +41,8 @@ if TYPE_CHECKING:
     from pedigree_graph._core import PedigreeGraph
     from pedigree_graph._view import CoordinateToken, PedigreeView
 
-_FIRST = _FieldSpec("first_rows", True, 0, _INT32_MAX, np.int32)
-_SECOND = _FieldSpec("second_rows", True, 0, _INT32_MAX, np.int32)
+_FIRST = _FieldSpec("first_rows", True, _INT32_MIN, _INT32_MAX, np.int32)
+_SECOND = _FieldSpec("second_rows", True, _INT32_MIN, _INT32_MAX, np.int32)
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,7 +78,9 @@ def _coerce_rows(spec: _FieldSpec, values: object, n_individuals: int) -> np.nda
 
     Fails with ``invalid_shape`` or ``invalid_integer_value``, or with
     ``pair_row_out_of_range`` for an integer with no int32 form, which cannot
-    reach the core and is outside every receiver.
+    reach the core and is outside every receiver.  That one is a coercion
+    failure, so it is reported in this argument's turn, before the core's
+    range checks.
     """
     try:
         rows = _coerce_selection(spec, values)
@@ -88,7 +90,7 @@ def _coerce_rows(spec: _FieldSpec, values: object, n_individuals: int) -> np.nda
         position = err.fields["position"]
         assert isinstance(position, int)
         raise _row_out_of_range(spec.name, err.fields["value"], position, n_individuals) from None
-    outside = (rows < np.iinfo(np.int32).min) | (rows > _INT32_MAX)
+    outside = (rows < _INT32_MIN) | (rows > _INT32_MAX)
     if outside.any():
         position = int(np.argmax(outside))
         raise _row_out_of_range(spec.name, int(rows[position]), position, n_individuals)
@@ -170,8 +172,11 @@ def _evaluate(graph: PedigreeGraph, query: _PairQuery, graph_rows: np.ndarray | 
 
     Endpoints are graph rows, or view rows when *graph_rows* maps each view row
     to its graph row.  The core reports ``pair_row_out_of_range`` per endpoint
-    argument, first then second, then ``pair_length_mismatch``.
+    argument, first then second, then ``pair_length_mismatch``, before the
+    thread budget is committed.
     """
+    n_receiver = graph.n_individuals if graph_rows is None else len(graph_rows)
+    _native.check_pair_rows(n_receiver, query.first, query.second)
     values = _native.pair_kinship(
         graph._built,
         graph.depth,
