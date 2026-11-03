@@ -108,18 +108,12 @@ impl Native {
     }
 
     fn kinship(&self) -> HostResult<KinshipPedigree<'_>> {
-        // The recurrence reads no parent ids, and the graph's are doubles here.
-        let ids: &[i64] = &[];
         let columns = GraphColumns {
             mother: self.mother_rows.slice(),
             father: self.father_rows.slice(),
             twin: self.twin_rows.slice(),
-            orig_mother: ids,
-            orig_father: ids,
-            depth: Some(self.depth.slice()),
-            rows_topological: false,
         };
-        Ok(columns.kinship()?)
+        Ok(columns.kinship(self.depth.slice())?)
     }
 
     /// The ids at `rows` in the graph's id type, as R vectors of that type.
@@ -160,12 +154,8 @@ impl OwnedRows {
             mother: &self.mother_rows,
             father: &self.father_rows,
             twin: &self.twin_rows,
-            orig_mother: &self.mother_ids,
-            orig_father: &self.father_ids,
-            depth: None,
-            rows_topological: false,
         }
-        .relationships()
+        .relationships(&self.mother_ids, &self.father_ids)
     }
 }
 
