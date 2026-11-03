@@ -6,6 +6,17 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking: an id in both parent roles is refused at construction**
+  (issue #58, ADR 0019). An id that is the mother of one row and the father
+  of another, external ids included, raises the validation error
+  `parent_in_both_roles` with fields `parent_id` (the smallest such id),
+  `mother_of_row`, `mother_of_id`, `father_of_row`, `father_of_id` and
+  `parent_count`; rows are 0-based in Python and 1-based in R. It runs after
+  `same_parent_id` and before `cycle`. Such a pedigree used to build, and
+  then sib links (by role) and cousin paths (either parent) disagreed: a half
+  sib pair through such an id was labelled `1C` while `pair_kinship` gave
+  1/8. A parent's recorded sex is still not checked against its role.
+  Real data with role errors must be repaired before construction.
 - **Kernel inputs are drawn from one core borrow, `columns::GraphColumns`**
   (issue #53). It holds a graph's parent and twin rows; `relationships(ids)`,
   `kinship(depth)` and `lineage(depth, rows_topological)` take the further

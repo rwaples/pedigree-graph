@@ -87,6 +87,26 @@ def _check_duplicate_ids(ids):
     )
 
 
+def _check_parent_roles(ids, mother_ids, father_ids):
+    both = np.intersect1d(mother_ids[mother_ids >= 0], father_ids[father_ids >= 0])
+    if not len(both):
+        return
+    parent = int(both[0])
+    mother_of = int(np.argmax(mother_ids == parent))
+    father_of = int(np.argmax(father_ids == parent))
+    raise PedigreeValidationError(
+        "parent_in_both_roles",
+        f"id {parent} is the mother of row {mother_of} (id {int(ids[mother_of])}) and the father of "
+        f"row {father_of} (id {int(ids[father_of])}); {len(both)} id(s) are in both parent roles",
+        parent_id=parent,
+        mother_of_row=mother_of,
+        mother_of_id=int(ids[mother_of]),
+        father_of_row=father_of,
+        father_of_id=int(ids[father_of]),
+        parent_count=len(both),
+    )
+
+
 def _check_same_parent(ids, mother_ids, father_ids):
     same = (mother_ids == father_ids) & (mother_ids >= 0)
     if not same.any():
@@ -260,6 +280,7 @@ def build(
 
     _check_duplicate_ids(ids)
     _check_same_parent(ids, mother, father)
+    _check_parent_roles(ids, mother, father)
 
     twin_ids = values.get("twin")
     if twin_ids is None:

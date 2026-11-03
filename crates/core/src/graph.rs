@@ -381,6 +381,66 @@ fn check_same_parent(ids: &[i64], mother: &[i64], father: &[i64]) -> Result<(), 
     }
 }
 
+/// `parent_in_both_roles` for the smallest id that is the mother of one row
+/// and the father of another (ADR 0019), external ids included.
+///
+/// Represented parents are marked per row from the resolved columns, one
+/// byte a row; only external ids are sorted.  The witness rows are found by
+/// one more scan, run only when there is a violation.
+fn check_parent_roles(
+    ids: &[i64],
+    mother: &[i64],
+    father: &[i64],
+    mother_rows: &[i32],
+    father_rows: &[i32],
+) -> Result<(), Error> {
+    const AS_MOTHER: u8 = 1;
+    const AS_FATHER: u8 = 2;
+    let mut roles = vec![0u8; ids.len()];
+    let mut external: Vec<(i64, u8)> = Vec::new();
+    for (parents, parent_rows, role) in [
+        (mother, mother_rows, AS_MOTHER),
+        (father, father_rows, AS_FATHER),
+    ] {
+        for (&id, &row) in parents.iter().zip(parent_rows) {
+            if row >= 0 {
+                roles[row as usize] |= role;
+            } else if id >= 0 {
+                external.push((id, role));
+            }
+        }
+    }
+    let represented = roles
+        .iter()
+        .zip(ids)
+        .filter(|&(&r, _)| r == AS_MOTHER | AS_FATHER)
+        .map(|(_, &id)| id);
+    external.sort_unstable();
+    external.dedup();
+    let external = external
+        .windows(2)
+        .filter(|pair| pair[0].0 == pair[1].0)
+        .map(|pair| pair[0].0);
+    let (parent_count, smallest) = represented
+        .chain(external)
+        .fold((0usize, i64::MAX), |(n, low), id| (n + 1, low.min(id)));
+    if parent_count == 0 {
+        return Ok(());
+    }
+    let first = |parents: &[i64]| parents.iter().position(|&id| id == smallest);
+    match first(mother).zip(first(father)) {
+        Some((mother_of, father_of)) => Err(Error::ParentInBothRoles {
+            parent_id: smallest,
+            mother_of_row: mother_of.into(),
+            mother_of_id: ids[mother_of],
+            father_of_row: father_of.into(),
+            father_of_id: ids[father_of],
+            parent_count,
+        }),
+        None => Ok(()),
+    }
+}
+
 /// Reject represented MZ references that break the ADR 0006 pair contract.
 ///
 /// Each kind of violation is swept over every row before the next kind runs,
@@ -512,8 +572,8 @@ fn normalize_optional<T: Copy + PartialEq>(values: Option<Vec<T>>, unknown: T) -
 /// # Errors
 ///
 /// `pedigree_too_large`, `length_mismatch`, `value_out_of_range`,
-/// `duplicate_id`, `same_parent_id`, `cycle`, the four MZ codes, and
-/// `birth_year_topology`, in that order of precedence.
+/// `duplicate_id`, `same_parent_id`, `parent_in_both_roles`, `cycle`, the
+/// four MZ codes, and `birth_year_topology`, in that order of precedence.
 pub fn build(
     columns: Columns<'_>,
     encoding: SexEncoding,
@@ -569,6 +629,13 @@ pub fn build(
 
     let mother_rows = index.resolve(columns.mother);
     let father_rows = index.resolve(columns.father);
+    check_parent_roles(
+        columns.ids,
+        columns.mother,
+        columns.father,
+        &mother_rows,
+        &father_rows,
+    )?;
     let (twin_ids, twin_rows) = match columns.twin {
         Some(twin) => (twin.to_vec(), index.resolve(twin)),
         None => (vec![-1; n], vec![-1; n]),
@@ -808,6 +875,126 @@ mod tests {
             err.to_string(),
             "row 1 names id 99 as both mother and father"
         );
+    }
+
+    /// The issue #58 rows: P (id 2) is the mother of a (row 5) and the
+    /// father of b (row 6).
+    const ISSUE_58_MOTHER: [i64; 7] = [-1, -1, 0, -1, -1, 2, 4];
+    const ISSUE_58_FATHER: [i64; 7] = [-1, -1, 1, -1, -1, 3, 2];
+
+    #[test]
+    fn a_parent_in_both_roles_is_rejected() {
+        let err = build(
+            columns(&[0, 1, 2, 3, 4, 5, 6], &ISSUE_58_MOTHER, &ISSUE_58_FATHER),
+            SexEncoding::Simace,
+            Limits::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            Error::ParentInBothRoles {
+                parent_id: 2,
+                mother_of_row: 5.into(),
+                mother_of_id: 5,
+                father_of_row: 6.into(),
+                father_of_id: 6,
+                parent_count: 1,
+            }
+        );
+        assert_eq!(
+            err.to_string(),
+            "id 2 is the mother of row 5 (id 5) and the father of row 6 (id 6); \
+             1 id(s) are in both parent roles"
+        );
+    }
+
+    #[test]
+    fn a_parent_in_both_roles_is_rejected_with_the_roles_swapped() {
+        let err = build(
+            columns(&[0, 1, 2, 3, 4, 5, 6], &ISSUE_58_FATHER, &ISSUE_58_MOTHER),
+            SexEncoding::Simace,
+            Limits::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            Error::ParentInBothRoles {
+                parent_id: 2,
+                mother_of_row: 6.into(),
+                mother_of_id: 6,
+                father_of_row: 5.into(),
+                father_of_id: 5,
+                parent_count: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn an_external_parent_in_both_roles_is_rejected() {
+        // 99 has no row; 50 (row 3) and 40 (also external) are each in both
+        // roles too, and the smallest such id is the witness.
+        let err = build(
+            columns(
+                &[10, 11, 12, 50, 13],
+                &[99, 40, 50, -1, -1],
+                &[-1, 99, 40, 40, 50],
+            ),
+            SexEncoding::Simace,
+            Limits::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            Error::ParentInBothRoles {
+                parent_id: 40,
+                mother_of_row: 1.into(),
+                mother_of_id: 11,
+                father_of_row: 2.into(),
+                father_of_id: 12,
+                parent_count: 3,
+            }
+        );
+    }
+
+    #[test]
+    fn same_parent_id_is_reported_before_a_parent_in_both_roles() {
+        let err = build(
+            columns(&[0, 1, 2], &[-1, 0, 7], &[-1, 7, 7]),
+            SexEncoding::Simace,
+            Limits::default(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "same_parent_id");
+    }
+
+    #[test]
+    fn a_parent_in_both_roles_is_reported_before_a_cycle() {
+        // Rows 0 and 1 are each other's parent, and id 0 is also a mother.
+        let err = build(
+            columns(&[0, 1, 2], &[1, -1, 0], &[-1, 0, -1]),
+            SexEncoding::Simace,
+            Limits::default(),
+        )
+        .unwrap_err();
+        assert_eq!(err.code(), "parent_in_both_roles");
+    }
+
+    #[test]
+    fn mz_co_twins_may_be_a_mother_and_a_father() {
+        // Co-twins 2 and 3 are two ids, so one may be a mother and the other a father.
+        build(
+            Columns {
+                twin: Some(&[-1, -1, 3, 2, -1, -1, -1]),
+                ..columns(
+                    &[0, 1, 2, 3, 4, 5, 6],
+                    &[-1, -1, 0, 0, -1, 2, 4],
+                    &[-1, -1, 1, 1, -1, -1, 3],
+                )
+            },
+            SexEncoding::Simace,
+            Limits::default(),
+        )
+        .expect("co-twin parents in different roles");
     }
 
     #[test]

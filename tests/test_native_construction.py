@@ -30,6 +30,7 @@ _DEFECTS = (
     "label_out_of_range",
     "duplicate_id",
     "same_parent",
+    "parent_in_both_roles",
     "cycle",
     "mz_self",
     "mz_nonreciprocal",
@@ -60,18 +61,20 @@ def structured_input(draw, defects=_DEFECTS):
     n = draw(st.integers(min_value=2 if twin_defect else 0, max_value=24))
     encoding = draw(st.sampled_from(["simace", "plink"]))
     # Rows 0..n-1 in a topological order first; parents come from earlier rows
-    # or are external (an id no row carries) or missing.
+    # or are external (an id no row carries) or missing.  Each row and each
+    # external id has one parent role, so the base has no id in both roles
+    # (ADR 0019); that and same_parent are planted defects.
     mother = [-1] * n
     father = [-1] * n
+    is_mother = draw(st.lists(st.booleans(), min_size=n, max_size=n))
     for i in range(1, n):
-        for parents in (mother, father):
+        for parents, role, external in ((mother, True, (-2, -3)), (father, False, (-4, -5))):
             kind = draw(st.sampled_from(["missing", "row", "external"]))
-            if kind == "row":
-                parents[i] = draw(st.integers(min_value=0, max_value=i - 1))
+            candidates = [r for r in range(i) if is_mother[r] == role]
+            if kind == "row" and candidates:
+                parents[i] = draw(st.sampled_from(candidates))
             elif kind == "external":
-                parents[i] = -2 - draw(st.integers(min_value=0, max_value=3))
-        if mother[i] == father[i] != -1:
-            father[i] = -1  # one id in both roles is the planted same_parent defect, not the base
+                parents[i] = draw(st.sampled_from(external))
     # Reciprocal MZ pairs among rows sharing both parents, formed greedily.
     twin = [-1] * n
     if twin_defect or draw(st.booleans()):
@@ -149,6 +152,9 @@ def structured_input(draw, defects=_DEFECTS):
     elif defect == "same_parent":
         columns["father"][k] = columns["mother"][k] if columns["mother"][k] != -1 else 10_007
         columns["mother"][k] = columns["father"][k]
+    elif defect == "parent_in_both_roles" and n >= 2:
+        j = draw(st.integers(min_value=0, max_value=n - 1).filter(lambda x: x != k))
+        columns["mother"][k] = columns["father"][j] = draw(st.sampled_from([10_050, columns["ids"][0]]))
     elif defect == "cycle" and n >= 2:
         j = draw(st.integers(min_value=0, max_value=n - 1).filter(lambda x: x != k))
         columns["mother"][k] = columns["ids"][j]

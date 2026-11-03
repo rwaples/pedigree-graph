@@ -53,6 +53,10 @@ _Avoid_: founder row, treating MZ co-twins as independent genetic sources
 A pedigree property in which every represented individual has either zero or two represented parents, regardless of whether an unrepresented parent is missing or known by an external ID.
 _Avoid_: complete pedigree (biological ancestors may still be outside the graph), complete metadata
 
+**Parent role**:
+Mother or father: the position a parent id holds for its children. Each id, represented or external, holds at most one role across the whole pedigree; a recorded sex need not agree with it.
+_Avoid_: parent sex (sex and role are separate columns and may conflict)
+
 **Generation label**:
 Optional cohort metadata supplied for an individual. When generation metadata
 is absent for the entire pedigree, structural depth supplies the generation

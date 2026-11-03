@@ -245,8 +245,8 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
             ValueError: For an unknown *sex_encoding*, which is API misuse
                 rather than a pedigree-data failure.
             PedigreeValidationError: For any invalid field, duplicate id,
-                shared parent id, cyclic parent reference, broken MZ pair, or
-                child born before a parent.
+                shared parent id, id in both parent roles, cyclic parent
+                reference, broken MZ pair, or child born before a parent.
             ResourceError: ``pedigree_too_large`` beyond the int32 row capacity.
         """
         columns = host_columns(frame)

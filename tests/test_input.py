@@ -174,6 +174,31 @@ class TestStructuralFailures:
         assert error.fields["child_id"] == 1
         assert error.fields["parent_id"] == 99
 
+    @pytest.mark.parametrize("swap", [False, True])
+    def test_parent_in_both_roles(self, swap):
+        """Issue #58: P (id 2) is the mother of row 5 and the father of row 6, or the mirror."""
+        mother = np.array([-1, -1, 0, -1, -1, 2, 4])
+        father = np.array([-1, -1, 1, -1, -1, 3, 2])
+        if swap:
+            mother, father = father, mother
+        error = _raises({"id": np.arange(7), "mother": mother, "father": father}, "parent_in_both_roles")
+        as_mother, as_father = (6, 5) if swap else (5, 6)
+        assert dict(error.fields) == {
+            "parent_id": 2,
+            "mother_of_row": as_mother,
+            "mother_of_id": as_mother,
+            "father_of_row": as_father,
+            "father_of_id": as_father,
+            "parent_count": 1,
+        }
+
+    def test_external_parent_in_both_roles(self):
+        data = {"id": np.array([10, 11]), "mother": np.array([99, -1]), "father": np.array([-1, 99])}
+        error = _raises(data, "parent_in_both_roles")
+        assert error.fields["parent_id"] == 99
+        assert error.fields["mother_of_row"] == 0
+        assert error.fields["father_of_row"] == 1
+
     def test_pedigree_too_large(self):
         with pytest.raises(ResourceError) as info:
             _native.build_pedigree(*host_columns(_data()).as_args(), sex_encoding="simace", max_rows=2)
@@ -334,9 +359,9 @@ class TestIdRemap:
         assert pg.father_rows.tolist() == [-1, -1, 1, 1]
 
     def test_unsorted_ids_remap_correctly(self):
-        parsed = _parse({"id": [5, 2, 9, 7], "mother": [-1, -1, 5, 2], "father": [-1, -1, 2, 5]})
-        assert parsed.mother_rows.tolist() == [-1, -1, 0, 1]
-        assert parsed.father_rows.tolist() == [-1, -1, 1, 0]
+        parsed = _parse({"id": [5, 2, 9, 7], "mother": [-1, -1, 5, 9], "father": [-1, -1, 2, 2]})
+        assert parsed.mother_rows.tolist() == [-1, -1, 0, 2]
+        assert parsed.father_rows.tolist() == [-1, -1, 1, 1]
 
 
 class TestOwnership:

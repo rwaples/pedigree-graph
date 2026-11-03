@@ -95,6 +95,37 @@ test_that("core validation errors report 1-based rows", {
   )
 })
 
+test_that("an id that is a mother and a father is parent_in_both_roles", {
+  # Issue #58: P (id 2) is the mother of a (id 5) and the father of b (id 6).
+  mother <- c(NA, NA, 0, NA, NA, 2, 4)
+  father <- c(NA, NA, 1, NA, NA, 3, 2)
+  err <- expect_pg_error(
+    pedigree_graph(data.frame(id = 0:6, mother = mother, father = father)),
+    "validation", "parent_in_both_roles"
+  )
+  expect_identical(
+    err$fields,
+    list(parent_id = 2, mother_of_row = 6, mother_of_id = 5, father_of_row = 7, father_of_id = 6, parent_count = 1)
+  )
+  expect_match(
+    conditionMessage(err),
+    "id 2 is the mother of row 6 (id 5) and the father of row 7 (id 6);",
+    fixed = TRUE
+  )
+
+  err <- expect_pg_error(
+    pedigree_graph(data.frame(id = 0:6, mother = father, father = mother)),
+    "validation", "parent_in_both_roles"
+  )
+  expect_identical(err$fields[c("mother_of_row", "father_of_row")], list(mother_of_row = 7, father_of_row = 6))
+
+  err <- expect_pg_error(
+    pedigree_graph(data.frame(id = c(10, 11), mother = c(99, NA), father = c(NA, 99))),
+    "validation", "parent_in_both_roles"
+  )
+  expect_identical(err$fields$parent_id, 99)
+})
+
 test_that("sex_encoding is simace or plink, anything else is a usage error", {
   df <- transform(nuclear(), sex = c(0L, 1L, 1L, 0L, -1L))
   expect_identical(pedigree_graph(df)$native$sex, c(0L, 1L, 1L, 0L, -1L))

@@ -179,6 +179,21 @@ pub enum Error {
         /// The id named twice.
         parent_id: i64,
     },
+    /// An id is the mother of one row and the father of another (ADR 0019).
+    ParentInBothRoles {
+        /// The smallest id in both roles.
+        parent_id: i64,
+        /// The first row naming it as mother.
+        mother_of_row: Position,
+        /// That row's id.
+        mother_of_id: i64,
+        /// The first row naming it as father.
+        father_of_row: Position,
+        /// That row's id.
+        father_of_id: i64,
+        /// How many distinct ids are in both roles.
+        parent_count: usize,
+    },
     /// Parent references form a cycle through `ids`, the deterministic witness.
     Cycle {
         /// The cycle's original ids, rotated so the smallest comes first.
@@ -380,6 +395,7 @@ impl Error {
             | Error::PairLengthMismatch { .. }
             | Error::DuplicateId { .. }
             | Error::SameParentId { .. }
+            | Error::ParentInBothRoles { .. }
             | Error::Cycle { .. }
             | Error::MzSelfReference { .. }
             | Error::MzNonreciprocal { .. }
@@ -417,6 +433,7 @@ impl Error {
             Error::PairLengthMismatch { .. } => "pair_length_mismatch",
             Error::DuplicateId { .. } => "duplicate_id",
             Error::SameParentId { .. } => "same_parent_id",
+            Error::ParentInBothRoles { .. } => "parent_in_both_roles",
             Error::Cycle { .. } => "cycle",
             Error::MzSelfReference { .. } => "mz_self_reference",
             Error::MzNonreciprocal { .. } => "mz_nonreciprocal",
@@ -506,6 +523,21 @@ impl Error {
                 ("row", at(row)),
                 ("child_id", Int(*child_id)),
                 ("parent_id", Int(*parent_id)),
+            ],
+            Error::ParentInBothRoles {
+                parent_id,
+                mother_of_row,
+                mother_of_id,
+                father_of_row,
+                father_of_id,
+                parent_count,
+            } => vec![
+                ("parent_id", Int(*parent_id)),
+                ("mother_of_row", at(mother_of_row)),
+                ("mother_of_id", Int(*mother_of_id)),
+                ("father_of_row", at(father_of_row)),
+                ("father_of_id", Int(*father_of_id)),
+                ("parent_count", int(*parent_count)),
             ],
             Error::Cycle { ids } => vec![("ids", Ints(ids.clone()))],
             Error::MzSelfReference { row, id } => vec![("row", at(row)), ("id", Int(*id))],
@@ -752,6 +784,20 @@ impl std::fmt::Display for Message<'_> {
                 "row {} names id {parent_id} as both mother and father",
                 row.at(base)
             ),
+            Error::ParentInBothRoles {
+                parent_id,
+                mother_of_row,
+                mother_of_id,
+                father_of_row,
+                father_of_id,
+                parent_count,
+            } => write!(
+                f,
+                "id {parent_id} is the mother of row {} (id {mother_of_id}) and the father of \
+                 row {} (id {father_of_id}); {parent_count} id(s) are in both parent roles",
+                mother_of_row.at(base),
+                father_of_row.at(base)
+            ),
             Error::Cycle { ids } => write!(
                 f,
                 "parent references form a cycle through ids {}",
@@ -938,6 +984,14 @@ impl Error {
                 child_id: 5,
                 parent_id: 7,
             },
+            Error::ParentInBothRoles {
+                parent_id: 7,
+                mother_of_row: p,
+                mother_of_id: 5,
+                father_of_row: q,
+                father_of_id: 6,
+                parent_count: 1,
+            },
             Error::Cycle { ids: vec![5, 7] },
             Error::MzSelfReference { row: p, id: 5 },
             Error::MzNonreciprocal {
@@ -1052,7 +1106,7 @@ mod tests {
     use super::{Error, ErrorClass, FieldValue, IndexBase, MAX_ROWS};
 
     /// How many variants `Error` has.
-    const VARIANTS: usize = 29;
+    const VARIANTS: usize = 30;
 
     /// Each variant's slot in [`Error::samples`]; the exhaustive match makes a new
     /// variant fail to compile until it is counted here.
@@ -1087,6 +1141,7 @@ mod tests {
             Error::NotRepresentable { .. } => 26,
             Error::InvalidMomentsTable { .. } => 27,
             Error::Cancelled => 28,
+            Error::ParentInBothRoles { .. } => 29,
         }
     }
 

@@ -1,6 +1,6 @@
 # ADR 0006: Public API, coordinate spaces, and relationship semantics for 0.8.0
 
-**Status:** accepted
+**Status:** accepted; input contract amended by ADR 0019
 **Date:** 2026-09-04
 **Context:** the pedigree-graph Rust core redesign
 (simACE `docs/plans/pedigree-graph-rust-core.md`); precedes any native code
@@ -61,12 +61,16 @@ is reserved for reference oracles and analysis.
 * Unresolved parent/twin IDs are valid partial-pedigree references, distinct
   from missing. Unresolved parent IDs still support sibling classification. A
   child cannot name the same known individual in both parent roles.
+  > Amended by ADR 0019: no id, represented or external, may be the mother of
+  > one row and the father of another (`parent_in_both_roles`).
 * Represented MZ references must be non-self, reciprocal, two-member,
   parent-identical, and sex-identical when both sexes are known. An external
   co-twin does not establish an internal MZ pair.
 * Sex is `Female` / `Male` / `Unknown`, transported as `0` / `1` / `-1`.
   Parent-role/sex conflicts do not block construction, so validation tools can
   represent imperfect data.
+  > Amended by ADR 0019: a parent's recorded sex is still not checked against
+  > its role, but one id in both parent roles now blocks construction.
 
 ### Coordinate spaces
 
