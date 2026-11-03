@@ -41,9 +41,10 @@ def _graph(name: str) -> PedigreeGraph:
 
 
 def _view(graph: PedigreeGraph, fraction: float) -> tuple[np.ndarray, int]:
+    """The view's graph rows and the size of its ancestor closure."""
     n = graph.n_individuals
     selected = np.random.default_rng(42).permutation(n)[: max(2, round(n * fraction))]
-    mapping = graph.view(rows=selected)._graph_to_view()
+    graph_rows = graph.view(rows=selected)._graph_rows
     retained = np.zeros(n, dtype=bool)
     stack = selected.tolist()
     while stack:
@@ -52,7 +53,7 @@ def _view(graph: PedigreeGraph, fraction: float) -> tuple[np.ndarray, int]:
             continue
         retained[row] = True
         stack.extend(int(p) for p in (graph.mother_rows[row], graph.father_rows[row], graph.twin_rows[row]) if p >= 0)
-    return mapping, int(retained.sum())
+    return graph_rows, int(retained.sum())
 
 
 def _digest(blocks: dict[str, tuple[np.ndarray, np.ndarray]]) -> str:
@@ -67,25 +68,31 @@ def _digest(blocks: dict[str, tuple[np.ndarray, np.ndarray]]) -> str:
 def child(mode: str, fraction: float, threads: int, fixture: str) -> dict:
     """One measured operation after graph construction, in its own process."""
     graph = _graph(fixture)
-    view_map, closure = _view(graph, fraction)
+    graph_rows, closure = _view(graph, fraction)
+    requested = list(RELATIONSHIPS)
     depth = graph.depth
     _native.configure_pool(threads)
     with PeakRss() as region:
         if mode == "burden":
             counts, per_person, same_depth = _native.relationship_burden(graph._built, depth, threads=threads)
-        elif mode == "count_full":
-            counts = _native.relationship_counts(graph._built, max_degree=5, threads=threads, selected=view_map >= 0)
-        elif mode == "count_compact":
-            counts = _native.compact_view_counts(graph._built, view_map, max_degree=5, threads=threads)
+        elif mode in ("count_full", "count_compact"):
+            counts = _native.relationship_counts(
+                graph._built,
+                requested=requested,
+                threads=threads,
+                graph_rows=graph_rows,
+                compaction=mode.removeprefix("count_"),
+            )
+        elif mode == "pairs":
+            blocks = _native.relationship_pairs(graph._built, requested=requested, threads=threads, execution="speed")
         else:
             blocks = _native.relationship_pairs(
                 graph._built,
-                max_degree=5,
-                requested=list(RELATIONSHIPS),
+                requested=requested,
                 threads=threads,
                 execution="speed",
-                view_rows=view_map if mode.startswith("view") else None,
-                compact=mode == "view_compact",
+                graph_rows=graph_rows,
+                compaction=mode.removeprefix("view_"),
             )
     if mode == "burden":
         digest = hashlib.sha256(per_person.tobytes() + same_depth.tobytes() + repr(counts).encode()).hexdigest()
@@ -100,7 +107,7 @@ def child(mode: str, fraction: float, threads: int, fixture: str) -> dict:
         "mode": mode,
         "fixture": fixture,
         "fraction": fraction,
-        "selected": int((view_map >= 0).sum()),
+        "selected": len(graph_rows),
         "closure": closure,
         "wall_s": region.wall_s,
         "peak_rss_mib": region.peak_mib,
