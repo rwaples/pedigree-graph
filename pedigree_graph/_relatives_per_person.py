@@ -219,14 +219,18 @@ def relatives_per_person(
 
     threads = thread_budget()
     graph_rows = None if view is None else view._graph_rows
-    logger.info(
-        "relatives_per_person: max_degree=%s, %d categories, %d threshold columns, threads=%d%s",
-        selection.top_degree,
-        len(codes),
-        len(columns),
-        threads,
-        ", view" if graph_rows is not None else "",
-    )
+    # Log arguments are computed even when INFO is off; a call with nothing
+    # to walk costs microseconds, so skip them unless they are shown.
+    verbose = logger.isEnabledFor(logging.INFO)
+    if verbose:
+        logger.info(
+            "relatives_per_person: max_degree=%s, %d categories, %d threshold columns, threads=%d%s",
+            selection.top_degree,
+            len(codes),
+            len(columns),
+            threads,
+            ", view" if graph_rows is not None else "",
+        )
     start = time.perf_counter()
     flat, rows, n_categories, stride, lanes, lane_pairs = _native.relatives_per_person(
         graph._built,
@@ -238,11 +242,12 @@ def relatives_per_person(
         tick=_progress.TICK_S,
     )
     assert (rows, n_categories, stride) == (n, len(codes), len(names)), "native layout disagrees with the request"
-    logger.info(
-        "relatives_per_person total: %d pairs in %.3fs on %d lane(s), pairs per lane %s",
-        sum(lane_pairs),
-        time.perf_counter() - start,
-        lanes,
-        lane_pairs,
-    )
+    if verbose:
+        logger.info(
+            "relatives_per_person total: %d pairs in %.3fs on %d lane(s), pairs per lane %s",
+            sum(lane_pairs),
+            time.perf_counter() - start,
+            lanes,
+            lane_pairs,
+        )
     return RelativesPerPerson(codes, names, _own_native(flat, np.uint32).reshape(rows, n_categories, stride))

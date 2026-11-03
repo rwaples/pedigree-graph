@@ -232,20 +232,24 @@ def relationship_moments(
 
     threads = thread_budget()
     graph_rows = None if view is None else view._graph_rows
-    logger.info(
-        "relationship_moments: max_degree=%s, %d categories, %d x %d labels, %d columns, %d products, "
-        "%d same keys, symmetric=%s, threads=%d%s",
-        selection.top_degree,
-        len(codes),
-        n_first,
-        n_second,
-        k,
-        p,
-        len(same),
-        symmetric,
-        threads,
-        ", view" if graph_rows is not None else "",
-    )
+    # Log arguments are computed even when INFO is off; a call with nothing
+    # to walk costs microseconds, so skip them unless they are shown.
+    verbose = logger.isEnabledFor(logging.INFO)
+    if verbose:
+        logger.info(
+            "relationship_moments: max_degree=%s, %d categories, %d x %d labels, %d columns, %d products, "
+            "%d same keys, symmetric=%s, threads=%d%s",
+            selection.top_degree,
+            len(codes),
+            n_first,
+            n_second,
+            k,
+            p,
+            len(same),
+            symmetric,
+            threads,
+            ", view" if graph_rows is not None else "",
+        )
     start = time.perf_counter()
     width, table, native_cells, native_stride, lanes, lane_pairs, peak = _native.relationship_moments(
         graph._built,
@@ -265,13 +269,14 @@ def relationship_moments(
         tick=_progress.TICK_S,
     )
     assert (native_cells, native_stride) == (cells, stride), "native layout disagrees with the packing"
-    logger.info(
-        "relationship_moments total: %d pairs in %.3fs on %d lane(s), estimated accumulator peak %d bytes",
-        sum(lane_pairs),
-        time.perf_counter() - start,
-        lanes,
-        peak,
-    )
+    if verbose:
+        logger.info(
+            "relationship_moments total: %d pairs in %.3fs on %d lane(s), estimated accumulator peak %d bytes",
+            sum(lane_pairs),
+            time.perf_counter() - start,
+            lanes,
+            peak,
+        )
 
     return RelationshipMoments(
         axes=axes,

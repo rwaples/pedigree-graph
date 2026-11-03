@@ -83,14 +83,18 @@ def _native_blocks(
     # One native call covers every degree, so an operator watching a long run
     # sees it start and finish rather than nothing at all; the matrix engine
     # this replaced logged once per degree.
-    logger.info(
-        "relationship_pairs: max_degree=%s, %d categories, execution=%s, threads=%d%s",
-        selection.top_degree,
-        len(requested),
-        execution,
-        threads,
-        ", view" if graph_rows is not None else "",
-    )
+    # Log arguments are computed even when INFO is off; a call with nothing
+    # to walk costs microseconds, so skip them unless they are shown.
+    verbose = logger.isEnabledFor(logging.INFO)
+    if verbose:
+        logger.info(
+            "relationship_pairs: max_degree=%s, %d categories, execution=%s, threads=%d%s",
+            selection.top_degree,
+            len(requested),
+            execution,
+            threads,
+            ", view" if graph_rows is not None else "",
+        )
     start = time.perf_counter()
     blocks = _native.relationship_pairs(
         graph._built,
@@ -101,11 +105,12 @@ def _native_blocks(
         progress=watch,
         tick=_progress.TICK_S,
     )
-    logger.info(
-        "relationship_pairs total: %d pairs in %.3fs",
-        sum(len(first) for first, _ in blocks.values()),
-        time.perf_counter() - start,
-    )
+    if verbose:
+        logger.info(
+            "relationship_pairs total: %d pairs in %.3fs",
+            sum(len(first) for first, _ in blocks.values()),
+            time.perf_counter() - start,
+        )
     return blocks
 
 

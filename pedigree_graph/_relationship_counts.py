@@ -64,13 +64,17 @@ def _count(
     """
     requested = selection.codes
     threads = thread_budget()
-    logger.info(
-        "relationship_counts: max_degree=%s, %d categories, threads=%d%s",
-        selection.top_degree,
-        len(requested),
-        threads,
-        ", view" if graph_rows is not None else "",
-    )
+    # Log arguments are computed even when INFO is off; a call with nothing
+    # to walk costs microseconds, so skip them unless they are shown.
+    verbose = logger.isEnabledFor(logging.INFO)
+    if verbose:
+        logger.info(
+            "relationship_counts: max_degree=%s, %d categories, threads=%d%s",
+            selection.top_degree,
+            len(requested),
+            threads,
+            ", view" if graph_rows is not None else "",
+        )
     start = time.perf_counter()
     counted = _native.relationship_counts(
         graph._built,
@@ -80,7 +84,8 @@ def _count(
         progress=watch,
         tick=_progress.TICK_S,
     )
-    logger.info("relationship_counts total: %.3fs", time.perf_counter() - start)
+    if verbose:
+        logger.info("relationship_counts total: %.3fs", time.perf_counter() - start)
     values: dict[str, int | None] = dict.fromkeys(RELATIONSHIPS, None)
     values.update({code: counted[code] for code in requested})
     return RelationshipCountResult(values, requested, requested)

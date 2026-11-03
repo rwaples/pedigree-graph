@@ -21,8 +21,8 @@ use pedigree_graph_core::pool;
 use pedigree_graph_core::relationships::query::{self, Compaction, Receiver};
 use pedigree_graph_core::relationships::{
     self, Category, CategorySet, Counts, Execution, Moments, MomentsInput, MomentsTable, Operand,
-    PairBlocks, Pedigree, Product, Progress, RelativesPerPerson, Side, Snapshot, Statistic,
-    Symmetric, Threshold, ThresholdColumn,
+    Pedigree, Product, Progress, RelativesPerPerson, Side, Snapshot, Statistic, Symmetric,
+    Threshold, ThresholdColumn,
 };
 use pedigree_graph_core::topology::{self, Order};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -554,7 +554,8 @@ fn relationship_counts<'py>(
 /// as amended) and changes resource use only.  The arrays are moved out of
 /// the core without a copy and retain nothing else.  The GIL is released
 /// while classifying and assembling.  A call with nothing to walk returns
-/// empty blocks without borrowing the graph or checking `graph_rows`.
+/// an empty dict, every block being empty, without borrowing the graph or
+/// checking `graph_rows`.
 #[pyfunction]
 #[pyo3(signature = (pedigree, *, requested, threads, execution, graph_rows=None, compaction="auto", progress=None, tick=1.0))]
 #[allow(clippy::too_many_arguments)]
@@ -576,17 +577,17 @@ fn relationship_pairs<'py>(
         ))
     })?;
     let receiver = receiver(&graph_rows, compaction)?;
-    let blocks = if query::walks(categories, receiver.rows(graph_len(py, pedigree))) {
-        let columns = EngineColumns::borrow(py, pedigree);
-        let ped = columns.relationships(py)?;
-        let pool = checked_pool(py, threads)?;
-        run_watched(py, pool, tick, progress, |progress| {
-            query::pairs(&ped, categories, receiver, execution, progress)
-        })?
-    } else {
-        PairBlocks::empty()
-    };
     let values = PyDict::new(py);
+    if !query::walks(categories, receiver.rows(graph_len(py, pedigree))) {
+        // 46 empty arrays would cost more than the rest of the call.
+        return Ok(values);
+    }
+    let columns = EngineColumns::borrow(py, pedigree);
+    let ped = columns.relationships(py)?;
+    let pool = checked_pool(py, threads)?;
+    let blocks = run_watched(py, pool, tick, progress, |progress| {
+        query::pairs(&ped, categories, receiver, execution, progress)
+    })?;
     for (cat, block) in Category::ALL.iter().zip(blocks.0) {
         let first = block.first.into_pyarray(py);
         let second = block.second.into_pyarray(py);

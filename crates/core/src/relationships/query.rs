@@ -96,26 +96,34 @@ pub fn compacts(graph_rows: usize, view_rows: usize) -> bool {
     graph_rows >= 20_000 && view_rows.saturating_mul(10) <= graph_rows
 }
 
-/// The view a walking query runs on: its map from graph rows to view rows,
-/// and whether it runs compact.
-struct View {
-    map: Vec<i32>,
+/// What [`run_on`] walks for a receiver: the view's graph-to-view map
+/// (`None` for the graph), and whether the view runs compact.
+struct Walk {
+    map: Option<Vec<i32>>,
     compact: bool,
 }
 
-/// The view of `receiver` on `ped`, or `None` for the graph.
-fn view_of(ped: &Pedigree, receiver: Receiver<'_>) -> Result<Option<View>, Error> {
-    let Receiver::View {
-        graph_rows,
-        compaction,
-    } = receiver
-    else {
-        return Ok(None);
-    };
-    Ok(Some(View {
-        map: view_map(graph_rows, ped.len())?,
-        compact: compaction.compacts(ped.len(), graph_rows.len()),
-    }))
+impl Walk {
+    /// The walk of `receiver` on `ped`, its view map checked.
+    fn of(ped: &Pedigree, receiver: Receiver<'_>) -> Result<Walk, Error> {
+        Ok(match receiver {
+            Receiver::Graph => Walk {
+                map: None,
+                compact: false,
+            },
+            Receiver::View {
+                graph_rows,
+                compaction,
+            } => Walk {
+                map: Some(view_map(graph_rows, ped.len())?),
+                compact: compaction.compacts(ped.len(), graph_rows.len()),
+            },
+        })
+    }
+
+    fn map(&self) -> Option<&[i32]> {
+        self.map.as_deref()
+    }
 }
 
 impl Compaction {
@@ -206,12 +214,11 @@ pub fn pairs(
     execution: Execution,
     progress: &Progress,
 ) -> Result<PairBlocks, Error> {
-    let view = view_of(ped, receiver)?;
+    let walk = Walk::of(ped, receiver)?;
     let Some(max_degree) = depth(requested, receiver.rows(ped.len())) else {
         return Ok(PairBlocks::empty());
     };
-    let (map, compact) = split(&view);
-    run_on(ped, map, compact, progress, |ped, view| {
+    run_on(ped, walk.map(), walk.compact, progress, |ped, view| {
         emit(ped, max_degree, requested, view, execution, progress)
     })
 }
@@ -292,15 +299,14 @@ pub fn moments(
     budget_bytes: u64,
     progress: &Progress,
 ) -> Result<Moments, Error> {
-    let view = view_of(ped, receiver)?;
+    let walk = Walk::of(ped, receiver)?;
     let rows = receiver.rows(ped.len());
     input.check(rows)?;
     let Some(max_degree) = depth(requested, rows) else {
         return Moments::degenerate(input.shape(requested), threads, budget_bytes);
     };
-    let (map, compact) = split(&view);
     moments_pass(requested, input, threads, budget_bytes, |reducer, lanes| {
-        run_on(ped, map, compact, progress, |ped, view| {
+        run_on(ped, walk.map(), walk.compact, progress, |ped, view| {
             reduce_pairs_in(
                 ped,
                 max_degree,
@@ -336,15 +342,14 @@ pub fn relatives(
     threads: NonZeroUsize,
     progress: &Progress,
 ) -> Result<RelativesPerPerson, Error> {
-    let view = view_of(ped, receiver)?;
+    let walk = Walk::of(ped, receiver)?;
     let rows = receiver.rows(ped.len());
     check_columns(rows, columns)?;
     let Some(max_degree) = depth(requested, rows) else {
         return RelativesPerPerson::zeros(rows, requested.iter().count(), 1 + columns.len());
     };
-    let (map, compact) = split(&view);
     relatives_pass(rows, requested, columns, threads, |reducer| {
-        run_on(ped, map, compact, progress, |ped, view| {
+        run_on(ped, walk.map(), walk.compact, progress, |ped, view| {
             reduce_pairs_in(
                 ped,
                 max_degree,
@@ -358,14 +363,6 @@ pub fn relatives(
             )
         })
     })
-}
-
-/// The map and compaction flag [`run_on`] takes.
-fn split(view: &Option<View>) -> (Option<&[i32]>, bool) {
-    match view {
-        Some(view) => (Some(&view.map), view.compact),
-        None => (None, false),
-    }
 }
 
 #[cfg(test)]
