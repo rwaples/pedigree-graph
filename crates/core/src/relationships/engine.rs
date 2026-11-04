@@ -510,7 +510,10 @@ impl<'p> Engine<'p> {
         self.collateral(row, ws, HGAv)?;
         self.avuncular_paths(row, ws, 3, reuse)?;
         self.collateral(row, ws, GGAv)?;
-        self.removed_cousins(row, ws, C1R1, reuse)?;
+        // C1R1 and H1C1R share a shape, so one product serves both.
+        let one_removed: &[Category] = if deg < 5 { &[C1R1] } else { &[C1R1, H1C1R] };
+        self.removed_cousin_paths(ws, one_removed, reuse)?;
+        self.removed_cousins(row, ws, C1R1)?;
         if deg < 5 {
             return Ok(());
         }
@@ -520,8 +523,9 @@ impl<'p> Engine<'p> {
         self.collateral(row, ws, HGGAv)?;
         self.avuncular_paths(row, ws, 4, reuse)?;
         self.collateral(row, ws, G3Av)?;
-        self.removed_cousins(row, ws, H1C1R, reuse)?;
-        self.removed_cousins(row, ws, C1R2, reuse)?;
+        self.removed_cousins(row, ws, H1C1R)?;
+        self.removed_cousin_paths(ws, &[C1R2], reuse)?;
+        self.removed_cousins(row, ws, C1R2)?;
         self.second_cousins(row, ws, reuse)
     }
 
@@ -633,32 +637,49 @@ impl<'p> Engine<'p> {
     }
 
     /// `A^a @ (A^b)^T` plus its transpose, with path multiplicity, thresholded
-    /// by the category's number of paths; `a` is its `down` and `b` its `up`.
+    /// into `ws.shared` by each category's number of paths; `a` is their
+    /// `down` and `b` their `up`, which every category in `cats` shares.
     ///
     /// The two orientations of a pair are summed before the threshold
     /// (ADR 0018).  Both products start from the row's ancestors, so `reuse`
     /// keeps them from the last row.
-    fn removed_cousins(
+    fn removed_cousin_paths(
         &self,
-        row: usize,
         ws: &mut Workspace,
-        cat: Category,
+        cats: &[Category],
         reuse: bool,
     ) -> Result<(), Error> {
-        if !reuse {
-            let (a, b) = (usize::from(cat.down()), usize::from(cat.up()));
-            let [forward, backward, tmp] = &mut ws.weighted;
-            self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp)?;
-            self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp)?;
-            // Through `backward` the row sits `b > a` meioses from the shared
-            // ancestor: it is the junior cousin, which the registry puts first.
-            // A pair joined both ways is in this arm too.  Kept whether or not
-            // orientation is wanted, for the next sib to reuse; the counting
-            // path never reads it.
+        let (a, b) = (usize::from(cats[0].down()), usize::from(cats[0].up()));
+        assert!(
+            cats.iter()
+                .all(|c| (c.down(), c.up()) == (cats[0].down(), cats[0].up())),
+            "removed-cousin categories of different shapes share one product"
+        );
+        if reuse {
+            return Ok(());
+        }
+        let [forward, backward, tmp] = &mut ws.weighted;
+        self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp)?;
+        self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp)?;
+        // Through `backward` the row sits `b > a` meioses from the shared
+        // ancestor: it is the junior cousin, which the registry puts first.
+        // A pair joined both ways is in this arm too.  Kept whether or not
+        // orientation is wanted, for the next sib to reuse; the counting
+        // path never reads it.
+        for &cat in cats {
             sets::support_into(backward, &mut ws.first_arm[cat.index()])?;
-            sets::sum_into(forward, backward, tmp)?;
+        }
+        sets::sum_into(forward, backward, tmp)?;
+        for &cat in cats {
             select_paths(tmp, cat, &mut ws.shared[cat.index()])?;
         }
+        Ok(())
+    }
+
+    /// A removed-cousin category from its candidates in `ws.shared`, which
+    /// [`removed_cousin_paths`](Self::removed_cousin_paths) filled for this
+    /// row's family: minus the row and closer categories.
+    fn removed_cousins(&self, row: usize, ws: &mut Workspace, cat: Category) -> Result<(), Error> {
         let set = &mut ws.sets[cat.index()];
         sets::copy_into(set, &ws.shared[cat.index()])?;
         sets::drop_self(set, row);
@@ -847,46 +868,50 @@ mod tests {
             (random_pedigree(300, 5), false),
         ] {
             let ped = cols.try_borrow().unwrap();
-            let engine = Engine::new(&ped, MaxDegree::MAX).unwrap();
-            let order = engine
-                .family_order()
-                .unwrap_or_else(|| (0..ped.len() as u32).collect());
-            let mut sorted = order.clone();
-            sorted.sort_unstable();
-            assert!(sorted.iter().copied().eq(0..ped.len() as u32));
-            // Sorted by parent rows, rows of different families with the
-            // same parent rows meet, and those must not reuse each other.
-            let mut by_parent_rows: Vec<u32> = (0..ped.len() as u32).collect();
-            by_parent_rows.sort_by_key(|&r| (ped.mother[r as usize], ped.father[r as usize]));
-            for walk in [&order, &by_parent_rows] {
-                let mut shared = Workspace::build(ped.len(), true).unwrap();
-                let mut counting = Workspace::build(ped.len(), false).unwrap();
-                let mut reused = 0;
-                for &row in walk {
-                    let row = row as usize;
-                    reused += usize::from(
-                        engine.family_key(row).is_some() && shared.family == engine.family_key(row),
-                    );
-                    let mut fresh = Workspace::build(ped.len(), true).unwrap();
-                    assert_eq!(
-                        emitted(&engine, row, &mut shared),
-                        emitted(&engine, row, &mut fresh),
-                        "row {row}"
-                    );
-                    // The counting path fills no orientation arms of its own.
-                    let mut fresh = Workspace::build(ped.len(), false).unwrap();
-                    assert_eq!(
-                        counted(&engine, row, &mut counting),
-                        counted(&engine, row, &mut fresh),
-                        "row {row}"
-                    );
-                }
-                if family_rows {
-                    assert!(
-                        reused > ped.len() / 3,
-                        "{reused} of {} rows reused",
-                        ped.len()
-                    );
+            // Degree 4 shares the 1C1R product with no H1C1R; 5 with it.
+            for degree in [MaxDegree::try_new(4).unwrap(), MaxDegree::MAX] {
+                let engine = Engine::new(&ped, degree).unwrap();
+                let order = engine
+                    .family_order()
+                    .unwrap_or_else(|| (0..ped.len() as u32).collect());
+                let mut sorted = order.clone();
+                sorted.sort_unstable();
+                assert!(sorted.iter().copied().eq(0..ped.len() as u32));
+                // Sorted by parent rows, rows of different families with the
+                // same parent rows meet, and those must not reuse each other.
+                let mut by_parent_rows: Vec<u32> = (0..ped.len() as u32).collect();
+                by_parent_rows.sort_by_key(|&r| (ped.mother[r as usize], ped.father[r as usize]));
+                for walk in [&order, &by_parent_rows] {
+                    let mut shared = Workspace::build(ped.len(), true).unwrap();
+                    let mut counting = Workspace::build(ped.len(), false).unwrap();
+                    let mut reused = 0;
+                    for &row in walk {
+                        let row = row as usize;
+                        reused += usize::from(
+                            engine.family_key(row).is_some()
+                                && shared.family == engine.family_key(row),
+                        );
+                        let mut fresh = Workspace::build(ped.len(), true).unwrap();
+                        assert_eq!(
+                            emitted(&engine, row, &mut shared),
+                            emitted(&engine, row, &mut fresh),
+                            "row {row}"
+                        );
+                        // The counting path fills no orientation arms of its own.
+                        let mut fresh = Workspace::build(ped.len(), false).unwrap();
+                        assert_eq!(
+                            counted(&engine, row, &mut counting),
+                            counted(&engine, row, &mut fresh),
+                            "row {row}"
+                        );
+                    }
+                    if family_rows {
+                        assert!(
+                            reused > ped.len() / 3,
+                            "{reused} of {} rows reused",
+                            ped.len()
+                        );
+                    }
                 }
             }
         }
