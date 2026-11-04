@@ -305,6 +305,9 @@ def _categories(out: Path) -> None:
                 "first_role": [c.first_role or "NA" for c in rows],
                 "second_role": [c.second_role or "NA" for c in rows],
                 "nominal_kinship": [float(c.nominal_kinship).hex() for c in rows],
+                "up": [c.up for c in rows],
+                "down": [c.down for c in rows],
+                "ancestor_count": [c.ancestor_count for c in rows],
             }
         ),
         out / "categories.tsv",

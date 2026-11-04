@@ -130,13 +130,17 @@ fn error_codes() -> Vec<(&'static str, &'static str, Vec<&'static str>)> {
         .collect()
 }
 
-/// `(code, degree, first_role, second_role, nominal_kinship)` of one category.
+/// `(code, degree, first_role, second_role, nominal_kinship, up, down,
+/// ancestor_count)` of one category.
 type CategoryRow = (
     &'static str,
     u8,
     Option<&'static str>,
     Option<&'static str>,
     f64,
+    u8,
+    u8,
+    u8,
 );
 
 /// Every category's row in `Category::ALL` order, as the R binding's
@@ -153,6 +157,9 @@ fn relationship_categories() -> Vec<CategoryRow> {
                 roles.map(|r| r.0),
                 roles.map(|r| r.1),
                 c.nominal_kinship(),
+                c.up(),
+                c.down(),
+                c.ancestor_count(),
             )
         })
         .collect()

@@ -164,8 +164,9 @@ _Avoid_: subgraph, subsample (for the execution pedigree)
 
 **Nominal kinship**:
 The kinship coefficient implied by a relationship category's `(up, down,
-n_ancestors)` formula, assuming a single relationship path and no inbreeding
-or co-coalescence.
+ancestor_count)` shape, `ancestor_count * 2^-(up + down + 1)`, assuming no
+inbreeding, co-coalescence or duplicate paths. MZ twins are the exception:
+they are joined by no meiotic path, and their nominal kinship is 1/2.
 _Avoid_: exact kinship, pedigree-expected kinship
 
 **Pedigree-expected kinship**:

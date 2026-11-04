@@ -17,3 +17,14 @@ test_that("roles exist exactly for the asymmetric categories", {
   expect_identical(cats[cats$code == "MO", c("first_role", "second_role")],
                    data.frame(first_role = "offspring", second_role = "mother", row.names = 2L))
 })
+
+test_that("the path shape gives the nominal kinship, MZ excepted", {
+  cats <- relationship_categories()
+  symmetric <- c("MZ", "FS", "MHS", "PHS", "1C", "H1C", "2C")
+  expect_true(all(cats$up >= cats$down))
+  expect_identical(cats$up == cats$down, cats$code %in% symmetric)
+  rest <- cats[cats$code != "MZ", ]
+  expect_equal(rest$nominal_kinship, rest$ancestor_count * 0.5^(rest$up + rest$down + 1))
+  mz <- cats[cats$code == "MZ", c("up", "down", "ancestor_count")]
+  expect_identical(unlist(mz, use.names = FALSE), c(0L, 0L, 0L))
+})

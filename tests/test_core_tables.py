@@ -47,8 +47,9 @@ def test_the_registry_lists_the_core_categories_in_the_same_order():
 
 @pytest.mark.parametrize("row", _CORE_CATEGORIES, ids=[row[0] for row in _CORE_CATEGORIES])
 def test_every_registry_category_matches_the_core(row):
-    code, degree, first_role, second_role, nominal_kinship = row
+    code, degree, first_role, second_role, nominal_kinship, up, down, ancestor_count = row
     category = RELATIONSHIPS[code]
     assert category.degree == degree
+    assert (category.up, category.down, category.ancestor_count) == (up, down, ancestor_count)
     assert (category.first_role, category.second_role) == (first_role, second_role)
     assert math.isclose(category.nominal_kinship, nominal_kinship, rel_tol=1e-12)

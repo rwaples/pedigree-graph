@@ -2,8 +2,11 @@
 #'
 #' One row per category in registry order: its `code`, kinship `degree`,
 #' the semantic roles of the `first` and `second` pair members (`NA` for a
-#' symmetric category, whose pairs have `first < second`), and its
-#' `nominal_kinship`.
+#' symmetric category, whose pairs have `first < second`), its
+#' `nominal_kinship`, and its path shape: `up`, the meioses from `first` up
+#' to the shared ancestor(s), `down`, the meioses from them down to
+#' `second`, and `ancestor_count`, the paths of that shape joining the pair
+#' (2 full, 1 half or lineal, 0 for MZ).
 #'
 #' @return A data frame with 23 rows.
 #' @examples

@@ -33,6 +33,13 @@ live on the corresponding GitHub release pages.
   functions is gone. The eight functions moved into `_ne_estimate.py` and
   are still exported from `pedigree_graph.effective_size`. Results,
   refusals and warnings are unchanged.
+- **Added: the core owns the categories' path shapes** (issue #56).
+  `Category::up`, `Category::down` and `Category::ancestor_count` (Rust)
+  give the values `RELATIONSHIPS` has always carried, and R's
+  `relationship_categories()` gains the integer columns `up`, `down` and
+  `ancestor_count` after `nominal_kinship`. No value changes; MZ stays
+  `(0, 0, 0)`, the one category outside
+  `nominal_kinship == ancestor_count * 2^-(up + down + 1)`.
 - **Breaking (Rust): the former relationship entry points are removed**
   from `pedigree-graph-core` (issue #52 step 6, ADR 0019). Call
   `relationships::query` instead: `pair_blocks` → `query::pairs`;

@@ -76,7 +76,12 @@ class RelationshipCategory:
             through the shared ancestor(s), with no inbreeding.
         up: Meioses from ``first`` up to the shared ancestor(s).
         down: Meioses from the shared ancestor(s) down to ``second``.
-        ancestor_count: 1 for half / lineal, 2 for a mated pair, 0 for MZ.
+        ancestor_count: The paths of this shape joining the pair: 2 for full
+            (through a mated pair of ancestors), 1 for half and lineal, 0 for
+            MZ.  The engine reads it as the full/half path-count threshold
+            (ADR 0018), so a full pair need not have two distinct ancestors.
+            Apart from MZ, ``nominal_kinship == ancestor_count * 2**-(up +
+            down + 1)``.
         first_role: Role of the first pair member, ``None`` if symmetric.
         second_role: Role of the second pair member, ``None`` if symmetric.
     """

@@ -289,6 +289,9 @@ fn relationship_categories() -> Robj {
         }))
         .into_robj()
     };
+    let shape = |field: fn(Category) -> u8| {
+        Integers::from_values(Category::ALL.iter().map(|&c| i32::from(field(c)))).into_robj()
+    };
     crate::named_list(
         [
             "code",
@@ -296,6 +299,9 @@ fn relationship_categories() -> Robj {
             "first_role",
             "second_role",
             "nominal_kinship",
+            "up",
+            "down",
+            "ancestor_count",
         ],
         [
             Strings::from_values(Category::ALL.iter().map(|c| c.code())).into_robj(),
@@ -303,6 +309,9 @@ fn relationship_categories() -> Robj {
             role(|r| r.0),
             role(|r| r.1),
             Doubles::from_values(Category::ALL.iter().map(|c| c.nominal_kinship())).into_robj(),
+            shape(Category::up),
+            shape(Category::down),
+            shape(Category::ancestor_count),
         ],
     )
 }

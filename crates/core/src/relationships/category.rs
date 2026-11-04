@@ -115,6 +115,86 @@ impl Category {
         0.5f64.powi(i32::from(self.degree()) + 1)
     }
 
+    /// Meioses from the `first` pair member up to the shared ancestor(s).
+    ///
+    /// `first` is the member at least as far from the ancestor(s), so
+    /// `up() >= down()`, with equality exactly for a symmetric category.
+    pub const fn up(self) -> u8 {
+        match self {
+            Category::MZ => 0,
+            Category::MO | Category::FO | Category::FS | Category::MHS | Category::PHS => 1,
+            Category::GP | Category::Av | Category::HAv | Category::C1 | Category::H1C => 2,
+            Category::GGP
+            | Category::GAv
+            | Category::HGAv
+            | Category::C1R1
+            | Category::H1C1R
+            | Category::C2 => 3,
+            Category::GGGP | Category::GGAv | Category::HGGAv | Category::C1R2 => 4,
+            Category::G3GP | Category::G3Av => 5,
+        }
+    }
+
+    /// Meioses from the shared ancestor(s) down to the `second` pair member.
+    pub const fn down(self) -> u8 {
+        match self {
+            Category::MZ
+            | Category::MO
+            | Category::FO
+            | Category::GP
+            | Category::GGP
+            | Category::GGGP
+            | Category::G3GP => 0,
+            Category::FS
+            | Category::MHS
+            | Category::PHS
+            | Category::Av
+            | Category::HAv
+            | Category::GAv
+            | Category::HGAv
+            | Category::GGAv
+            | Category::HGGAv
+            | Category::G3Av => 1,
+            Category::C1 | Category::H1C | Category::C1R1 | Category::H1C1R | Category::C1R2 => 2,
+            Category::C2 => 3,
+        }
+    }
+
+    /// The paths of this shape that join a pair: 2 through a mated pair of
+    /// ancestors (full), 1 through a single ancestor (half and lineal), and 0
+    /// for MZ, whose twins are not joined by a meiotic path.
+    ///
+    /// Apart from MZ, `nominal_kinship() == ancestor_count() * 2^-(up() +
+    /// down() + 1)`.  The engine decides full against half by this count
+    /// (ADR 0018).
+    pub const fn ancestor_count(self) -> u8 {
+        match self {
+            Category::MZ => 0,
+            Category::FS
+            | Category::Av
+            | Category::GAv
+            | Category::C1
+            | Category::GGAv
+            | Category::C1R1
+            | Category::G3Av
+            | Category::C1R2
+            | Category::C2 => 2,
+            Category::MO
+            | Category::FO
+            | Category::MHS
+            | Category::PHS
+            | Category::GP
+            | Category::GGP
+            | Category::HAv
+            | Category::GGGP
+            | Category::HGAv
+            | Category::H1C
+            | Category::G3GP
+            | Category::HGGAv
+            | Category::H1C1R => 1,
+        }
+    }
+
     #[inline]
     pub fn index(self) -> usize {
         self as usize
@@ -246,6 +326,35 @@ mod tests {
         for cat in Category::ALL {
             assert_eq!(cat.roles().is_none(), cat.symmetric(), "{}", cat.code());
         }
+    }
+
+    #[test]
+    fn first_is_at_least_as_far_from_the_ancestors() {
+        for cat in Category::ALL {
+            assert!(cat.up() >= cat.down(), "{}", cat.code());
+            assert_eq!(cat.up() == cat.down(), cat.symmetric(), "{}", cat.code());
+        }
+    }
+
+    #[test]
+    fn nominal_kinship_follows_the_path_shape() {
+        for cat in Category::ALL.into_iter().filter(|&c| c != Category::MZ) {
+            let paths = f64::from(cat.ancestor_count());
+            let meioses = i32::from(cat.up() + cat.down());
+            let want = paths * 0.5f64.powi(meioses + 1);
+            assert!(
+                (cat.nominal_kinship() - want).abs() < 1e-15,
+                "{}",
+                cat.code()
+            );
+        }
+    }
+
+    #[test]
+    fn mz_is_the_stated_exception() {
+        let mz = Category::MZ;
+        assert_eq!((mz.up(), mz.down(), mz.ancestor_count()), (0, 0, 0));
+        assert!((mz.nominal_kinship() - 0.5).abs() < 1e-15);
     }
 
     #[test]
