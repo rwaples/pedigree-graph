@@ -143,6 +143,10 @@ pub struct Workspace {
     /// Per avuncular depth: the current row's paths of that shape, both
     /// orientations summed.
     avuncular: Vec<Weighted>,
+    /// The deepest entry of `avuncular` filled for the current row, so a
+    /// category whose `up` reaches past it is caught rather than reading the
+    /// last row's paths.
+    avuncular_depth: usize,
     scratch: [Vec<u32>; 4],
     weighted: [Weighted; 3],
     /// Per asymmetric category, the sorted members for whom the current row
@@ -175,6 +179,7 @@ impl Workspace {
             half_aunt: vec![Vec::new(); MAX_AVUNCULAR_DEPTH + 1],
             full_aunt: vec![Vec::new(); MAX_AVUNCULAR_DEPTH + 1],
             avuncular: vec![Vec::new(); MAX_AVUNCULAR_DEPTH + 1],
+            avuncular_depth: 0,
             scratch: Default::default(),
             weighted: Default::default(),
             first_arm: vec![Vec::new(); super::category::N_CATEGORIES],
@@ -427,6 +432,7 @@ impl<'p> Engine<'p> {
         for s in &mut ws.sets {
             s.clear();
         }
+        ws.avuncular_depth = 0;
 
         // Lineal expansions: up with path multiplicity, down as support.
         if !reuse {
@@ -560,14 +566,27 @@ impl<'p> Engine<'p> {
         }
         sibs_below(&self.down, &mut ws.acc, &mut ws.full_aunt, depth, terms)?;
         sets::sum_into(&ws.niece[depth], &ws.half_aunt[depth], tmp)?;
-        sets::sum_into(tmp, &ws.full_aunt[depth], &mut ws.avuncular[depth])
+        sets::sum_into(tmp, &ws.full_aunt[depth], &mut ws.avuncular[depth])?;
+        assert_eq!(ws.avuncular_depth + 1, depth, "avuncular depths in order");
+        ws.avuncular_depth = depth;
+        Ok(())
     }
 
     /// One avuncular category: the members of `ws.avuncular[up - 1]` joined
     /// by its number of paths, minus the row and closer categories.  The
     /// row's `up - 1`-hop ancestors' sibs are the aunts and uncles.
     fn collateral(&self, row: usize, ws: &mut Workspace, cat: Category) -> Result<(), Error> {
+        assert!(
+            cat.down() == 1 && cat.up() >= 2,
+            "{} is not avuncular",
+            cat.code()
+        );
         let depth = usize::from(cat.up()) - 1;
+        assert!(
+            depth <= ws.avuncular_depth,
+            "{} reads avuncular depth {depth} before it is filled",
+            cat.code()
+        );
         let result = &mut ws.scratch[0];
         select_paths(&ws.avuncular[depth], cat, result)?;
         if ws.orient {
@@ -710,21 +729,32 @@ fn weighted_rows(rows: &[u32], m: Mult, out: &mut Weighted) -> Result<(), Error>
     alloc::extend(out, rows.iter().map(|&j| (j, m)), Family::RowSet)
 }
 
-/// Hops from a row up to its grandparents.  The first cousin product and the
-/// shared-grandparent support of the 2C rule share this walk, so it is a
-/// grandparent fact, not 1C's shape; the assertion ties the two together.
+/// Hops from a row up to its grandparents.  The first and half first cousin
+/// products and the shared-grandparent support of the 2C rule share this
+/// walk, so it is a grandparent fact, not one category's shape; the
+/// assertion ties it to every category read from it.
 const GRANDPARENT_DEPTH: usize = 2;
 const _: () = assert!(
     Category::C1.up() as usize == GRANDPARENT_DEPTH
         && Category::C1.down() as usize == GRANDPARENT_DEPTH
+        && Category::H1C.up() as usize == GRANDPARENT_DEPTH
+        && Category::H1C.down() as usize == GRANDPARENT_DEPTH
         && Category::GP.up() as usize == GRANDPARENT_DEPTH
 );
 
 /// The members of `w` joined by `cat`'s number of paths: at least two for a
 /// full category, exactly one for a half one (ADR 0018, on the saturated
-/// count of ADR 0010).  The test is chosen once, outside the loop.
+/// count of ADR 0010).  The test is chosen once, outside the loop.  Only a
+/// collateral category has a full or half test; MZ and the lineal codes are
+/// not decided by a path count.
 fn select_paths(w: &Weighted, cat: Category, out: &mut Vec<u32>) -> Result<(), Error> {
-    if cat.ancestor_count() >= 2 {
+    let n = cat.ancestor_count();
+    assert!(
+        cat.down() > 0 && matches!(n, 1 | 2),
+        "{} has no path-count test",
+        cat.code()
+    );
+    if n == 2 {
         sets::select_into(w, Mult::at_least_two, out)
     } else {
         sets::select_into(w, Mult::is_one, out)

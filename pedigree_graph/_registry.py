@@ -72,8 +72,9 @@ class RelationshipCategory:
         label: Human-readable display label.
         degree: Kinship distance: 0 for MZ twins, 1 for parent-offspring and
             full sibs, and so on.
-        nominal_kinship: Kinship coefficient of a single connecting path
-            through the shared ancestor(s), with no inbreeding.
+        nominal_kinship: Kinship coefficient the category's path shape implies,
+            ``ancestor_count * 2**-(up + down + 1)`` (1/2 for MZ), with no
+            inbreeding or duplicate paths.
         up: Meioses from ``first`` up to the shared ancestor(s).
         down: Meioses from the shared ancestor(s) down to ``second``.
         ancestor_count: The paths of this shape joining the pair: 2 for full

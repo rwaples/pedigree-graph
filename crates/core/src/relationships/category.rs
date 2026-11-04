@@ -109,8 +109,9 @@ impl Category {
         }
     }
 
-    /// Kinship coefficient of a single connecting path through the shared
-    /// ancestor(s), with no inbreeding: `2^-(degree + 1)` for every category.
+    /// Kinship coefficient the category's path shape implies, with no
+    /// inbreeding or duplicate paths: `2^-(degree + 1)` for every category,
+    /// which is `ancestor_count() * 2^-(up() + down() + 1)` for all but MZ.
     pub fn nominal_kinship(self) -> f64 {
         0.5f64.powi(i32::from(self.degree()) + 1)
     }
