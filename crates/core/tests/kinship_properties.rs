@@ -332,7 +332,8 @@ const SCALE: i32 = 100;
 
 /// `v' Phi v` exactly, for the float32 matrix `k` as stored: every entry is
 /// a dyadic rational, so the sum is an integer in units of `2^-SCALE`.
-/// With entries below `2^SCALE`, `|v_i| <= 3` and 25 rows, it fits an i128.
+/// With entries at most `2^SCALE`, `|v_i| <= 3` and 25 rows, it is below
+/// `625 * 9 * 2^SCALE < 2^113` and fits an i128.
 fn quadratic_form(k: &[Vec<f32>], v: &[i32]) -> Result<i128, TestCaseError> {
     let unit = 2f64.powi(SCALE);
     let mut total = 0i128;
@@ -352,7 +353,8 @@ fn quadratic_form(k: &[Vec<f32>], v: &[i32]) -> Result<i128, TestCaseError> {
 /// The kinship matrix is positive semidefinite: `v' Phi v >= 0`, computed
 /// exactly on the stored float32 values, for random small-integer `v`, for
 /// each child's `2 e_c - e_m - e_f` (whose form is `2 - phi_mm - phi_ff`,
-/// the Mendelian sampling term), and `0` for each co-twin pair's
+/// the Mendelian sampling term, exactly while every entry it reads is the
+/// rational, `2 d_c <= EXACT_DEPTH_SUM`), and `0` for each co-twin pair's
 /// `e_x - e_t`, the null direction that makes an MZ pedigree's matrix
 /// singular.
 #[test]
@@ -386,7 +388,11 @@ fn the_matrix_is_positive_semidefinite() {
                     f64::from(k[f as usize][f as usize]),
                 );
                 prop_assert!(q >= 0, "child {c}: {q}");
-                prop_assert_eq!(q as f64 / 2f64.powi(SCALE), 2.0 - pm - pf, "child {}", c);
+                // The deepest entry the form reads is the child's own, at
+                // depth sum 2 d_c; past the exact depth it may be rounded.
+                if 2 * b.depth[c] <= EXACT_DEPTH_SUM {
+                    prop_assert_eq!(q as f64 / 2f64.powi(SCALE), 2.0 - pm - pf, "child {}", c);
+                }
                 tally(checked, 1);
             }
             for x in 0..n {

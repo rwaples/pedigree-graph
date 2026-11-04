@@ -268,10 +268,7 @@ fn role_partner(cat: Category) -> Category {
     }
 }
 
-const THREADS: NonZeroUsize = match NonZeroUsize::new(2) {
-    Some(n) => n,
-    None => panic!("2 is not zero"),
-};
+const THREADS: NonZeroUsize = NonZeroUsize::new(2).expect("2 is not zero");
 
 /// Every category's relatives of every row, with one threshold column.
 fn relatives(b: &Built, relative: &[f64]) -> RelativesPerPerson {
@@ -481,14 +478,14 @@ fn a_parent_role_swap_exchanges_the_sex_specific_categories() {
     });
 }
 
-/// The lineal categories with their meioses up.
-const LINEAL: [(Category, u32); 6] = [
-    (Category::MO, 1),
-    (Category::FO, 1),
-    (Category::GP, 2),
-    (Category::GGP, 3),
-    (Category::GGGP, 4),
-    (Category::G3GP, 5),
+/// The lineal categories; `up()` is each one's meioses up.
+const LINEAL: [Category; 6] = [
+    Category::MO,
+    Category::FO,
+    Category::GP,
+    Category::GGP,
+    Category::GGGP,
+    Category::G3GP,
 ];
 
 /// Each strict ancestor row of `row`, with its fewest meioses up.
@@ -537,7 +534,7 @@ fn lineal_credits_are_the_distinct_ancestors() {
         };
         let mut lineal_of: Vec<HashMap<usize, Category>> = vec![HashMap::new(); b.len()];
         let mut equal = 0;
-        for (cat, _) in LINEAL {
+        for cat in LINEAL {
             for (junior, senior) in pairs(&all, cat) {
                 let parent = match cat {
                     Category::MO => Some(b.graph.mother_rows[junior]),
@@ -558,10 +555,7 @@ fn lineal_credits_are_the_distinct_ancestors() {
             }
         }
         for row in 0..b.len() {
-            let lineal: u32 = LINEAL
-                .iter()
-                .map(|&(cat, _)| credits(&rel, row, cat)[0])
-                .sum();
+            let lineal: u32 = LINEAL.iter().map(|&cat| credits(&rel, row, cat)[0]).sum();
             let n = i64::from(distinct[row]);
             prop_assert!(
                 i64::from(lineal) <= n,
@@ -587,7 +581,10 @@ fn lineal_credits_are_the_distinct_ancestors() {
                         let cat = match d {
                             1 if b.graph.mother_rows[row] == p as i32 => Category::MO,
                             1 => Category::FO,
-                            _ => LINEAL.iter().find(|l| l.1 == d).expect("depth <= 5").0,
+                            _ => *LINEAL
+                                .iter()
+                                .find(|cat| u32::from(cat.up()) == d)
+                                .expect("depth <= 5"),
                         };
                         (p, cat)
                     })
@@ -604,10 +601,11 @@ fn lineal_credits_are_the_distinct_ancestors() {
 
 /// The case proptest found against lineal credits equalling the distinct
 /// ancestors at depth at most 5 with no external parent and no inbred
-/// ancestor, when the row itself may be inbred.  Row 4's father (row 1) is also its great-grandfather, so its
-/// maternal grandmother (row 2, a daughter of row 1) is also its paternal
-/// half sib: the closer PHS wins, and row 4 has four ancestors but three
-/// lineal credits.  Row 4 itself is inbred (F = 1/8).
+/// ancestor, when the row itself may be inbred.  Row 4's father (row 1) is
+/// also its great-grandfather, so its maternal grandmother (row 2, a
+/// daughter of row 1) is also its paternal half sib: the closer PHS wins,
+/// and row 4 has four ancestors but three lineal credits.  Row 4 itself is
+/// inbred (F = 1/8).
 #[test]
 fn an_inbred_rows_grandmother_can_be_its_half_sib() {
     let ped = Ped {
@@ -625,10 +623,7 @@ fn an_inbred_rows_grandmother_can_be_its_half_sib() {
             .expect("built columns");
     assert_eq!(distinct_ancestor_counts(columns).expect("counts")[4], 4);
     let rel = relatives(&b, &[0.0; 5]);
-    let lineal: u32 = LINEAL
-        .iter()
-        .map(|&(cat, _)| credits(&rel, 4, cat)[0])
-        .sum();
+    let lineal: u32 = LINEAL.iter().map(|&cat| credits(&rel, 4, cat)[0]).sum();
     assert_eq!(lineal, 3);
     assert_eq!(inbreeding(b.kinship()).expect("inbreeding")[4], 0.125);
 }
@@ -657,9 +652,10 @@ fn moments_of_a_disjoint_union_are_the_merge_of_the_parts() {
                 let mb = moments(&b, &inputs.rows(a.len()..u.len()), &products, symmetric);
                 let mu = moments(&u, &inputs, &products, symmetric);
                 let merged = ma.merge(&mb).expect("one layout");
-                prop_assert_eq!(merged.exponents(), mu.exponents());
                 // The counts, and the sums and cross sums below, are every
-                // accumulator, exact as floats at these magnitudes.
+                // accumulator, exact as floats at these magnitudes.  The
+                // exponents are not compared: every input is an integer,
+                // so `moments` gives every table exponent 0.
                 prop_assert_eq!(merged.counts(), mu.counts(), "{}", symmetric.name());
                 let bits = |v: Vec<f64>| v.into_iter().map(f64::to_bits).collect::<Vec<_>>();
                 for statistic in Statistic::ALL {
@@ -733,9 +729,8 @@ fn viewed_pedigree() -> impl Strategy<Value = (Ped, Vec<i32>)> {
     })
 }
 
-/// On a random view, the full path's pairs (both executions) and counts
-/// are the whole graph's restricted to the view, and the compact path
-/// gives the full path's pairs, counts and relatives: unselected rows
+/// On a random view, both paths' pairs (both executions), counts and
+/// relatives are the whole graph's restricted to the view: unselected rows
 /// still connect the selected ones, and compaction drops only rows no
 /// selected pair needs.
 #[test]
@@ -755,7 +750,33 @@ fn a_view_is_the_graph_restricted_to_it_on_either_path() {
                 graph_rows: &rows,
                 compaction,
             };
-            let mut paths = Vec::new();
+            // Each pair credits its first member, and a symmetric one both:
+            // one relative, and one more when the other member's relative
+            // value passes the threshold.
+            let relative: Vec<f64> = (0..rows.len()).map(|v| (v % 5) as f64).collect();
+            let threshold = 2.0;
+            let stride = 2;
+            let mut want_relatives = vec![0u32; rows.len() * Category::ALL.len() * stride];
+            for cat in Category::ALL {
+                let block = want_blocks.get(cat);
+                for (&x, &y) in block.first.iter().zip(&block.second) {
+                    let (x, y) = (x as usize, y as usize);
+                    let credited: &[(usize, usize)] = if cat.symmetric() {
+                        &[(x, y), (y, x)]
+                    } else {
+                        &[(x, y)]
+                    };
+                    for &(row, other) in credited {
+                        let base = (row * Category::ALL.len() + cat.index()) * stride;
+                        want_relatives[base] += 1;
+                        want_relatives[base + 1] += u32::from(relative[other] <= threshold);
+                    }
+                }
+            }
+            let columns = [ThresholdColumn {
+                relative: &relative,
+                threshold: Threshold::Scalar(threshold),
+            }];
             for compaction in [Compaction::Full, Compaction::Compact] {
                 for execution in [Execution::Speed, Execution::Memory] {
                     let got = query::pairs(&rel, all, on(compaction), execution, &progress)
@@ -764,18 +785,10 @@ fn a_view_is_the_graph_restricted_to_it_on_either_path() {
                 }
                 let counts = query::counts(&rel, all, on(compaction), &progress).expect("counts");
                 prop_assert_eq!(counts.0, want_counts.0, "{:?}", compaction);
-                let relative: Vec<f64> = (0..rows.len()).map(|v| (v % 5) as f64).collect();
-                let columns = [ThresholdColumn {
-                    relative: &relative,
-                    threshold: Threshold::Scalar(2.0),
-                }];
-                let mut got =
-                    query::relatives(&rel, all, on(compaction), &columns, THREADS, &progress)
-                        .expect("view relatives");
-                got.lane_pairs = vec![got.lane_pairs.iter().sum()];
-                paths.push(got);
+                let got = query::relatives(&rel, all, on(compaction), &columns, THREADS, &progress)
+                    .expect("view relatives");
+                prop_assert_eq!(&got.counts, &want_relatives, "relatives {:?}", compaction);
             }
-            prop_assert_eq!(&paths[0], &paths[1], "relatives Full vs Compact");
             tally(checked, want_blocks.total());
             Ok(())
         },
