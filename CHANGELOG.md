@@ -6,6 +6,13 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Internal: each public Ne estimator is a one-row registry call**
+  (issue #55). `ne_X(pg)` now runs the same guards and build as
+  `estimate_effective_sizes` through `_REGISTRY`, so each estimator's
+  guards are written once; the empty-graph fallback to the standalone
+  functions is gone. The eight functions moved into `_ne_estimate.py` and
+  are still exported from `pedigree_graph.effective_size`. Results,
+  refusals and warnings are unchanged.
 - **Breaking (Rust): the former relationship entry points are removed**
   from `pedigree-graph-core` (issue #52 step 6, ADR 0019). Call
   `relationships::query` instead: `pair_blocks` → `query::pairs`;

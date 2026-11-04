@@ -21,7 +21,6 @@ from pedigree_graph import _native
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._input import _own_native
 from pedigree_graph._ne_common import _checked_founder_matrix, _genome_of
-from pedigree_graph._ne_metadata import _require_closed_parentage
 from pedigree_graph._ne_results import NeLTCResult
 
 if TYPE_CHECKING:
@@ -148,38 +147,3 @@ def _ltc_from(cohorts: ObservedCohorts, means: FounderContributionMeans) -> NeLT
         n_cohorts=cohorts.k,
         final_generation=int(cohorts.generations[last]),
     )
-
-
-def ne_long_term_contributions(pg: PedigreeGraph) -> NeLTCResult:
-    """Founder-genome long-term contribution Ne (Ne_LTC).
-
-    Mean founder-genome contributions ``c_b[f] = mean_{i ∈ cohort b} c[i, f]``
-    are taken over the observed generation labels, and both effective sizes
-    are read from the **last observed cohort**, named by
-    ``final_generation``.
-
-    ``n_effective_founders = 1 / Σ_f c_f²`` is Caballero & Toro 2000
-    (Genet. Res. 75(3):331-343) eq. 19, ``N_ef = 1/[(1/N²)Σc²_{i(0,t)}]``,
-    in normalised contributions.  It is the assumption-free quantity: what
-    the founder-contribution vector measures directly.
-
-    ``ne = 2 · n_effective_founders`` is Wray & Thompson 1990
-    (Genet. Res. 55(1):41-54) eq. 31, ``Ne ≈ 2N/(μ_r² + σ_r²)``, which with
-    ``μ_r = 1`` gives ``Σr² = N·Σc²`` and so ``Ne = 2/Σc²``; C&T state the
-    same link as ``N_ef = Ne/2`` in the text after their eq. 20.  It is the
-    derived quantity, and it holds under two assumptions this package cannot
-    check against a pedigree: **regular random mating (α = 0)**, and
-    **long-term contribution variance at its asymptote**.
-
-    ``max_delta_final`` reports how far the contributions still moved into
-    the last cohort, which is what a caller weighs against the second
-    assumption; ``asymptote_reached`` is that same movement against a fixed
-    tolerance and gates neither estimate.
-
-    Requires complete generation labels (or none), then closed represented
-    parentage: a row with exactly one represented parent raises
-    ``incomplete_parentage``.
-    """
-    cohorts = ObservedCohorts.for_graph(pg, "ne_long_term_contributions")
-    _require_closed_parentage(pg, "ne_long_term_contributions")
-    return _ltc_from(cohorts, _per_gen_founder_means(pg, cohorts=cohorts))

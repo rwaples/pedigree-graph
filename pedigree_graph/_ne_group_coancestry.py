@@ -9,7 +9,7 @@ sends it to the sentinel bucket
 :func:`~pedigree_graph._cohorts._densify_labels` already discards.  So the
 prerequisite reads per-cohort θ sums off the generation kinship summary
 rather than materialising a kinship matrix, and it reuses outright the
-summary the graph memoises for :func:`~pedigree_graph._ne_rates.ne_coancestry`:
+summary the graph memoises for :func:`~pedigree_graph.effective_size.ne_coancestry`:
 since issue #25 that summary is itself genome-node, so both estimators share
 one convention and one computation whether or not the pedigree has MZ twins.
 That computation holds no kinship rows (issue #38), so memory stays linear in
@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import (
     _genome_node_labels,
     _log_fit_mask,
@@ -33,6 +32,7 @@ from pedigree_graph._ne_rates import _generation_kinship_summary
 from pedigree_graph._ne_results import NeGroupCoancestryResult
 
 if TYPE_CHECKING:
+    from pedigree_graph._cohorts import ObservedCohorts
     from pedigree_graph._core import PedigreeGraph
 
 
@@ -158,69 +158,3 @@ def _group_coancestry_from(cohorts: ObservedCohorts, gc: GroupCoancestryByCohort
         ne_per_gen=_transition_ne(f_bar, cohorts.generations),
         census_ratio=float(fitted_census.max() / fitted_census.min()) if fitted_census.size else float("nan"),
     )
-
-
-def ne_group_coancestry(pg: PedigreeGraph) -> NeGroupCoancestryResult:
-    """Group-coancestry rate Ne (Ne_GC).
-
-    Caballero & Toro, *Interrelations between effective population size and
-    other pedigree tools for the management of conserved populations*,
-    Genet. Res. 75(3):331-343, 2000, eq. 3::
-
-        f̄ = Σ_i Σ_j a_ij / 2N²
-
-    over all ``N²`` ordered pairs of a group, self-coancestries and
-    reciprocals included, with ``a_ij = 2φ_ij`` off the diagonal and
-    ``a_ii = 1 + F_i`` on it.  Each observed cohort is one such group,
-    taken over the genome-node pedigree of ADR 0008: an MZ pair is one
-    genome, not two.  The paper has no MZ twins, so it is silent there
-    rather than contradicted.
-
-    The reduction to a scalar is **not** their eq. 11 ``Ne ≈ t/(2Δf₀,ₜ)``,
-    which the authors themselves flag as "only accurate if F̄ₖ₋₁ is small".
-    It is the regression of ``ln(1 − f̄_g)`` on the label offset that
-    :func:`~pedigree_graph._ne_rates.ne_inbreeding` and
-    :func:`~pedigree_graph._ne_rates.ne_coancestry` share, whose exact
-    cumulative form ``1 − x_t = (1 − Δ)^t`` is Gutiérrez et al. 2008
-    (Genet. Sel. Evol. 40:359) eq. 1.
-
-    The first observed cohort is the regression baseline, and its f̄ is
-    computed like every other cohort's rather than assumed.  Where that
-    cohort is unrelated and non-inbred the computed value is ``1/(2n)``
-    exactly — the ``f̄₀ = 1/(2N)`` the paper states for unrelated founders —
-    and the first entry of ``ne_per_gen`` is then their eq. 11
-    ``Δf₀,₁ = (f̄₁ − f̄₀)/(1 − f̄₀)``.
-
-    **The scalar assumes a constant census**, and ``census_ratio`` on the
-    record is the evidence for or against that.
-    ``f̄_g = θ̄_g·(n_g − 1)/n_g + s̄_g/n_g`` is an identity whose second term
-    is a self-coancestry near ``0.5`` over the cohort size; that term does
-    not accumulate at the drift rate, so ``ln(1 − f̄)`` reads a change in
-    census as drift.  Eq. 11 carries the same assumption, fixing ``N`` at
-    ``f̄₀ = 1/(2N)`` and holding it after, so this is faithful to the source
-    rather than a defect in the implementation.  Measured over 6 cohorts and
-    8 seeds against :func:`~pedigree_graph._ne_rates.ne_coancestry`, which
-    reads the same drift without the diagonal term: a constant census of 40
-    gives ``Ne_GC/Ne_C = 1.00``, a decline from 40 to 4 gives ``0.57``,
-    growth from 10 to 40 gives ``1.28``, and a lone trailing individual
-    gives ``0.08`` — ``ne`` of 3.40 where ``ne_coancestry`` is unmoved at
-    40.73.  The number is always reported; weigh it against
-    ``census_ratio``.
-
-    Requires complete generation labels, or none, in which case structural
-    depth groups the cohorts.  It reads no founder contributions, so unlike
-    :func:`~pedigree_graph._ne_founders.ne_long_term_contributions` it does
-    not require closed represented parentage.
-
-    Args:
-        pg: Pedigree graph.
-
-    Returns:
-        The :class:`~pedigree_graph._ne_results.NeGroupCoancestryResult`.
-
-    Raises:
-        MissingMetadataError: ``missing_generation_labels`` when the supplied
-            labels are partly ``-1``.
-    """
-    cohorts = ObservedCohorts.for_graph(pg, "ne_group_coancestry")
-    return _group_coancestry_from(cohorts, _group_coancestry_by_cohort(pg, cohorts))

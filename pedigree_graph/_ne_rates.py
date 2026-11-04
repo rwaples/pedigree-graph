@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from pedigree_graph import _native
-from pedigree_graph._cohorts import ObservedCohorts, _densify_labels
+from pedigree_graph._cohorts import _densify_labels
 from pedigree_graph._errors import PedigreeValidationError
 from pedigree_graph._input import (
     _INT32_MAX,
@@ -52,6 +52,7 @@ from pedigree_graph._ne_results import (
 from pedigree_graph.summaries import GenerationKinshipSummary
 
 if TYPE_CHECKING:
+    from pedigree_graph._cohorts import ObservedCohorts
     from pedigree_graph._core import PedigreeGraph
     from pedigree_graph._ne_results import IndividualDeltaFNoEstimate
 
@@ -180,19 +181,6 @@ def _inbreeding_from(cohorts: ObservedCohorts, F: np.ndarray) -> NeInbreedingRes
     )
 
 
-def ne_inbreeding(pg: PedigreeGraph) -> NeInbreedingResult:
-    """Inbreeding-rate Ne (Ne_I).
-
-    Computes per-cohort mean F over the observed generation labels.
-    Each adjacent observed-cohort transition reports the gap-corrected
-    ``Ne = 1 / (2·ΔF)`` of :func:`~pedigree_graph._ne_common._transition_ne`;
-    the aggregate Ne comes from the regression slope of ``ln(1 − F̄)`` on the
-    label offset, first observed cohort excluded.
-    """
-    cohorts = ObservedCohorts.for_graph(pg, "ne_inbreeding")
-    return _inbreeding_from(cohorts, pg._inbreeding_values())
-
-
 def _coancestry_from(cohorts: ObservedCohorts, summary: GenerationKinshipSummary) -> NeCoancestryResult:
     # Co-twins with differing generation labels are constructible: the MZ codes
     # in _errors.py's VALIDATION_CODES cover reciprocity, parents and sex, and
@@ -214,19 +202,6 @@ def _coancestry_from(cohorts: ObservedCohorts, summary: GenerationKinshipSummary
         transition_to=cohorts.transition_to(),
         ne_per_gen=_transition_ne(mean_theta, cohorts.generations),
     )
-
-
-def ne_coancestry(pg: PedigreeGraph) -> NeCoancestryResult:
-    """Coancestry-rate Ne (Ne_C).
-
-    Same regression form as Ne_I but on the per-cohort mean kinship θ over
-    within-cohort unordered pairs of distinct genomes (excluding the
-    diagonal, and counting MZ co-twins once) that
-    :meth:`PedigreeGraph.mean_kinship_by_generation` reports, which holds
-    no kinship and runs in memory linear in the rows.
-    """
-    cohorts = ObservedCohorts.for_graph(pg, "ne_coancestry")
-    return _coancestry_from(cohorts, _generation_kinship_summary(pg))
 
 
 def _ne_from_delta_f(delta_f: np.ndarray) -> float | None:
@@ -352,67 +327,3 @@ def _reference_rows(pg: PedigreeGraph, selection: object) -> np.ndarray:
     )
     _check_duplicate_rows(rows, n_individuals, "duplicate_reference_row", "row", rows)
     return _own(rows, np.int32)
-
-
-def ne_individual_delta_f(pg: PedigreeGraph, *, reference: object | None = None) -> NeIndividualDeltaFResult:
-    """Gutiérrez et al. 2008 individual increase in inbreeding (Ne_iΔF).
-
-    Gutiérrez, Cervantes, Molina, Valera and Goyache, *Individual increase in
-    inbreeding allows estimating effective sizes from pedigrees*, Genet. Sel.
-    Evol. 40(4):359-378, eq. 2::
-
-        ΔF_i = 1 − (1 − F_i)^(1/t_i)
-
-    where ``t_i`` is the individual's equivalent complete generations, the sum
-    over its known ancestors of ``(1/2)^n`` for meiotic distance ``n``
-    (:func:`_equivalent_generations`).  A row is eligible
-    when ``t_i > 0``: a founder has ``t = 0`` and no rate.  Rows with
-    ``F_i = 1`` are dropped as well, which is this package's guard and not the
-    paper's — eq. 2 is finite there and would report ``ΔF_i = 1``.
-
-    Their §2.1 averages ΔF_i over a **reference subpopulation** to give ΔF̄ and
-    reports ``Ne = 1/(2·ΔF̄)``, with standard error
-    ``σ_Ne = (2/√N)·Ne²·σ_ΔF`` over that subpopulation's ``N`` individuals.
-    σ_ΔF is the sample standard deviation (``ddof=1``): the paper does not
-    state a ddof, and the difference is O(1/N).
-
-    Equivalent complete generations already count each individual's own
-    pedigree depth, so labels only group the per-cohort series; each cohort is
-    itself a valid reference subpopulation, which is what ``ne_per_gen``
-    reports.
-
-    The result also carries ``ne_unrelated_founders``, a package-defined
-    diagnostic that no line of the paper contains, dividing by ``t_i − 1``
-    over the reference rows with ``t_i > 1``.  Its justification is
-    measurement, not theory.  Eq. 1 is ``F_t = 1 − (1 − ΔF)^t``, so eq. 2
-    recovers the census size only where the pedigree has accumulated ``t``
-    generations of drift, and founders that really are unrelated and
-    non-inbred leave generation 1 at ``F = 0`` exactly, one generation behind.
-    The paper's own remedy is choosing the reference subpopulation by pedigree
-    depth (its Table II) and reading ΔF_i against equivalent generations (its
-    Figs. 3-4), which is what ``reference=`` does here.  A real pedigree's
-    founders are merely where record-keeping stopped and are generally
-    related, so there the lag does not exist and the field biases downward.
-    ``ne`` remains the estimator; see
-    :class:`~pedigree_graph.effective_size.NeIndividualDeltaFResult`.
-
-    Args:
-        pg: Pedigree graph.
-        reference: Graph rows of the reference subpopulation, unique and in
-            range.  ``None`` selects the rows of the last observed cohort.
-
-    Returns:
-        The :class:`~pedigree_graph.effective_size.NeIndividualDeltaFResult`.
-
-    Raises:
-        PedigreeValidationError: ``invalid_shape``, ``invalid_integer_value``,
-            ``reference_row_out_of_range``, or ``duplicate_reference_row`` for
-            a *reference* the graph cannot accept.
-        MissingMetadataError: ``missing_generation_labels`` when the supplied
-            labels are partly ``-1``.
-    """
-    rows = None if reference is None else _reference_rows(pg, reference)
-    cohorts = ObservedCohorts.for_graph(pg, "ne_individual_delta_f")
-    F = pg._inbreeding_values()
-    eqg = _equivalent_generations(pg)
-    return _individual_delta_f_from(cohorts, F, eqg, rows)

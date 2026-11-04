@@ -2,8 +2,8 @@
 
 Covers selector validation and its ordering against the thread budget, the
 immutable eight-key mapping, the ``UnavailableEffectiveSize`` sentinel, the
-per-call prerequisite memo (what each selection builds and shares), parity
-with the eight direct estimators, and serialization.
+per-call prerequisite memo (what each selection builds and shares), and
+serialization.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 from _support import CHAIN_BIRTH, _chain_graph, _run_child
 
-from pedigree_graph import MissingMetadataError, PedigreeGraph, _threads, configure_threads
+from pedigree_graph import PedigreeGraph, _threads, configure_threads
 from pedigree_graph import _ne_estimate as ne_estimate
 from pedigree_graph import _ne_rates as ne_rates
 from pedigree_graph import effective_size as es
@@ -32,59 +32,15 @@ from pedigree_graph.effective_size import (
 
 _ONE_PARENT_FATHER = np.array([-1, -1, 1, 1, 3, -1, 5, 5])
 _PARTIAL_GEN = np.array([0, 0, 1, 1, -1, 2, 3, 3])
-_PARTIAL_SEX = np.array([0, 1, 0, 1, -1, 1, 0, 1])
 _UNIFORM_SEX = np.zeros(8, dtype=np.int64)
 
-_DEGENERATE = {
-    "clean": {},
-    "partial_labels": {"generation": _PARTIAL_GEN},
-    "absent_sex": {"sex": None},
-    "partial_sex": {"sex": _PARTIAL_SEX},
-    "uniform_sex": {"sex": _UNIFORM_SEX},
-    "one_parent": {"father": _ONE_PARENT_FATHER},
-    "labels+sex": {"generation": _PARTIAL_GEN, "sex": None},
-    "labels+parentage": {"generation": _PARTIAL_GEN, "father": _ONE_PARENT_FATHER},
-    "sex+parentage": {"sex": None, "father": _ONE_PARENT_FATHER},
-    "labels+sex+parentage": {"generation": _PARTIAL_GEN, "sex": None, "father": _ONE_PARENT_FATHER},
-    "clean+birth": {"birth_year": CHAIN_BIRTH},
-    "labels+birth": {"generation": _PARTIAL_GEN, "birth_year": CHAIN_BIRTH},
-    "labels+sex+birth": {"generation": _PARTIAL_GEN, "sex": None, "birth_year": CHAIN_BIRTH},
-    "uniform_sex+birth": {"sex": _UNIFORM_SEX, "birth_year": CHAIN_BIRTH},
-}
-
-_DIRECT = {name: getattr(es, name) for name in ALL_EFFECTIVE_SIZE_ESTIMATORS}
+_PUBLIC = {name: getattr(es, name) for name in ALL_EFFECTIVE_SIZE_ESTIMATORS}
 _NEEDS_PARENTAGE = ("ne_long_term_contributions",)
 _NEEDS_SEX = ("ne_variance_family_size", "ne_sex_ratio", "ne_hill_overlapping")
 
 
 def _empty_graph():
     return PedigreeGraph.from_frame({"id": [], "mother": [], "father": []})
-
-
-def _refusal(code, fields):
-    return ("missing_metadata", code, tuple(sorted(fields.items())))
-
-
-def _outcome(call):
-    """``(outcome, warnings)`` for one estimator call, on either path.
-
-    The two paths report a refusal differently, the standalone function
-    raising where the orchestrator returns a sentinel, so both normalize to
-    one tuple here.  What is compared is then the refusal itself rather than
-    the shape it arrived in.
-    """
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        try:
-            value = call()
-        except MissingMetadataError as error:
-            outcome = _refusal(error.code, error.fields)
-        else:
-            if isinstance(value, UnavailableEffectiveSize):
-                outcome = _refusal(value.code, value.fields)
-            else:
-                outcome = ("value", value)
-    return outcome, tuple(sorted(str(record.message) for record in caught))
 
 
 def _without(*names):
@@ -109,8 +65,8 @@ def prerequisites(monkeypatch):
     class Spy(ne_estimate._Prerequisites):
         __slots__ = ()
 
-        def __init__(self, pg, hill_vk_scale):
-            super().__init__(pg, hill_vk_scale)
+        def __init__(self, pg, **options):
+            super().__init__(pg, **options)
             built.append(self)
 
     monkeypatch.setattr(ne_estimate, "_Prerequisites", Spy)
@@ -358,13 +314,7 @@ class TestPrerequisiteClosure:
         assert computed.isdisjoint(_NEEDS_PARENTAGE)
 
 
-class TestDirectParity:
-    @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
-    @pytest.mark.parametrize("birth_year", [None, CHAIN_BIRTH], ids=["no_birth_years", "birth_years"])
-    def test_the_orchestrated_record_equals_the_direct_one(self, name, birth_year):
-        pg = _chain_graph(birth_year=birth_year)
-        assert estimate_effective_sizes(pg)[name] == _DIRECT[name](pg)
-
+class TestEmptyGraph:
     @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
     def test_the_empty_graph_yields_real_records_without_an_estimate(self, name):
         value = estimate_effective_sizes(_empty_graph())[name]
@@ -443,25 +393,23 @@ _NO_ESTIMATE_CASES = {
 
 
 class TestNoEstimateCode:
-    """An estimator that runs without an estimate says why, the same way on both paths (issue #42)."""
+    """An estimator that runs without an estimate says why (issue #42)."""
 
     @pytest.mark.parametrize(
         ("case", "name"), [(case, name) for case, (_, codes) in _NO_ESTIMATE_CASES.items() for name in codes]
     )
-    def test_each_path_names_the_branch_that_returned_no_estimate(self, case, name):
+    def test_the_record_names_the_branch_that_returned_no_estimate(self, case, name):
         build, codes = _NO_ESTIMATE_CASES[case]
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            direct = _DIRECT[name](build())
-            orchestrated = estimate_effective_sizes(build(), [name])[name]
-        assert orchestrated == direct
-        assert direct.ne is None
-        assert direct.no_estimate_code == codes[name]
-        assert direct.to_dict()["no_estimate_code"] == codes[name]
+            result = _PUBLIC[name](build())
+        assert result.ne is None
+        assert result.no_estimate_code == codes[name]
+        assert result.to_dict()["no_estimate_code"] == codes[name]
 
     @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
     def test_the_cases_reach_every_declared_code(self, name):
-        result_type = type(_DIRECT[name](_empty_graph()))
+        result_type = type(_PUBLIC[name](_empty_graph()))
         reached = {codes[name] for _, codes in _NO_ESTIMATE_CASES.values() if name in codes}
         assert reached == set(result_type._NO_ESTIMATE_CODES)
 
@@ -500,9 +448,6 @@ class TestRegistryCoverage:
     def test_every_estimator_name_has_exactly_one_row(self):
         assert tuple(ne_estimate._REGISTRY) == ALL_EFFECTIVE_SIZE_ESTIMATORS
 
-    def test_the_empty_graph_delegate_covers_the_same_names(self):
-        assert tuple(ne_estimate._DIRECT) == ALL_EFFECTIVE_SIZE_ESTIMATORS
-
     @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
     def test_each_row_declares_the_documented_guards(self, name):
         """The rows restate the metadata dependency matrix on ``effective_size``.
@@ -518,38 +463,6 @@ class TestRegistryCoverage:
         """It groups by birth year and never reads a label, so it must not refuse one."""
         guards = ne_estimate._REGISTRY["ne_hill_overlapping"].guards(_chain_graph(birth_year=CHAIN_BIRTH))
         assert tuple(guard.__name__ for guard in guards) == ("_require_complete_sex",)
-
-
-class TestPathEquivalence:
-    """The batch and standalone paths agree on every degenerate graph.
-
-    Each estimator is reachable two ways, and each way wires its own guards
-    and prerequisites: the standalone function does it inline, the
-    orchestrator does it in ``_Prerequisites``.  A graph that fails more than
-    one guard is where two wirings would part company, since only the first
-    guard to run gets to name the refusal.
-
-    Issue #19 asserted they already have.  They have not.  The standalone path
-    reaches its guards through
-    :meth:`~pedigree_graph._cohorts.ObservedCohorts.for_graph`, which runs
-    ``_require_complete_generation_labels`` before it densifies, so building
-    cohorts first *is* checking labels first.  Both paths refuse in the order
-    labels, sex, then the estimator's own guard.
-
-    This pins that agreement rather than the order itself, so a reshape of
-    either wiring has to keep the two in step without freezing which guard
-    happens to be checked where.  Swapping the two guards in ``_compute``
-    moves eight of these cells, which is what makes the pin worth its
-    runtime.
-    """
-
-    @pytest.mark.parametrize("name", ALL_EFFECTIVE_SIZE_ESTIMATORS)
-    @pytest.mark.parametrize("case", list(_DEGENERATE), ids=list(_DEGENERATE))
-    def test_both_paths_refuse_alike_and_warn_alike(self, name, case):
-        overrides = _DEGENERATE[case]
-        direct = _outcome(lambda: _DIRECT[name](_chain_graph(**overrides)))
-        orchestrated = _outcome(lambda: estimate_effective_sizes(_chain_graph(**overrides), [name])[name])
-        assert orchestrated == direct
 
 
 class TestSerialization:

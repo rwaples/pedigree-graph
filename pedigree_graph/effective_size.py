@@ -75,12 +75,15 @@ from pedigree_graph._ne_estimate import (
     EffectiveSizeResults,
     UnavailableEffectiveSize,
     estimate_effective_sizes,
+    ne_coancestry,
+    ne_group_coancestry,
+    ne_hill_overlapping,
+    ne_inbreeding,
+    ne_individual_delta_f,
+    ne_long_term_contributions,
+    ne_sex_ratio,
+    ne_variance_family_size,
 )
-from pedigree_graph._ne_family_size import ne_sex_ratio, ne_variance_family_size
-from pedigree_graph._ne_founders import ne_long_term_contributions
-from pedigree_graph._ne_group_coancestry import ne_group_coancestry
-from pedigree_graph._ne_hill import ne_hill_overlapping
-from pedigree_graph._ne_rates import ne_coancestry, ne_inbreeding, ne_individual_delta_f
 from pedigree_graph._ne_results import (
     GenerationInterval,
     NeCoancestryResult,

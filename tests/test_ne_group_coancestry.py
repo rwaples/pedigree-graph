@@ -24,9 +24,8 @@ from pedigree_graph._ne_group_coancestry import (
     _genome_node_labels,
     _group_coancestry_by_cohort,
     _group_coancestry_from,
-    ne_group_coancestry,
 )
-from pedigree_graph.effective_size import ne_coancestry, ne_long_term_contributions
+from pedigree_graph.effective_size import ne_coancestry, ne_group_coancestry, ne_long_term_contributions
 
 
 def _with_mz_pair(frame: pl.DataFrame, generation: int) -> pl.DataFrame:

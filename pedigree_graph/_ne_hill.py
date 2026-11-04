@@ -13,18 +13,13 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from pedigree_graph._cohort_utils import eligible_cohort_range
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
-    _generation_family_table,
     _sex_specific_family_table,
     _sigma2_from_quadrants,
-    _variance_from,
     _waples_vk2_expectation,
-    _warn_if_uniform_sex,
 )
-from pedigree_graph._ne_metadata import _require_complete_sex
 from pedigree_graph._ne_results import NeHillResult
 
 if TYPE_CHECKING:
@@ -83,79 +78,6 @@ def _hill_from_variance(variance: NeVarianceResult, vk_scale: bool) -> NeHillRes
         vk_scaled=vk_scale,
         no_estimate_code=variance.no_estimate_code,
     )
-
-
-def _hill_collapsed(pg: PedigreeGraph, vk_scale: bool) -> NeHillResult:
-    cohorts = ObservedCohorts.for_graph(pg, "ne_hill_overlapping")
-    _require_complete_sex(pg, "ne_hill_overlapping")
-    _warn_if_uniform_sex(pg, "ne_hill_overlapping")
-    return _hill_from_variance(_variance_from(cohorts, _generation_family_table(pg, cohorts)), vk_scale)
-
-
-def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillResult:
-    """Hill 1979 separate-sex overlapping-generation Ne (Ne_H).
-
-    Dispatches on ``pg.birth_year``:
-
-    * **Sentinel branch** (``pg.birth_year is None``): the
-      discrete-generation form of Hill 1979 reduces to Ne_V (Caballero
-      1994 eq. 6 = Hill 1979 eq. 8 under symmetric sexes), so ``ne`` is
-      the :func:`ne_variance_family_size` passthrough and
-      ``collapses_to_ne_v=True``.  This branch inherits Ne_V's guards:
-      complete generation labels (or none), then complete sex.
-    * **Birth-year branch**: ignores generation labels; requires complete
-      sex, then a qualifying known-age edge for each parent role
-      (:attr:`PedigreeGraph.generation_interval` raises
-      ``insufficient_parent_age_data`` otherwise).  Per eligible
-      birth-year cohort, computes
-      sex-specific Ne via Hill 1979 eq. (4)::
-
-          Ne_s(c) = 4·N1_s(c)·T / (σ²_s(c) + 2)         s ∈ {m, f}
-
-      and combines them with Wright 1938 sex-ratio (paper eq. 3)::
-
-          1/Ne(c) = 1/(4·Ne_m(c)) + 1/(4·Ne_f(c))
-
-      where ``σ²_m = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the
-      per-male lifetime offspring variance reassembled from sex-of-
-      offspring quadrants (Caballero 1994 eq. 6) and ``σ²_f`` is the
-      symmetric female form.  ``N1_s(c)`` is the number of newborns of
-      sex ``s`` in cohort ``c`` (zero-offspring individuals included);
-      ``T = (T_m + T_f) / 2`` from
-      :attr:`PedigreeGraph.generation_interval`.
-
-      Scenario-scalar ``ne``, ``Ne_m``, ``Ne_f`` are harmonic means
-      across cohorts within
-      :func:`~pedigree_graph._cohort_utils.eligible_cohort_range`.
-
-      Under balanced sex (``N1_m ≈ N1_f``) this matches the eq. (10)
-      form ``Ne = 8·N·T / (σ²_m + σ²_f + 4)``; the per-sex form is
-      preferred because it surfaces ``Ne_m`` and ``Ne_f`` directly and
-      handles sex-asymmetric cohorts correctly.
-
-    Args:
-        pg: Pedigree graph.
-        vk_scale: when ``True``, rescale ``σ²_m`` and ``σ²_f`` per
-            cohort via Waples 2002 eq. (5) so the resulting Ne assumes
-            a constant-N reference (``k̄ = 2``).  Removes demographic
-            non-stationarity from ``Vk`` over populations spanning
-            growth or decline.  Default ``False`` (raw sample
-            variances).
-    """
-    if pg.n_individuals == 0:
-        return NeHillResult(
-            ne=None,
-            generation_interval=1.0,
-            collapses_to_ne_v=True,
-            vk_scaled=vk_scale,
-            no_estimate_code="too_few_parents",
-        )
-    if pg.birth_year is None:
-        return _hill_collapsed(pg, vk_scale)
-    _require_complete_sex(pg, "ne_hill_overlapping")
-    gi = pg.generation_interval
-    assert gi is not None  # birth years are present, so the property returns or raises
-    return _hill_from(pg, gi, eligible_cohort_range(pg), _birth_year_family_table(pg), vk_scale)
 
 
 def _hill_from(

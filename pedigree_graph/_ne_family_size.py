@@ -17,12 +17,11 @@ from typing import TYPE_CHECKING, NamedTuple
 
 import numpy as np
 
-from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _harmonic_mean
-from pedigree_graph._ne_metadata import _require_complete_sex
 from pedigree_graph._ne_results import NeSexRatioResult, NeVarianceResult
 
 if TYPE_CHECKING:
+    from pedigree_graph._cohorts import ObservedCohorts
     from pedigree_graph._core import PedigreeGraph
     from pedigree_graph._ne_results import VarianceNoEstimate
 
@@ -322,38 +321,6 @@ def _generation_family_table(pg: PedigreeGraph, cohorts: ObservedCohorts) -> Fam
     return _sex_specific_family_table(np.asarray(pg.mother_rows), np.asarray(pg.father_rows), _sex_column(pg), cohorts)
 
 
-def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
-    """Variance-of-family-size Ne (Ne_V) — Caballero 1994 eq. 6.
-
-    For each observed parent cohort, decompose lifetime offspring counts per
-    parent by offspring sex (``k_mm, k_mf, k_fm, k_ff``).  Skip-gen
-    children (offspring in a later cohort than the next) are attributed to
-    the parent's own cohort, so a parent's k-totals reflect their full
-    reproductive output even when offspring span several cohorts.
-
-    ``V(k_m) = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the per-male
-    total-offspring variance built from this decomposition.  Discrete-
-    generation Ne for the cohort is
-
-        ``ΔF = (V(k_m)/k̄_m) / (4 · N_m · k̄_m) +
-                  (V(k_f)/k̄_f) / (4 · N_f · k̄_f)``,
-
-    with ``Ne_p = 1/(2·ΔF)``.  When ``V(k)/k̄ → 1`` (Poisson) and
-    ``N_m = N_f``, this reduces to Wright's ``4 N_m N_f / (N_m + N_f)``.
-    Aggregate Ne is the harmonic mean across parent cohorts.
-
-    Requires complete generation labels (or none) and complete sex, in
-    that order: absent or partly unknown sex raises ``missing_sex``.
-    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1.  The
-    estimator still returns ``ne=None`` (consistent with a legitimate
-    single-sex pedigree), with ``no_estimate_code="too_few_parents"``.
-    """
-    cohorts = ObservedCohorts.for_graph(pg, "ne_variance_family_size")
-    _require_complete_sex(pg, "ne_variance_family_size")
-    _warn_if_uniform_sex(pg, "ne_variance_family_size")
-    return _variance_from(cohorts, _generation_family_table(pg, cohorts))
-
-
 def _sex_ratio_from(cohorts: ObservedCohorts, sex: np.ndarray) -> NeSexRatioResult:
     k = cohorts.k
     labelled = cohorts.dense < k
@@ -374,20 +341,3 @@ def _sex_ratio_from(cohorts: ObservedCohorts, sex: np.ndarray) -> NeSexRatioResu
         n_female_per_gen=n_female,
         no_estimate_code="no_cohort_with_both_sexes" if ne is None else None,
     )
-
-
-def ne_sex_ratio(pg: PedigreeGraph) -> NeSexRatioResult:
-    """Wright sex-ratio Ne (Ne_sr).
-
-    ``Ne_g = 4·Nm_g·Nf_g / (Nm_g + Nf_g)`` per observed cohort; aggregate is
-    the harmonic mean across cohorts with both sexes present.
-
-    Emits a ``RuntimeWarning`` when ``pg.sex`` is uniformly 0 or 1.  The
-    estimator still returns ``ne=None`` in that case (consistent with a
-    legitimate single-sex pedigree), with
-    ``no_estimate_code="no_cohort_with_both_sexes"``.
-    """
-    cohorts = ObservedCohorts.for_graph(pg, "ne_sex_ratio")
-    _require_complete_sex(pg, "ne_sex_ratio")
-    _warn_if_uniform_sex(pg, "ne_sex_ratio")
-    return _sex_ratio_from(cohorts, _sex_column(pg))

@@ -332,7 +332,7 @@ class NeGroupCoancestryResult(_FrozenResult):
 
     Per-cohort group coancestry over the genome-node pedigree of ADR 0008,
     reduced by the ``ln(1 − f̄)`` regression the other rate estimators share.
-    See :func:`~pedigree_graph._ne_group_coancestry.ne_group_coancestry` for
+    See :func:`~pedigree_graph.effective_size.ne_group_coancestry` for
     the sources, the equations, and why the reduction is not that paper's
     eq. 11.
 
@@ -370,7 +370,7 @@ class NeGroupCoancestryResult(_FrozenResult):
             ``f̄₀ = 1/(2N)`` and holding it after, so this is an assumption
             to weigh rather than a defect to correct.  How far the estimate
             moves as this ratio rises is measured once, in
-            :func:`~pedigree_graph._ne_group_coancestry.ne_group_coancestry`.
+            :func:`~pedigree_graph.effective_size.ne_group_coancestry`.
         no_estimate_code: why ``ne`` is ``None``, one of :data:`RateNoEstimate`;
             ``None`` when there is an estimate.
     """
