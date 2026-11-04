@@ -137,8 +137,6 @@ fn field_robj(value: FieldValue) -> Robj {
         FieldValue::Ints(v) => int_field(v),
         FieldValue::Strs(v) => Strings::from_values(v).into_robj(),
         FieldValue::Texts(v) => Strings::from_values(v).into_robj(),
-        // A kind this binding predates still reaches the host, as text.
-        other => format!("{other:?}").into(),
     }
 }
 

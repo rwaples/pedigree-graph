@@ -104,9 +104,9 @@ impl IndexBase {
 
 /// One keyword field of a structured error, in the value kinds hosts receive.
 ///
-/// Non-exhaustive: a host that matches it keeps an arm for kinds added later.
+/// Exhaustive on purpose: a kind added here fails every binding's build until
+/// that binding converts it.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum FieldValue {
     /// An integer scalar.
     Int(i64),

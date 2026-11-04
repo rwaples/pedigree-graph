@@ -6,15 +6,15 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
-- **Breaking (Rust): `FieldValue` gains `Texts` and is `#[non_exhaustive]`;
-  `unknown_relationship_category` is a core error** (issues #54, #60, ADR 0006).
+- **Breaking (Rust): `FieldValue` gains `Texts`; `unknown_relationship_category`
+  is a core error** (issues #54, #60, ADR 0006).
   `Error::UnknownRelationshipCategory { codes }` carries caller-given codes as
   `FieldValue::Texts(Vec<String>)`, and `Category::parse_codes` returns it with
   the unknown codes sorted and deduplicated. R raises it through the core;
   Python still raises it from `select_categories`, with the same code, fields
-  and message. A crate that matches `FieldValue` needs a wildcard arm;
-  pg-phenotype adds one now, which builds at its current pin too, and can
-  name `Texts` once it repins past this change. No host-visible change.
+  and message. `FieldValue` stays exhaustive, so a crate that matches it
+  needs a `Texts` arm: pg-phenotype's build fails at its next repin until it
+  adds `PgField::Texts(v) => FieldValue::Texts(v)`. No host-visible change.
 - **Internal: `RELATIONSHIPS` is built from the core's category table**
   (issue #60). Every field but `label` comes from
   `_native.relationship_categories()` at import, as R's registry does; no
