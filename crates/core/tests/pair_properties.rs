@@ -14,7 +14,9 @@
 
 mod common;
 
-use common::{check, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped};
+use common::{
+    check, non_inbred_pedigree, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped,
+};
 use pedigree_graph_core::kinship::inbreeding;
 use pedigree_graph_core::lineage::{distinct_ancestor_counts, ParentColumns};
 use pedigree_graph_core::relationships::query::{self, Receiver};
@@ -509,13 +511,18 @@ fn ancestors(b: &Built, row: usize) -> HashMap<usize, u32> {
 /// credits in its relatives (MO + FO + GP + GGP + GGGP + G3GP, each pair
 /// crediting the descendant) are at most its distinct ancestors, each
 /// lineal pair's senior is an ancestor of its junior, and an MO or FO
-/// senior is the junior's mother or father row.  Equality does not hold
-/// in general, even at depth at most 5 with no external parent and no
-/// inbred ancestor: an inbred row's ancestor can be a closer relative
+/// senior is the junior's mother or father row.
+///
+/// When the row is at depth at most 5, neither it nor any ancestor has an
+/// external parent, and neither it nor any ancestor is inbred, each
+/// ancestor is in the lineal category of its fewest meioses up with the
+/// row, so the credits are the distinct ancestor count.  The row's own
+/// `F = 0` is needed: an inbred row's ancestor can be a closer relative
 /// (`an_inbred_rows_grandmother_can_be_its_half_sib`).
 #[test]
-fn lineal_credits_are_at_most_the_distinct_ancestors() {
-    check("lineal credits", 3.6, pedigree(), |ped, checked| {
+fn lineal_credits_are_the_distinct_ancestors() {
+    let strategy = prop_oneof![pedigree(), non_inbred_pedigree()];
+    check("lineal credits", 3.0, strategy, |ped, checked| {
         let b = Built::new(&ped);
         let columns =
             ParentColumns::try_new(&b.graph.mother_rows, &b.graph.father_rows, Some(&b.depth))
@@ -523,7 +530,13 @@ fn lineal_credits_are_at_most_the_distinct_ancestors() {
         let distinct = distinct_ancestor_counts(columns).expect("ancestor counts");
         let rel = relatives(&b, &vec![0.0; b.len()]);
         let all = blocks(&b, Execution::Speed);
-        let mut lineal_of: Vec<Vec<usize>> = vec![Vec::new(); b.len()];
+        let f = inbreeding(b.kinship()).expect("inbreeding");
+        let external = |r: usize| {
+            (b.graph.mother_ids[r] >= 0 && b.graph.mother_rows[r] < 0)
+                || (b.graph.father_ids[r] >= 0 && b.graph.father_rows[r] < 0)
+        };
+        let mut lineal_of: Vec<HashMap<usize, Category>> = vec![HashMap::new(); b.len()];
+        let mut equal = 0;
         for (cat, _) in LINEAL {
             for (junior, senior) in pairs(&all, cat) {
                 let parent = match cat {
@@ -541,7 +554,7 @@ fn lineal_credits_are_at_most_the_distinct_ancestors() {
                         senior
                     );
                 }
-                lineal_of[junior].push(senior);
+                lineal_of[junior].insert(senior, cat);
             }
         }
         for row in 0..b.len() {
@@ -557,21 +570,41 @@ fn lineal_credits_are_at_most_the_distinct_ancestors() {
             prop_assert_eq!(lineal as usize, lineal_of[row].len(), "row {}", row);
             let up = ancestors(&b, row);
             prop_assert_eq!(up.len() as i64, n, "row {}", row);
-            for senior in &lineal_of[row] {
+            for senior in lineal_of[row].keys() {
                 prop_assert!(
                     up.contains_key(senior),
                     "row {row}: {senior} not an ancestor"
                 );
             }
-            tally(checked, lineal as usize);
+            let clean = b.depth[row] <= 5
+                && f[row] == 0.0
+                && !external(row)
+                && up.keys().all(|&p| !external(p) && f[p] == 0.0);
+            if clean {
+                let want: HashMap<usize, Category> = up
+                    .iter()
+                    .map(|(&p, &d)| {
+                        let cat = match d {
+                            1 if b.graph.mother_rows[row] == p as i32 => Category::MO,
+                            1 => Category::FO,
+                            _ => LINEAL.iter().find(|l| l.1 == d).expect("depth <= 5").0,
+                        };
+                        (p, cat)
+                    })
+                    .collect();
+                prop_assert_eq!(&lineal_of[row], &want, "row {}", row);
+                prop_assert_eq!(i64::from(lineal), n, "row {}", row);
+                equal += 1;
+            }
         }
+        tally(checked, equal);
         Ok(())
     });
 }
 
 /// The case proptest found against lineal credits equalling the distinct
 /// ancestors at depth at most 5 with no external parent and no inbred
-/// ancestor.  Row 4's father (row 1) is also its great-grandfather, so its
+/// ancestor, when the row itself may be inbred.  Row 4's father (row 1) is also its great-grandfather, so its
 /// maternal grandmother (row 2, a daughter of row 1) is also its paternal
 /// half sib: the closer PHS wins, and row 4 has four ancestors but three
 /// lineal credits.  Row 4 itself is inbred (F = 1/8).
