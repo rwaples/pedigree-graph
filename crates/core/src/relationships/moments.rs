@@ -315,8 +315,10 @@ impl Operand {
         Some(Operand { side, column })
     }
 
-    /// The operand's name over `columns`, as [`Operand::parse`] reads it;
-    /// `None` when `column` is not an index of `columns`.
+    /// The operand's name over `columns`, which [`Operand::parse`] reads
+    /// back to this operand when the column names are distinct (a repeated
+    /// name parses to its first column); `None` when `column` is not an
+    /// index of `columns`.
     pub fn name<S: AsRef<str>>(self, columns: &[S]) -> Option<String> {
         let column = columns.get(self.column)?;
         Some(format!("{}.{}", self.side.name(), column.as_ref()))
@@ -334,9 +336,10 @@ impl Product {
     /// The default products' operand names over `columns`: `first.c` and
     /// `second.c` for each column, in column order.
     pub fn diagonal_names<S: AsRef<str>>(columns: &[S]) -> Vec<(String, String)> {
-        Product::diagonal(columns.len())
+        let spell = |side: Side, column: &S| format!("{}.{}", side.name(), column.as_ref());
+        columns
             .iter()
-            .filter_map(|p| Some((p.a.name(columns)?, p.b.name(columns)?)))
+            .map(|c| (spell(Side::First, c), spell(Side::Second, c)))
             .collect()
     }
 

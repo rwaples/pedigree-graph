@@ -247,7 +247,10 @@ def _build_hill(memo: _Prerequisites) -> NeHillResult:
         gi = memo.generation_interval()
         assert gi is not None  # birth years are present, so the prerequisite returns or raises
         return _hill_from(memo.pg, gi, memo.cohort_window(), memo.birth_year_family_table(), memo.hill_vk_scale)
-    return _hill_from_variance(memo.collapsed_variance(), memo.hill_vk_scale)
+    # Hill's collapse guards are Ne_V's (`_hill_guards`) and have run under
+    # Hill's name, so it reads Ne_V's record as a prerequisite, without Ne_V's
+    # guards: no second uniform-sex notice and no warning filter.
+    return _hill_from_variance(memo.family_size_variance(), memo.hill_vk_scale)
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,10 +281,7 @@ _REGISTRY: Mapping[str, _Estimator] = MappingProxyType(
             _always(_LABELS),
             lambda memo: _coancestry_from(memo.observed_cohorts(), memo.theta_summary()),
         ),
-        "ne_variance_family_size": _Estimator(
-            _always(_LABELS_AND_SEX),
-            lambda memo: _variance_from(memo.observed_cohorts(), memo.generation_family_table()),
-        ),
+        "ne_variance_family_size": _Estimator(_always(_LABELS_AND_SEX), lambda memo: memo.family_size_variance()),
         "ne_sex_ratio": _Estimator(
             _always(_LABELS_AND_SEX),
             lambda memo: _sex_ratio_from(memo.observed_cohorts(), _sex_column(memo.pg)),
@@ -382,8 +382,15 @@ class _Prerequisites:
         )
 
     def generation_interval(self) -> GenerationInterval | None:
-        # The graph caches it, so repeated direct calls compute it once per graph.
+        # The graph's cached_property is the real cache (repeated direct calls
+        # compute it once per graph); this entry only records it in computed().
         return self._prerequisite("generation_interval", lambda: self.pg.generation_interval)
+
+    def family_size_variance(self) -> NeVarianceResult:
+        """Ne_V's record, built once per memo, guard-free: Ne_V's row and Hill's collapse both read it."""
+        return self._prerequisite(
+            "family_size_variance", lambda: _variance_from(self.observed_cohorts(), self.generation_family_table())
+        )
 
     def cohort_window(self) -> CohortWindow:
         return self._prerequisite("cohort_window", lambda: eligible_cohort_range(self.pg))
@@ -394,20 +401,6 @@ class _Prerequisites:
         if name not in self._results:
             self._results[name] = self._compute(name)
         return self._results[name]
-
-    def collapsed_variance(self) -> NeVarianceResult:
-        """Ne_V's result for Hill's collapse branch, memoized under Ne_V's name.
-
-        Hill's collapse guards are Ne_V's (:func:`_hill_guards`) and have
-        already run under Hill's name, so Ne_V's build runs without its own
-        guards: no second uniform-sex notice, and no warning filters touched.
-        """
-        name = "ne_variance_family_size"
-        if name not in self._results:
-            self._results[name] = _REGISTRY[name].build(self)
-        variance = self._results[name]
-        assert isinstance(variance, NeVarianceResult)
-        return variance
 
     def _compute(self, name: str) -> EffectiveSizeResult:
         """Run one estimator's guards in its own context, then its build."""

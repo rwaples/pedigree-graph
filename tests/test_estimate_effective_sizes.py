@@ -251,7 +251,7 @@ class TestPrerequisiteClosure:
             ),
             (
                 "ne_variance_family_size",
-                {"observed_cohorts", "generation_family_table", "ne_variance_family_size"},
+                {"observed_cohorts", "generation_family_table", "family_size_variance", "ne_variance_family_size"},
             ),
             (
                 "ne_individual_delta_f",
@@ -272,7 +272,7 @@ class TestPrerequisiteClosure:
         assert prerequisites[0].computed() == {
             "observed_cohorts",
             "generation_family_table",
-            "ne_variance_family_size",
+            "family_size_variance",
             "ne_hill_overlapping",
         }
         assert result["ne_variance_family_size"] == UnavailableEffectiveSize.not_requested()
@@ -580,7 +580,11 @@ class TestWarningAttribution:
 
 
 class TestHillFallbackWarningScope:
-    """The Hill fallback hides only the duplicate uniform-sex notice."""
+    """Hill's collapse emits one uniform-sex notice, its own, and passes every other warning through.
+
+    It reads Ne_V's record as a guard-free prerequisite, so Ne_V's notice is
+    never raised there and nothing needs filtering.
+    """
 
     def _run(self, monkeypatch, *, noisy):
         pg = _chain_graph(sex=_UNIFORM_SEX)
@@ -600,7 +604,18 @@ class TestHillFallbackWarningScope:
     def test_an_unrelated_runtime_warning_still_reaches_the_caller(self, monkeypatch):
         assert any("nan encountered" in message for message in self._run(monkeypatch, noisy=True))
 
-    def test_the_duplicate_uniform_sex_notice_stays_hidden(self, monkeypatch):
+    def test_ne_vs_uniform_sex_notice_is_never_raised_for_hill(self, monkeypatch):
         messages = self._run(monkeypatch, noisy=False)
         assert any(message.startswith("ne_hill_overlapping: pg.sex is uniform") for message in messages)
         assert not any(message.startswith("ne_variance_family_size: pg.sex is uniform") for message in messages)
+
+    def test_ne_v_after_hill_on_one_memo_still_runs_its_own_guards(self):
+        """The shared variance is a prerequisite, so Ne_V's guards run whichever estimator asks first."""
+        memo = ne_estimate._Prerequisites(_chain_graph(sex=_UNIFORM_SEX))
+        with warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("always")
+            memo.result("ne_hill_overlapping")
+            memo.result("ne_variance_family_size")
+        messages = [str(record.message) for record in seen]
+        for name in ("ne_hill_overlapping", "ne_variance_family_size"):
+            assert sum(m.startswith(f"{name}: pg.sex is uniform") for m in messages) == 1

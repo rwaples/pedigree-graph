@@ -20,8 +20,9 @@ live on the corresponding GitHub release pages.
   table: merge needs one symmetric rule, got 'canonical' and 'both'`).
   `RelationshipMoments(...)` and `RelationshipMoments.from_exact(...)` now
   refuse a `symmetric` other than `"canonical"` or `"both"` with
-  `ValueError`; any string used to be kept. A `RelationshipMoments` parses
-  its product names once, at construction.
+  `ValueError`; any string used to be kept. A `RelationshipMoments` keeps
+  the operands it parses at construction instead of parsing its product
+  names again on every core call.
 - **Internal: each public Ne estimator is a one-row registry call**
   (issue #55). `ne_X(pg)` now runs the same guards and build as
   `estimate_effective_sizes` through `_REGISTRY`, so each estimator's
