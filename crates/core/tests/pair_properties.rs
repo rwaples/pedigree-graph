@@ -15,12 +15,18 @@
 mod common;
 
 use common::{check, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped};
+use pedigree_graph_core::kinship::inbreeding;
+use pedigree_graph_core::lineage::{distinct_ancestor_counts, ParentColumns};
 use pedigree_graph_core::relationships::query::{self, Receiver};
 use pedigree_graph_core::relationships::{
-    Category, CategorySet, Counts, Execution, MaxDegree, PairBlocks, Progress,
+    relationship_burden, Category, CategorySet, Counts, Execution, MaxDegree, MomentsInput,
+    MomentsTable, Operand, PairBlocks, Product, Progress, RelativesPerPerson, Side, Statistic,
+    Symmetric, Threshold, ThresholdColumn,
 };
 use proptest::prelude::*;
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn tally(checked: &AtomicUsize, n: usize) {
@@ -245,4 +251,402 @@ fn degree_gates_the_counts() {
         tally(checked, 1);
         Ok(())
     });
+}
+
+/// The sex-specific category a parent-role swap exchanges `cat` with: MO
+/// with FO, MHS with PHS, every other category with itself
+/// (`pedigree_graph/_registry.py`).
+fn role_partner(cat: Category) -> Category {
+    match cat {
+        Category::MO => Category::FO,
+        Category::FO => Category::MO,
+        Category::MHS => Category::PHS,
+        Category::PHS => Category::MHS,
+        other => other,
+    }
+}
+
+const THREADS: NonZeroUsize = match NonZeroUsize::new(2) {
+    Some(n) => n,
+    None => panic!("2 is not zero"),
+};
+
+/// Every category's relatives of every row, with one threshold column.
+fn relatives(b: &Built, relative: &[f64]) -> RelativesPerPerson {
+    let columns = [ThresholdColumn {
+        relative,
+        threshold: Threshold::Scalar(2.0),
+    }];
+    query::relatives(
+        &b.relationships(),
+        CategorySet::up_to_degree(MaxDegree::MAX.get()),
+        Receiver::Graph,
+        &columns,
+        THREADS,
+        &Progress::default(),
+    )
+    .expect("relatives")
+}
+
+/// A row's counts in `cat`: its relatives, then those passing the column.
+fn credits(r: &RelativesPerPerson, row: usize, cat: Category) -> &[u32] {
+    let base = (row * r.n_categories + cat.index()) * r.stride;
+    &r.counts[base..base + r.stride]
+}
+
+/// Small-integer moments inputs, one entry per row: two first labels, two
+/// second labels, two value columns, one equality key.  Integers keep the
+/// quantization exponent at zero, so every accumulator is exact (ADR 0013).
+struct Inputs {
+    first: Vec<i32>,
+    second: Vec<i32>,
+    values: Vec<i64>,
+    same: Vec<i64>,
+}
+
+impl Inputs {
+    /// Inputs for `n` rows read from `bytes`, cycled.
+    fn new(n: usize, bytes: &[u8]) -> Inputs {
+        let at = |r: usize| u32::from(bytes[r % bytes.len()]);
+        Inputs {
+            first: (0..n).map(|r| (at(r) % 2) as i32).collect(),
+            second: (0..n).map(|r| (at(r) / 2 % 2) as i32).collect(),
+            values: (0..n)
+                .flat_map(|r| [i64::from(at(r) % 7) - 3, i64::from(at(r) / 7 % 5) - 2])
+                .collect(),
+            same: (0..n).map(|r| i64::from(at(r) / 35 % 3)).collect(),
+        }
+    }
+
+    /// The inputs of the rows in `range`.
+    fn rows(&self, range: std::ops::Range<usize>) -> Inputs {
+        Inputs {
+            first: self.first[range.clone()].to_vec(),
+            second: self.second[range.clone()].to_vec(),
+            values: self.values[2 * range.start..2 * range.end].to_vec(),
+            same: self.same[range].to_vec(),
+        }
+    }
+}
+
+/// The diagonal products and one cross-column product.
+fn products() -> Vec<Product> {
+    let mut p = Product::diagonal(2);
+    p.push(Product {
+        a: Operand {
+            side: Side::First,
+            column: 0,
+        },
+        b: Operand {
+            side: Side::Second,
+            column: 1,
+        },
+    });
+    p
+}
+
+/// Every category's moments of `inputs` as a table of shape
+/// `[categories, cells]`, categories in registry order.
+fn moments(
+    b: &Built,
+    inputs: &Inputs,
+    products: &[Product],
+    symmetric: Symmetric,
+) -> MomentsTable<'static> {
+    let requested = CategorySet::up_to_degree(MaxDegree::MAX.get());
+    let input = MomentsInput {
+        labels_first: &inputs.first,
+        n_labels_first: 2,
+        labels_second: &inputs.second,
+        n_labels_second: 2,
+        values: &inputs.values,
+        n_columns: 2,
+        products,
+        same: &inputs.same,
+        n_same: 1,
+    };
+    let m = query::moments(
+        &b.relationships(),
+        requested,
+        Receiver::Graph,
+        &input,
+        symmetric,
+        THREADS,
+        1 << 30,
+        &Progress::default(),
+    )
+    .expect("moments");
+    MomentsTable::from_bytes(
+        vec![requested.iter().count(), m.cells],
+        2,
+        products.to_vec(),
+        symmetric,
+        vec![0, 0],
+        m.width,
+        Cow::Owned(m.table),
+    )
+    .expect("a moments call's own table")
+}
+
+/// The encoded accumulators of `cat`'s cells in a [`moments`] table.
+fn category_cells<'t>(t: &'t MomentsTable<'_>, cat: Category) -> &'t [u8] {
+    let len = t.shape()[1] * t.stride() * t.width();
+    &t.bytes()[cat.index() * len..(cat.index() + 1) * len]
+}
+
+/// Swapping the mother and father ids (and flipping sex, so MZ co-twins
+/// keep one sex) exchanges MO with FO and MHS with PHS, row for row, and
+/// changes no other category: in the pair blocks of both executions, the
+/// relatives of every row, the moments under both symmetric rules, and the
+/// burden.
+#[test]
+fn a_parent_role_swap_exchanges_the_sex_specific_categories() {
+    let strategy = (pedigree(), prop::collection::vec(any::<u8>(), 25));
+    check("role swap", 9.0, strategy, |(ped, bytes), checked| {
+        let sex = ped.role_sex();
+        let flipped: Vec<i64> = sex.iter().map(|&s| if s < 0 { s } else { 1 - s }).collect();
+        let a = Built::with_sex(&ped, Some(&sex));
+        let b = Built::with_sex(&ped.roles_swapped(), Some(&flipped));
+        prop_assert_eq!(&a.graph.mother_rows, &b.graph.father_rows);
+        prop_assert_eq!(&a.graph.father_rows, &b.graph.mother_rows);
+
+        for execution in [Execution::Speed, Execution::Memory] {
+            let (pa, pb) = (blocks(&a, execution), blocks(&b, execution));
+            for cat in Category::ALL {
+                let partner = role_partner(cat);
+                prop_assert_eq!(
+                    pa.get(cat),
+                    pb.get(partner),
+                    "{} {}",
+                    cat.code(),
+                    execution.name()
+                );
+                if cat != partner {
+                    tally(checked, pa.get(cat).len());
+                }
+            }
+        }
+
+        let relative: Vec<f64> = (0..a.len())
+            .map(|r| f64::from(bytes[r % bytes.len()] % 5))
+            .collect();
+        let (ra, rb) = (relatives(&a, &relative), relatives(&b, &relative));
+        for row in 0..a.len() {
+            for cat in Category::ALL {
+                prop_assert_eq!(
+                    credits(&ra, row, cat),
+                    credits(&rb, row, role_partner(cat)),
+                    "row {} {}",
+                    row,
+                    cat.code()
+                );
+            }
+        }
+
+        let inputs = Inputs::new(a.len(), &bytes);
+        let products = products();
+        for symmetric in [Symmetric::Canonical, Symmetric::Both] {
+            let ma = moments(&a, &inputs, &products, symmetric);
+            let mb = moments(&b, &inputs, &products, symmetric);
+            // The same accumulators in another category order: one width.
+            prop_assert_eq!(ma.width(), mb.width());
+            for cat in Category::ALL {
+                prop_assert_eq!(
+                    category_cells(&ma, cat),
+                    category_cells(&mb, role_partner(cat)),
+                    "{} {}",
+                    cat.code(),
+                    symmetric.name()
+                );
+            }
+        }
+
+        let burden = |x: &Built| {
+            relationship_burden(&x.relationships(), &x.depth, &Progress::default()).expect("burden")
+        };
+        let (ba, bb) = (burden(&a), burden(&b));
+        for cat in Category::ALL {
+            prop_assert_eq!(
+                ba.categories[cat.index()],
+                bb.categories[role_partner(cat).index()],
+                "{}",
+                cat.code()
+            );
+        }
+        prop_assert_eq!(ba.per_person, bb.per_person);
+        prop_assert_eq!(ba.same_depth, bb.same_depth);
+        Ok(())
+    });
+}
+
+/// The lineal categories with their meioses up.
+const LINEAL: [(Category, u32); 6] = [
+    (Category::MO, 1),
+    (Category::FO, 1),
+    (Category::GP, 2),
+    (Category::GGP, 3),
+    (Category::GGGP, 4),
+    (Category::G3GP, 5),
+];
+
+/// Each strict ancestor row of `row`, with its fewest meioses up.
+fn ancestors(b: &Built, row: usize) -> HashMap<usize, u32> {
+    let mut nearest = HashMap::new();
+    let mut frontier = vec![(row, 0u32)];
+    while let Some((r, d)) = frontier.pop() {
+        for p in b.parent_rows(r) {
+            let best = nearest.entry(p).or_insert(u32::MAX);
+            if d + 1 < *best {
+                *best = d + 1;
+                frontier.push((p, d + 1));
+            }
+        }
+    }
+    nearest
+}
+
+/// The row-streaming engine against the lineage engine: a row's lineal
+/// credits in its relatives (MO + FO + GP + GGP + GGGP + G3GP, each pair
+/// crediting the descendant) are at most its distinct ancestors, each
+/// lineal pair's senior is an ancestor of its junior, and an MO or FO
+/// senior is the junior's mother or father row.  Equality does not hold
+/// in general, even at depth at most 5 with no external parent and no
+/// inbred ancestor: an inbred row's ancestor can be a closer relative
+/// (`an_inbred_rows_grandmother_can_be_its_half_sib`).
+#[test]
+fn lineal_credits_are_at_most_the_distinct_ancestors() {
+    check("lineal credits", 3.6, pedigree(), |ped, checked| {
+        let b = Built::new(&ped);
+        let columns =
+            ParentColumns::try_new(&b.graph.mother_rows, &b.graph.father_rows, Some(&b.depth))
+                .expect("built columns");
+        let distinct = distinct_ancestor_counts(columns).expect("ancestor counts");
+        let rel = relatives(&b, &vec![0.0; b.len()]);
+        let all = blocks(&b, Execution::Speed);
+        let mut lineal_of: Vec<Vec<usize>> = vec![Vec::new(); b.len()];
+        for (cat, _) in LINEAL {
+            for (junior, senior) in pairs(&all, cat) {
+                let parent = match cat {
+                    Category::MO => Some(b.graph.mother_rows[junior]),
+                    Category::FO => Some(b.graph.father_rows[junior]),
+                    _ => None,
+                };
+                if let Some(parent) = parent {
+                    prop_assert_eq!(
+                        parent,
+                        senior as i32,
+                        "{} ({}, {})",
+                        cat.code(),
+                        junior,
+                        senior
+                    );
+                }
+                lineal_of[junior].push(senior);
+            }
+        }
+        for row in 0..b.len() {
+            let lineal: u32 = LINEAL
+                .iter()
+                .map(|&(cat, _)| credits(&rel, row, cat)[0])
+                .sum();
+            let n = i64::from(distinct[row]);
+            prop_assert!(
+                i64::from(lineal) <= n,
+                "row {row}: {lineal} credits, {n} ancestors"
+            );
+            prop_assert_eq!(lineal as usize, lineal_of[row].len(), "row {}", row);
+            let up = ancestors(&b, row);
+            prop_assert_eq!(up.len() as i64, n, "row {}", row);
+            for senior in &lineal_of[row] {
+                prop_assert!(
+                    up.contains_key(senior),
+                    "row {row}: {senior} not an ancestor"
+                );
+            }
+            tally(checked, lineal as usize);
+        }
+        Ok(())
+    });
+}
+
+/// The case proptest found against lineal credits equalling the distinct
+/// ancestors at depth at most 5 with no external parent and no inbred
+/// ancestor.  Row 4's father (row 1) is also its great-grandfather, so its
+/// maternal grandmother (row 2, a daughter of row 1) is also its paternal
+/// half sib: the closer PHS wins, and row 4 has four ancestors but three
+/// lineal credits.  Row 4 itself is inbred (F = 1/8).
+#[test]
+fn an_inbred_rows_grandmother_can_be_its_half_sib() {
+    let ped = Ped {
+        ids: vec![1, 2, 3, 4, 5],
+        mother: vec![-1, -1, 1, 3, 4],
+        father: vec![-1, -1, 2, -1, 2],
+        twin: vec![-1; 5],
+    };
+    let b = Built::new(&ped);
+    let all = blocks(&b, Execution::Speed);
+    assert_eq!(pairs(&all, Category::PHS).collect::<Vec<_>>(), vec![(2, 4)]);
+    assert!(!pairs(&all, Category::GP).any(|p| p == (4, 2)));
+    let columns =
+        ParentColumns::try_new(&b.graph.mother_rows, &b.graph.father_rows, Some(&b.depth))
+            .expect("built columns");
+    assert_eq!(distinct_ancestor_counts(columns).expect("counts")[4], 4);
+    let rel = relatives(&b, &[0.0; 5]);
+    let lineal: u32 = LINEAL
+        .iter()
+        .map(|&(cat, _)| credits(&rel, 4, cat)[0])
+        .sum();
+    assert_eq!(lineal, 3);
+    assert_eq!(inbreeding(b.kinship()).expect("inbreeding")[4], 0.125);
+}
+
+/// The moments of two pedigrees side by side are the merge of each one's
+/// moments, under both symmetric rules: every accumulator and every
+/// derived float.
+#[test]
+fn moments_of_a_disjoint_union_are_the_merge_of_the_parts() {
+    let strategy = (
+        pedigree(),
+        pedigree(),
+        prop::collection::vec(any::<u8>(), 50),
+    );
+    check(
+        "moments union",
+        0.5,
+        strategy,
+        |(pa, pb, bytes), checked| {
+            let union = pa.disjoint_union(&pb);
+            let (a, b, u) = (Built::new(&pa), Built::new(&pb), Built::new(&union));
+            let inputs = Inputs::new(u.len(), &bytes);
+            let products = products();
+            for symmetric in [Symmetric::Canonical, Symmetric::Both] {
+                let ma = moments(&a, &inputs.rows(0..a.len()), &products, symmetric);
+                let mb = moments(&b, &inputs.rows(a.len()..u.len()), &products, symmetric);
+                let mu = moments(&u, &inputs, &products, symmetric);
+                let merged = ma.merge(&mb).expect("one layout");
+                prop_assert_eq!(merged.exponents(), mu.exponents());
+                // The counts, and the sums and cross sums below, are every
+                // accumulator, exact as floats at these magnitudes.
+                prop_assert_eq!(merged.counts(), mu.counts(), "{}", symmetric.name());
+                let bits = |v: Vec<f64>| v.into_iter().map(f64::to_bits).collect::<Vec<_>>();
+                for statistic in Statistic::ALL {
+                    let n = if statistic.per_product() {
+                        products.len()
+                    } else {
+                        2
+                    };
+                    for index in 0..n {
+                        let x = merged.derive(statistic, index, "x").expect("derive");
+                        let y = mu.derive(statistic, index, "x").expect("derive");
+                        prop_assert_eq!(bits(x), bits(y), "{} {}", statistic.name(), index);
+                    }
+                }
+                tally(
+                    checked,
+                    usize::from(ma.total_pairs() > 0 && mb.total_pairs() > 0),
+                );
+            }
+            Ok(())
+        },
+    );
 }

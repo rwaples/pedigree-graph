@@ -37,7 +37,7 @@ test = { cmd = "pytest -n 6 --dist worksteal -m 'not slow'", depends-on = ["buil
 test-all = { cmd = "pytest -n 6 --dist worksteal", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
 test-rust = "cargo test --release"
 # The core's property tests at release depth: 64x the 256 cases per property
-# an ordinary test-rust run draws (crates/core/tests/common/mod.rs), ~9 s.
+# an ordinary test-rust run draws (crates/core/tests/common/mod.rs), ~40 s.
 test-rust-thorough = { cmd = "cargo test --release -p pedigree-graph-core --test kinship_properties --test pair_properties", env = { PROPTEST_CASES = "16384" } }
 # Release depth: the whole Python suite, slow tests included, with every
 # Hypothesis budget ten times its ordinary size (tests/_support.py

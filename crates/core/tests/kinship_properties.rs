@@ -325,6 +325,84 @@ fn assert_inbreeding_is_parent_kinship(
     Ok(())
 }
 
+/// Kinship values scaled by `2^SCALE` are integers: a float32 in [0, 1]
+/// above `2^-(SCALE - 23)` has no bit below `2^-SCALE`, and the pedigrees
+/// here never reach kinship that small.
+const SCALE: i32 = 100;
+
+/// `v' Phi v` exactly, for the float32 matrix `k` as stored: every entry is
+/// a dyadic rational, so the sum is an integer in units of `2^-SCALE`.
+/// With entries below `2^SCALE`, `|v_i| <= 3` and 25 rows, it fits an i128.
+fn quadratic_form(k: &[Vec<f32>], v: &[i32]) -> Result<i128, TestCaseError> {
+    let unit = 2f64.powi(SCALE);
+    let mut total = 0i128;
+    for (x, &vx) in v.iter().enumerate() {
+        for (y, &vy) in v.iter().enumerate() {
+            let scaled = f64::from(k[x][y]) * unit;
+            prop_assert!(
+                scaled.fract() == 0.0,
+                "({x}, {y}) is not a multiple of 2^-{SCALE}"
+            );
+            total += i128::from(vx * vy) * scaled as i128;
+        }
+    }
+    Ok(total)
+}
+
+/// The kinship matrix is positive semidefinite: `v' Phi v >= 0`, computed
+/// exactly on the stored float32 values, for random small-integer `v`, for
+/// each child's `2 e_c - e_m - e_f` (whose form is `2 - phi_mm - phi_ff`,
+/// the Mendelian sampling term), and `0` for each co-twin pair's
+/// `e_x - e_t`, the null direction that makes an MZ pedigree's matrix
+/// singular.
+#[test]
+fn the_matrix_is_positive_semidefinite() {
+    let vectors = prop::collection::vec(prop::collection::vec(-3i32..=3, 25), 8);
+    check(
+        "semidefinite",
+        9.0,
+        (pedigree(), vectors),
+        |(ped, vs), checked| {
+            let b = Built::new(&ped);
+            let n = b.len();
+            let k = b.dense_kinship();
+            for v in &vs {
+                let q = quadratic_form(&k, &v[..n])?;
+                prop_assert!(q >= 0, "v' Phi v = {q} * 2^-{SCALE} for {:?}", &v[..n]);
+                tally(checked, 1);
+            }
+            for c in 0..n {
+                let (m, f) = (b.graph.mother_rows[c], b.graph.father_rows[c]);
+                if m < 0 || f < 0 {
+                    continue;
+                }
+                let mut v = vec![0i32; n];
+                v[c] = 2;
+                v[m as usize] -= 1;
+                v[f as usize] -= 1;
+                let q = quadratic_form(&k, &v)?;
+                let (pm, pf) = (
+                    f64::from(k[m as usize][m as usize]),
+                    f64::from(k[f as usize][f as usize]),
+                );
+                prop_assert!(q >= 0, "child {c}: {q}");
+                prop_assert_eq!(q as f64 / 2f64.powi(SCALE), 2.0 - pm - pf, "child {}", c);
+                tally(checked, 1);
+            }
+            for x in 0..n {
+                if let Some(t) = b.twin_of(x) {
+                    let mut v = vec![0i32; n];
+                    v[x] = 1;
+                    v[t] = -1;
+                    prop_assert_eq!(quadratic_form(&k, &v)?, 0, "co-twins ({}, {})", x, t);
+                    tally(checked, 1);
+                }
+            }
+            Ok(())
+        },
+    );
+}
+
 /// Full-sib mating: child 4 of sibs 2 and 3 has `F = phi(2, 3) = 1/4`.
 #[test]
 fn full_sib_mating_inbreeds_one_quarter() {

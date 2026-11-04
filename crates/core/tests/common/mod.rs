@@ -56,6 +56,75 @@ impl Ped {
         }
     }
 
+    /// The same pedigree with the parent roles swapped: every mother id
+    /// becomes the father id and every father id the mother id.  No id plays
+    /// both roles (ADR 0020), so the result is a valid pedigree.
+    pub fn roles_swapped(&self) -> Ped {
+        Ped {
+            mother: self.father.clone(),
+            father: self.mother.clone(),
+            ..self.clone()
+        }
+    }
+
+    /// A sex column consistent with the parent roles: `0` (female) for a
+    /// mother, `1` (male) for a father, unknown otherwise.  A co-twin takes
+    /// its twin's known sex, and co-twins whose roles disagree (the
+    /// generator allows it) are both unknown, so MZ co-twins never differ.
+    pub fn role_sex(&self) -> Vec<i64> {
+        let mothers: BTreeSet<i64> = self.mother.iter().copied().collect();
+        let fathers: BTreeSet<i64> = self.father.iter().copied().collect();
+        let own: Vec<i64> = self
+            .ids
+            .iter()
+            .map(|id| {
+                if mothers.contains(id) {
+                    0
+                } else if fathers.contains(id) {
+                    1
+                } else {
+                    -1
+                }
+            })
+            .collect();
+        let row_of: std::collections::HashMap<i64, usize> = self
+            .ids
+            .iter()
+            .enumerate()
+            .map(|(r, &id)| (id, r))
+            .collect();
+        (0..self.len())
+            .map(|r| match row_of.get(&self.twin[r]) {
+                None => own[r],
+                Some(&t) => match (own[r], own[t]) {
+                    (a, b) if a == b || b == -1 => a,
+                    (-1, b) => b,
+                    _ => -1,
+                },
+            })
+            .collect()
+    }
+
+    /// `self` and `other` side by side as one pedigree, `other`'s rows
+    /// after `self`'s: every id of `other`, external parents included, is
+    /// moved above every id of `self`, so no id is shared and the two parts
+    /// have no relative in common.
+    pub fn disjoint_union(&self, other: &Ped) -> Ped {
+        const OFFSET: i64 = 20_000_000_000;
+        let shift = |v: &[i64]| -> Vec<i64> {
+            v.iter()
+                .map(|&x| if x < 0 { x } else { x + OFFSET })
+                .collect()
+        };
+        let join = |a: &[i64], b: Vec<i64>| a.iter().copied().chain(b).collect();
+        Ped {
+            ids: join(&self.ids, shift(&other.ids)),
+            mother: join(&self.mother, shift(&other.mother)),
+            father: join(&self.father, shift(&other.father)),
+            twin: join(&self.twin, shift(&other.twin)),
+        }
+    }
+
     /// The rows in `order`: row `r` of the result is row `order[r]`, ids kept.
     pub fn permuted(&self, order: &[usize]) -> Ped {
         let pick = |v: &[i64]| order.iter().map(|&r| v[r]).collect();
@@ -76,13 +145,19 @@ pub struct Built {
 
 impl Built {
     pub fn new(ped: &Ped) -> Built {
+        Built::with_sex(ped, None)
+    }
+
+    /// The pedigree built with a sex column (Simace encoding), which the
+    /// build checks MZ co-twins against.
+    pub fn with_sex(ped: &Ped, sex: Option<&[i64]>) -> Built {
         let graph = graph::build(
             Columns {
                 ids: &ped.ids,
                 mother: &ped.mother,
                 father: &ped.father,
                 twin: Some(&ped.twin),
-                sex: None,
+                sex,
                 generation: None,
                 birth_year: None,
             },
