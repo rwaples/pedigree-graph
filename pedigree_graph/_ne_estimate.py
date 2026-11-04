@@ -9,14 +9,16 @@ Each estimator first runs its guards in its own context, so a failure names
 that estimator, then pulls what it needs from a per-call memo of named
 prerequisites (:class:`_Prerequisites`): the observed cohorts, F, the
 equivalent complete generations, the generation kinship summary, the
-represented founders, the two family-size tables, the founder means, the
-per-cohort group coancestry, the generation interval, and the cohort
-window.  Each is built at most once per call and only when a selected
-estimator asks for it, so an unselected estimator costs nothing and a
-shared prerequisite is never built twice.  Completed estimator results are
-memoized beside them in their own namespace, which is how Hill's
-absent-birth-year collapse reuses a selected Ne_V result or computes one
-privately while the public Ne_V key stays ``not_requested``.
+represented founders, the two family-size tables, Ne_V's family-size
+variance record, the founder means, the per-cohort group coancestry, the
+generation interval, and the cohort window.  Each is built at most once per
+call and only when a selected estimator asks for it, so an unselected
+estimator costs nothing and a shared prerequisite is never built twice.
+Completed estimator results are memoized beside them in their own
+namespace.  Hill's absent-birth-year collapse reads the variance record as
+a prerequisite, after running Ne_V's own guards under Hill's name, so Ne_V
+alone ever fills the Ne_V result and its public key stays
+``not_requested`` when only Hill is selected.
 
 Each public ``ne_X(pg)`` is the same dispatch over a memo of its own: a
 one-row call through :data:`_REGISTRY`, so an estimator's guards and its
@@ -221,11 +223,13 @@ def _hill_guards(pg: PedigreeGraph) -> tuple[_Guard, ...]:
 
     The birth-year branch groups by birth year and never reads a generation
     label, so partly unknown labels are no obstacle to it.  The collapse
-    branch is Ne_V, and inherits Ne_V's requirements.
+    branch is Ne_V, and runs Ne_V's guards, read from Ne_V's own row so the
+    two cannot drift: the branch reads Ne_V's record without guards of its
+    own.
     """
     if pg.birth_year is not None:
         return (_require_complete_sex,)
-    return _LABELS_AND_SEX
+    return _REGISTRY["ne_variance_family_size"].guards(pg)
 
 
 def _build_hill(memo: _Prerequisites) -> NeHillResult:
@@ -247,9 +251,9 @@ def _build_hill(memo: _Prerequisites) -> NeHillResult:
         gi = memo.generation_interval()
         assert gi is not None  # birth years are present, so the prerequisite returns or raises
         return _hill_from(memo.pg, gi, memo.cohort_window(), memo.birth_year_family_table(), memo.hill_vk_scale)
-    # Hill's collapse guards are Ne_V's (`_hill_guards`) and have run under
-    # Hill's name, so it reads Ne_V's record as a prerequisite, without Ne_V's
-    # guards: no second uniform-sex notice and no warning filter.
+    # Hill's collapse guards are Ne_V's own (`_hill_guards` reads them from
+    # Ne_V's row) and have run under Hill's name, so it reads Ne_V's record
+    # as a prerequisite: no second uniform-sex notice and no warning filter.
     return _hill_from_variance(memo.family_size_variance(), memo.hill_vk_scale)
 
 

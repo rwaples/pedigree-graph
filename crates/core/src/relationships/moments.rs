@@ -320,8 +320,12 @@ impl Operand {
     /// name parses to its first column); `None` when `column` is not an
     /// index of `columns`.
     pub fn name<S: AsRef<str>>(self, columns: &[S]) -> Option<String> {
-        let column = columns.get(self.column)?;
-        Some(format!("{}.{}", self.side.name(), column.as_ref()))
+        Some(self.spell(columns.get(self.column)?.as_ref()))
+    }
+
+    /// The one spelling of an operand name, over its column's name.
+    fn spell(self, column: &str) -> String {
+        format!("{}.{}", self.side.name(), column)
     }
 }
 
@@ -336,10 +340,11 @@ impl Product {
     /// The default products' operand names over `columns`: `first.c` and
     /// `second.c` for each column, in column order.
     pub fn diagonal_names<S: AsRef<str>>(columns: &[S]) -> Vec<(String, String)> {
-        let spell = |side: Side, column: &S| format!("{}.{}", side.name(), column.as_ref());
-        columns
-            .iter()
-            .map(|c| (spell(Side::First, c), spell(Side::Second, c)))
+        // Product `i` of the diagonal is over column `i`.
+        Product::diagonal(columns.len())
+            .into_iter()
+            .zip(columns)
+            .map(|(p, c)| (p.a.spell(c.as_ref()), p.b.spell(c.as_ref())))
             .collect()
     }
 
@@ -853,6 +858,11 @@ mod tests {
             assert_eq!(Operand::parse(bad, &columns), None, "{bad}");
         }
         let diagonal = Product::diagonal(2);
+        let named: Vec<_> = diagonal
+            .iter()
+            .map(|p| (p.a.name(&columns).unwrap(), p.b.name(&columns).unwrap()))
+            .collect();
+        assert_eq!(Product::diagonal_names(&columns), named);
         assert_eq!(
             Product::diagonal_names(&columns),
             [

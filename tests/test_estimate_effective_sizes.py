@@ -611,11 +611,19 @@ class TestHillFallbackWarningScope:
 
     def test_ne_v_after_hill_on_one_memo_still_runs_its_own_guards(self):
         """The shared variance is a prerequisite, so Ne_V's guards run whichever estimator asks first."""
-        memo = ne_estimate._Prerequisites(_chain_graph(sex=_UNIFORM_SEX))
+        pg = _chain_graph(sex=_UNIFORM_SEX)
+        memo = ne_estimate._Prerequisites(pg)
         with warnings.catch_warnings(record=True) as seen:
             warnings.simplefilter("always")
             memo.result("ne_hill_overlapping")
-            memo.result("ne_variance_family_size")
+            variance = memo.result("ne_variance_family_size")
+            standalone = es.ne_variance_family_size(pg)
         messages = [str(record.message) for record in seen]
-        for name in ("ne_hill_overlapping", "ne_variance_family_size"):
-            assert sum(m.startswith(f"{name}: pg.sex is uniform") for m in messages) == 1
+        assert sum(m.startswith("ne_hill_overlapping: pg.sex is uniform") for m in messages) == 1
+        assert sum(m.startswith("ne_variance_family_size: pg.sex is uniform") for m in messages) == 2
+        assert variance == standalone
+
+    def test_hills_collapse_runs_ne_vs_guards(self):
+        """The collapse reads Ne_V's record unguarded, so its guards must be Ne_V's own row's."""
+        pg = _chain_graph()
+        assert ne_estimate._hill_guards(pg) == ne_estimate._REGISTRY["ne_variance_family_size"].guards(pg)
