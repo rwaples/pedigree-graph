@@ -5,6 +5,8 @@
 **Context:** PGQ-004 (make relationship extraction semantics explicit instead of duplicated across engines)
 
 Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+Amended 2026-11-04 (issue #56): the engine reads each category's path
+shape from the core; see "Path shapes are read, not driven".
 
 ## Context
 
@@ -38,6 +40,28 @@ in the engine, not encoded as plan data. They are the `EXCLUSIONS` table in
 `crates/core/src/relationships/engine.rs`; for example `1C1R` subtracts
 `[MO, FO, GP, GGP, Av, GAv, FS, MHS, PHS, 1C]`. They were the subtract lists
 of `_pair_extractor.py` when this was written.
+
+### Path shapes are read, not driven
+
+The core's `Category` owns each category's path shape: `up`, `down` and
+`ancestor_count` (issue #56). The engine's call sites read it. A lineal
+walk takes its hop count from `up`. An avuncular category reads the paths
+at depth `up - 1`, a removed cousin category multiplies `A^down` by
+`(A^up)^T`, and second cousins read `up` and `down`. Full against half is
+`ancestor_count`'s path-count test (ADR 0018). This does not make the
+classifier data-driven. The calls, their order, the degree gates and
+`EXCLUSIONS` are still written out by hand, and the engine never loops over
+categories to decide what to compute. The shape replaces a literal at a call
+that was already there. The walks the engine shares between categories keep
+their own constants. The grandparent product feeds both 1C and the 2C rule,
+so it walks `GRANDPARENT_DEPTH`, which a compile-time assertion ties to 1C
+and GP. The per-depth avuncular caches are filled in order 1 to 4. A wrong
+shape in the core now fails the core's own engine tests, and does not wait
+for the Python cross-check.
+
+MZ is outside the shape formula. Its shape is `(0, 0, 0)` and its nominal
+kinship is 1/2, and the engine finds co-twins from the twin column, not from
+a shape.
 
 ## Considered options
 

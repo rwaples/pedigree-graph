@@ -23,7 +23,10 @@
 //! categories subtract.  Siblings include MZ co-twins (issue #29, ADR 0010 as
 //! amended).
 //! [`EXCLUSIONS`] is the per-category subtraction table; it is part of each
-//! category's definition.
+//! category's definition.  Each call below reads its category's path shape
+//! from [`Category::up`], [`Category::down`] and [`Category::ancestor_count`]
+//! (issue #56); the order of the calls, the degree gates and the exclusions
+//! stay written out here (ADR 0003).
 //!
 //! Reporting is a separate step (ADR 0010 as amended, `GLOSSARY.md` "Closest
 //! category"): after every set of a row is final, each category loses the
@@ -479,42 +482,40 @@ impl<'p> Engine<'p> {
         // Degree 2: GP is lineal (up[2] ∪ down[2] as an exclusion set); Av.
         // Each avuncular depth's paths are counted at its full category's
         // degree and read again at its half category's, one degree on.
-        let full = |m: Mult| m.at_least_two();
-        let half = |m: Mult| m.is_one();
-        lineal(ws, GP, 2)?;
+        lineal(ws, GP)?;
         self.avuncular_paths(row, ws, 1, reuse)?;
-        self.collateral(row, ws, Av, 1, full)?;
+        self.collateral(row, ws, Av)?;
         if deg < 3 {
             return Ok(());
         }
 
         // Degree 3.
-        lineal(ws, GGP, 3)?;
-        self.collateral(row, ws, HAv, 1, half)?;
+        lineal(ws, GGP)?;
+        self.collateral(row, ws, HAv)?;
         self.avuncular_paths(row, ws, 2, reuse)?;
-        self.collateral(row, ws, GAv, 2, full)?;
+        self.collateral(row, ws, GAv)?;
         self.cousins(row, ws, reuse)?;
         if deg < 4 {
             return Ok(());
         }
 
         // Degree 4.
-        lineal(ws, GGGP, 4)?;
-        self.collateral(row, ws, HGAv, 2, half)?;
+        lineal(ws, GGGP)?;
+        self.collateral(row, ws, HGAv)?;
         self.avuncular_paths(row, ws, 3, reuse)?;
-        self.collateral(row, ws, GGAv, 3, full)?;
-        self.removed_cousins(row, ws, 2, 3, C1R1, reuse, full)?;
+        self.collateral(row, ws, GGAv)?;
+        self.removed_cousins(row, ws, C1R1, reuse)?;
         if deg < 5 {
             return Ok(());
         }
 
         // Degree 5.
-        lineal(ws, G3GP, 5)?;
-        self.collateral(row, ws, HGGAv, 3, half)?;
+        lineal(ws, G3GP)?;
+        self.collateral(row, ws, HGGAv)?;
         self.avuncular_paths(row, ws, 4, reuse)?;
-        self.collateral(row, ws, G3Av, 4, full)?;
-        self.removed_cousins(row, ws, 2, 3, H1C1R, reuse, half)?;
-        self.removed_cousins(row, ws, 2, 4, C1R2, reuse, full)?;
+        self.collateral(row, ws, G3Av)?;
+        self.removed_cousins(row, ws, H1C1R, reuse)?;
+        self.removed_cousins(row, ws, C1R2, reuse)?;
         self.second_cousins(row, ws, reuse)
     }
 
@@ -562,18 +563,13 @@ impl<'p> Engine<'p> {
         sets::sum_into(tmp, &ws.full_aunt[depth], &mut ws.avuncular[depth])
     }
 
-    /// One avuncular category: the members of `ws.avuncular[depth]` whose
-    /// path count `keep` accepts, minus the row and closer categories.
-    fn collateral(
-        &self,
-        row: usize,
-        ws: &mut Workspace,
-        cat: Category,
-        depth: usize,
-        keep: impl Fn(Mult) -> bool,
-    ) -> Result<(), Error> {
+    /// One avuncular category: the members of `ws.avuncular[up - 1]` joined
+    /// by its number of paths, minus the row and closer categories.  The
+    /// row's `up - 1`-hop ancestors' sibs are the aunts and uncles.
+    fn collateral(&self, row: usize, ws: &mut Workspace, cat: Category) -> Result<(), Error> {
+        let depth = usize::from(cat.up()) - 1;
         let result = &mut ws.scratch[0];
-        sets::select_into(&ws.avuncular[depth], keep, result)?;
+        select_paths(&ws.avuncular[depth], cat, result)?;
         if ws.orient {
             // The row is the niece or nephew of every member the niece arm
             // reaches, including a pair joined in both orientations.
@@ -597,7 +593,8 @@ impl<'p> Engine<'p> {
         if !reuse {
             let ped = &self.ped;
             let [counted, _, tmp] = &mut ws.weighted;
-            self.chain_down(&mut ws.acc, &ws.up[2], 2, counted, tmp)?;
+            let gp = GRANDPARENT_DEPTH;
+            self.chain_down(&mut ws.acc, &ws.up[gp], gp, counted, tmp)?;
             sets::support_into(counted, &mut ws.shares_grandparent)?;
             // The row and every full sib of it share a known parent id, so
             // the same rows leave whichever sib computes the sets.
@@ -607,8 +604,8 @@ impl<'p> Engine<'p> {
                     || (ped.orig_father[row] >= 0 && ped.orig_father[row] == ped.orig_father[j])
             };
             counted.retain(|&(j, _)| j as usize != row && !shares_parent_id(j));
-            sets::select_into(counted, |m| m.at_least_two(), &mut ws.shared[C1.index()])?;
-            sets::select_into(counted, |m| m.is_one(), &mut ws.shared[H1C.index()])?;
+            select_paths(counted, C1, &mut ws.shared[C1.index()])?;
+            select_paths(counted, H1C, &mut ws.shared[H1C.index()])?;
         }
         for cat in [C1, H1C] {
             sets::copy_into(&mut ws.sets[cat.index()], &ws.shared[cat.index()])?;
@@ -616,23 +613,21 @@ impl<'p> Engine<'p> {
         Ok(())
     }
 
-    /// `A^a @ (A^b)^T` plus its transpose, with path multiplicity, thresholded by `keep`.
+    /// `A^a @ (A^b)^T` plus its transpose, with path multiplicity, thresholded
+    /// by the category's number of paths; `a` is its `down` and `b` its `up`.
     ///
     /// The two orientations of a pair are summed before the threshold
     /// (ADR 0018).  Both products start from the row's ancestors, so `reuse`
     /// keeps them from the last row.
-    #[allow(clippy::too_many_arguments)]
     fn removed_cousins(
         &self,
         row: usize,
         ws: &mut Workspace,
-        a: usize,
-        b: usize,
         cat: Category,
         reuse: bool,
-        keep: impl Fn(Mult) -> bool,
     ) -> Result<(), Error> {
         if !reuse {
+            let (a, b) = (usize::from(cat.down()), usize::from(cat.up()));
             let [forward, backward, tmp] = &mut ws.weighted;
             self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp)?;
             self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp)?;
@@ -643,7 +638,7 @@ impl<'p> Engine<'p> {
             // path never reads it.
             sets::support_into(backward, &mut ws.first_arm[cat.index()])?;
             sets::sum_into(forward, backward, tmp)?;
-            sets::select_into(tmp, &keep, &mut ws.shared[cat.index()])?;
+            select_paths(tmp, cat, &mut ws.shared[cat.index()])?;
         }
         let set = &mut ws.sets[cat.index()];
         sets::copy_into(set, &ws.shared[cat.index()])?;
@@ -659,8 +654,9 @@ impl<'p> Engine<'p> {
         let cat = Category::C2;
         if !reuse {
             let [product, _, tmp] = &mut ws.weighted;
-            self.chain_down(&mut ws.acc, &ws.up[3], 3, product, tmp)?;
-            sets::select_into(product, |m| m.at_least_two(), &mut ws.shared[cat.index()])?;
+            let (up, down) = (usize::from(cat.up()), usize::from(cat.down()));
+            self.chain_down(&mut ws.acc, &ws.up[up], down, product, tmp)?;
+            select_paths(product, cat, &mut ws.shared[cat.index()])?;
         }
         let set = &mut ws.sets[cat.index()];
         sets::copy_into(set, &ws.shared[cat.index()])?;
@@ -714,9 +710,32 @@ fn weighted_rows(rows: &[u32], m: Mult, out: &mut Weighted) -> Result<(), Error>
     alloc::extend(out, rows.iter().map(|&j| (j, m)), Family::RowSet)
 }
 
-/// Lineal pairs in both orientations: ancestors at k hops and descendants at
-/// k hops.  Towards an ancestor the row is the descendant, hence `first`.
-fn lineal(ws: &mut Workspace, cat: Category, k: usize) -> Result<(), Error> {
+/// Hops from a row up to its grandparents.  The first cousin product and the
+/// shared-grandparent support of the 2C rule share this walk, so it is a
+/// grandparent fact, not 1C's shape; the assertion ties the two together.
+const GRANDPARENT_DEPTH: usize = 2;
+const _: () = assert!(
+    Category::C1.up() as usize == GRANDPARENT_DEPTH
+        && Category::C1.down() as usize == GRANDPARENT_DEPTH
+        && Category::GP.up() as usize == GRANDPARENT_DEPTH
+);
+
+/// The members of `w` joined by `cat`'s number of paths: at least two for a
+/// full category, exactly one for a half one (ADR 0018, on the saturated
+/// count of ADR 0010).  The test is chosen once, outside the loop.
+fn select_paths(w: &Weighted, cat: Category, out: &mut Vec<u32>) -> Result<(), Error> {
+    if cat.ancestor_count() >= 2 {
+        sets::select_into(w, Mult::at_least_two, out)
+    } else {
+        sets::select_into(w, Mult::is_one, out)
+    }
+}
+
+/// Lineal pairs in both orientations: ancestors and descendants at the
+/// category's `up` hops.  Towards an ancestor the row is the descendant,
+/// hence `first`.
+fn lineal(ws: &mut Workspace, cat: Category) -> Result<(), Error> {
+    let k = usize::from(cat.up());
     let mut set = std::mem::take(&mut ws.sets[cat.index()]);
     let built = (|| {
         sets::support_into(&ws.up[k], &mut set)?;
