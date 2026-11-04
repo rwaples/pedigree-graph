@@ -35,23 +35,6 @@ fn peak_rss_mib() -> f64 {
         .map_or(f64::NAN, |kb| kb / 1024.0)
 }
 
-/// The view's graph rows in view order, from its map (one view row per
-/// graph row, `-1` unselected), so the driver keeps reading the map that
-/// `bench_pair_emitters.py` writes for every build.
-fn graph_rows(map: &[i32]) -> Vec<i32> {
-    let mut rows = vec![-1i32; map.iter().filter(|&&v| v >= 0).count()];
-    for (row, &v) in map.iter().enumerate() {
-        if v >= 0 {
-            rows[v as usize] = row as i32;
-        }
-    }
-    assert!(
-        rows.iter().all(|&r| r >= 0),
-        "the view map skips a view row"
-    );
-    rows
-}
-
 fn read_view(path: &Path) -> Vec<i32> {
     std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
@@ -114,7 +97,11 @@ fn main() {
     let ped = PedigreeColumns::read_tsv(Path::new(&path)).unwrap_or_else(|e| panic!("{e}"));
     // Inverted before the timer, and run on the full pedigree as before
     // the core chose compaction, so builds stay comparable.
-    let view = view_path.map(|p| graph_rows(&read_view(Path::new(&p))));
+    // The driver keeps reading the map `bench_pair_emitters.py` writes for
+    // every build, and inverts it before the timer starts.
+    let view = view_path.map(|p| {
+        query::graph_rows(&read_view(Path::new(&p))).unwrap_or_else(|e| panic!("view {p}: {e}"))
+    });
     let n = ped.mother.len();
     let baseline_mib = peak_rss_mib();
     let pool = pedigree_graph_core::pool::configure(

@@ -923,9 +923,15 @@ mod tests {
         let ped = cols.try_borrow().unwrap();
         let n = ped.len();
         let view: Vec<i32> = (0..n as i32).filter(|r| r % 3 != 0).collect();
-        let n_view = view.len();
-        let requested = CategorySet::up_to_degree(5);
-        for (v, len) in [(None, n), (Some(view.as_slice()), n_view)] {
+        // Every category, and a sparse set whose top degree is not the
+        // engine's: the walk's depth comes from the set.
+        let sparse: CategorySet = [Category::MZ, Category::FS, Category::MHS, Category::C1]
+            .into_iter()
+            .collect();
+        for (requested, (v, len)) in [CategorySet::up_to_degree(5), sparse]
+            .into_iter()
+            .flat_map(|r| [(r, (None, n)), (r, (Some(view.as_slice()), view.len()))])
+        {
             let (first, second, values, same) = inputs(len, 9);
             let input = MomentsInput {
                 labels_first: &first,
@@ -948,8 +954,9 @@ mod tests {
                     (1, Compaction::Full),
                     (4, Compaction::Full),
                     (4, Compaction::Compact),
+                    (4, Compaction::Auto),
                 ] {
-                    if compaction == Compaction::Compact && v.is_none() {
+                    if v.is_none() && compaction != Compaction::Full {
                         continue;
                     }
                     let pool = rayon::ThreadPoolBuilder::new()
@@ -975,7 +982,7 @@ mod tests {
                     assert_eq!(got.lane_pairs.iter().sum::<u64>(), total);
                     assert!(
                         decoded(&(got.width, got.table.clone())) == want,
-                        "threads={threads} {compaction:?} {symmetric:?}"
+                        "threads={threads} {compaction:?} {symmetric:?} {requested:?}"
                     );
                 }
             }

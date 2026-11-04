@@ -17,6 +17,10 @@ live on the corresponding GitHub release pages.
   rather than a graph-to-view map. None takes a `MaxDegree`: the walk's
   depth is the requested set's top degree. Python and R are unchanged; no
   known consumer (pg-phenotype, pedsum, fitACE, simACE) called these.
+- **Added (Rust): `query::graph_rows`**, the inverse of `query::view_map`:
+  a graph-to-view map whose view rows are `0..k` becomes the view's graph
+  rows, and any other map is refused with `InvalidViewMap`.
+  `pgr-bench-pairs` uses it in place of its own copy.
 - **Breaking: an id in both parent roles is refused at construction**
   (issue #58, ADR 0020). An id that is the mother of one row and the father
   of another, external ids included, raises the validation error

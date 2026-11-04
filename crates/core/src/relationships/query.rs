@@ -155,6 +155,41 @@ pub fn view_map(graph_rows: &[i32], n: usize) -> Result<Vec<i32>, Error> {
     Ok(map)
 }
 
+/// The graph rows of the view a graph-to-view `map` selects, in view order:
+/// the inverse of [`view_map`].  A negative entry is an unselected row; the
+/// selected entries must be the view rows `0..k`, each once.
+///
+/// # Errors
+///
+/// [`Error::InvalidViewMap`] on `view_rows` at the first entry naming a view
+/// row past the `k` the map selects, or a view row already named;
+/// [`Error::AllocationFailed`] for the rows.
+pub fn graph_rows(map: &[i32]) -> Result<Vec<i32>, Error> {
+    let k = map.iter().filter(|&&v| v >= 0).count();
+    let mut rows = alloc::filled(-1i32, k, Family::ViewSortScratch)?;
+    for (row, &v) in map.iter().enumerate() {
+        if v < 0 {
+            continue;
+        }
+        let reason = match rows.get_mut(v as usize) {
+            None => "the view has no row that far",
+            Some(slot) if *slot >= 0 => "two graph rows map to this view row",
+            // The graph's rows are int32.
+            Some(slot) => {
+                *slot = row as i32;
+                continue;
+            }
+        };
+        return Err(Error::InvalidViewMap {
+            field: "view_rows",
+            position: row.into(),
+            value: (v as usize).into(),
+            reason,
+        });
+    }
+    Ok(rows)
+}
+
 /// The rows `graph_rows` selects on a graph of `n` rows, as the engine's
 /// count filter; the errors of [`view_map`] without building the map.
 fn selected(graph_rows: &[i32], n: usize) -> Result<Vec<bool>, Error> {
@@ -520,6 +555,29 @@ mod tests {
         }
         assert_eq!(view_map(&[3, 1, 3], 4).unwrap_err(), duplicate);
         assert_eq!(selected(&[3, 1, 3], 4).unwrap_err(), duplicate);
+    }
+
+    #[test]
+    fn graph_rows_inverts_view_map_and_rejects_gaps_and_repeats() {
+        for rows in [vec![], vec![2, 0], vec![3, 1, 0, 2]] {
+            assert_eq!(graph_rows(&view_map(&rows, 4).unwrap()).unwrap(), rows);
+        }
+        assert_eq!(graph_rows(&[-1, -1]).unwrap(), Vec::<i32>::new());
+        let invalid = |position: usize, value: usize, reason| Error::InvalidViewMap {
+            field: "view_rows",
+            position: position.into(),
+            value: value.into(),
+            reason,
+        };
+        // Two rows selected, but view row 2 named: a gap at view row 1.
+        assert_eq!(
+            graph_rows(&[-1, 0, 2]).unwrap_err(),
+            invalid(2, 2, "the view has no row that far")
+        );
+        assert_eq!(
+            graph_rows(&[1, 0, 1]).unwrap_err(),
+            invalid(2, 1, "two graph rows map to this view row")
+        );
     }
 
     /// Counts check the selection on both paths, a call that walks nothing
