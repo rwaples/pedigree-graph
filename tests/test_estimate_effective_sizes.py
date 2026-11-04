@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 from _support import CHAIN_BIRTH, _chain_graph, _run_child
 
-from pedigree_graph import PedigreeGraph, _threads, configure_threads
+from pedigree_graph import MissingMetadataError, PedigreeGraph, PedigreeValidationError, _threads, configure_threads
 from pedigree_graph import _ne_estimate as ne_estimate
 from pedigree_graph import _ne_rates as ne_rates
 from pedigree_graph import effective_size as es
@@ -320,6 +320,16 @@ class TestEmptyGraph:
         value = estimate_effective_sizes(_empty_graph())[name]
         assert not isinstance(value, UnavailableEffectiveSize)
         assert value.ne is None
+
+
+def test_a_bad_delta_f_reference_is_refused_before_the_label_guard():
+    """``reference=`` is an argument, checked before the estimator's metadata guards run."""
+    pg = _chain_graph(generation=_PARTIAL_GEN)
+    with pytest.raises(MissingMetadataError):
+        es.ne_individual_delta_f(pg)
+    with pytest.raises(PedigreeValidationError) as excinfo:
+        es.ne_individual_delta_f(pg, reference=[0, 99])
+    assert excinfo.value.code == "reference_row_out_of_range"
 
 
 def _uniform_families_graph():
