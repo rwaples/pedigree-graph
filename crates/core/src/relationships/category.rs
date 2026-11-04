@@ -116,49 +116,49 @@ impl Category {
         0.5f64.powi(i32::from(self.degree()) + 1)
     }
 
+    /// `(up, down, ancestor_count)`: the category's path shape, one line per
+    /// category.  [`up`](Self::up), [`down`](Self::down),
+    /// [`ancestor_count`](Self::ancestor_count) and [`symmetric`](Self::symmetric)
+    /// read it.
+    pub const fn shape(self) -> (u8, u8, u8) {
+        match self {
+            Category::MZ => (0, 0, 0),
+            Category::MO => (1, 0, 1),
+            Category::FO => (1, 0, 1),
+            Category::FS => (1, 1, 2),
+            Category::MHS => (1, 1, 1),
+            Category::PHS => (1, 1, 1),
+            Category::GP => (2, 0, 1),
+            Category::Av => (2, 1, 2),
+            Category::GGP => (3, 0, 1),
+            Category::HAv => (2, 1, 1),
+            Category::GAv => (3, 1, 2),
+            Category::C1 => (2, 2, 2),
+            Category::GGGP => (4, 0, 1),
+            Category::HGAv => (3, 1, 1),
+            Category::GGAv => (4, 1, 2),
+            Category::H1C => (2, 2, 1),
+            Category::C1R1 => (3, 2, 2),
+            Category::G3GP => (5, 0, 1),
+            Category::HGGAv => (4, 1, 1),
+            Category::G3Av => (5, 1, 2),
+            Category::H1C1R => (3, 2, 1),
+            Category::C1R2 => (4, 2, 2),
+            Category::C2 => (3, 3, 2),
+        }
+    }
+
     /// Meioses from the `first` pair member up to the shared ancestor(s).
     ///
     /// `first` is the member at least as far from the ancestor(s), so
     /// `up() >= down()`, with equality exactly for a symmetric category.
     pub const fn up(self) -> u8 {
-        match self {
-            Category::MZ => 0,
-            Category::MO | Category::FO | Category::FS | Category::MHS | Category::PHS => 1,
-            Category::GP | Category::Av | Category::HAv | Category::C1 | Category::H1C => 2,
-            Category::GGP
-            | Category::GAv
-            | Category::HGAv
-            | Category::C1R1
-            | Category::H1C1R
-            | Category::C2 => 3,
-            Category::GGGP | Category::GGAv | Category::HGGAv | Category::C1R2 => 4,
-            Category::G3GP | Category::G3Av => 5,
-        }
+        self.shape().0
     }
 
     /// Meioses from the shared ancestor(s) down to the `second` pair member.
     pub const fn down(self) -> u8 {
-        match self {
-            Category::MZ
-            | Category::MO
-            | Category::FO
-            | Category::GP
-            | Category::GGP
-            | Category::GGGP
-            | Category::G3GP => 0,
-            Category::FS
-            | Category::MHS
-            | Category::PHS
-            | Category::Av
-            | Category::HAv
-            | Category::GAv
-            | Category::HGAv
-            | Category::GGAv
-            | Category::HGGAv
-            | Category::G3Av => 1,
-            Category::C1 | Category::H1C | Category::C1R1 | Category::H1C1R | Category::C1R2 => 2,
-            Category::C2 => 3,
-        }
+        self.shape().1
     }
 
     /// The paths of this shape that join a pair: 2 through a mated pair of
@@ -169,31 +169,7 @@ impl Category {
     /// down() + 1)`.  The engine decides full against half by this count
     /// (ADR 0018).
     pub const fn ancestor_count(self) -> u8 {
-        match self {
-            Category::MZ => 0,
-            Category::FS
-            | Category::Av
-            | Category::GAv
-            | Category::C1
-            | Category::GGAv
-            | Category::C1R1
-            | Category::G3Av
-            | Category::C1R2
-            | Category::C2 => 2,
-            Category::MO
-            | Category::FO
-            | Category::MHS
-            | Category::PHS
-            | Category::GP
-            | Category::GGP
-            | Category::HAv
-            | Category::GGGP
-            | Category::HGAv
-            | Category::H1C
-            | Category::G3GP
-            | Category::HGGAv
-            | Category::H1C1R => 1,
-        }
+        self.shape().2
     }
 
     #[inline]
@@ -201,21 +177,12 @@ impl Category {
         self as usize
     }
 
-    /// Whether the category has no roles, so a pair is stored `first < second`.
-    ///
-    /// The seven symmetric codes of the Python registry.  Every other category
-    /// names a `first_role` and a `second_role`.
-    pub fn symmetric(self) -> bool {
-        matches!(
-            self,
-            Category::MZ
-                | Category::FS
-                | Category::MHS
-                | Category::PHS
-                | Category::C1
-                | Category::H1C
-                | Category::C2
-        )
+    /// Whether the category has no roles, so a pair is stored `first < second`:
+    /// both members are as far from the shared ancestor(s), `up() == down()`.
+    /// Every other category names a `first_role` and a `second_role`.
+    pub const fn symmetric(self) -> bool {
+        let (up, down, _) = self.shape();
+        up == down
     }
 
     /// The `(first, second)` semantic roles of an asymmetric category, as the
