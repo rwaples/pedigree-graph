@@ -315,13 +315,11 @@ impl Operand {
         Some(Operand { side, column })
     }
 
-    /// The operand's name over `columns`, as [`Operand::parse`] reads it.
-    ///
-    /// # Panics
-    ///
-    /// When `column` is not an index of `columns`.
-    pub fn name<S: AsRef<str>>(self, columns: &[S]) -> String {
-        format!("{}.{}", self.side.name(), columns[self.column].as_ref())
+    /// The operand's name over `columns`, as [`Operand::parse`] reads it;
+    /// `None` when `column` is not an index of `columns`.
+    pub fn name<S: AsRef<str>>(self, columns: &[S]) -> Option<String> {
+        let column = columns.get(self.column)?;
+        Some(format!("{}.{}", self.side.name(), column.as_ref()))
     }
 }
 
@@ -333,6 +331,15 @@ pub struct Product {
 }
 
 impl Product {
+    /// The default products' operand names over `columns`: `first.c` and
+    /// `second.c` for each column, in column order.
+    pub fn diagonal_names<S: AsRef<str>>(columns: &[S]) -> Vec<(String, String)> {
+        Product::diagonal(columns.len())
+            .iter()
+            .filter_map(|p| Some((p.a.name(columns)?, p.b.name(columns)?)))
+            .collect()
+    }
+
     /// The default products: `first.c × second.c` for each of `n_columns`
     /// columns, in column order.
     pub fn diagonal(n_columns: usize) -> Vec<Product> {
@@ -843,22 +850,27 @@ mod tests {
             assert_eq!(Operand::parse(bad, &columns), None, "{bad}");
         }
         let diagonal = Product::diagonal(2);
-        let names: Vec<_> = diagonal
-            .iter()
-            .map(|p| (p.a.name(&columns), p.b.name(&columns)))
-            .collect();
         assert_eq!(
-            names,
+            Product::diagonal_names(&columns),
             [
                 ("first.x".to_string(), "second.x".to_string()),
                 ("first.y.z".to_string(), "second.y.z".to_string())
             ]
         );
         for p in &diagonal {
-            assert_eq!(Operand::parse(&p.a.name(&columns), &columns), Some(p.a));
-            assert_eq!(Operand::parse(&p.b.name(&columns), &columns), Some(p.b));
+            for o in [p.a, p.b] {
+                assert_eq!(
+                    Operand::parse(&o.name(&columns).unwrap(), &columns),
+                    Some(o)
+                );
+            }
         }
         assert!(Product::diagonal(0).is_empty());
+        let past = Operand {
+            side: Side::First,
+            column: 2,
+        };
+        assert_eq!(past.name(&columns), None);
         // No `.` reads as the empty column, which only a table built
         // without a pedigree can have (both pedigree boundaries refuse it).
         let unnamed = [""];

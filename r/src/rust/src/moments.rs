@@ -174,10 +174,7 @@ type ProductNames = Vec<(String, String)>;
 /// first x second product of every column.
 fn products(products: &Robj, columns: &[String]) -> HostResult<(ProductNames, Vec<Product>)> {
     let named: Vec<(String, String)> = if products.is_null() {
-        Product::diagonal(columns.len())
-            .into_iter()
-            .map(|p| (p.a.name(columns), p.b.name(columns)))
-            .collect()
+        Product::diagonal_names(columns)
     } else {
         let list = List::try_from(products.clone()).map_err(|_| {
             HostError::usage("`products` must be a list of length-2 character vectors".to_string())

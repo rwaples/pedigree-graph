@@ -31,13 +31,12 @@ is validated, and applies through the kernels the prerequisites call.
 
 from __future__ import annotations
 
-import warnings
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
-from pedigree_graph._cohort_utils import eligible_cohort_range, generation_interval
+from pedigree_graph._cohort_utils import eligible_cohort_range
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._errors import MissingMetadataError
 from pedigree_graph._ne_family_size import (
@@ -248,17 +247,7 @@ def _build_hill(memo: _Prerequisites) -> NeHillResult:
         gi = memo.generation_interval()
         assert gi is not None  # birth years are present, so the prerequisite returns or raises
         return _hill_from(memo.pg, gi, memo.cohort_window(), memo.birth_year_family_table(), memo.hill_vk_scale)
-    with warnings.catch_warnings():
-        # Only the duplicate uniform-sex notice from the nested call; the
-        # caller already had it under this estimator's own name.
-        warnings.filterwarnings(
-            "ignore",
-            message=r"ne_variance_family_size: pg\.sex is uniform",
-            category=RuntimeWarning,
-        )
-        variance = memo.result("ne_variance_family_size")
-    assert isinstance(variance, NeVarianceResult)
-    return _hill_from_variance(variance, memo.hill_vk_scale)
+    return _hill_from_variance(memo.collapsed_variance(), memo.hill_vk_scale)
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,7 +382,8 @@ class _Prerequisites:
         )
 
     def generation_interval(self) -> GenerationInterval | None:
-        return self._prerequisite("generation_interval", lambda: generation_interval(self.pg))
+        # The graph caches it, so repeated direct calls compute it once per graph.
+        return self._prerequisite("generation_interval", lambda: self.pg.generation_interval)
 
     def cohort_window(self) -> CohortWindow:
         return self._prerequisite("cohort_window", lambda: eligible_cohort_range(self.pg))
@@ -404,6 +394,20 @@ class _Prerequisites:
         if name not in self._results:
             self._results[name] = self._compute(name)
         return self._results[name]
+
+    def collapsed_variance(self) -> NeVarianceResult:
+        """Ne_V's result for Hill's collapse branch, memoized under Ne_V's name.
+
+        Hill's collapse guards are Ne_V's (:func:`_hill_guards`) and have
+        already run under Hill's name, so Ne_V's build runs without its own
+        guards: no second uniform-sex notice, and no warning filters touched.
+        """
+        name = "ne_variance_family_size"
+        if name not in self._results:
+            self._results[name] = _REGISTRY[name].build(self)
+        variance = self._results[name]
+        assert isinstance(variance, NeVarianceResult)
+        return variance
 
     def _compute(self, name: str) -> EffectiveSizeResult:
         """Run one estimator's guards in its own context, then its build."""

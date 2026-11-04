@@ -1,8 +1,9 @@
 """Founder-contribution Ne estimator and its primitives (PGQ-006).
 
 Owns the represented-founder index, the adjoint per-cohort mean-contribution
-propagation, and the founder-contribution effective sizes
-(:func:`ne_long_term_contributions`) built on them.
+propagation, and the evaluator of the founder-contribution effective
+sizes (:func:`~pedigree_graph.effective_size.ne_long_term_contributions`, whose public function
+runs its registry row in ``_ne_estimate``) built on them.
 
 A **represented founder** is a row with no represented mother or father,
 whatever its generation label and whether its parents are missing or

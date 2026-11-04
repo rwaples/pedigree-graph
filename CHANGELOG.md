@@ -11,14 +11,17 @@ live on the corresponding GitHub release pages.
   `Symmetric` after the products, `symmetric()` reads it back, and `merge`
   refuses two rules with `InvalidMomentsTable`. pg-phenotype's six
   constructor calls need the argument at its next repin. Core also parses
-  operand names (`Operand::parse`, `Operand::name`, `Side::name`) and gives
-  the default products (`Product::diagonal`), which both hosts now call.
-  Python and R raise the same error class as before for every refused
-  merge. The message for different `symmetric` rules (both hosts) and for
-  different products (Python) is now core's, e.g. `invalid relationship
-  moments table: merge needs one symmetric rule, got 'canonical' and
-  'both'`; Python's axes-or-columns message drops "and products". A
-  `RelationshipMoments` parses its product names once, at construction.
+  operand names (`Operand::parse`; `Operand::name` and `Side::name` spell
+  them back, `Operand::name` returning `None` for a column past the list)
+  and gives the default products (`Product::diagonal`,
+  `Product::diagonal_names`), which both hosts now call. Python and R raise
+  the same error class as before for every refused merge; the message for
+  different `symmetric` rules is now core's (`invalid relationship moments
+  table: merge needs one symmetric rule, got 'canonical' and 'both'`).
+  `RelationshipMoments(...)` and `RelationshipMoments.from_exact(...)` now
+  refuse a `symmetric` other than `"canonical"` or `"both"` with
+  `ValueError`; any string used to be kept. A `RelationshipMoments` parses
+  its product names once, at construction.
 - **Internal: each public Ne estimator is a one-row registry call**
   (issue #55). `ne_X(pg)` now runs the same guards and build as
   `estimate_effective_sizes` through `_REGISTRY`, so each estimator's

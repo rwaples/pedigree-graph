@@ -208,8 +208,10 @@ class RelationshipMoments:
         units, as the attributes of the same names hold them.
 
         Raises:
-            ValueError: A count outside ``[0, 2**63 - 1]`` or arrays that do not
-                fit the axes.
+            ValueError: A count outside ``[0, 2**63 - 1]``, arrays that do not
+                fit the axes, a product name that is not
+                ``"first.<column>"`` or ``"second.<column>"``, or a
+                *symmetric* other than ``"canonical"`` or ``"both"``.
         """
         shape = tuple(len(axis.levels) for axis in axes)
         slabs = [np.asarray(counts, dtype=object).reshape(*shape, 1)]
@@ -316,9 +318,9 @@ class RelationshipMoments:
         brings it to the finer exponent, so the merged result carries the
         larger exponent of each column and no rounding.
 
-        The core refuses differing products or ``symmetric`` rules; this
-        host checks only the labels it alone holds, the axes and the column
-        names.
+        The core refuses differing product operands or ``symmetric`` rules;
+        this host checks only the labels it alone holds: the axes, the column
+        names and the product names (two names can spell one operand).
 
         Raises:
             ValueError: The axes, columns, products or ``symmetric`` rules
@@ -330,8 +332,8 @@ class RelationshipMoments:
             a.name == b.name and a.levels.shape == b.levels.shape and bool(np.all(a.levels == b.levels))
             for a, b in zip(self.axes, other.axes, strict=True)
         )
-        if not same_axes or self.columns != other.columns:
-            raise ValueError("merge needs two results with the same axes and columns")
+        if not same_axes or self.columns != other.columns or self.products != other.products:
+            raise ValueError("merge needs two results with the same axes, columns and products")
         _, exponents, width, data = _native.moments_table_merge(self._core_table(), other._core_table())
         return self._from_core(self.axes, exponents, width, data)
 

@@ -1,17 +1,16 @@
-"""Rate-of-inbreeding / coancestry Ne estimators (PGQ-006).
+"""Rate-of-inbreeding / coancestry Ne evaluators (PGQ-006).
 
-The regression-based estimators built on F̄ and θ̄ series, plus the
-Gutiérrez 2008 individual-ΔF estimator:
+The evaluators behind the regression-based estimators built on F̄ and θ̄
+series, and the Gutiérrez 2008 individual-ΔF estimator:
 
-* :func:`ne_inbreeding`         — regression of ``ln(1 − F̄_t)`` on t.
-* :func:`ne_coancestry`         — regression of ``ln(1 − θ̄_t)`` on t.
-* :func:`ne_individual_delta_f` — Gutiérrez individual increase in inbreeding.
+* :func:`~pedigree_graph.effective_size.ne_inbreeding`         — regression of ``ln(1 − F̄_t)`` on t.
+* :func:`~pedigree_graph.effective_size.ne_coancestry`         — regression of ``ln(1 − θ̄_t)`` on t.
+* :func:`~pedigree_graph.effective_size.ne_individual_delta_f` — Gutiérrez individual increase in inbreeding.
 
-Each public estimator resolves its prerequisites from the graph and hands
-them to a private evaluator (``_inbreeding_from`` and friends) that works
-on an :class:`~pedigree_graph._cohorts.ObservedCohorts` grouping.  The
-orchestrator calls the same evaluators, so a direct call and an
-orchestrated call cannot disagree.
+The public estimators live in ``_ne_estimate``: each runs its registry row,
+which resolves the prerequisites and hands them to a private evaluator here
+(``_inbreeding_from`` and friends) working on an
+:class:`~pedigree_graph._cohorts.ObservedCohorts` grouping.
 
 Also owns :func:`_kinship_summary_for_labels`, the one route to
 :meth:`PedigreeGraph.mean_kinship_by_generation` for any labelling, the

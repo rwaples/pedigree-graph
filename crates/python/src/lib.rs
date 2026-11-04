@@ -759,13 +759,10 @@ fn moments_operand(name: &str, columns: Vec<String>) -> Option<(u8, usize)> {
 }
 
 /// The default products' operand names over `columns`: `first.c` x
-/// `second.c` for each column (core's `Product::diagonal`).
+/// `second.c` for each column (core's `Product::diagonal_names`).
 #[pyfunction]
 fn moments_default_products(columns: Vec<String>) -> Vec<(String, String)> {
-    Product::diagonal(columns.len())
-        .into_iter()
-        .map(|p| (p.a.name(&columns), p.b.name(&columns)))
-        .collect()
+    Product::diagonal_names(&columns)
 }
 
 fn resolve_products(products: Vec<ProductArg>) -> PyResult<Vec<Product>> {

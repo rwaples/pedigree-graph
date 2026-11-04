@@ -634,7 +634,7 @@ class TestSurface:
                     symmetric="both",
                 )
             )
-        with pytest.raises(ValueError, match="same shape, columns and products"):
+        with pytest.raises(ValueError, match="same axes, columns and products"):
             full.merge(
                 graph.relationship_moments(
                     max_degree=3,
@@ -910,6 +910,37 @@ def _counts_table(counts: list[int]) -> RelationshipMoments:
         q_cross=zeros,
         symmetric="canonical",
     )
+
+
+def _unnamed_table(products, symmetric="canonical") -> RelationshipMoments:
+    """A one-cell table over the empty column name, which only ``from_exact`` can build."""
+    from pedigree_graph.moments import RelationshipMoments
+
+    zeros = np.zeros((1, 1), dtype=object)
+    return RelationshipMoments.from_exact(
+        axes=(MomentAxis("category", np.array(["FS"], dtype=object)),),
+        columns=("",),
+        products=products,
+        exponents=np.zeros(1, dtype=np.int64),
+        counts=np.array([1], dtype=object),
+        q_sum_first=zeros,
+        q_sum_second=zeros,
+        q_sumsq_first=zeros,
+        q_sumsq_second=zeros,
+        q_cross=zeros,
+        symmetric=symmetric,
+    )
+
+
+def test_merge_compares_product_names_that_spell_one_operand():
+    """``first`` and ``first.`` name one operand over the empty column; the names still differ."""
+    with pytest.raises(ValueError, match="same axes, columns and products"):
+        _unnamed_table((("first", "second"),)).merge(_unnamed_table((("first.", "second."),)))
+
+
+def test_a_table_refuses_an_unknown_symmetric_rule():
+    with pytest.raises(ValueError, match='symmetric must be "canonical" or "both"'):
+        _unnamed_table((("first", "second"),), symmetric="unordered")
 
 
 @pytest.mark.parametrize(

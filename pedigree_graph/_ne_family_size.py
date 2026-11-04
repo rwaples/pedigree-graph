@@ -1,8 +1,10 @@
 """Family-size Ne estimators and their shared primitives (PGQ-006).
 
 Owns the sex-of-offspring family-size table and the Caballero 1994 eq. 6
-variance reassembly, plus the two estimators built directly on them:
-:func:`ne_variance_family_size` (Ne_V) and :func:`ne_sex_ratio` (Ne_sr).
+variance reassembly, plus the evaluators of the two estimators built
+directly on them, :func:`~pedigree_graph.effective_size.ne_variance_family_size` (Ne_V) and
+:func:`~pedigree_graph.effective_size.ne_sex_ratio` (Ne_sr), whose public functions run their
+registry rows in ``_ne_estimate``.
 The Hill overlapping-generation estimator (``_ne_hill``) also consumes
 ``_sex_specific_family_table`` / ``_sigma2_from_quadrants`` /
 ``_waples_vk2_expectation`` from here.
@@ -169,7 +171,8 @@ _PACKAGE_DIR = str(Path(__file__).parent)
 def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
     """RuntimeWarning when ``pg.sex`` is uniform — usually a missing ``sex=``.
 
-    Fired by :func:`ne_variance_family_size` and :func:`ne_sex_ratio`,
+    Fired by :func:`~pedigree_graph.effective_size.ne_variance_family_size` and
+    :func:`~pedigree_graph.effective_size.ne_sex_ratio` (and Hill's collapse branch),
     which are degenerate on a single-sex pedigree.  Absent sex is refused
     before this point (``missing_sex``), so a uniform column here was
     supplied by the caller.  Estimators still return ``ne=None`` (matching
@@ -178,8 +181,8 @@ def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
 
     Attributed to the first frame outside the package rather than to a fixed
     ``stacklevel``.  Every estimator that fires this is reachable both
-    directly and through ``estimate_effective_sizes``, whose memo adds frames,
-    so no one constant can name the caller on both paths.
+    directly and through ``estimate_effective_sizes``, from different call
+    depths, so no one constant can name the caller on both.
     """
     if pg.n_individuals == 0:
         return

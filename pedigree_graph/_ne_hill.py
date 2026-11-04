@@ -1,7 +1,9 @@
 """Hill 1979 separate-sex overlapping-generation Ne (Ne_H) (PGQ-006).
 
-Owns the parental-age diagnostic table and :func:`ne_hill_overlapping`,
-which builds on the family-size primitives in ``_ne_family_size`` (the
+Owns the parental-age diagnostic table and the evaluators behind
+:func:`~pedigree_graph.effective_size.ne_hill_overlapping`, whose public
+function runs its registry row in ``_ne_estimate``.  They build on the
+family-size primitives in ``_ne_family_size`` (the
 sex-of-offspring table, the Caballero 1994 eq. 6 variance reassembly, and
 the Waples 2002 Vk rescaling) and on the cohort-eligibility window in
 ``_cohort_utils``.

@@ -322,6 +322,21 @@ class TestEmptyGraph:
         assert value.ne is None
 
 
+def test_hills_collapse_leaves_the_warning_filters_alone(monkeypatch, recwarn):
+    """``catch_warnings`` swaps process-wide state; Hill's collapse needs no filter, on either path."""
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("catch_warnings entered")
+
+    monkeypatch.setattr(warnings, "catch_warnings", refuse)
+    pg = _chain_graph(sex=_UNIFORM_SEX)
+    es.ne_hill_overlapping(pg)
+    estimate_effective_sizes(pg, ["ne_hill_overlapping"])
+    messages = [str(record.message) for record in recwarn]
+    assert len(messages) == 2
+    assert all(m.startswith("ne_hill_overlapping: pg.sex is uniform") for m in messages)
+
+
 def test_a_bad_delta_f_reference_is_refused_before_the_label_guard():
     """``reference=`` is an argument, checked before the estimator's metadata guards run."""
     pg = _chain_graph(generation=_PARTIAL_GEN)
