@@ -14,7 +14,9 @@ import math
 import numpy as np
 import polars as pl
 import pytest
-from _support import _build_closed_line, _df, _random_mating
+from _support import _build_closed_line, _df, _random_mating, property_budget
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from pedigree_graph import PedigreeGraph
 from pedigree_graph.effective_size import (
@@ -133,9 +135,18 @@ def _replicated(frame: pl.DataFrame) -> pl.DataFrame:
     return pl.concat([frame, shifted])
 
 
-def test_a_disjoint_replicate_scales_each_estimate_by_its_derived_factor():
-    # Two unrelated copies with the same labels.  Per cohort: every count
-    # doubles and no cross-copy pair is related.
+@property_budget(50)
+@given(
+    half=st.integers(min_value=2, max_value=5),
+    n_gens=st.integers(min_value=1, max_value=5),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
+)
+@example(half=5, n_gens=5, seed=1428)  # f̄ halves only to 1 ulp here
+@example(half=3, n_gens=4, seed=11)  # the fixture this test replaced
+def test_a_disjoint_replicate_scales_each_estimate_by_its_derived_factor(half, n_gens, seed):
+    # Two unrelated copies with the same labels, of a random-mating pedigree
+    # of 2·half rows (half of each sex) in each of n_gens + 1 cohorts.  Per
+    # cohort: every count doubles and no cross-copy pair is related.
     # * F̄ and each individual's ΔF are unchanged, so Ne_F and Ne_ΔF are.
     # * Ne_sr = 4·Nm·Nf/(Nm + Nf) doubles, exactly (every step scales by 2).
     # * Founder contributions halve over twice as many founders, so Σc²
@@ -144,11 +155,17 @@ def test_a_disjoint_replicate_scales_each_estimate_by_its_derived_factor():
     #   different order: recursive summation of nonnegative terms is within
     #   (terms − 1)·2**−53 relative, so the two differ by under 3F·2**−53.
     # * Group coancestry f̄ = Σ_{i,j} φ_ij / n² over all ordered genome pairs:
-    #   the sum doubles and n² quadruples, so f̄ halves.
+    #   the sum doubles and n² quadruples, so f̄ halves, but not exactly:
+    #   the estimator rebuilds the pair sum as round(round(S/P)·P) from the
+    #   kinship summary's mean (``_ne_group_coancestry.py``), adds Σs over n
+    #   genomes, and divides.  Each side is within (n + 4)·2**−53 relative
+    #   of its rational (two roundings for the pair sum, n − 1 for Σs, one
+    #   each for the sum and the quotient), so they differ by under
+    #   (2n_max + 8)·2**−53, n_max the replicate's largest cohort.
     # * θ̄ averages the n(n−1)/2 distinct pairs: the kinship sum doubles over
     #   2n(2n−1)/2 pairs, so θ̄·pairs doubles.
     # Rejects wrong denominators: pairs for n², rows for genomes.
-    frame = _random_mating(n_per_gen=6, n_gens=4, seed=11)
+    frame = _random_mating(n_per_gen=2 * half, n_gens=n_gens, seed=seed)
     one, two = PedigreeGraph.from_frame(frame), PedigreeGraph.from_frame(_replicated(frame))
 
     f1, f2 = ne_inbreeding(one), ne_inbreeding(two)
@@ -170,7 +187,10 @@ def test_a_disjoint_replicate_scales_each_estimate_by_its_derived_factor():
 
     g1, g2 = ne_group_coancestry(one), ne_group_coancestry(two)
     np.testing.assert_array_equal(g2.n_genomes_per_gen, 2 * g1.n_genomes_per_gen)
-    np.testing.assert_array_equal(g2.mean_group_coancestry_per_gen, g1.mean_group_coancestry_per_gen / 2)
+    gc_rtol = (2 * int(g2.n_genomes_per_gen.max()) + 8) * 2.0**-53
+    np.testing.assert_allclose(
+        g2.mean_group_coancestry_per_gen, g1.mean_group_coancestry_per_gen / 2, rtol=gc_rtol, atol=0
+    )
 
     theta1, theta2 = one.mean_kinship_by_generation(), two.mean_kinship_by_generation()
     genomes = g1.n_genomes_per_gen
