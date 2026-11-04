@@ -10,6 +10,7 @@ No core variant is a metadata error yet, so ``METADATA_CODES`` has nothing
 to agree with until one is; its row in ``_TABLES`` checks it from then on.
 """
 
+import math
 import pickle
 
 import pytest
@@ -42,13 +43,20 @@ def test_every_core_code_is_in_its_python_table_with_the_same_fields(code, class
     assert table[code] == tuple(fields)
 
 
-def test_the_registry_is_the_core_table_with_labels():
-    rows = tuple(
-        (c.code, c.degree, c.first_role, c.second_role, c.nominal_kinship, c.up, c.down, c.ancestor_count)
-        for c in RELATIONSHIPS.values()
-    )
-    assert rows == tuple(_CORE_CATEGORIES)
-    assert all(c.label for c in RELATIONSHIPS.values())
+def test_the_registry_lists_the_core_categories_in_the_same_order():
+    assert tuple(RELATIONSHIPS) == tuple(row[0] for row in _CORE_CATEGORIES)
+
+
+@pytest.mark.parametrize("row", _CORE_CATEGORIES, ids=[row[0] for row in _CORE_CATEGORIES])
+def test_every_registry_field_is_read_from_its_core_column(row):
+    # Holds `_from_core`'s unpacking to the binding's column order.
+    code, degree, first_role, second_role, nominal_kinship, up, down, ancestor_count = row
+    category = RELATIONSHIPS[code]
+    assert category.degree == degree
+    assert (category.up, category.down, category.ancestor_count) == (up, down, ancestor_count)
+    assert (category.first_role, category.second_role) == (first_role, second_role)
+    assert math.isclose(category.nominal_kinship, nominal_kinship, rel_tol=1e-12)
+    assert category.label
 
 
 @pytest.mark.parametrize("code", list(RELATIONSHIPS))

@@ -152,15 +152,16 @@ def _role(role: str | None) -> RelationshipRole | None:
 
 def _from_core() -> dict[str, RelationshipCategory]:
     """Every category from the core's table, in its order, with its label."""
-    categories = {
+    rows = _native.relationship_categories()
+    codes = tuple(row[0] for row in rows)
+    if codes != tuple(_LABELS):
+        raise AssertionError(f"_LABELS names {tuple(_LABELS)}, the core's categories are {codes}")
+    return {
         code: RelationshipCategory(
             code, _LABELS[code], degree, nominal_kinship, up, down, ancestor_count, _role(first), _role(second)
         )
-        for code, degree, first, second, nominal_kinship, up, down, ancestor_count in _native.relationship_categories()
+        for code, degree, first, second, nominal_kinship, up, down, ancestor_count in rows
     }
-    if tuple(categories) != tuple(_LABELS):
-        raise AssertionError("_LABELS and the core's categories differ in codes or order")
-    return categories
 
 
 _RELATIONSHIPS: dict[str, RelationshipCategory] = _from_core()
