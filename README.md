@@ -19,8 +19,8 @@ Each relationship type is parameterised by `(up, down, n_ancestors)`:
 pip install pedigree-graph
 ```
 
-Binary wheels cover manylinux x86-64 and AArch64, macOS x86-64 and Apple
-Silicon, and Windows x86-64 (one `abi3` wheel per platform for CPython >= 3.13).
+Binary wheels cover manylinux x86-64 and AArch64, macOS Apple Silicon, and
+Windows x86-64 (one `abi3` wheel per platform for CPython >= 3.13).
 Elsewhere pip builds the sdist, which needs a Rust toolchain (`rustc >= 1.85`).
 
 For development the locked pixi environment carries Python, Rust, and maturin

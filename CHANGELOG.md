@@ -6,6 +6,9 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Packaging: no macOS x86-64 wheel.** Releases build four `abi3` wheels
+  (manylinux x86-64 and AArch64, macOS Apple Silicon, Windows x86-64). On an
+  Intel Mac pip builds the sdist, which needs a Rust toolchain.
 - **Breaking (Rust): a `MomentsTable` carries its `symmetric` rule**
   (issue #55, ADR 0015). `MomentsTable::from_bytes` and `from_i128` take a
   `Symmetric` after the products, `symmetric()` reads it back, and `merge`

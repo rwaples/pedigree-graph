@@ -68,9 +68,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
             manylinux: auto
             artifact: dist-wheel-linux-aarch64
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            artifact: dist-wheel-macos-x86_64
           - runner: macos-15
             target: aarch64-apple-darwin
             artifact: dist-wheel-macos-arm64
@@ -182,8 +179,8 @@ jobs:
         run: |
           wheels="$(ls dist/*.whl 2>/dev/null | wc -l)"
           sdists="$(ls dist/*.tar.gz 2>/dev/null | wc -l)"
-          if [ "$wheels" -ne 5 ] || [ "$sdists" -ne 1 ]; then
-            echo "::error::expected 5 wheels and 1 sdist, found ${wheels} wheels and ${sdists} sdists"
+          if [ "$wheels" -ne 4 ] || [ "$sdists" -ne 1 ]; then
+            echo "::error::expected 4 wheels and 1 sdist, found ${wheels} wheels and ${sdists} sdists"
             exit 1
           fi
           echo "Found ${wheels} wheels and ${sdists} sdist"

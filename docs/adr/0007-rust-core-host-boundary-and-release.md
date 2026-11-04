@@ -222,9 +222,10 @@ ship `py.typed` and the `_native.pyi` stubs. CI installs the built wheel
 outside the checkout and runs the tests against it. There is no production
 Python fallback for a migrated operation.
 
-Wheels: CPython 3.13+ via ABI3 on manylinux x86-64/AArch64, macOS
-x86-64/Apple Silicon, and Windows x86-64, plus an sdist that needs Rust. No
-PyPy, musllinux, Windows ARM, or 32-bit guarantee.
+Wheels: CPython 3.13+ via ABI3 on manylinux x86-64/AArch64, macOS Apple
+Silicon, and Windows x86-64, plus an sdist that needs Rust. No PyPy,
+musllinux, Windows ARM, macOS x86-64, or 32-bit guarantee; macOS x86-64
+wheels were dropped 2026-11-04 (Intel Macs build the sdist).
 
 The release profile uses one codegen unit. Under the default sixteen, adding
 unrelated modules moved the generation-summary DP's inlining and cost it 12%
