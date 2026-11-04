@@ -19,7 +19,7 @@ use common::{
 };
 use pedigree_graph_core::kinship::inbreeding;
 use pedigree_graph_core::lineage::{distinct_ancestor_counts, ParentColumns};
-use pedigree_graph_core::relationships::query::{self, Receiver};
+use pedigree_graph_core::relationships::query::{self, Compaction, Receiver};
 use pedigree_graph_core::relationships::{
     relationship_burden, Category, CategorySet, Counts, Execution, MaxDegree, MomentsInput,
     MomentsTable, Operand, PairBlocks, Product, Progress, RelativesPerPerson, Side, Statistic,
@@ -679,6 +679,104 @@ fn moments_of_a_disjoint_union_are_the_merge_of_the_parts() {
                     usize::from(ma.total_pairs() > 0 && mb.total_pairs() > 0),
                 );
             }
+            Ok(())
+        },
+    );
+}
+
+/// The graph's pairs restricted to the view `graph_rows`, built without
+/// the engine's view map: pairs with both rows selected, in view rows, a
+/// symmetric category's pairs lower view row first and an asymmetric one's
+/// in their semantic orientation, each block in view-space canonical-key
+/// order; with every category's kept pair count.
+fn restricted(graph: &PairBlocks, graph_rows: &[i32], n: usize) -> (PairBlocks, Counts) {
+    let mut to_view: Vec<Option<i32>> = vec![None; n];
+    for (view_row, &row) in graph_rows.iter().enumerate() {
+        to_view[row as usize] = Some(view_row as i32);
+    }
+    let mut blocks = PairBlocks::empty();
+    let mut counts = Counts::default();
+    for cat in Category::ALL {
+        let block = graph.get(cat);
+        let mut kept: Vec<(i32, i32)> = block
+            .first
+            .iter()
+            .zip(&block.second)
+            .filter_map(|(&a, &b)| {
+                let (a, b) = (to_view[a as usize]?, to_view[b as usize]?);
+                Some(if cat.symmetric() && a > b {
+                    (b, a)
+                } else {
+                    (a, b)
+                })
+            })
+            .collect();
+        kept.sort_unstable_by_key(|&(a, b)| (a.min(b), a.max(b)));
+        counts.0[cat.index()] = kept.len() as u64;
+        let out = &mut blocks.0[cat.index()];
+        out.first = kept.iter().map(|p| p.0).collect();
+        out.second = kept.iter().map(|p| p.1).collect();
+    }
+    (blocks, counts)
+}
+
+/// A pedigree and a view of it: a shuffled selection of its rows, of any
+/// size from none to all.
+fn viewed_pedigree() -> impl Strategy<Value = (Ped, Vec<i32>)> {
+    pedigree().prop_flat_map(|ped| {
+        let n = ped.len();
+        let rows = Just((0..n as i32).collect::<Vec<_>>()).prop_shuffle();
+        (Just(ped), rows, 0..=n).prop_map(|(ped, mut rows, k)| {
+            rows.truncate(k);
+            (ped, rows)
+        })
+    })
+}
+
+/// On a random view, the full path's pairs (both executions) and counts
+/// are the whole graph's restricted to the view, and the compact path
+/// gives the full path's pairs, counts and relatives: unselected rows
+/// still connect the selected ones, and compaction drops only rows no
+/// selected pair needs.
+#[test]
+fn a_view_is_the_graph_restricted_to_it_on_either_path() {
+    check(
+        "view subsets",
+        3.4,
+        viewed_pedigree(),
+        |(ped, rows), checked| {
+            let b = Built::new(&ped);
+            let rel = b.relationships();
+            let all = CategorySet::up_to_degree(MaxDegree::MAX.get());
+            let progress = Progress::default();
+            let graph = blocks(&b, Execution::Speed);
+            let (want_blocks, want_counts) = restricted(&graph, &rows, b.len());
+            let on = |compaction| Receiver::View {
+                graph_rows: &rows,
+                compaction,
+            };
+            let mut paths = Vec::new();
+            for compaction in [Compaction::Full, Compaction::Compact] {
+                for execution in [Execution::Speed, Execution::Memory] {
+                    let got = query::pairs(&rel, all, on(compaction), execution, &progress)
+                        .expect("view pairs");
+                    prop_assert_eq!(&got, &want_blocks, "{:?} {}", compaction, execution.name());
+                }
+                let counts = query::counts(&rel, all, on(compaction), &progress).expect("counts");
+                prop_assert_eq!(counts.0, want_counts.0, "{:?}", compaction);
+                let relative: Vec<f64> = (0..rows.len()).map(|v| (v % 5) as f64).collect();
+                let columns = [ThresholdColumn {
+                    relative: &relative,
+                    threshold: Threshold::Scalar(2.0),
+                }];
+                let mut got =
+                    query::relatives(&rel, all, on(compaction), &columns, THREADS, &progress)
+                        .expect("view relatives");
+                got.lane_pairs = vec![got.lane_pairs.iter().sum()];
+                paths.push(got);
+            }
+            prop_assert_eq!(&paths[0], &paths[1], "relatives Full vs Compact");
+            tally(checked, want_blocks.total());
             Ok(())
         },
     );
