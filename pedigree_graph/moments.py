@@ -98,11 +98,14 @@ class MomentAxis:
 
 
 def side_column(name: str, columns: Sequence[str]) -> tuple[int, int]:
-    """Resolve ``"first.<column>"`` / ``"second.<column>"`` to ``(side, column index)``."""
-    side, _, column = name.partition(".")
-    if side not in ("first", "second") or column not in columns:
+    """Resolve ``"first.<column>"`` / ``"second.<column>"`` to ``(side, column index)``.
+
+    The core parses the name (split at the first ``.``), as it does for R.
+    """
+    operand = _native.moments_operand(name, list(columns))
+    if operand is None:
         raise ValueError(f"{name!r} is not 'first.<column>' or 'second.<column>' over {tuple(columns)}")
-    return (0 if side == "first" else 1), columns.index(column)
+    return operand
 
 
 def _encode_exact(values: np.ndarray) -> tuple[int, np.ndarray]:
@@ -171,10 +174,13 @@ class RelationshipMoments:
     lane_pairs: tuple[int, ...] = ()
     estimated_peak_bytes: int = 0
     counts: np.ndarray = field(init=False)
+    _operands: list[tuple[int, int, int, int]] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "exponents", _frozen(np.asarray(self.exponents, dtype=np.int64)))
         object.__setattr__(self, "encoded", _frozen(np.asarray(self.encoded, dtype=np.uint8).reshape(-1)))
+        # Core parses the product names once; every later core call reuses the operands.
+        object.__setattr__(self, "_operands", list(self._product_operands()))
         # Core checks the layout and that every count is in [0, 2^63 - 1].
         counts = _native.moments_table_counts(self._core_table())
         object.__setattr__(self, "counts", _frozen(counts.reshape(self.shape)))
@@ -293,11 +299,11 @@ class RelationshipMoments:
         if not names:
             return self
         axes = list(self.axes)
-        shape, n_columns, operands, exponents, width, data = self._core_table()
+        shape, n_columns, operands, symmetric, exponents, width, data = self._core_table()
         for name in names:
             axis = _axis_index(axes, name)
             shape, exponents, width, data = _native.moments_table_sum(
-                (shape, n_columns, operands, exponents, width, data), axis
+                (shape, n_columns, operands, symmetric, exponents, width, data), axis
             )
             del axes[axis]
         return self._from_core(tuple(axes), exponents, width, data, keep_pass=True)
@@ -310,8 +316,13 @@ class RelationshipMoments:
         brings it to the finer exponent, so the merged result carries the
         larger exponent of each column and no rounding.
 
+        The core refuses differing products or ``symmetric`` rules; this
+        host checks only the labels it alone holds, the axes and the column
+        names.
+
         Raises:
-            ValueError: The layouts or the ``symmetric`` rules differ.
+            ValueError: The axes, columns, products or ``symmetric`` rules
+                differ.
             ResourceError: A cell's pair count would pass ``2**63 - 1``
                 (``arithmetic_overflow``); nothing wraps.
         """
@@ -319,18 +330,23 @@ class RelationshipMoments:
             a.name == b.name and a.levels.shape == b.levels.shape and bool(np.all(a.levels == b.levels))
             for a, b in zip(self.axes, other.axes, strict=True)
         )
-        if not same_axes or self.columns != other.columns or self.products != other.products:
-            raise ValueError("merge needs two results with the same axes, columns and products")
-        if self.symmetric != other.symmetric:
-            raise ValueError(f"merge needs one symmetric rule, got {self.symmetric!r} and {other.symmetric!r}")
+        if not same_axes or self.columns != other.columns:
+            raise ValueError("merge needs two results with the same axes and columns")
         _, exponents, width, data = _native.moments_table_merge(self._core_table(), other._core_table())
         return self._from_core(self.axes, exponents, width, data)
 
     def _core_table(self) -> tuple:
-        """This table as core reads it: ``(shape, n_columns, operands, exponents, width, bytes)``."""
-        operands = list(self._product_operands())
+        """This table as core reads it: ``(shape, n_columns, operands, symmetric, exponents, width, bytes)``."""
         exponents = [int(e) for e in self.exponents]
-        return (list(self.shape), len(self.columns), operands, exponents, self.width, self.encoded)
+        return (
+            list(self.shape),
+            len(self.columns),
+            self._operands,
+            self.symmetric,
+            exponents,
+            self.width,
+            self.encoded,
+        )
 
     def _from_core(
         self,

@@ -687,11 +687,7 @@ fn relationship_moments<'py>(
     tick: f64,
 ) -> PyResult<MomentsArrays<'py>> {
     let categories = requested_categories(&requested)?;
-    let symmetric = Symmetric::parse(symmetric).ok_or_else(|| {
-        PyValueError::new_err(format!(
-            "symmetric must be \"canonical\" or \"both\", got {symmetric:?}"
-        ))
-    })?;
+    let symmetric = parse_symmetric(symmetric)?;
     let receiver = receiver(&graph_rows, compaction)?;
     let n_columns = values.shape()[1];
     let n_same = same.shape()[1];
@@ -745,6 +741,32 @@ fn relationship_moments<'py>(
 /// Product operands as the host spells them, `(side_a, column_a, side_b,
 /// column_b)` with side `0` for the first member and `1` for the second.
 type ProductArg = (u8, usize, u8, usize);
+
+fn parse_symmetric(symmetric: &str) -> PyResult<Symmetric> {
+    Symmetric::parse(symmetric).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "symmetric must be \"canonical\" or \"both\", got {symmetric:?}"
+        ))
+    })
+}
+
+/// `(side, column)` of an operand name over `columns` (core's
+/// `Operand::parse`); `None` for a name that is not
+/// `"first.<column>"` or `"second.<column>"`, which the caller words.
+#[pyfunction]
+fn moments_operand(name: &str, columns: Vec<String>) -> Option<(u8, usize)> {
+    Operand::parse(name, &columns).map(|o| (o.side.code(), o.column))
+}
+
+/// The default products' operand names over `columns`: `first.c` x
+/// `second.c` for each column (core's `Product::diagonal`).
+#[pyfunction]
+fn moments_default_products(columns: Vec<String>) -> Vec<(String, String)> {
+    Product::diagonal(columns.len())
+        .into_iter()
+        .map(|p| (p.a.name(&columns), p.b.name(&columns)))
+        .collect()
+}
 
 fn resolve_products(products: Vec<ProductArg>) -> PyResult<Vec<Product>> {
     let side = |code: u8| {
@@ -851,12 +873,14 @@ fn moments_ratio(numerator: &str, denominator: &str, shift: i64) -> PyResult<Opt
 }
 
 /// A moments table as the host hands it over: `(shape, n_columns, products,
-/// exponents, width, data)`, `data` a uint8 array of little-endian two's
-/// complement accumulators, `width` bytes each.  Core borrows `data`.
+/// symmetric, exponents, width, data)`, `data` a uint8 array of
+/// little-endian two's complement accumulators, `width` bytes each.  Core
+/// borrows `data`.
 type TableArg<'py> = (
     Vec<usize>,
     usize,
     Vec<ProductArg>,
+    String,
     Vec<i64>,
     usize,
     PyReadonlyArray1<'py, u8>,
@@ -867,11 +891,12 @@ type TableArg<'py> = (
 type TableOut<'py> = (Vec<usize>, Vec<i64>, usize, Bound<'py, PyArray1<u8>>);
 
 fn table<'a>(py: Python<'_>, arg: &'a TableArg<'_>) -> PyResult<MomentsTable<'a>> {
-    let (shape, n_columns, products, exponents, width, data) = arg;
+    let (shape, n_columns, products, symmetric, exponents, width, data) = arg;
     MomentsTable::from_bytes(
         shape.clone(),
         *n_columns,
         resolve_products(products.clone())?,
+        parse_symmetric(symmetric)?,
         exponents.clone(),
         *width,
         Cow::Borrowed(data.as_slice()?),
@@ -1485,6 +1510,8 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(moments_table_sum, m)?)?;
     m.add_function(wrap_pyfunction!(moments_table_select, m)?)?;
     m.add_function(wrap_pyfunction!(moments_table_merge, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_operand, m)?)?;
+    m.add_function(wrap_pyfunction!(moments_default_products, m)?)?;
     m.add_function(wrap_pyfunction!(moments_table_derive, m)?)?;
     m.add_function(wrap_pyfunction!(relatives_per_person, m)?)?;
     m.add_function(wrap_pyfunction!(check_pair_rows, m)?)?;

@@ -137,9 +137,9 @@ def _quantize(columns: dict[str, np.ndarray], n: int) -> tuple[np.ndarray, np.nd
 def _parse_products(
     products: Iterable[tuple[str, str]] | None, columns: tuple[str, ...]
 ) -> tuple[tuple[tuple[str, str], ...], list[tuple[int, int, int, int]]]:
-    """Resolve product names to (side, column) index pairs; default is the first×second diagonal."""
+    """Resolve product names to (side, column) index pairs; default is core's first×second diagonal."""
     if products is None:
-        named = tuple((f"first.{c}", f"second.{c}") for c in columns)
+        named = tuple(_native.moments_default_products(list(columns)))
     else:
         named = tuple(_product_entry(entry) for entry in products)
     resolved = []

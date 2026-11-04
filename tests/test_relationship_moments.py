@@ -23,7 +23,7 @@ from conftest import parity_columns, parity_fixtures
 from pedigree_graph import RELATIONSHIPS, PedigreeGraph, PedigreeValidationError, ResourceError, _native
 from pedigree_graph import _relationship_moments as boundary
 from pedigree_graph._threads import thread_budget
-from pedigree_graph.moments import MomentAxis, host_bytes
+from pedigree_graph.moments import MomentAxis, host_bytes, side_column
 
 if TYPE_CHECKING:
     from pedigree_graph.moments import RelationshipMoments
@@ -634,6 +634,17 @@ class TestSurface:
                     symmetric="both",
                 )
             )
+        with pytest.raises(ValueError, match="same shape, columns and products"):
+            full.merge(
+                graph.relationship_moments(
+                    max_degree=3,
+                    first={"g": g, "s": s},
+                    second={"s": s},
+                    values=values,
+                    products=None,
+                    same={"hh": hh},
+                )
+            )
 
     def test_a_constant_non_dyadic_column_stays_exactly_constant_through_the_algebra(self):
         graph = _graph("random_1k")
@@ -899,6 +910,27 @@ def _counts_table(counts: list[int]) -> RelationshipMoments:
         q_cross=zeros,
         symmetric="canonical",
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "columns", "expected"),
+    [
+        ("first.x", ("x", "y.z"), (0, 0)),
+        ("second.y.z", ("x", "y.z"), (1, 1)),
+        ("first", ("",), (0, 0)),
+        ("second.", ("",), (1, 0)),
+        ("first", ("x",), None),
+        ("third.x", ("x",), None),
+        ("first.w", ("x",), None),
+    ],
+)
+def test_side_column_reads_operand_names_as_str_partition_does(name, columns, expected):
+    """Core parses the name; a name with no ``.`` is a side and the empty column, as before."""
+    if expected is None:
+        with pytest.raises(ValueError, match=r"is not 'first\.<column>' or 'second\.<column>'"):
+            side_column(name, columns)
+    else:
+        assert side_column(name, columns) == expected
 
 
 class TestCheckedCounts:

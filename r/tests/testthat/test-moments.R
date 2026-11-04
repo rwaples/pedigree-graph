@@ -106,8 +106,23 @@ test_that("merge needs one factor mapping, one layout and one rule", {
   err <- expect_pg_error(moments_merge(a, b), "usage")
   expect_match(conditionMessage(err), "axis 'first_f'")
   expect_pg_error(moments_merge(a, relationship_moments(pg, max_degree = 1, first = list(f = f))), "usage")
-  expect_pg_error(moments_merge(a, relationship_moments(pg, max_degree = 1, first = list(f = f), values = list(x = x),
-                                                         symmetric = "both")), "usage")
+  err <- expect_pg_error(moments_merge(a, relationship_moments(pg, max_degree = 1, first = list(f = f),
+                                                                values = list(x = x), symmetric = "both")), "usage")
+  expect_match(conditionMessage(err), "one symmetric rule, got 'canonical' and 'both'")
+  err <- expect_pg_error(moments_merge(a, relationship_moments(pg, max_degree = 1, first = list(f = f),
+                                                                values = list(x = x),
+                                                                products = list(c("first.x", "first.x")))), "usage")
+  expect_match(conditionMessage(err), "same axes, columns and products")
+  # R keeps product names beside their operand codes: R compares the names,
+  # core the codes.
+  recoded <- a
+  recoded$operands[3] <- 0L
+  err <- expect_pg_error(moments_merge(a, recoded), "usage")
+  expect_match(conditionMessage(err), "same shape, columns and products")
+  relabelled <- a
+  relabelled$products[[1]][2] <- "first.x"
+  err <- expect_pg_error(moments_merge(a, relabelled), "usage")
+  expect_match(conditionMessage(err), "same axes, columns and products")
   doubled <- moments_merge(a, a)
   expect_identical(as.data.frame(doubled, stats = "n")$n, 2 * as.data.frame(a, stats = "n")$n)
   expect_identical(as.data.frame(doubled, stats = "mean_first"), as.data.frame(a, stats = "mean_first"))

@@ -248,6 +248,9 @@ moments_merge <- function(a, b) {
   same_axes <- length(a$axes) == length(b$axes) && all(mapply(function(x, y) {
     identical(x$name, y$name) && identical(x$levels, y$levels)
   }, a$axes, b$axes))
+  # Core refuses differing product operands and symmetric rules; R checks
+  # the labels it alone holds: axis names and levels, factor labels, columns,
+  # and the product names it keeps beside their operand codes.
   if (!same_axes || !identical(a$columns, b$columns) || !identical(a$products, b$products)) {
     .pg_usage("moments_merge() needs two results with the same axes, columns and products")
   }
@@ -256,9 +259,6 @@ moments_merge <- function(a, b) {
       .pg_usage(sprintf("moments_merge() needs one factor mapping on axis '%s'; the labels differ",
                         a$axes[[i]]$name))
     }
-  }
-  if (!identical(a$symmetric, b$symmetric)) {
-    .pg_usage(sprintf("moments_merge() needs one symmetric rule, got '%s' and '%s'", a$symmetric, b$symmetric))
   }
   .pg_moments_like(a, a$axes, .pg_call(.native_moments_merge(a, b)))
 }

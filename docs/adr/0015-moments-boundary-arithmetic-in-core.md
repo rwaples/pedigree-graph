@@ -1,6 +1,6 @@
 # ADR 0015: the moments boundary arithmetic is one core implementation both hosts share
 
-**Status:** accepted
+**Status:** accepted; amended 2026-11-04 (issue #55: merge compatibility and operand names)
 **Date:** 2026-10-01
 **Context:** issue #30 (the R binding of `relationship_moments`,
 `relationship_counts` and `relationship_burden`). Amends ADR 0013's "Exact
@@ -98,6 +98,31 @@ whose message names the statistic and the column or product
 (`sumsq_first of 'x' is not representable in float64 (an output
 overflowed)`); R appends how to leave it out with `stats =`. An inconsistent
 table handed to core is `InvalidMomentsTable`.
+
+### Merge compatibility and operand names are core's
+
+> Amended 2026-11-04 (issue #55): before this, each host checked the
+> products and the `symmetric` rule before calling `merge`, and each parsed
+> operand names and built the default products itself.
+
+A table carries the `symmetric` rule of the pass that built it
+(`MomentsTable::from_bytes` and `from_i128` take it; `select`, `sum` and
+`merge` keep it). Two rules count a symmetric pair once or twice, so `merge`
+refuses tables whose shapes, column counts, products or rules differ, all as
+`InvalidMomentsTable` (a usage error: `ValueError` in Python,
+`pedigree_graph_usage_error` in R). A host checks only the labels it alone
+holds: axis names and levels and column names, plus, in R, factor labels and
+the product names R keeps beside their operand codes (core sees only the
+codes, so two R objects whose names and codes disagree would otherwise
+merge).
+
+`Operand::parse` reads `"first.<column>"` or `"second.<column>"`, split at
+the first `.` as Python's `str.partition` splits it (a name with no `.` is
+a side and the empty column, which only a table built without a pedigree can
+have), and `Product::diagonal` gives the default `first.c × second.c`
+products; `Operand::name` spells an operand back. Both hosts call them.
+`parse` returns `None` for a bad name rather than an error, so each host
+words the refusal in its own terms and keeps its exception type.
 
 ### R surface
 

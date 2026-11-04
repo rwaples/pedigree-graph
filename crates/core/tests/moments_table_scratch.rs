@@ -11,7 +11,9 @@
     reason = "test helpers outside #[test] functions: a panic fails the test"
 )]
 
-use pedigree_graph_core::relationships::{MomentsTable, Operand, Product, Side, Statistic};
+use pedigree_graph_core::relationships::{
+    MomentsTable, Operand, Product, Side, Statistic, Symmetric,
+};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -103,6 +105,7 @@ fn table(cells: usize, exponents: [i64; 2]) -> MomentsTable<'static> {
         vec![7, cells],
         2,
         PRODUCTS.to_vec(),
+        Symmetric::Canonical,
         exponents.to_vec(),
         &values,
     )

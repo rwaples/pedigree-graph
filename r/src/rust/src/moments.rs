@@ -4,8 +4,8 @@
 //! every operation on the result, exactly as for Python; this module only
 //! turns R vectors into core's inputs and core's outputs into R vectors.  A
 //! table crosses as the list the R object keeps (`shape`, `n_columns`,
-//! `operands`, `exponents`, `width`, `table`), its accumulators a raw
-//! vector that core borrows.
+//! `operands`, `symmetric`, `exponents`, `width`, `table`), its
+//! accumulators a raw vector that core borrows.
 
 use crate::errors::{HostError, HostResult};
 use crate::input::doubles;
@@ -159,19 +159,12 @@ fn value_column(field: &str, column: &Robj, n: usize) -> HostResult<Vec<f64>> {
 }
 
 fn operand(name: &str, columns: &[String]) -> HostResult<Operand> {
-    let (side, column) = name.split_once('.').unwrap_or(("", name));
-    let side = match side {
-        "first" => Some(Side::First),
-        "second" => Some(Side::Second),
-        _ => None,
-    };
-    match (side, columns.iter().position(|c| c == column)) {
-        (Some(side), Some(column)) => Ok(Operand { side, column }),
-        _ => Err(HostError::usage(format!(
+    Operand::parse(name, columns).ok_or_else(|| {
+        HostError::usage(format!(
             "product operand '{name}' must be 'first.<column>' or 'second.<column>' over the values ({})",
             columns.join(", ")
-        ))),
-    }
+        ))
+    })
 }
 
 /// Each product's `(a, b)` operand names, as the R object keeps them.
@@ -181,9 +174,9 @@ type ProductNames = Vec<(String, String)>;
 /// first x second product of every column.
 fn products(products: &Robj, columns: &[String]) -> HostResult<(ProductNames, Vec<Product>)> {
     let named: Vec<(String, String)> = if products.is_null() {
-        columns
-            .iter()
-            .map(|c| (format!("first.{c}"), format!("second.{c}")))
+        Product::diagonal(columns.len())
+            .into_iter()
+            .map(|p| (p.a.name(columns), p.b.name(columns)))
             .collect()
     } else {
         let list = List::try_from(products.clone()).map_err(|_| {
@@ -277,11 +270,7 @@ pub fn start_moments(
 ) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
     let requested = selection(max_degree, categories)?;
-    let symmetric = Symmetric::parse(symmetric).ok_or_else(|| {
-        HostError::usage(format!(
-            "symmetric must be \"canonical\" or \"both\", got {symmetric:?}"
-        ))
-    })?;
+    let symmetric = parse_symmetric(symmetric)?;
     let budget = budget_bytes(memory_budget_bytes)?;
     let n = graph.len();
 
@@ -426,6 +415,14 @@ pub fn start_moments(
     Ok(job::spawn(pool, work, finish))
 }
 
+fn parse_symmetric(symmetric: &str) -> HostResult<Symmetric> {
+    Symmetric::parse(symmetric).ok_or_else(|| {
+        HostError::usage(format!(
+            "symmetric must be \"canonical\" or \"both\", got {symmetric:?}"
+        ))
+    })
+}
+
 fn int_field<'a>(m: &'a List, name: &str) -> HostResult<&'a [i32]> {
     m.dollar(name)
         .ok()
@@ -447,6 +444,15 @@ fn with_table<T>(m: &Robj, f: impl FnOnce(&MomentsTable<'_>) -> HostResult<T>) -
     let operands = int_field(&list, "operands")?;
     let exponents = int_field(&list, "exponents")?;
     let width = int_field(&list, "width")?;
+    let symmetric = list
+        .dollar("symmetric")
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .ok_or_else(|| {
+            HostError::usage(
+                "a relationship_moments object needs a character `symmetric`".to_string(),
+            )
+        })?;
     let raw = list.dollar("table").map_err(|_| {
         HostError::usage("a relationship_moments object needs a raw `table`".to_string())
     })?;
@@ -488,6 +494,7 @@ fn with_table<T>(m: &Robj, f: impl FnOnce(&MomentsTable<'_>) -> HostResult<T>) -
         shape.iter().map(|&s| s as usize).collect(),
         n_columns[0] as usize,
         products,
+        parse_symmetric(&symmetric)?,
         exponents.iter().map(|&e| i64::from(e)).collect(),
         width[0] as usize,
         Cow::Borrowed(bytes),

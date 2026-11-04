@@ -238,7 +238,7 @@ def _stacked(table: OracleTable) -> np.ndarray:
 def _arg(table: OracleTable) -> tuple:
     width, data = _encode_exact(_stacked(table))
     k = len(table.exponents)
-    return (list(table.shape), k, list(table.operands), [int(e) for e in table.exponents], width, data)
+    return (list(table.shape), k, list(table.operands), "canonical", [int(e) for e in table.exponents], width, data)
 
 
 def _back(out: tuple, like: OracleTable) -> OracleTable:
@@ -393,7 +393,7 @@ def test_a_refused_table_or_label_allocation_is_a_resource_error():
     out = _run_child("""
         import numpy as np
         from pedigree_graph import ResourceError, _native
-        table = ([3], 0, [], [], 1, np.zeros(3, dtype=np.uint8))
+        table = ([3], 0, [], "canonical", [], 1, np.zeros(3, dtype=np.uint8))
         for family, call in (
             ("moment_input", lambda: _native.moments_pack([np.arange(5)], 5, "first")),
             ("moment_table", lambda: _native.moments_table_sum(table, 0)),

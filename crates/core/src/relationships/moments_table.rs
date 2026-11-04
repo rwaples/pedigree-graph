@@ -18,7 +18,7 @@
 //! decodes a whole table: each accumulator is decoded when it is read, so
 //! the scratch beyond the input and the output is a few big integers.
 
-use super::moments::{CellLayout, Operand, Product, Side, Slot};
+use super::moments::{CellLayout, Operand, Product, Side, Slot, Symmetric};
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use num_bigint::{BigInt, BigUint, Sign};
@@ -498,12 +498,16 @@ impl Statistic {
 /// squares in the same order, and the cross sums of the `p` products, in
 /// quantized units of `2^-exponents[c]` per column (`2^-(e_a + e_b)` for a
 /// cross sum).  Cells are in row-major order over `shape`.  Each count is
-/// in `[0, 2^63 − 1]`.  A table built from host bytes borrows them.
+/// in `[0, 2^63 − 1]`.  `symmetric` is how the pass that built the table
+/// oriented a symmetric pair; two tables of different rules count those
+/// pairs differently, so they never merge.  A table built from host bytes
+/// borrows them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MomentsTable<'a> {
     shape: Vec<usize>,
     layout: CellLayout,
     products: Vec<Product>,
+    symmetric: Symmetric,
     exponents: Vec<i64>,
     width: usize,
     bytes: Cow<'a, [u8]>,
@@ -563,6 +567,7 @@ impl<'a> MomentsTable<'a> {
         shape: Vec<usize>,
         n_columns: usize,
         products: Vec<Product>,
+        symmetric: Symmetric,
         exponents: Vec<i64>,
         width: usize,
         bytes: Cow<'a, [u8]>,
@@ -612,6 +617,7 @@ impl<'a> MomentsTable<'a> {
             shape,
             layout,
             products,
+            symmetric,
             exponents,
             width,
             bytes,
@@ -644,6 +650,7 @@ impl<'a> MomentsTable<'a> {
         shape: Vec<usize>,
         n_columns: usize,
         products: Vec<Product>,
+        symmetric: Symmetric,
         exponents: Vec<i64>,
         values: &[i128],
     ) -> Result<MomentsTable<'static>, Error> {
@@ -652,6 +659,7 @@ impl<'a> MomentsTable<'a> {
             shape,
             n_columns,
             products,
+            symmetric,
             exponents,
             width,
             Cow::Owned(bytes),
@@ -671,6 +679,11 @@ impl<'a> MomentsTable<'a> {
     /// The products, as operand pairs.
     pub fn products(&self) -> &[Product] {
         &self.products
+    }
+
+    /// How the pass oriented a symmetric pair.
+    pub fn symmetric(&self) -> Symmetric {
+        self.symmetric
     }
 
     /// The scale exponent of each column.
@@ -786,6 +799,7 @@ impl<'a> MomentsTable<'a> {
             shape,
             layout: self.layout,
             products: self.products.clone(),
+            symmetric: self.symmetric,
             exponents,
             width,
             bytes: Cow::Owned(alloc::filled(0u8, len, Family::MomentTable)?),
@@ -911,8 +925,8 @@ impl<'a> MomentsTable<'a> {
     ///
     /// # Errors
     ///
-    /// [`Error::InvalidMomentsTable`] when the shapes, columns or products
-    /// differ; [`Error::ArithmeticOverflow`] when a cell's pair count would
+    /// [`Error::InvalidMomentsTable`] when the shapes, columns, products or
+    /// symmetric rules differ; [`Error::ArithmeticOverflow`] when a cell's pair count would
     /// pass `2^63 − 1`; [`Error::AllocationFailed`] for the output.
     pub fn merge(&self, other: &MomentsTable<'_>) -> Result<MomentsTable<'static>, Error> {
         if self.shape != other.shape
@@ -922,6 +936,13 @@ impl<'a> MomentsTable<'a> {
             return Err(invalid(
                 "merge needs two tables with the same shape, columns and products".to_string(),
             ));
+        }
+        if self.symmetric != other.symmetric {
+            return Err(invalid(format!(
+                "merge needs one symmetric rule, got '{}' and '{}'",
+                self.symmetric.name(),
+                other.symmetric.name()
+            )));
         }
         let exponents: Vec<i64> = self
             .exponents
@@ -1460,6 +1481,7 @@ mod tests {
             shape.to_vec(),
             2,
             PRODUCTS.to_vec(),
+            Symmetric::Canonical,
             exponents.to_vec(),
             values,
         )
@@ -1513,6 +1535,7 @@ mod tests {
             vec![2, 3],
             2,
             PRODUCTS.to_vec(),
+            Symmetric::Canonical,
             vec![1, -2],
             16,
             Cow::Borrowed(&wide),
@@ -1527,6 +1550,7 @@ mod tests {
                 shape,
                 2,
                 PRODUCTS.to_vec(),
+                Symmetric::Canonical,
                 exponents,
                 width,
                 Cow::Owned(bytes),
@@ -1638,6 +1662,32 @@ mod tests {
             .contains("same shape"));
     }
 
+    #[test]
+    fn a_table_keeps_its_symmetric_rule_and_merges_only_with_its_own() {
+        let shape = [2, 2];
+        let raw = random_values(&shape, 23, 40);
+        let canonical = table(&shape, &[0, 0], &raw);
+        let both = MomentsTable::from_i128(
+            shape.to_vec(),
+            2,
+            PRODUCTS.to_vec(),
+            Symmetric::Both,
+            vec![0, 0],
+            &raw,
+        )
+        .unwrap();
+        assert_eq!(both.sum(0).unwrap().symmetric(), Symmetric::Both);
+        assert_eq!(both.select(1, &[1]).unwrap().symmetric(), Symmetric::Both);
+        assert_eq!(both.merge(&both).unwrap().symmetric(), Symmetric::Both);
+        let err = canonical.merge(&both).unwrap_err();
+        assert!(matches!(err, Error::InvalidMomentsTable { .. }));
+        assert_eq!(err.class(), crate::error::ErrorClass::Usage);
+        assert_eq!(
+            err.to_string(),
+            "invalid relationship moments table: merge needs one symmetric rule, got 'canonical' and 'both'"
+        );
+    }
+
     fn counts_table(counts: &[i64]) -> MomentsTable<'static> {
         let mut bytes = Vec::new();
         for &n in counts {
@@ -1648,6 +1698,7 @@ mod tests {
             vec![counts.len()],
             2,
             PRODUCTS.to_vec(),
+            Symmetric::Canonical,
             vec![0, 0],
             8,
             Cow::Owned(bytes),
@@ -1800,6 +1851,7 @@ mod tests {
             t.shape().to_vec(),
             t.n_columns(),
             t.products().to_vec(),
+            t.symmetric(),
             t.exponents().to_vec(),
             20,
             Cow::Owned(bytes),

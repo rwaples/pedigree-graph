@@ -281,6 +281,14 @@ impl Side {
             _ => None,
         }
     }
+
+    /// The side's spelling in an operand name: `"first"` or `"second"`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Side::First => "first",
+            Side::Second => "second",
+        }
+    }
 }
 
 /// One operand of a cross product: a value column of one member.
@@ -290,11 +298,57 @@ pub struct Operand {
     pub column: usize,
 }
 
+impl Operand {
+    /// The operand an operand name spells, `"first.<column>"` or
+    /// `"second.<column>"` over `columns`, split at the first `.` (a name
+    /// with none is a side and the empty column, as Python's
+    /// `str.partition` splits it); `None` for any other name, which each
+    /// host refuses in its own words.
+    pub fn parse<S: AsRef<str>>(name: &str, columns: &[S]) -> Option<Operand> {
+        let (side, column) = name.split_once('.').unwrap_or((name, ""));
+        let side = match side {
+            "first" => Side::First,
+            "second" => Side::Second,
+            _ => return None,
+        };
+        let column = columns.iter().position(|c| c.as_ref() == column)?;
+        Some(Operand { side, column })
+    }
+
+    /// The operand's name over `columns`, as [`Operand::parse`] reads it.
+    ///
+    /// # Panics
+    ///
+    /// When `column` is not an index of `columns`.
+    pub fn name<S: AsRef<str>>(self, columns: &[S]) -> String {
+        format!("{}.{}", self.side.name(), columns[self.column].as_ref())
+    }
+}
+
 /// One cross product: `a × b`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Product {
     pub a: Operand,
     pub b: Operand,
+}
+
+impl Product {
+    /// The default products: `first.c × second.c` for each of `n_columns`
+    /// columns, in column order.
+    pub fn diagonal(n_columns: usize) -> Vec<Product> {
+        (0..n_columns)
+            .map(|column| Product {
+                a: Operand {
+                    side: Side::First,
+                    column,
+                },
+                b: Operand {
+                    side: Side::Second,
+                    column,
+                },
+            })
+            .collect()
+    }
 }
 
 /// The per-individual inputs of one moments call, in receiver rows.
@@ -778,6 +832,40 @@ mod tests {
     use super::super::testing::{random_pedigree, receiver};
     use super::super::{Execution, PedigreeColumns};
     use super::*;
+
+    #[test]
+    fn an_operand_name_is_a_side_then_a_column() {
+        let columns = ["x", "y.z"];
+        let op = |side, column| Some(Operand { side, column });
+        assert_eq!(Operand::parse("first.x", &columns), op(Side::First, 0));
+        assert_eq!(Operand::parse("second.y.z", &columns), op(Side::Second, 1));
+        for bad in ["x", "first", "first.", "third.x", "first.w", "First.x", ""] {
+            assert_eq!(Operand::parse(bad, &columns), None, "{bad}");
+        }
+        let diagonal = Product::diagonal(2);
+        let names: Vec<_> = diagonal
+            .iter()
+            .map(|p| (p.a.name(&columns), p.b.name(&columns)))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                ("first.x".to_string(), "second.x".to_string()),
+                ("first.y.z".to_string(), "second.y.z".to_string())
+            ]
+        );
+        for p in &diagonal {
+            assert_eq!(Operand::parse(&p.a.name(&columns), &columns), Some(p.a));
+            assert_eq!(Operand::parse(&p.b.name(&columns), &columns), Some(p.b));
+        }
+        assert!(Product::diagonal(0).is_empty());
+        // No `.` reads as the empty column, which only a table built
+        // without a pedigree can have (both pedigree boundaries refuse it).
+        let unnamed = [""];
+        assert_eq!(Operand::parse("first", &unnamed), op(Side::First, 0));
+        assert_eq!(Operand::parse("second.", &unnamed), op(Side::Second, 0));
+        assert_eq!(Operand::parse("third", &unnamed), None);
+    }
 
     /// Brute force from the emitted pair blocks, for the same inputs.
     fn oracle(
