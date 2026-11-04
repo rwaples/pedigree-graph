@@ -13,9 +13,12 @@ and ``down`` counts meioses from the ancestor(s) down to ``second``.  So
 ``up >= down`` holds for every category, with equality exactly for the seven
 symmetric ones.
 
-Imported by ``_core`` (PedigreeGraph), both pair engines, and the public
-:mod:`pedigree_graph.relationships` facade, so the codes, kinship coefficients,
-and degree range have a single source of truth.
+Every field but ``label`` comes from the Rust core's ``Category`` table
+(``crates/core/src/relationships/category.rs``) through
+``_native.relationship_categories()`` at import, as the R package's registry
+does, so the codes, order, degrees, path shapes, roles and nominal kinship have
+one source.  Imported by ``_core`` (PedigreeGraph), both pair engines, and the
+public :mod:`pedigree_graph.relationships` facade.
 """
 
 from __future__ import annotations
@@ -23,8 +26,9 @@ from __future__ import annotations
 import operator
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple, cast, get_args
 
+from pedigree_graph import _native
 from pedigree_graph._errors import PedigreeValidationError
 
 if TYPE_CHECKING:
@@ -103,40 +107,63 @@ class RelationshipCategory:
         return self.first_role is None
 
 
-_RELATIONSHIPS: dict[str, RelationshipCategory] = {
-    category.code: category
-    for category in (
-        # --- degree 0 (kinship 1/2) ---
-        RelationshipCategory("MZ", "MZ twin", 0, 0.5, 0, 0, 0, None, None),
-        # --- degree 1 (kinship 1/4) ---
-        RelationshipCategory("MO", "Mother-offspring", 1, 0.25, 1, 0, 1, "offspring", "mother"),
-        RelationshipCategory("FO", "Father-offspring", 1, 0.25, 1, 0, 1, "offspring", "father"),
-        RelationshipCategory("FS", "Full sib", 1, 0.25, 1, 1, 2, None, None),
-        # --- degree 2 (kinship 1/8) ---
-        RelationshipCategory("MHS", "Maternal half sib", 2, 0.125, 1, 1, 1, None, None),
-        RelationshipCategory("PHS", "Paternal half sib", 2, 0.125, 1, 1, 1, None, None),
-        RelationshipCategory("GP", "Grandparent", 2, 0.125, 2, 0, 1, "descendant", "ancestor"),
-        RelationshipCategory("Av", "Avuncular", 2, 0.125, 2, 1, 2, "niece_nephew", "aunt_uncle"),
-        # --- degree 3 (kinship 1/16) ---
-        RelationshipCategory("GGP", "Great-grandparent", 3, 0.0625, 3, 0, 1, "descendant", "ancestor"),
-        RelationshipCategory("HAv", "Half-avuncular", 3, 0.0625, 2, 1, 1, "niece_nephew", "aunt_uncle"),
-        RelationshipCategory("GAv", "Great-avuncular", 3, 0.0625, 3, 1, 2, "niece_nephew", "aunt_uncle"),
-        RelationshipCategory("1C", "1st cousin", 3, 0.0625, 2, 2, 2, None, None),
-        # --- degree 4 (kinship 1/32) ---
-        RelationshipCategory("GGGP", "Great²-grandparent", 4, 0.03125, 4, 0, 1, "descendant", "ancestor"),
-        RelationshipCategory("HGAv", "Half-great-avuncular", 4, 0.03125, 3, 1, 1, "niece_nephew", "aunt_uncle"),
-        RelationshipCategory("GGAv", "Great²-avuncular", 4, 0.03125, 4, 1, 2, "niece_nephew", "aunt_uncle"),
-        RelationshipCategory("H1C", "Half-1st-cousin", 4, 0.03125, 2, 2, 1, None, None),
-        RelationshipCategory("1C1R", "1st cousin 1R", 4, 0.03125, 3, 2, 2, "junior_cousin", "senior_cousin"),
-        # --- degree 5 (kinship 1/64) ---
-        RelationshipCategory("G3GP", "Great³-grandparent", 5, 0.015625, 5, 0, 1, "descendant", "ancestor"),
-        RelationshipCategory("HGGAv", "Half-great²-avuncular", 5, 0.015625, 4, 1, 1, "niece_nephew", "aunt_uncle"),
-        RelationshipCategory("G3Av", "Great³-avuncular", 5, 0.015625, 5, 1, 2, "niece_nephew", "aunt_uncle"),
-        RelationshipCategory("H1C1R", "Half-1st-cousin 1R", 5, 0.015625, 3, 2, 1, "junior_cousin", "senior_cousin"),
-        RelationshipCategory("1C2R", "1st cousin 2R", 5, 0.015625, 4, 2, 2, "junior_cousin", "senior_cousin"),
-        RelationshipCategory("2C", "2nd cousin", 5, 0.015625, 3, 3, 2, None, None),
-    )
+# Display labels, the one field the Rust core does not carry, in core order.
+_LABELS: dict[str, str] = {
+    # --- degree 0 (kinship 1/2) ---
+    "MZ": "MZ twin",
+    # --- degree 1 (kinship 1/4) ---
+    "MO": "Mother-offspring",
+    "FO": "Father-offspring",
+    "FS": "Full sib",
+    # --- degree 2 (kinship 1/8) ---
+    "MHS": "Maternal half sib",
+    "PHS": "Paternal half sib",
+    "GP": "Grandparent",
+    "Av": "Avuncular",
+    # --- degree 3 (kinship 1/16) ---
+    "GGP": "Great-grandparent",
+    "HAv": "Half-avuncular",
+    "GAv": "Great-avuncular",
+    "1C": "1st cousin",
+    # --- degree 4 (kinship 1/32) ---
+    "GGGP": "Great²-grandparent",
+    "HGAv": "Half-great-avuncular",
+    "GGAv": "Great²-avuncular",
+    "H1C": "Half-1st-cousin",
+    "1C1R": "1st cousin 1R",
+    # --- degree 5 (kinship 1/64) ---
+    "G3GP": "Great³-grandparent",
+    "HGGAv": "Half-great²-avuncular",
+    "G3Av": "Great³-avuncular",
+    "H1C1R": "Half-1st-cousin 1R",
+    "1C2R": "1st cousin 2R",
+    "2C": "2nd cousin",
 }
+
+_ROLES: frozenset[str] = frozenset(get_args(RelationshipRole))
+
+
+def _role(role: str | None) -> RelationshipRole | None:
+    """The core's role name as a :data:`RelationshipRole`, rejecting any other."""
+    if role is not None and role not in _ROLES:
+        raise AssertionError(f"the core names role {role!r}, which RelationshipRole lacks")
+    return cast("RelationshipRole | None", role)
+
+
+def _from_core() -> dict[str, RelationshipCategory]:
+    """Every category from the core's table, in its order, with its label."""
+    categories = {
+        code: RelationshipCategory(
+            code, _LABELS[code], degree, nominal_kinship, up, down, ancestor_count, _role(first), _role(second)
+        )
+        for code, degree, first, second, nominal_kinship, up, down, ancestor_count in _native.relationship_categories()
+    }
+    if tuple(categories) != tuple(_LABELS):
+        raise AssertionError("_LABELS and the core's categories differ in codes or order")
+    return categories
+
+
+_RELATIONSHIPS: dict[str, RelationshipCategory] = _from_core()
 
 RELATIONSHIPS: Mapping[str, RelationshipCategory] = MappingProxyType(_RELATIONSHIPS)
 

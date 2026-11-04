@@ -6,6 +6,8 @@
 (simACE `docs/plans/pedigree-graph-rust-core.md`); precedes any native code
 
 Revised 2026-09-24 to match 0.10.0; earlier wording in git history.
+Revised 2026-11-04 (issues #54, #60): the registry is built from the core's
+table, and the core owns the codes both hosts raise.
 
 ## Context
 
@@ -104,15 +106,19 @@ One immutable `RELATIONSHIPS` mapping replaces `REL_REGISTRY` and
 `second_role`. Registry order is the documented same-degree precedence for
 closest-category classification.
 
-The registry exists twice and neither copy is generated from the other.
-`pedigree_graph/_registry.py` holds the full records for Python. The Rust
-core's ordered 23-variant `Category` enum
-(`crates/core/src/relationships/category.rs`) carries code, degree, and
-roles; the relationship engine and the R package read it. Tests hold the two
-together: the native counts come back keyed by code in `RELATIONSHIPS` order,
-the native degree ceiling equals `MAX_DEGREE`, and the R registry, built
-from the enum, must equal a golden written from the Python registry
-(`tools/r_golden.py`).
+The Rust core's ordered 23-variant `Category` enum
+(`crates/core/src/relationships/category.rs`) is the one table. It carries
+code, degree, path shape (`up`, `down`, `ancestor_count`), roles and nominal
+kinship; the relationship engine reads it, and both packages build their
+registry from it at load. `pedigree_graph/_registry.py` adds only the display
+labels, and fails at import if they do not name the core's codes in the
+core's order. The R registry must still equal a golden written from the
+Python registry (`tools/r_golden.py`), which now checks the two bindings'
+marshalling of the one table.
+
+> Revised 2026-11-04: until then the registry existed twice, `_registry.py`
+> writing every field by hand and tests holding it to the core (#54, #56).
+> No value changed when it became derived (#60).
 
 ### Relationship pairs and counts
 
@@ -240,6 +246,15 @@ stable `.code`; missing analysis metadata raises `MissingMetadataError`;
 allocation/capacity failures raise `ResourceError`. Tests assert codes and
 fields, not prose. Existing regex-matched messages are not compatibility
 requirements.
+
+The core's `Error` (`crates/core/src/error.rs`) owns each code it raises and
+that code's fields. A code both hosts raise about a value the core can hold
+is a core variant, even when one host raises it before reaching the core:
+`max_degree_out_of_range` and `unknown_relationship_category`. Codes about a
+host's own input shape (`missing_field`, `invalid_integer_value`, whose
+`value` is a host object) stay host codes. `_errors.py` stays hand-written,
+because Python raises 16 codes of its own; `tests/test_core_tables.py` holds
+every core code to its Python table, field for field.
 
 ## Consequences
 

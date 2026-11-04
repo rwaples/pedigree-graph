@@ -6,6 +6,23 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking (Rust): `FieldValue` gains `Texts` and is `#[non_exhaustive]`;
+  `unknown_relationship_category` is a core error** (issues #54, #60, ADR 0006).
+  `Error::UnknownRelationshipCategory { codes }` carries caller-given codes as
+  `FieldValue::Texts(Vec<String>)`, and `Category::parse_codes` returns it with
+  the unknown codes sorted and deduplicated. R raises it through the core;
+  Python still raises it from `select_categories`, with the same code, fields
+  and message. A crate that matches `FieldValue` needs a wildcard arm;
+  pg-phenotype adds one now, which builds at its current pin too, and can
+  name `Texts` once it repins past this change. No host-visible change.
+- **Internal: `RELATIONSHIPS` is built from the core's category table**
+  (issue #60). Every field but `label` comes from
+  `_native.relationship_categories()` at import, as R's registry does; no
+  value changes. `Category::shape()` holds each category's `(up, down,
+  ancestor_count)` on one line, and `symmetric()` is `up == down`.
+- **Performance: 1C1R and H1C1R share one product.** At `max_degree=5` a row
+  walks `A^2 @ (A^3)^T` and its transpose once, not twice.
+
 - **Packaging: no macOS x86-64 wheel.** Releases build four `abi3` wheels
   (manylinux x86-64 and AArch64, macOS Apple Silicon, Windows x86-64). On an
   Intel Mac pip builds the sdist, which needs a Rust toolchain.

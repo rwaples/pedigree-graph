@@ -1,15 +1,16 @@
-"""The hand-kept Python tables agree with the Rust core's (issue #54).
+"""The Python tables agree with the Rust core's (issues #54, #60).
 
-``_errors.py`` and ``_registry.RELATIONSHIPS`` restate facts the core owns.
-These tests read the core's own tables through the binding, so an edit on
-one side only fails here rather than at raise time or as a silent shift in
-nominal kinship.
+``_errors.py`` is hand-written, because Python raises many codes of its own;
+these tests read the core's codes through the binding, so a core code missing
+from its Python table, or with other fields, fails here rather than at raise
+time.  ``_registry.RELATIONSHIPS`` is built from the core's category table at
+import, so only what the build adds (labels, the record type) is checked here.
 
 No core variant is a metadata error yet, so ``METADATA_CODES`` has nothing
 to agree with until one is; its row in ``_TABLES`` checks it from then on.
 """
 
-import math
+import pickle
 
 import pytest
 
@@ -41,15 +42,16 @@ def test_every_core_code_is_in_its_python_table_with_the_same_fields(code, class
     assert table[code] == tuple(fields)
 
 
-def test_the_registry_lists_the_core_categories_in_the_same_order():
-    assert tuple(RELATIONSHIPS) == tuple(row[0] for row in _CORE_CATEGORIES)
+def test_the_registry_is_the_core_table_with_labels():
+    rows = tuple(
+        (c.code, c.degree, c.first_role, c.second_role, c.nominal_kinship, c.up, c.down, c.ancestor_count)
+        for c in RELATIONSHIPS.values()
+    )
+    assert rows == tuple(_CORE_CATEGORIES)
+    assert all(c.label for c in RELATIONSHIPS.values())
 
 
-@pytest.mark.parametrize("row", _CORE_CATEGORIES, ids=[row[0] for row in _CORE_CATEGORIES])
-def test_every_registry_category_matches_the_core(row):
-    code, degree, first_role, second_role, nominal_kinship, up, down, ancestor_count = row
+@pytest.mark.parametrize("code", list(RELATIONSHIPS))
+def test_a_registry_record_survives_pickling(code):
     category = RELATIONSHIPS[code]
-    assert category.degree == degree
-    assert (category.up, category.down, category.ancestor_count) == (up, down, ancestor_count)
-    assert (category.first_role, category.second_role) == (first_role, second_role)
-    assert math.isclose(category.nominal_kinship, nominal_kinship, rel_tol=1e-12)
+    assert pickle.loads(pickle.dumps(category)) == category

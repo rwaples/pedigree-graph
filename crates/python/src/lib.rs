@@ -98,6 +98,9 @@ fn field_object<'py>(py: Python<'py>, value: FieldValue) -> PyResult<Bound<'py, 
         FieldValue::Str(s) => s.into_pyobject(py)?.into_any(),
         FieldValue::Ints(v) => v.into_pyobject(py)?.into_any(),
         FieldValue::Strs(v) => v.into_pyobject(py)?.into_any(),
+        FieldValue::Texts(v) => v.into_pyobject(py)?.into_any(),
+        // A kind this binding predates still reaches the host, as text.
+        other => format!("{other:?}").into_pyobject(py)?.into_any(),
     })
 }
 

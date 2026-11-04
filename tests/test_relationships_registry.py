@@ -1,9 +1,10 @@
 """Pins the canonical relationship registry (ADR 0006).
 
-``RELATIONSHIPS`` is the source of truth for the code set, its order, the
-per-category path shape, and the positional roles.  The table itself carries
-the literal values, so these tests re-derive them from the documented formulas
-and would catch a typo in any row.
+``RELATIONSHIPS`` is the public form of the core's category table: the code
+set, its order, the per-category path shape, and the positional roles.  The
+values come from ``crates/core/src/relationships/category.rs``, so these tests
+re-derive them from the documented formulas and pin them, and would catch a
+typo in any row of the core's table.
 """
 
 import dataclasses

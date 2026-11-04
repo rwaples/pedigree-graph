@@ -103,7 +103,10 @@ impl IndexBase {
 }
 
 /// One keyword field of a structured error, in the value kinds hosts receive.
+///
+/// Non-exhaustive: a host that matches it keeps an arm for kinds added later.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FieldValue {
     /// An integer scalar.
     Int(i64),
@@ -113,6 +116,8 @@ pub enum FieldValue {
     Ints(Vec<i64>),
     /// A tuple of fixed names.
     Strs(Vec<&'static str>),
+    /// A tuple of caller-given strings.
+    Texts(Vec<String>),
 }
 
 /// A structured core failure.
@@ -308,6 +313,11 @@ pub enum Error {
         /// The highest supported degree.
         maximum: i64,
     },
+    /// The caller named relationship codes the registry does not have.
+    UnknownRelationshipCategory {
+        /// The unknown codes, sorted and without duplicates.
+        codes: Vec<String>,
+    },
     /// A kinship support column's row indices are not strictly increasing.
     KinshipSupportUnsorted {
         /// The offending column.
@@ -409,6 +419,7 @@ impl Error {
             | Error::MzSexMismatch { .. }
             | Error::BirthYearTopology { .. }
             | Error::MaxDegreeOutOfRange { .. }
+            | Error::UnknownRelationshipCategory { .. }
             | Error::KinshipSupportUnsorted { .. }
             | Error::KinshipSupportAsymmetric { .. } => ErrorClass::Validation,
             Error::PedigreeTooLarge { .. } => ErrorClass::Resource,
@@ -451,6 +462,7 @@ impl Error {
             Error::ArithmeticOverflow { .. } => "arithmetic_overflow",
             Error::ThreadPoolConflict { .. } | Error::ThreadPoolUnavailable { .. } => "",
             Error::MaxDegreeOutOfRange { .. } => "max_degree_out_of_range",
+            Error::UnknownRelationshipCategory { .. } => "unknown_relationship_category",
             Error::KinshipSupportUnsorted { .. } => "kinship_support_unsorted",
             Error::KinshipSupportAsymmetric { .. } => "kinship_support_asymmetric",
             Error::CscIndexOverflow { .. } => "csc_index_overflow",
@@ -633,6 +645,9 @@ impl Error {
                 ("minimum", Int(*minimum)),
                 ("maximum", Int(*maximum)),
             ],
+            Error::UnknownRelationshipCategory { codes } => {
+                vec![("codes", FieldValue::Texts(codes.clone()))]
+            }
             Error::KinshipSupportUnsorted { column } => vec![("column", at(column))],
             Error::KinshipSupportAsymmetric { row, column } => {
                 vec![("row", at(row)), ("column", at(column))]
@@ -887,6 +902,11 @@ impl std::fmt::Display for Message<'_> {
                 f,
                 "max_degree must be in [{minimum}, {maximum}], got {value}"
             ),
+            Error::UnknownRelationshipCategory { codes } => write!(
+                f,
+                "unknown relationship category code(s): {}",
+                codes.join(", ")
+            ),
             Error::KinshipSupportUnsorted { column } => write!(
                 f,
                 "kinship support column {} is not sorted by row",
@@ -1057,6 +1077,9 @@ impl Error {
                 minimum: 1,
                 maximum: 5,
             },
+            Error::UnknownRelationshipCategory {
+                codes: vec!["AA".to_string(), "ZZ".to_string()],
+            },
             Error::KinshipSupportUnsorted { column: p },
             Error::KinshipSupportAsymmetric { row: p, column: q },
             Error::CscIndexOverflow {
@@ -1114,7 +1137,7 @@ mod tests {
     use super::{Error, ErrorClass, FieldValue, IndexBase, MAX_ROWS};
 
     /// How many variants `Error` has.
-    const VARIANTS: usize = 30;
+    const VARIANTS: usize = 31;
 
     /// Each variant's slot in [`Error::samples`]; the exhaustive match makes a new
     /// variant fail to compile until it is counted here.
@@ -1150,6 +1173,7 @@ mod tests {
             Error::InvalidMomentsTable { .. } => 27,
             Error::Cancelled => 28,
             Error::ParentInBothRoles { .. } => 29,
+            Error::UnknownRelationshipCategory { .. } => 30,
         }
     }
 

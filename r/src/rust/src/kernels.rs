@@ -227,33 +227,11 @@ pub fn selection(max_degree: &Robj, categories: &Robj) -> HostResult<CategorySet
             let codes = Strings::try_from(categories.clone()).map_err(|_| {
                 HostError::usage("categories must be a character vector of codes".to_string())
             })?;
-            let mut unknown: Vec<String> = codes
+            // An NA code is reported as "NA", which is no registry code.
+            let codes = codes
                 .iter()
-                .filter(|code| code.is_na() || Category::parse(code.as_ref()).is_none())
-                .map(|code| {
-                    if code.is_na() {
-                        "NA".to_string()
-                    } else {
-                        code.to_string()
-                    }
-                })
-                .collect();
-            if !unknown.is_empty() {
-                unknown.sort();
-                unknown.dedup();
-                return Err(HostError::validation(
-                    "unknown_relationship_category",
-                    format!(
-                        "unknown relationship category code(s): {}",
-                        unknown.join(", ")
-                    ),
-                    vec![("codes", Strings::from_values(unknown).into_robj())],
-                ));
-            }
-            Ok(codes
-                .iter()
-                .filter_map(|code| Category::parse(code.as_ref()))
-                .collect())
+                .map(|code| if code.is_na() { "NA" } else { code.as_ref() });
+            Ok(Category::parse_codes(codes)?)
         }
         _ => Err(HostError::usage(
             "exactly one of max_degree or categories is required".to_string(),

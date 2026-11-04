@@ -1,5 +1,7 @@
 //! The 23 relationship categories in registry order (degree ascending, then precedence).
 
+use crate::error::Error;
+
 /// Relationship category codes, in the order of the Python `REL_REGISTRY`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u8)]
@@ -90,6 +92,29 @@ impl Category {
     /// The category by its registry code.
     pub fn parse(code: &str) -> Option<Category> {
         Category::ALL.into_iter().find(|cat| cat.code() == code)
+    }
+
+    /// The categories `codes` name, duplicates ignored.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnknownRelationshipCategory`] when any code is not a registry
+    /// code, carrying every unknown code sorted and without duplicates.
+    pub fn parse_codes<'a>(codes: impl IntoIterator<Item = &'a str>) -> Result<CategorySet, Error> {
+        let mut set = CategorySet::EMPTY;
+        let mut unknown = Vec::new();
+        for code in codes {
+            match Category::parse(code) {
+                Some(cat) => set.insert(cat),
+                None => unknown.push(code.to_string()),
+            }
+        }
+        if unknown.is_empty() {
+            return Ok(set);
+        }
+        unknown.sort();
+        unknown.dedup();
+        Err(Error::UnknownRelationshipCategory { codes: unknown })
     }
 
     /// Kinship degree: 0 for MZ, 1 for parent-offspring and full sibs, and so on.
@@ -287,7 +312,21 @@ impl Counts {
 
 #[cfg(test)]
 mod tests {
-    use super::Category;
+    use super::{Category, CategorySet};
+    use crate::error::Error;
+
+    #[test]
+    fn parse_codes_reports_every_unknown_code_once_and_sorted() {
+        let set = Category::parse_codes(["FS", "1C", "FS"]).unwrap();
+        assert_eq!(set.iter().collect::<Vec<_>>(), [Category::FS, Category::C1]);
+        assert_eq!(Category::parse_codes([]).unwrap(), CategorySet::EMPTY);
+        assert_eq!(
+            Category::parse_codes(["FS", "ZZ", "NA", "AA", "ZZ"]),
+            Err(Error::UnknownRelationshipCategory {
+                codes: vec!["AA".to_string(), "NA".to_string(), "ZZ".to_string()],
+            })
+        );
+    }
 
     #[test]
     fn roles_exist_exactly_for_asymmetric_categories() {
