@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.15.0
 
 - **Breaking (relationships): cousin paths count shared external parent
   ids** (issue #61, ADR 0018 as amended). An external parent id (an id with
