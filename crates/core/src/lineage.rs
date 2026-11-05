@@ -14,8 +14,8 @@
 
 use crate::alloc::{self, Family};
 use crate::error::Error;
-use crate::kinship::depth_order::ParentsFirst;
-use crate::relationships::{check_column_length, check_row_range};
+use crate::kinship::depth_order::{readable, readable_mut, unread, ParentsFirst};
+use crate::relationships::check_column_length;
 
 const SETS: Family = Family::LineageSets;
 const OUTPUT: Family = Family::LineageOutput;
@@ -25,71 +25,31 @@ const OUTPUT: Family = Family::LineageOutput;
 /// not already parents-first.  Depth is optional because a pedigree whose
 /// parent rows all precede their children is swept as it is and never
 /// needs it.
+///
+/// The parent rows are checked by the sweeps, not here, in passes they
+/// already make: with a depth where it is sorted, in graph order as each row
+/// is visited.  No sweep makes a pass of its own to check them.
 #[derive(Clone, Copy)]
 pub struct ParentColumns<'a> {
     mother: &'a [i32],
     father: &'a [i32],
     depth: Option<&'a [i32]>,
-    /// Every parent row precedes its child, so the rows sweep as they are.
-    parents_first: bool,
 }
 
 impl<'a> ParentColumns<'a> {
-    /// Check `father` has one entry per row and every parent row is `-1` or
-    /// a row of the pedigree, and note whether every parent row precedes its
-    /// child, in one pass; `depth` is checked where it is read.
-    ///
     /// # Errors
     ///
-    /// [`Error::LengthMismatch`] and [`Error::ValueOutOfRange`], as the
-    /// relationship engine reports them.
-    pub fn try_new(
+    /// [`Error::LengthMismatch`] when `father` is not as long as `mother`.
+    pub(crate) fn try_new(
         mother: &'a [i32],
         father: &'a [i32],
         depth: Option<&'a [i32]>,
-    ) -> Result<ParentColumns<'a>, Error> {
-        let n = mother.len();
-        check_column_length("father", father.len(), n)?;
-        let (mut in_range, mut parents_first) = (true, true);
-        for (row, (&m, &f)) in mother.iter().zip(father).enumerate() {
-            let (m, f) = (i64::from(m), i64::from(f));
-            in_range &= m >= -1 && f >= -1 && m < n as i64 && f < n as i64;
-            parents_first &= m < row as i64 && f < row as i64;
-        }
-        if !in_range {
-            check_row_range("mother", mother, n)?;
-            check_row_range("father", father, n)?;
-        }
-        Ok(ParentColumns {
-            mother,
-            father,
-            depth,
-            parents_first,
-        })
-    }
-
-    /// Columns a graph construction has already validated: every parent row
-    /// is `-1` or a row of the pedigree, and `parents_first` is what
-    /// construction found.  Only the lengths are re-checked, which keeps a
-    /// sweep of a few milliseconds to the one pass the 0.9.3 kernel made; a
-    /// broken promise can give wrong counts or a panic, never undefined
-    /// behaviour.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::LengthMismatch`] on `father`.
-    pub fn validated(
-        mother: &'a [i32],
-        father: &'a [i32],
-        depth: Option<&'a [i32]>,
-        parents_first: bool,
     ) -> Result<ParentColumns<'a>, Error> {
         check_column_length("father", father.len(), mother.len())?;
         Ok(ParentColumns {
             mother,
             father,
             depth,
-            parents_first,
         })
     }
 
@@ -109,16 +69,27 @@ impl<'a> ParentColumns<'a> {
         self.father
     }
 
-    /// The graph rows when they are parents-first, else the depth-major sort.
-    ///
-    /// # Errors
-    ///
-    /// As [`ParentsFirst::sorted`], when the rows need sorting.
-    pub(crate) fn parents_first(&self, family: Family) -> Result<ParentsFirst, Error> {
-        if self.parents_first {
-            return Ok(ParentsFirst::Rows);
+    /// The depth-major sort when the depth sorts, else the graph rows.
+    pub(crate) fn parents_first(&self, family: Family) -> ParentsFirst {
+        ParentsFirst::of(self.mother, self.father, self.depth, family)
+    }
+
+    /// A graph-order sweep's result: `out` when every parent it met preceded
+    /// its child, else the error [`ParentsFirst::unordered`] finds.
+    pub(crate) fn ordered<T>(
+        &self,
+        (out, ordered): (T, bool),
+        depth_error: Option<Error>,
+    ) -> Result<T, Error> {
+        if ordered {
+            Ok(out)
+        } else {
+            Err(ParentsFirst::unordered(
+                self.mother,
+                self.father,
+                depth_error,
+            ))
         }
-        ParentsFirst::sorted(self.mother, self.father, self.depth, family)
     }
 }
 
@@ -133,50 +104,68 @@ impl<'a> ParentColumns<'a> {
 ///
 /// # Errors
 ///
-/// When the rows need sorting, [`Error::LengthMismatch`] on `depth` when it
-/// is absent or not one per row and [`Error::ValueOutOfRange`] when a row's
-/// depth is negative or not above both parents'; [`Error::AllocationFailed`]
-/// for any buffer.
+/// When the rows are not parents-first: [`Error::ValueOutOfRange`] at the
+/// first `mother`, then `father`, row outside `-1..n`, then
+/// [`Error::LengthMismatch`] on `depth` when it is absent or not one per row
+/// and [`Error::ValueOutOfRange`] when a row's depth is negative or not
+/// above both parents'.  [`Error::AllocationFailed`] for any buffer.
 pub fn distinct_ancestor_counts(ped: ParentColumns<'_>) -> Result<Vec<i32>, Error> {
-    match ped.parents_first(SETS)? {
-        ParentsFirst::Rows => ancestors_in(&ped, 0..ped.len() as u32),
-        ParentsFirst::DepthMajor(sweep) => ancestors_in(&ped, sweep.order.iter().copied()),
+    match ped.parents_first(SETS) {
+        ParentsFirst::Rows { depth_error } => ped.ordered(
+            ancestors_in::<false>(&ped, 0..ped.len() as u32)?,
+            depth_error,
+        ),
+        ParentsFirst::DepthMajor(sweep) => {
+            Ok(ancestors_in::<true>(&ped, sweep.order.iter().copied())?.0)
+        }
     }
 }
 
-fn ancestors_in(
+/// The counts, and whether every parent met was readable ([`readable`]).
+/// In graph order the sweep stops at the first parent it cannot read: the
+/// caller discards it, and a set it would keep alive is not built.
+fn ancestors_in<const CHECKED: bool>(
     ped: &ParentColumns<'_>,
     rows: impl Iterator<Item = u32>,
-) -> Result<Vec<i32>, Error> {
+) -> Result<(Vec<i32>, bool), Error> {
     let n = ped.len();
     let (mother, father) = (ped.mother(), ped.father());
     let mut remaining = alloc::filled(0u32, n, SETS)?;
+    // Every parent row in range; a sweep reads only those.
     for &p in mother.iter().chain(father) {
-        if p >= 0 {
-            remaining[p as usize] += 1;
+        if let Some(r) = usize::try_from(p).ok().and_then(|p| remaining.get_mut(p)) {
+            *r += 1;
         }
     }
     let mut sets: Vec<Box<[u32]>> = alloc::filled(Box::default(), n, SETS)?;
     let mut merged: Vec<u32> = Vec::new();
     let mut merged_for = None;
     let mut counts = alloc::filled(0i32, n, OUTPUT)?;
+    let mut ordered = true;
 
     for row in rows {
         let i = row as usize;
+        let rows_read = readable::<CHECKED, _>(&remaining, row).len();
+        let parents = [mother[i], father[i]].map(|p| {
+            let at = p as usize;
+            if at < rows_read {
+                Some(at)
+            } else {
+                unread(p, &mut ordered);
+                None
+            }
+        });
+        if !CHECKED && !ordered {
+            break;
+        }
         // A full sib of the previous row reuses its merge.
-        if merged_for != Some((mother[i], father[i])) {
-            let side = |p: i32| -> &[u32] {
-                if p < 0 {
-                    &[]
-                } else {
-                    &sets[p as usize]
-                }
-            };
-            let (a, b) = (side(mother[i]), side(father[i]));
+        if merged_for != Some(parents) {
+            let side = |p: Option<usize>| -> &[u32] { p.map_or(&[], |p| &sets[p]) };
+            let (a, b) = (side(parents[0]), side(parents[1]));
             merged.clear();
             alloc::reserve(&mut merged, a.len() + b.len() + 1, SETS)?;
             union_into(a, b, &mut merged);
-            merged_for = Some((mother[i], father[i]));
+            merged_for = Some(parents);
         }
         counts[i] = merged.len() as i32;
 
@@ -188,17 +177,14 @@ fn ancestors_in(
             set.extend_from_slice(&merged[at..]);
             sets[i] = set.into_boxed_slice();
         }
-        for p in [mother[i], father[i]] {
-            if p >= 0 {
-                let p = p as usize;
-                remaining[p] -= 1;
-                if remaining[p] == 0 {
-                    sets[p] = Box::default();
-                }
+        for p in parents.into_iter().flatten() {
+            remaining[p] -= 1;
+            if remaining[p] == 0 {
+                sets[p] = Box::default();
             }
         }
     }
-    Ok(counts)
+    Ok((counts, ordered))
 }
 
 /// Append the sorted union of two sorted, duplicate-free slices.
@@ -221,45 +207,57 @@ fn union_into(a: &[u32], b: &[u32], out: &mut Vec<u32>) {
 /// [`Error::ArithmeticOverflow`] when a count outgrows int64, as it does
 /// after about 63 generations of repeated sib mating;
 /// when the rows need sorting, [`Error::LengthMismatch`] or
-/// [`Error::ValueOutOfRange`] on `depth` as [`distinct_ancestor_counts`]
-/// reports them; and [`Error::AllocationFailed`] for any buffer.
+/// [`Error::ValueOutOfRange`] on `mother`, `father` or `depth` as
+/// [`distinct_ancestor_counts`] reports them; and
+/// [`Error::AllocationFailed`] for any buffer.
 pub fn descendant_path_counts(ped: ParentColumns<'_>) -> Result<Vec<i64>, Error> {
-    match ped.parents_first(OUTPUT)? {
-        ParentsFirst::Rows => descendants_in(&ped, (0..ped.len() as u32).rev()),
-        ParentsFirst::DepthMajor(sweep) => descendants_in(&ped, sweep.order.iter().rev().copied()),
+    match ped.parents_first(OUTPUT) {
+        ParentsFirst::Rows { depth_error } => ped.ordered(
+            descendants_in::<false>(&ped, (0..ped.len() as u32).rev())?,
+            depth_error,
+        ),
+        ParentsFirst::DepthMajor(sweep) => {
+            Ok(descendants_in::<true>(&ped, sweep.order.iter().rev().copied())?.0)
+        }
     }
 }
 
-/// The reverse sweep over `rows`, children before parents.  Overflow is
-/// collected branch-free and reported once at the end: every add's carry is
-/// kept, so none is missed, and the counts are dropped when one occurred.
-fn descendants_in(
+/// The reverse sweep over `rows`, children before parents, and whether
+/// every parent met was readable ([`readable`]).  Overflow is collected
+/// branch-free and reported once at the end: every add's carry is kept, so
+/// none is missed, and the counts are dropped when one occurred.  An
+/// unreadable parent outranks an overflow, which it may have caused.
+fn descendants_in<const CHECKED: bool>(
     ped: &ParentColumns<'_>,
     rows: impl Iterator<Item = u32>,
-) -> Result<Vec<i64>, Error> {
+) -> Result<(Vec<i64>, bool), Error> {
     let (mother, father) = (ped.mother(), ped.father());
     let mut counts = alloc::filled(0i64, ped.len(), OUTPUT)?;
     let mut overflowed = false;
+    let mut ordered = true;
     for row in rows {
         let i = row as usize;
         let (paths, carry) = counts[i].overflowing_add(1);
         overflowed |= carry;
+        let parents = readable_mut::<CHECKED, _>(&mut counts, row);
         for p in [mother[i], father[i]] {
-            if p >= 0 {
-                let count = &mut counts[p as usize];
-                let (sum, carry) = count.overflowing_add(paths);
-                *count = sum;
-                overflowed |= carry;
+            match parents.get_mut(p as usize) {
+                Some(count) => {
+                    let (sum, carry) = count.overflowing_add(paths);
+                    *count = sum;
+                    overflowed |= carry;
+                }
+                None => unread(p, &mut ordered),
             }
         }
     }
-    if overflowed {
+    if overflowed && ordered {
         return Err(Error::ArithmeticOverflow {
             operation: "descendant_path_counts",
             dtype: "int64",
         });
     }
-    Ok(counts)
+    Ok((counts, ordered))
 }
 
 #[cfg(test)]
@@ -269,13 +267,21 @@ mod tests {
     use crate::topology::structural_depth;
     use std::collections::BTreeSet;
 
-    fn run<T>(
+    /// `kernel` swept depth-major; when the rows are parents-first, also in
+    /// graph order with no depth, which must agree bit for bit (each row
+    /// reads its parents in one order either way).
+    fn run<T: PartialEq + std::fmt::Debug>(
         mother: &[i32],
         father: &[i32],
         kernel: fn(ParentColumns<'_>) -> Result<T, Error>,
     ) -> Result<T, Error> {
         let depth = structural_depth(mother, father);
-        kernel(ParentColumns::try_new(mother, father, Some(&depth)).unwrap())
+        let sorted = kernel(ParentColumns::try_new(mother, father, Some(&depth)).unwrap());
+        if crate::topology::is_topological(mother, father) {
+            let graph = kernel(ParentColumns::try_new(mother, father, None).unwrap());
+            assert_eq!(graph.as_ref().ok(), sorted.as_ref().ok());
+        }
+        sorted
     }
 
     /// Distinct ancestors by explicit set closure, for comparison.
@@ -515,7 +521,10 @@ mod tests {
         let c = crate::relationships::testing::random_pedigree(n, 5);
         let depth = structural_depth(&c.mother, &c.father);
         let ped = KinshipPedigree::try_new(&c.mother, &c.father, &c.twin, &depth).unwrap();
-        let cols = ParentColumns::try_new(&c.mother, &c.father, Some(&depth)).unwrap();
+        // Parents-first rows with no depth, as Python passes them, so the
+        // plant lands in the sweep's own buffers rather than in a sort the
+        // rows did not need (whose failure the sweep would rightly ignore).
+        let cols = ParentColumns::try_new(&c.mother, &c.father, None).unwrap();
         let cohort: Vec<i32> = depth.iter().map(|&d| d.min(3)).collect();
         let column: Vec<i64> = (0..n)
             .map(|r| {

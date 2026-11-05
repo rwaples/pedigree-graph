@@ -124,7 +124,10 @@ SEAM_CASES = [
 def test_a_refused_allocation_raises_a_resource_error(family, product):
     body = f"""
         from pedigree_graph import ResourceError
-        call = lambda: getattr(_native, {product!r})(graph._built, graph.depth)
+        from pedigree_graph._lineage import sweep_depth
+        # The depth production passes, so the plant lands in the sweep's own
+        # buffers, not in a sort parents-first rows never need (#57).
+        call = lambda: getattr(_native, {product!r})(graph._built, sweep_depth(graph))
         _native.fail_next_allocation({family!r}, n)
         try:
             call()

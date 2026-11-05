@@ -8,7 +8,7 @@
 //! depth.  EqG and the founder means evaluate each value by the float64
 //! expression the 0.9.3 NumPy and Numba code used, in the same order.
 
-use super::depth_order::{Buckets, DepthOrder, ParentsFirst};
+use super::depth_order::{readable, unread, Buckets, DepthOrder, ParentsFirst};
 use super::inbreeding::{genome_node, GenomePedigree};
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
@@ -27,29 +27,38 @@ use crate::relationships::check_column_length;
 /// [`crate::lineage::distinct_ancestor_counts`] reports them;
 /// [`Error::AllocationFailed`] for any buffer.
 pub fn equivalent_generations(ped: ParentColumns<'_>) -> Result<Vec<f64>, Error> {
-    match ped.parents_first(Family::LineageOutput)? {
-        ParentsFirst::Rows => generations_in(&ped, 0..ped.len() as u32),
-        ParentsFirst::DepthMajor(sweep) => generations_in(&ped, sweep.order.iter().copied()),
+    match ped.parents_first(Family::LineageOutput) {
+        ParentsFirst::Rows { depth_error } => ped.ordered(
+            generations_in::<false>(&ped, 0..ped.len() as u32)?,
+            depth_error,
+        ),
+        ParentsFirst::DepthMajor(sweep) => {
+            Ok(generations_in::<true>(&ped, sweep.order.iter().copied())?.0)
+        }
     }
 }
 
-fn generations_in(
+/// The values, and whether every parent met was readable ([`readable`]).
+fn generations_in<const CHECKED: bool>(
     ped: &ParentColumns<'_>,
     rows: impl Iterator<Item = u32>,
-) -> Result<Vec<f64>, Error> {
+) -> Result<(Vec<f64>, bool), Error> {
     let (mother, father) = (ped.mother(), ped.father());
     let mut eqg = alloc::filled(0.0f64, ped.len(), Family::LineageOutput)?;
+    let mut ordered = true;
     for row in rows {
         let i = row as usize;
+        let parents = readable::<CHECKED, _>(&eqg, row);
         let mut v = 0.0f64;
         for p in [mother[i], father[i]] {
-            if p >= 0 {
-                v += 0.5 + 0.5 * eqg[p as usize];
+            match parents.get(p as usize) {
+                Some(&e) => v += 0.5 + 0.5 * e,
+                None => unread(p, &mut ordered),
             }
         }
         eqg[i] = v;
     }
-    Ok(eqg)
+    Ok((eqg, ordered))
 }
 
 /// Per cohort, the mean over its rows of each founder genome's expected
