@@ -14,8 +14,8 @@ from pedigree_graph import PedigreeGraph
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
+    _family_size_moments,
     _sex_specific_family_table,
-    _sigma2_from_quadrants,
 )
 from pedigree_graph._ne_rates import _equivalent_generations
 from pedigree_graph.effective_size import (
@@ -778,10 +778,10 @@ def test_group_coancestry_equals_diluted_theta_plus_self_coancestry():
     )
 
 
-def test_sigma2_from_quadrants_returns_none_below_two_per_sex():
+def test_family_size_moments_returns_none_below_two_per_sex():
     pg = PedigreeGraph.from_frame(_build_closed_line(n_gens=4))
     table = _family_table(pg)
     # _build_closed_line has one male + one female per cohort, so
     # every cohort lacks two of a sex → decomposition is None.
     for entry in table.values():
-        assert _sigma2_from_quadrants(entry) is None
+        assert _family_size_moments(entry) is None

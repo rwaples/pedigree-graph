@@ -362,10 +362,33 @@ def test_hill_branches_agree_on_the_same_edges_at_unit_generation_interval():
     sentinel = ne_hill_overlapping(PedigreeGraph.from_frame(frame))
     dated = ne_hill_overlapping(PedigreeGraph.from_frame(frame.with_columns(pl.col("generation").alias("birth_year"))))
     assert sentinel.collapses_to_ne_v
-    assert sentinel.ne == v.ne
-    assert dated.generation_interval == 1.0
+    assert v.ne is not None
+    assert sentinel.ne == pytest.approx(v.ne, rel=1e-15)
+    assert dated.generation_interval == pytest.approx(1.0, rel=1e-15)
     assert dated.cohort_years is not None
     assert dated.ne_per_cohort is not None
     assert dated.n_eligible_cohorts >= 4
     for year, ne_c in zip(dated.cohort_years, dated.ne_per_cohort, strict=True):
         assert ne_c == pytest.approx(v.ne_per_transition[int(year)], rel=1e-12)
+
+
+def test_hill_birth_years_name_a_single_sex_cohort_as_the_sentinel_does():
+    # Two couples with two sons each: every father and mother has a zero
+    # daughter pathway, so Caballero 1994 eq. 17 is undefined in the one
+    # parent cohort.  Dated, that cohort sits inside the window, so the
+    # reason is the offspring sex, not eligibility.
+    frame = pl.DataFrame(
+        {
+            "id": list(range(8)),
+            "mother": [-1, -1, -1, -1, 1, 1, 3, 3],
+            "father": [-1, -1, -1, -1, 0, 0, 2, 2],
+            "sex": [1, 0, 1, 0, 1, 1, 1, 1],
+            "generation": [0, 0, 0, 0, 1, 1, 1, 1],
+        }
+    )
+    sentinel = ne_hill_overlapping(PedigreeGraph.from_frame(frame))
+    dated = ne_hill_overlapping(PedigreeGraph.from_frame(frame.with_columns(pl.col("generation").alias("birth_year"))))
+    assert sentinel.no_estimate_code == "single_sex_offspring"
+    assert dated.no_estimate_code == "single_sex_offspring"
+    assert dated.cohort_window is not None
+    assert dated.cohort_window.c_min <= 0 <= dated.cohort_window.c_max

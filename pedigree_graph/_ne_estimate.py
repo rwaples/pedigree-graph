@@ -611,7 +611,10 @@ def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillR
       sex, then a qualifying known-age edge for each parent role
       (:attr:`PedigreeGraph.generation_interval` raises
       ``insufficient_parent_age_data`` otherwise).  Per eligible
-      birth-year cohort, computes sex-specific Ne::
+      birth-year cohort, computes sex-specific Ne (Caballero 1994 eq.
+      17's ``N_es``; Hill eq. 9 splits segregation between the sexes
+      differently, so ``Ne_m`` and ``Ne_f`` are not its per-sex brackets
+      when ``N1_m ≠ N1_f``, though their combination is)::
 
           Ne_s(c) = 4·N1_s(c)·T / D_s(c)         s ∈ {m, f}
 

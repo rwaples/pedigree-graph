@@ -18,8 +18,8 @@ import numpy as np
 from pedigree_graph._cohorts import ObservedCohorts
 from pedigree_graph._ne_common import _harmonic_mean
 from pedigree_graph._ne_family_size import (
+    _family_size_moments,
     _sex_specific_family_table,
-    _sigma2_from_quadrants,
     _waples_vk2_expectation,
 )
 from pedigree_graph._ne_results import NeHillResult
@@ -102,12 +102,15 @@ def _hill_from(
     cohort_years_kept: list[int] = []
 
     T = gi.T
+    # A windowed cohort dropped for a zero pathway mean, so an empty result
+    # names that cause, as the sentinel does, rather than eligibility.
+    single_sex_offspring = False
     for c, entry in table.items():
         if c < window.c_min or c > window.c_max:
             continue
         # Need at least 2 of each sex for sample variance (ddof=1) and a
-        # meaningful covariance — _sigma2_from_quadrants returns None below.
-        d = _sigma2_from_quadrants(entry)
+        # meaningful covariance — _family_size_moments returns None below.
+        d = _family_size_moments(entry)
         if d is None:
             continue
         kbar_m, kbar_f, n_m, n_f = d.kbar_m, d.kbar_f, d.n_m, d.n_f
@@ -121,10 +124,10 @@ def _hill_from(
             denom_m = sigma2_m + 2.0
             denom_f = sigma2_f + 2.0
         else:
-            # Hill 1979 eq. 9, in Caballero 1994 eq. 17's form, which is
-            # also Ne_V's: the two branches agree at T = 1.
+            # Caballero 1994 eq. 17, Ne_V's form: the branches agree at T = 1.
             denominators = d.drift_denominators()
             if denominators is None:
+                single_sex_offspring = True
                 continue
             denom_m, denom_f = denominators
         if denom_m <= 0 or denom_f <= 0:
@@ -170,7 +173,7 @@ def _hill_from(
             n_unknown_birth_year=n_unknown,
             age_table=age_table,
             n_offspring_pairs=n_pairs,
-            no_estimate_code="no_eligible_cohorts",
+            no_estimate_code="single_sex_offspring" if single_sex_offspring else "no_eligible_cohorts",
         )
 
     # Every kept cohort has a positive, finite Ne: both sexes share T and a

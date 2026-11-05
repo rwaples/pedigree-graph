@@ -6,7 +6,7 @@ directly on them, :func:`~pedigree_graph.effective_size.ne_variance_family_size`
 :func:`~pedigree_graph.effective_size.ne_sex_ratio` (Ne_sr), whose public functions run their
 registry rows in ``_ne_estimate``.
 The Hill overlapping-generation estimator (``_ne_hill``) also consumes
-``_sex_specific_family_table`` / ``_sigma2_from_quadrants`` /
+``_sex_specific_family_table`` / ``_family_size_moments`` /
 ``_waples_vk2_expectation`` from here.
 """
 
@@ -44,7 +44,7 @@ class FamilySizeEntry:
     """One parent cohort's sex-of-offspring family-size quadrants.
 
     Produced by :func:`_sex_specific_family_table` (one entry per parent
-    cohort) and consumed by :func:`_sigma2_from_quadrants`.  The four
+    cohort) and consumed by :func:`_family_size_moments`.  The four
     ``k_*`` arrays are per-parent lifetime offspring counts; arrays are
     aligned *within sex* — ``k_mm``/``k_mf`` index the same males as
     ``males_in_parent_gen`` (length ``n_m``), and ``k_fm``/``k_ff`` the
@@ -74,10 +74,10 @@ class FamilySizeEntry:
 FamilySizeTable = dict[int, FamilySizeEntry]
 
 
-class Sigma2Decomposition(NamedTuple):
+class FamilySizeMoments(NamedTuple):
     """Sex-of-offspring family-size moments for one cohort.
 
-    Returned by :func:`_sigma2_from_quadrants`.  The per-sex lifetime
+    Returned by :func:`_family_size_moments`.  The per-sex lifetime
     offspring variance is ``σ²_m = v_mm + v_mf + 2·cov_m`` (Hill 1979 eq.
     10's definition) and ``σ²_f = v_fm + v_ff + 2·cov_f``; the pathway means
     ``mu_*`` are Caballero 1994 eq. 17's ``μ_sm``, ``μ_sf``.
@@ -131,9 +131,12 @@ class Sigma2Decomposition(NamedTuple):
         The first two terms are Mendelian segregation; the rest is the
         variance of each parent's offspring counts, each pathway scaled by
         its mean.  Where each cohort replaces itself (``μ_mm = μ_ff = 1``,
-        ``μ_mf = F/M``) this is Hill 1979 eq. 9, and at ``M = F`` eq. 10's
-        ``σ²_s + 2``.  ``None`` when a pathway mean is 0: the cohort's
-        parents of one sex had no sons or no daughters.
+        ``μ_mf = F/M``), the sum ``D_m/(16M) + D_f/(16F)`` is Hill 1979
+        eq. 9; per sex it is not, because eq. 9 puts segregation 2 in each
+        bracket where this puts ``1/μ_sm + 1/μ_sf``.  At ``M = F`` the two
+        coincide and ``D_s`` is eq. 10's ``σ²_s + 2``.  ``None`` when a
+        pathway mean is 0: the cohort's parents of one sex had no sons or no
+        daughters.
         """
         if min(self.mu_mm, self.mu_mf, self.mu_fm, self.mu_ff) <= 0:
             return None
@@ -245,7 +248,7 @@ def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
         )
 
 
-def _sigma2_from_quadrants(entry: FamilySizeEntry) -> Sigma2Decomposition | None:
+def _family_size_moments(entry: FamilySizeEntry) -> FamilySizeMoments | None:
     """Sex-of-offspring moments of one :class:`FamilySizeEntry`.
 
     The four quadrant variances (ddof=1), the two within-sex covariances
@@ -260,7 +263,7 @@ def _sigma2_from_quadrants(entry: FamilySizeEntry) -> Sigma2Decomposition | None
     n_f = len(kfm)
     if n_m < 2 or n_f < 2:
         return None
-    return Sigma2Decomposition(
+    return FamilySizeMoments(
         v_mm=float(kmm.var(ddof=1)),
         v_mf=float(kmf.var(ddof=1)),
         v_fm=float(kfm.var(ddof=1)),
@@ -315,7 +318,7 @@ def _variance_from(cohorts: ObservedCohorts, table: FamilySizeTable) -> NeVarian
     any_estimable = False
 
     for b, label in enumerate(cohorts.generations):
-        d = _sigma2_from_quadrants(table[int(label)])
+        d = _family_size_moments(table[int(label)])
         if d is None or d.kbar_m <= 0 or d.kbar_f <= 0:
             continue
         any_estimable = True

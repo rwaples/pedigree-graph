@@ -161,8 +161,11 @@ SexRatioNoEstimate = Literal["no_cohort_with_both_sexes"]
 LTCNoEstimate = Literal["no_founders"]
 """Ne_LTC: no represented founder or no observed cohort, i.e. an empty graph."""
 HillNoEstimate = Literal[VarianceNoEstimate, "no_eligible_cohorts"]
-"""Ne_H: Ne_V's code on the sentinel branch; on the birth-year branch, no
-cohort in the window has two of each sex and a positive Ne."""
+"""Ne_H: Ne_V's code on the sentinel branch.  On the birth-year branch,
+``single_sex_offspring`` when a windowed cohort was dropped because the parents
+of one sex had no sons or no daughters and no cohort has an estimate, else
+``no_eligible_cohorts``: no cohort in the window has two of each sex and a
+positive Ne."""
 
 
 class _FrozenResult(_SerializableResult):
@@ -628,7 +631,11 @@ class NeHillResult(_FrozenResult):
     # Sex-decomposed Ne (Wright 1938 / paper eq. 3 combination):
     #   1/Ne = 1/(4·Ne_m) + 1/(4·Ne_f)
     # Per-cohort Ne_s = 4·N1_s·T/D_s, then harmonic-mean across cohorts.
-    # D_s = Vk_s + 2 only where the cohort replaces itself, or with vk_scaled.
+    # Ne_s is Caballero 1994 eq. 17's N_es, whose per-sex D_s holds that sex's
+    # own segregation 1/μ_sm + 1/μ_sf; Hill 1979 eq. 9's per-sex brackets put
+    # 2 in each instead, so the two splits differ when N1_m ≠ N1_f although
+    # their combined Ne agrees.  D_s = Vk_s + 2 only where the cohort replaces
+    # itself with N1_m = N1_f, or with vk_scaled.
     Ne_m: float | None = None
     Ne_f: float | None = None
     # Whether Vk_m/Vk_f were rescaled to constant-N reference via Waples 2002 eq. 5
