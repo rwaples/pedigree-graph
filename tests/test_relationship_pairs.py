@@ -199,6 +199,19 @@ class TestOrientation:
             for first, second in _oriented(pairs[code]):
                 assert walk.oriented_pair_is_valid(code, first, second), (code, first, second)
 
+    def test_cousins_through_an_external_parent_id_satisfy_their_predicate(self):
+        """Issue #61: 1 and 2 share the external mother 900, 3 is 1's child, 4 is 2's, 5 is 4's."""
+        graph = PedigreeGraph.from_frame(
+            {"id": [1, 2, 3, 4, 5], "mother": [900, 900, 1, 2, 4], "father": [-1, -1, -1, -1, -1]}
+        )
+        walk = AncestorWalk(graph)
+        pairs = graph.relationship_pairs(max_degree=5)
+        assert _oriented(pairs["H1C"]) == [(2, 3)]
+        assert _oriented(pairs["H1C1R"]) == [(4, 2)]
+        for code in ("H1C", "H1C1R"):
+            for first, second in _oriented(pairs[code]):
+                assert walk.oriented_pair_is_valid(code, first, second), (code, first, second)
+
 
 class TestDualValid:
     """random_1k holds removed cousins joined in both orientations through different paths."""

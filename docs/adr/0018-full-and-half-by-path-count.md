@@ -167,24 +167,21 @@ shape and not the next, and leaves real half cousins out of every
 degree-selected consumer; this ADR already prefers moving pairs closer to
 dropping them.
 
-The engine adds the external hop beside the cousin products
-(`Engine::below_ancestors`): the represented product is computed as before,
-and only when an ancestor `k - 1` up has an external parent id that another
-row also names is a second chain run, from the rows naming that id, and
-merged in. An id only one row names is skipped: its one path runs back down
-through that row, which joins the pair at a closer shape (sibs, a shared
-grandparent, or an avuncular pair), so the pair is excluded or claimed by a
-closer category either way; the founder-row property holds with the skip at
-16,384 cases. The alternative, a virtual founder row per external id in the
-parent CSR, would widen every workspace and accumulator by the number of
-external ids and make every lineal and avuncular read skip the virtual rows;
-it was not built, because the hop costs nothing measurable. On `random_300k`
-(one thread, five calls each), user-space instructions changed by +0.07%
-(`pairs`, degree 3), +0.58% (`counts`, degree 5), +0.17% (`moments`) and
--1.01% (`relatives`); the relationship-query benchmark's wall-time medians
-moved by a geometric mean of +4.5% against +1.9% for an A/A run of the
-unchanged engine in the same two environments, whose single cells ranged
-from -5% to +17%.
+The engine adds the external hop where the cousin products start
+(`Engine::below_ancestors`): when an ancestor `k - 1` up has an external
+parent id, the rows naming that id join the first hop below the ancestors
+`k` up, and the chain continues from there; otherwise the product is the
+represented chain unchanged. Every external id counts, including one that a
+single row names, so the per-category sets match the founder-row model
+before the closest-category fold as well as after it. The alternative, a
+virtual founder row per external id in the parent CSR, would widen every
+workspace and accumulator by the number of external ids and make every
+lineal and avuncular read skip the virtual rows; it was not built, because
+the hop costs little. On `random_300k` (one thread, five calls each, setup
+subtracted), user-space instructions changed by +1.23% (`pairs`, degree 3),
++0.84% (`counts`, degree 5), +0.49% (`moments`) and +0.96% (`relatives`).
+Wall-time medians on this host could not resolve a few percent: an A/A run
+of the unchanged engine moved single cells by -5% to +17%.
 
 ## Alternatives considered
 

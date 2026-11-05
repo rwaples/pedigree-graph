@@ -10,9 +10,9 @@ represented parent rows, each route counted once; a sib link counts one path
 per shared known parent id, external ids included, so full sibs are joined
 by two paths and half sibs by one.  A cousin path also reaches an external
 parent id, as a parentless ancestor whose children are the rows naming it
-(issue #61), so every collateral shape sees the ids a sib link sees.  A collateral category is *full* when at
-least two paths of its shape join the pair, summed over both orientations,
-and *half* when exactly one does.
+(issue #61), so every collateral shape sees the ids a sib link sees.  A
+collateral category is *full* when at least two paths of its shape join the
+pair, summed over both orientations, and *half* when exactly one does.
 
 * ``MZ``: the twin column.
 * ``MO``/``FO``: each represented parent link, offspring first.

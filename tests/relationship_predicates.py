@@ -3,7 +3,8 @@
 Each predicate walks ``mother_rows`` / ``father_rows`` directly, so a test can
 check a block's role orientation without trusting the matrix products that
 produced it.  Sibling links follow the engine's rule of sharing an original
-parent *id*, which also covers parents external to the pedigree.
+parent *id*, which also covers parents external to the pedigree, and a cousin
+shape's shared ancestor may be such an external id (ADR 0018, issue #61).
 """
 
 from __future__ import annotations
@@ -40,6 +41,20 @@ class AncestorWalk:
         """Rows exactly *up* meioses above *row* (``{row}`` for ``up == 0``)."""
         return self.levels[up][row]
 
+    def external_ancestors(self, row: int, up: int) -> set[int]:
+        """External parent ids exactly *up* meioses above *row* (none for ``up == 0``)."""
+        if up == 0:
+            return set()
+        return {
+            int(parent_id)
+            for x in self.ancestors(row, up - 1)
+            for parent_id, parent_row in (
+                (self.mother_ids[x], self.mother_rows[x]),
+                (self.father_ids[x], self.father_rows[x]),
+            )
+            if parent_id >= 0 and parent_row < 0
+        }
+
     def share_parent(self, a: int, b: int) -> bool:
         """Whether *a* and *b* have a common known parent id."""
         return bool(
@@ -58,7 +73,10 @@ class AncestorWalk:
             return second in self.ancestors(first, category.up)
         if category.down == 1:
             return any(x != second and self.share_parent(x, second) for x in self.ancestors(first, category.up - 1))
-        return bool(self.ancestors(first, category.up) & self.ancestors(second, category.down))
+        return bool(
+            self.ancestors(first, category.up) & self.ancestors(second, category.down)
+            or self.external_ancestors(first, category.up) & self.external_ancestors(second, category.down)
+        )
 
     def dual_valid(self, code: str, first: int, second: int) -> bool:
         """Whether both orientations of the pair satisfy *code*."""

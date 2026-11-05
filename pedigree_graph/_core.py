@@ -328,8 +328,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         engine always resolves the closer categories a selected one depends
         on, so a pair is reported under its closest category (lowest degree,
         then registry order) whichever categories were named.  Degree and
-        category are read from represented parent edges, so they derive from
-        structural depth and supplied generation labels never enter the
+        category are read from parent links alone: represented parent rows,
+        and parent ids with no row, which join sibs, avuncular pairs and
+        cousins as parentless ancestors (ADR 0018).  They derive from
+        structural depth, and supplied generation labels never enter the
         classification.  Classification runs on the Rust row-streaming
         engine under the package thread budget
         (:func:`~pedigree_graph.configure_threads`); the result is the same
