@@ -38,6 +38,23 @@ live on the corresponding GitHub release pages.
   gives the same pairs their nominal kinship (#67). The
   relationship-pair, pair-kinship, structure and R goldens and the Rust
   parity counts were regenerated.
+
+- **Breaking (Rust): kernel inputs come only from `columns::GraphColumns`**
+  (issue #57). `relationships::Pedigree::try_new`,
+  `kinship::KinshipPedigree::try_new` and `lineage::ParentColumns::try_new`
+  are crate-private, and `ParentColumns::validated` is gone; a Rust host
+  borrows its rows as `GraphColumns` and calls `relationships`, `kinship`
+  or `lineage`. `GraphColumns::lineage` drops its `rows_topological`
+  argument, so a host can no longer hand the lineage sweeps out-of-range
+  rows or a wrong order flag. The sweeps check the parent rows themselves,
+  in passes they already made: with a depth, where it is checked and
+  sorted; without one, in graph order, each parent row before its child,
+  as the sweep reads it. An out-of-range row reports `value_out_of_range`
+  on `mother` or `father` before any depth error. A depth that sorts is
+  now used even when the rows are already parents-first, which gives the
+  same counts. The other projections' checks and errors are unchanged;
+  `PedigreeColumns::try_borrow` stays.
+
 - **Breaking (scientific): Ne_V and Ne_H include Mendelian segregation**
   (issue #36, ADR 0021). `ne_variance_family_size` was `2N/V(k)` at
   constant size; it is now Caballero 1994 (Heredity 73:657) eqs. 17-18,
@@ -145,6 +162,19 @@ live on the corresponding GitHub release pages.
   former entry points (`pair_blocks`, `relationship_moments`,
   `relatives_per_person`, `count_pairs`, `count_view_pairs_compact`) are
   unchanged until pg-phenotype moves, then removed.
+- **Fix (Rust, `_native`): `kinship::founder_contribution_means` keeps a
+  founder raised above depth 0** (issue #62). The sweep cleared every row it
+  passed, so a parentless row at depth 1 or more lost its contribution; it
+  no longer clears any row. A `founder_column` on a row with a parent is
+  now refused (`value_out_of_range`). `PedigreeGraph` always passes the
+  structural depth and founder columns only on founders, and was not
+  affected.
+- **Fix (Rust, `_native`): the kinship matrices refuse co-twins at two
+  depths** (issue #63). `kinship_csc`, `kinship_csc_upper` and
+  `approximate_kinship_csc` now run the twin check the pairwise walk and
+  the inbreeding sweep already ran, raising `value_out_of_range` on `depth`
+  (or on `twin` for a non-reciprocal pair) instead of writing a column with
+  duplicate rows. `PedigreeGraph` was not affected.
 - **Fix: an empty-selection `relationship_counts` commits the thread
   budget** (issue #52), on a graph and on a view, like every other call and
   like R. A later `configure_threads` with another value now raises.

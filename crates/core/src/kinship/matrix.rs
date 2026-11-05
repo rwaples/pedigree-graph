@@ -25,7 +25,7 @@
 //! translates stored columns through the permutation, so every output
 //! column's rows come out ascending without a sort.
 
-use super::depth_order::{Buckets, DepthOrder};
+use super::depth_order::{check_twins, Buckets, DepthOrder};
 use super::pairwise::KinshipPedigree;
 use super::rows::Owned;
 use crate::alloc::{self, Family};
@@ -60,6 +60,7 @@ struct Topo {
 impl Topo {
     fn build(ped: &KinshipPedigree<'_>) -> Result<Topo, Error> {
         let n = ped.len();
+        check_twins(ped.twin(), ped.depth())?;
         let DepthOrder { order, starts } =
             DepthOrder::build(ped.mother(), ped.father(), ped.depth(), SCRATCH)?;
         let mut inverse = alloc::filled(0u32, n, SCRATCH)?;
@@ -524,8 +525,9 @@ fn approximate_with(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
 ///
 /// # Errors
 ///
-/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
-/// not above both parents', [`Error::CscIndexOverflow`] when the entry count
+/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative,
+/// not above both parents' or not its co-twin's, on `twin` when a pair is
+/// not reciprocal, [`Error::CscIndexOverflow`] when the entry count
 /// exceeds int32, and [`Error::AllocationFailed`] for any buffer.
 pub fn kinship_csc(ped: KinshipPedigree<'_>) -> Result<Csc, Error> {
     let topo = Topo::build(&ped)?;
@@ -681,6 +683,39 @@ mod tests {
             },
             perm,
         )
+    }
+
+    #[test]
+    fn co_twins_at_two_depths_are_refused_by_every_matrix() {
+        // Issue #63: MZ co-twins 2, 3 of founders 0, 1, raised apart.
+        let mut c = cols(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[(2, 3)]);
+        c.depth = vec![0, 0, 1, 2];
+        let refused = |r: Result<Csc, Error>| {
+            assert!(
+                matches!(
+                    r,
+                    Err(Error::ValueOutOfRange { field: "depth", position, .. })
+                        if position == 2.into()
+                ),
+                "{r:?}"
+            );
+        };
+        refused(kinship_csc(c.ped()));
+        refused(kinship_csc_upper(c.ped(), MAX_CSC_NNZ));
+        refused(approximate_kinship_csc(c.ped(), 0.0));
+        // A twin that does not name its partner back is refused on `twin`.
+        let mut c = cols(&[(-1, -1), (-1, -1), (0, 1), (0, 1)], &[]);
+        c.twin[2] = 3;
+        for r in [
+            kinship_csc(c.ped()),
+            kinship_csc_upper(c.ped(), MAX_CSC_NNZ),
+            approximate_kinship_csc(c.ped(), 0.0),
+        ] {
+            assert!(
+                matches!(r, Err(Error::ValueOutOfRange { field: "twin", position, .. }) if position == 3.into()),
+                "{r:?}"
+            );
+        }
     }
 
     #[test]

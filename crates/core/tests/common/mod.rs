@@ -12,6 +12,7 @@
 use pedigree_graph_core::columns::GraphColumns;
 use pedigree_graph_core::graph::{self, Columns, Limits, PedigreeGraph, SexEncoding};
 use pedigree_graph_core::kinship::{kinship_csc, KinshipPedigree};
+use pedigree_graph_core::lineage::ParentColumns;
 use pedigree_graph_core::relationships::Pedigree;
 use pedigree_graph_core::topology::structural_depth;
 use proptest::prelude::*;
@@ -218,6 +219,15 @@ impl Built {
         self.columns()
             .relationships(&self.graph.mother_ids, &self.graph.father_ids)
             .expect("built columns are an engine input")
+    }
+
+    /// The lineage input as Python passes it: no depth when the rows are
+    /// parents-first, so the sweeps run (and check) in graph order.
+    pub fn lineage(&self) -> ParentColumns<'_> {
+        let depth = (!self.graph.rows_topological).then_some(self.depth.as_slice());
+        self.columns()
+            .lineage(depth)
+            .expect("built columns are a lineage input")
     }
 
     /// The complete kinship matrix, dense, `k[a][b]`.

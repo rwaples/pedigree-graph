@@ -473,11 +473,8 @@ impl<'py> BuiltColumns<'py> {
         &'a self,
         py: Python<'py>,
         depth: Option<&'a [i32]>,
-        rows_topological: bool,
     ) -> PyResult<ParentColumns<'a>> {
-        self.columns()?
-            .lineage(depth, rows_topological)
-            .map_err(|e| to_pyerr(py, e))
+        self.columns()?.lineage(depth).map_err(|e| to_pyerr(py, e))
     }
 }
 
@@ -1213,8 +1210,8 @@ fn csc_arrays(py: Python<'_>, csc: Csc) -> CscArrays<'_> {
 /// within each column, the diagonal always present (ADR 0006, 0009).
 ///
 /// `pedigree` is the graph's own [`BuiltPedigree`] and `depth` its structural
-/// depth, which must be non-negative and strictly above both parents' for
-/// every row.  The DP runs in depth-major order on the calling thread with
+/// depth, which must be non-negative, strictly above both parents' for
+/// every row and shared by MZ co-twins.  The DP runs in depth-major order on the calling thread with
 /// the GIL released; the arrays are moved out of the core without a copy.
 #[pyfunction]
 #[pyo3(signature = (pedigree, depth, /))]
@@ -1311,7 +1308,7 @@ fn distinct_ancestor_counts<'py>(
 ) -> PyResult<Bound<'py, PyArray1<i32>>> {
     let columns = BuiltColumns::borrow(py, pedigree);
     let depth = depth.as_ref().map(|d| d.as_slice()).transpose()?;
-    let ped = columns.lineage(py, depth, pedigree.rows_topological)?;
+    let ped = columns.lineage(py, depth)?;
     let counts = py
         .detach(|| lineage::distinct_ancestor_counts(ped))
         .map_err(|e| to_pyerr(py, e))?;
@@ -1329,7 +1326,7 @@ fn descendant_path_counts<'py>(
 ) -> PyResult<Bound<'py, PyArray1<i64>>> {
     let columns = BuiltColumns::borrow(py, pedigree);
     let depth = depth.as_ref().map(|d| d.as_slice()).transpose()?;
-    let ped = columns.lineage(py, depth, pedigree.rows_topological)?;
+    let ped = columns.lineage(py, depth)?;
     let counts = py
         .detach(|| lineage::descendant_path_counts(ped))
         .map_err(|e| to_pyerr(py, e))?;
@@ -1346,7 +1343,7 @@ fn equivalent_generations<'py>(
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let columns = BuiltColumns::borrow(py, pedigree);
     let depth = depth.as_ref().map(|d| d.as_slice()).transpose()?;
-    let ped = columns.lineage(py, depth, pedigree.rows_topological)?;
+    let ped = columns.lineage(py, depth)?;
     let values = py
         .detach(|| kinship::equivalent_generations(ped))
         .map_err(|e| to_pyerr(py, e))?;

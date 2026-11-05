@@ -267,11 +267,18 @@ pub fn cancel(handle: &Robj) -> HostResult<Robj> {
 #[cfg(any(test, feature = "test-hooks"))]
 #[expect(clippy::expect_used, reason = "two founder rows are a valid pedigree")]
 pub(crate) fn cancelled(progress: &Progress) -> bool {
+    use pedigree_graph_core::columns::GraphColumns;
     use pedigree_graph_core::relationships::query::{self, Receiver};
-    use pedigree_graph_core::relationships::{CategorySet, Pedigree};
+    use pedigree_graph_core::relationships::CategorySet;
     let none = [-1i32; 2];
     let ids = [0i64; 2];
-    let ped = Pedigree::try_new(&none, &none, &none, &ids, &ids).expect("a two-row pedigree");
+    let ped = GraphColumns {
+        mother: &none,
+        father: &none,
+        twin: &none,
+    }
+    .relationships(&ids, &ids)
+    .expect("a two-row pedigree");
     matches!(
         query::counts(
             &ped,

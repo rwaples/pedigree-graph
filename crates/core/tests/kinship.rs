@@ -12,6 +12,7 @@
     reason = "test helpers outside #[test] functions: a panic fails the test"
 )]
 
+use pedigree_graph_core::columns::GraphColumns;
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::kinship::{
     kinship_csc, kinship_csc_upper, pair_kinship, support_values, Csc, KinshipPedigree, MAX_CSC_NNZ,
@@ -20,6 +21,17 @@ use pedigree_graph_core::relationships::PedigreeColumns;
 use pedigree_graph_core::topology::structural_depth;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+/// A fixture's columns as the kinship kernels read them.
+fn kinship_input<'a>(cols: &'a PedigreeColumns, depth: &'a [i32]) -> KinshipPedigree<'a> {
+    GraphColumns {
+        mother: &cols.mother,
+        father: &cols.father,
+        twin: &cols.twin,
+    }
+    .kinship(depth)
+    .unwrap()
+}
 
 struct Oracle<'a> {
     mother: &'a [i32],
@@ -117,7 +129,7 @@ fn the_walk_matches_the_oracle_on_every_fixture() {
             continue;
         }
         let depth = structural_depth(&cols.mother, &cols.father);
-        let ped = KinshipPedigree::try_new(&cols.mother, &cols.father, &cols.twin, &depth).unwrap();
+        let ped = kinship_input(&cols, &depth);
         let (first, second) = query(cols.mother.len());
         let mut oracle = Oracle {
             mother: &cols.mother,
@@ -148,7 +160,7 @@ fn support_values_match_pair_kinship_on_a_dense_small_fixture() {
     let tsv = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/deep_inbred_60g.tsv");
     let cols = PedigreeColumns::read_tsv(&tsv).unwrap();
     let depth = structural_depth(&cols.mother, &cols.father);
-    let ped = KinshipPedigree::try_new(&cols.mother, &cols.father, &cols.twin, &depth).unwrap();
+    let ped = kinship_input(&cols, &depth);
     let n = cols.mother.len();
     // Every third pair of the full matrix, symmetric, plus the diagonal.
     let mut columns: Vec<Vec<i32>> = vec![Vec::new(); n];
@@ -208,7 +220,7 @@ fn the_upper_csc_is_the_upper_triangle_of_the_complete_one_on_every_fixture() {
     for tsv in fixtures() {
         let cols = PedigreeColumns::read_tsv(&tsv).unwrap();
         let depth = structural_depth(&cols.mother, &cols.father);
-        let ped = KinshipPedigree::try_new(&cols.mother, &cols.father, &cols.twin, &depth).unwrap();
+        let ped = kinship_input(&cols, &depth);
         let full = kinship_csc(ped).unwrap();
         let upper = kinship_csc_upper(ped, MAX_CSC_NNZ).unwrap();
         let want = upper_of(&full);
@@ -225,7 +237,7 @@ fn the_upper_csc_refuses_past_its_cap_on_upper_entries() {
     let tsv = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/nuclear_full_sibs.tsv");
     let cols = PedigreeColumns::read_tsv(&tsv).unwrap();
     let depth = structural_depth(&cols.mother, &cols.father);
-    let ped = KinshipPedigree::try_new(&cols.mother, &cols.father, &cols.twin, &depth).unwrap();
+    let ped = kinship_input(&cols, &depth);
     let nnz = kinship_csc_upper(ped, MAX_CSC_NNZ).unwrap().indices.len();
     assert!(kinship_csc_upper(ped, nnz).is_ok());
     assert_eq!(

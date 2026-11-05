@@ -55,7 +55,7 @@ impl<'a> KinshipPedigree<'a> {
     ///
     /// [`Error::LengthMismatch`] and [`Error::ValueOutOfRange`], as the
     /// relationship engine reports them.
-    pub fn try_new(
+    pub(crate) fn try_new(
         mother: &'a [i32],
         father: &'a [i32],
         twin: &'a [i32],

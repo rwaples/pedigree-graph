@@ -18,7 +18,7 @@ use common::{
     check, non_inbred_pedigree, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped,
 };
 use pedigree_graph_core::kinship::inbreeding;
-use pedigree_graph_core::lineage::{distinct_ancestor_counts, ParentColumns};
+use pedigree_graph_core::lineage::distinct_ancestor_counts;
 use pedigree_graph_core::relationships::query::{self, Compaction, Receiver};
 use pedigree_graph_core::relationships::{
     relationship_burden, Category, CategorySet, Counts, Execution, MaxDegree, MomentsInput,
@@ -521,10 +521,7 @@ fn lineal_credits_are_the_distinct_ancestors() {
     let strategy = prop_oneof![pedigree(), non_inbred_pedigree()];
     check("lineal credits", 3.0, strategy, |ped, checked| {
         let b = Built::new(&ped);
-        let columns =
-            ParentColumns::try_new(&b.graph.mother_rows, &b.graph.father_rows, Some(&b.depth))
-                .expect("built columns");
-        let distinct = distinct_ancestor_counts(columns).expect("ancestor counts");
+        let distinct = distinct_ancestor_counts(b.lineage()).expect("ancestor counts");
         let rel = relatives(&b, &vec![0.0; b.len()]);
         let all = blocks(&b, Execution::Speed);
         let f = inbreeding(b.kinship()).expect("inbreeding");
@@ -618,10 +615,7 @@ fn an_inbred_rows_grandmother_can_be_its_half_sib() {
     let all = blocks(&b, Execution::Speed);
     assert_eq!(pairs(&all, Category::PHS).collect::<Vec<_>>(), vec![(2, 4)]);
     assert!(!pairs(&all, Category::GP).any(|p| p == (4, 2)));
-    let columns =
-        ParentColumns::try_new(&b.graph.mother_rows, &b.graph.father_rows, Some(&b.depth))
-            .expect("built columns");
-    assert_eq!(distinct_ancestor_counts(columns).expect("counts")[4], 4);
+    assert_eq!(distinct_ancestor_counts(b.lineage()).expect("counts")[4], 4);
     let rel = relatives(&b, &[0.0; 5]);
     let lineal: u32 = LINEAL.iter().map(|&cat| credits(&rel, 4, cat)[0]).sum();
     assert_eq!(lineal, 3);
