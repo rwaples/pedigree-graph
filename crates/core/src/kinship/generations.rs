@@ -62,13 +62,16 @@ fn generations_in(
 /// For each cohort the adjoint of the Mendelian recursion runs backwards:
 /// `u` starts at `1 / size` on the cohort's rows, then from the deepest
 /// member's depth down to 1 every row of the depth sends `u / 2` to each
-/// parent, mothers first then fathers, rows ascending, and is cleared.
-/// What reaches the founder rows is summed per genome in ascending row.
+/// parent, mothers first then fathers, rows ascending.  No row is read
+/// again once its depth has sent, so nothing is cleared, and a founder the
+/// caller raises above depth 0 keeps what reaches it.  What reaches the
+/// founder rows is summed per genome in ascending row.
 ///
 /// # Errors
 ///
 /// [`Error::LengthMismatch`] when `cohort` or `founder_column` is not one
-/// per row, [`Error::ValueOutOfRange`] on either of them, on `n_cohorts`
+/// per row, [`Error::ValueOutOfRange`] on either of them (on
+/// `founder_column` also for a row with a parent), on `n_cohorts`
 /// past int32 or on `depth`,
 /// [`Error::ArithmeticOverflow`] when `n_cohorts * n_genomes` exceeds the
 /// address space, and [`Error::AllocationFailed`] for any buffer.
@@ -113,6 +116,19 @@ pub fn founder_contribution_means(
             maximum: n_genomes as i64 - 1,
         });
     }
+    if let Some(position) = founder_column
+        .iter()
+        .zip(ped.mother().iter().zip(ped.father()))
+        .position(|(&g, (&m, &f))| g >= 0 && (m >= 0 || f >= 0))
+    {
+        return Err(Error::ValueOutOfRange {
+            field: "founder_column",
+            position: position.into(),
+            value: founder_column[position],
+            minimum: -1,
+            maximum: -1,
+        });
+    }
     let len = n_cohorts
         .checked_mul(n_genomes)
         .ok_or(Error::ArithmeticOverflow {
@@ -151,9 +167,6 @@ pub fn founder_contribution_means(
                         u[p as usize] += 0.5 * u[row as usize];
                     }
                 }
-            }
-            for &row in rows {
-                u[row as usize] = 0.0;
             }
         }
         for (&g, &u_i) in founder_column.iter().zip(&u) {
@@ -312,6 +325,42 @@ mod tests {
             founder_contribution_means(p, &[1, 1, 0], 1, &[0, 1, -1], 2).unwrap()
         });
         assert_eq!(means, vec![0.5, 0.5]);
+    }
+
+    #[test]
+    fn a_founder_raised_above_depth_zero_keeps_its_contribution() {
+        // Issue #62: founders 0, 1 at depth 1, their child at depth 2.
+        let (m, f, twin) = ([-1, -1, 0], [-1, -1, 1], [-1; 3]);
+        let depth = [1, 1, 2];
+        let ped = KinshipPedigree::try_new(&m, &f, &twin, &depth).unwrap();
+        let means = founder_contribution_means(ped, &[1, 1, 0], 1, &[0, 1, -1], 2).unwrap();
+        assert_close(&means, &[0.5, 0.5]);
+        // A raised founder in its own cohort keeps its whole genome.
+        let means = founder_contribution_means(ped, &[0, 1, 1], 1, &[0, 1, -1], 2).unwrap();
+        assert_close(&means, &[1.0, 0.0]);
+    }
+
+    fn assert_close(got: &[f64], want: &[f64]) {
+        assert_eq!(got.len(), want.len());
+        for (g, w) in got.iter().zip(want) {
+            assert!((g - w).abs() <= 1e-12, "{got:?} vs {want:?}");
+        }
+    }
+
+    #[test]
+    fn a_founder_column_on_a_row_with_a_parent_is_refused() {
+        let (m, f) = ([-1, -1, 0], [-1, -1, 1]);
+        with_ped(&m, &f, |p| {
+            assert!(matches!(
+                founder_contribution_means(p, &[0, 0, 0], 1, &[0, 1, 2], 3),
+                Err(Error::ValueOutOfRange {
+                    field: "founder_column",
+                    position,
+                    value: 2,
+                    ..
+                }) if position == 2.into()
+            ));
+        });
     }
 
     #[test]

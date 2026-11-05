@@ -113,6 +113,13 @@ live on the corresponding GitHub release pages.
   former entry points (`pair_blocks`, `relationship_moments`,
   `relatives_per_person`, `count_pairs`, `count_view_pairs_compact`) are
   unchanged until pg-phenotype moves, then removed.
+- **Fix (Rust, `_native`): `kinship::founder_contribution_means` keeps a
+  founder raised above depth 0** (issue #62). The sweep cleared every row it
+  passed, so a parentless row at depth 1 or more lost its contribution; it
+  no longer clears any row. A `founder_column` on a row with a parent is
+  now refused (`value_out_of_range`). `PedigreeGraph` always passes the
+  structural depth and founder columns only on founders, and was not
+  affected.
 - **Fix: an empty-selection `relationship_counts` commits the thread
   budget** (issue #52), on a graph and on a view, like every other call and
   like R. A later `configure_threads` with another value now raises.
