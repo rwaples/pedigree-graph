@@ -10,35 +10,98 @@
 
 use crate::alloc::{self, Family};
 use crate::error::Error;
+use crate::relationships::{check_column_length, check_row_range};
 
-/// A parents-first sweep over the graph rows, for the kernels that need
-/// nothing else from their order.
+/// The order a parents-first sweep visits the graph rows in, for the kernels
+/// that need nothing else from it.
+///
+/// Neither order costs a pass of its own: a depth is checked structural,
+/// with the parent rows, where it is sorted, and the graph order is checked
+/// by the sweep as it goes ([`admit`]).
 pub(crate) enum ParentsFirst {
-    /// Every parent row already precedes its children: sweep `0..n`, and
-    /// neither sort nor read `depth`.
-    Rows,
-    /// Sweep the stable depth-major order, `depth` checked structural.
+    /// The graph rows as they stand, unchecked.  The sweep skips a parent row
+    /// that does not precede its child and says so, and the caller then
+    /// discards it for [`ParentsFirst::unordered`].
+    Rows {
+        /// Why the depth could not be sorted, when there was one.
+        depth_error: Option<Error>,
+    },
+    /// The stable depth-major order, `depth` checked structural and every
+    /// parent row `-1` or a row.
     DepthMajor(DepthOrder),
 }
 
 impl ParentsFirst {
-    /// The stable depth-major order on `depth`, for rows that are not
-    /// already parents-first.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::LengthMismatch`] on `depth` when it is absent or not one per
-    /// row, then as [`DepthOrder::build`].
-    pub(crate) fn sorted(
+    /// The depth-major order on `depth` when it sorts, else the graph rows.
+    /// Parents-first rows ignore a depth, so a depth that does not sort is
+    /// reported only when the rows turn out not to be.
+    pub(crate) fn of(
         mother: &[i32],
         father: &[i32],
         depth: Option<&[i32]>,
         family: Family,
-    ) -> Result<ParentsFirst, Error> {
-        let depth = depth.unwrap_or(&[]);
-        crate::relationships::check_column_length("depth", depth.len(), mother.len())?;
-        DepthOrder::build(mother, father, depth, family).map(ParentsFirst::DepthMajor)
+    ) -> ParentsFirst {
+        let sorted = depth.map(|depth| {
+            check_column_length("depth", depth.len(), mother.len())
+                .and_then(|()| DepthOrder::build(mother, father, depth, family))
+        });
+        match sorted {
+            Some(Ok(order)) => ParentsFirst::DepthMajor(order),
+            Some(Err(error)) => ParentsFirst::Rows {
+                depth_error: Some(error),
+            },
+            None => ParentsFirst::Rows { depth_error: None },
+        }
     }
+
+    /// What a sweep in graph order reports when a parent row did not precede
+    /// its child: the first `mother`, then `father`, row outside `-1..n`,
+    /// then the depth's error, or a missing depth.
+    pub(crate) fn unordered(mother: &[i32], father: &[i32], depth_error: Option<Error>) -> Error {
+        match check_parent_rows(mother, father) {
+            Err(error) => error,
+            Ok(()) => depth_error.unwrap_or(Error::LengthMismatch {
+                field: "depth",
+                expected_length: mother.len(),
+                actual_length: 0,
+            }),
+        }
+    }
+}
+
+/// The rows a sweep visiting `row` may read: every row in a depth-major
+/// sweep (`CHECKED`), whose rows are checked already, and in graph order
+/// only those before `row`.
+///
+/// A sweep looks a parent `p` up as `readable(..).get(p as usize)`, which
+/// puts `-1` and every other negative row past the end: one compare, the
+/// bounds check the lookup always made, both bounds the row and orders it.
+/// A parent it cannot read goes to [`unread`].
+#[inline(always)]
+pub(crate) fn readable<const CHECKED: bool, T>(values: &[T], row: u32) -> &[T] {
+    if CHECKED {
+        values
+    } else {
+        &values[..row as usize]
+    }
+}
+
+/// [`readable`], mutably.
+#[inline(always)]
+pub(crate) fn readable_mut<const CHECKED: bool, T>(values: &mut [T], row: u32) -> &mut [T] {
+    if CHECKED {
+        values
+    } else {
+        &mut values[..row as usize]
+    }
+}
+
+/// A parent `p` its sweep could not read ([`readable`]): missing when
+/// `p == -1`, else a later row or no row, so the rows are not parents-first
+/// and `ordered` clears; the caller then discards the sweep.
+#[inline(always)]
+pub(crate) fn unread(p: i32, ordered: &mut bool) {
+    *ordered &= p == -1;
 }
 
 /// Graph rows in stable depth-major order, bucketed by depth.
@@ -55,7 +118,8 @@ impl DepthOrder {
     ///
     /// # Errors
     ///
-    /// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative,
+    /// [`Error::ValueOutOfRange`] on `mother` or `father` at the first row
+    /// outside `-1..n`, then on `depth` when a row's depth is negative,
     /// above `n - 1` or not above both parents', before anything is
     /// allocated, and
     /// [`Error::AllocationFailed`] for either array.
@@ -120,21 +184,39 @@ impl Buckets {
     }
 }
 
-/// Every depth is non-negative, at most `n - 1`, and strictly above both
-/// parents'.  The cap is what any ordering of `n` rows needs, and it keeps a
-/// buffer sized by the deepest depth within the pedigree's size.
+/// Every parent row is `-1` or a row of the pedigree, and every depth is
+/// non-negative, at most `n - 1`, and strictly above both parents'.  The cap
+/// is what any ordering of `n` rows needs, and it keeps a buffer sized by the
+/// deepest depth within the pedigree's size.
 ///
-/// `mother` and `father` must already be `-1` or rows of the pedigree.
+/// The parent rows are checked in the same pass, as the depths are read, so
+/// a caller whose rows are already checked pays nothing for it; a range
+/// error still wins over a depth error at an earlier row.
+///
+/// `depth` must have one entry per row.
 pub(crate) fn check_structural(mother: &[i32], father: &[i32], depth: &[i32]) -> Result<(), Error> {
     let maximum = depth.len() as i64 - 1;
     for (row, &d) in depth.iter().enumerate() {
-        let floor = [mother[row], father[row]]
-            .into_iter()
-            .filter(|&p| p >= 0)
-            .map(|p| i64::from(depth[p as usize]) + 1)
-            .max()
-            .unwrap_or(0);
+        let mut floor = 0i64;
+        for (field, p) in [("mother", mother[row]), ("father", father[row])] {
+            if p == -1 {
+                continue;
+            }
+            let Some(&parent) = depth.get(p as usize) else {
+                // An earlier row's range error, or this one's, is first.
+                check_parent_rows(mother, father)?;
+                return Err(Error::ValueOutOfRange {
+                    field,
+                    position: row.into(),
+                    value: i64::from(p),
+                    minimum: -1,
+                    maximum,
+                });
+            };
+            floor = floor.max(i64::from(parent) + 1);
+        }
         if i64::from(d) < floor || i64::from(d) > maximum {
+            check_parent_rows(mother, father)?;
             return Err(Error::ValueOutOfRange {
                 field: "depth",
                 position: row.into(),
@@ -145,6 +227,12 @@ pub(crate) fn check_structural(mother: &[i32], father: &[i32], depth: &[i32]) ->
         }
     }
     Ok(())
+}
+
+/// The first `mother`, then `father`, row outside `-1..n`.
+pub(crate) fn check_parent_rows(mother: &[i32], father: &[i32]) -> Result<(), Error> {
+    check_row_range("mother", mother, mother.len())?;
+    check_row_range("father", father, mother.len())
 }
 
 /// Co-twins are one node, at one depth: each names the other, and they

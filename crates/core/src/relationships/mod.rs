@@ -96,8 +96,8 @@ impl MaxDegree {
 /// defines siblings.  Rows may be in any acyclic order.
 ///
 /// The fields are private because [`Engine`] indexes by them without a bounds
-/// check: only [`Pedigree::try_new`] and [`PedigreeColumns::try_borrow`], which
-/// verify that, can build one.
+/// check: only [`GraphColumns::relationships`](crate::columns::GraphColumns::relationships)
+/// and [`PedigreeColumns::try_borrow`], which verify that, can build one.
 #[derive(Clone, Copy, Debug)]
 pub struct Pedigree<'a> {
     mother: &'a [i32],
@@ -119,7 +119,7 @@ impl<'a> Pedigree<'a> {
     ///
     /// [`Error::LengthMismatch`] when a column is not as long as `mother`, and
     /// [`Error::ValueOutOfRange`] at the first row index outside `-1..n`.
-    pub fn try_new(
+    pub(crate) fn try_new(
         mother: &'a [i32],
         father: &'a [i32],
         twin: &'a [i32],
@@ -231,7 +231,8 @@ impl PedigreeColumns {
     ///
     /// # Errors
     ///
-    /// Whatever [`Pedigree::try_new`] reports.
+    /// [`Error::LengthMismatch`] when a column is not as long as `mother`, and
+    /// [`Error::ValueOutOfRange`] at the first row index outside `-1..n`.
     pub fn try_borrow(&self) -> Result<Pedigree<'_>, Error> {
         Pedigree::try_new(
             &self.mother,

@@ -102,6 +102,13 @@ def _descendant_paths(graph) -> Measurement:
     return Measurement(lambda: checksum_array(counts), lambda: {"max_paths": int(counts.max(initial=0))})
 
 
+def _equivalent_generations(graph) -> Measurement:
+    from pedigree_graph._ne_rates import _equivalent_generations
+
+    values = _equivalent_generations(graph)
+    return Measurement(lambda: checksum_array(values), lambda: {"max_eqg": float(values.max(initial=0.0))})
+
+
 def _individual_delta_f(graph) -> Measurement:
     from pedigree_graph.effective_size import ne_individual_delta_f
 
@@ -126,6 +133,9 @@ def _estimates(graph) -> Measurement:
 
 PRODUCTS: dict[str, tuple[str, Callable[[object], Measurement]]] = {
     "dp": ("`descendant_path_counts()`", _descendant_paths),
+    # The cheapest parents-first sweep, alone: a per-call check shows here
+    # first (#57); `idf` hides it inside inbreeding.
+    "eqg": ("equivalent complete generations", _equivalent_generations),
     "idf": ("`ne_individual_delta_f` (F and EqG)", _individual_delta_f),
     "ltc": ("`ne_long_term_contributions` (founder means)", _long_term_contributions),
     "ne": ("`estimate_effective_sizes` without `ne_coancestry`", _estimates),
@@ -172,6 +182,9 @@ _CELLS = (
     ("ne-45k", "wf_n5000_g8", "ne"),
     ("dp-300k", "random_300k", "dp"),
     ("dp-536k", "baseline100K", "dp"),
+    ("eqg-45k", "wf_n5000_g8", "eqg"),
+    ("eqg-300k", "random_300k", "eqg"),
+    ("eqg-536k", "baseline100K", "eqg"),
 )
 
 SUITE = Suite(

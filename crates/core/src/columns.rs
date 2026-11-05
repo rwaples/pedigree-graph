@@ -30,7 +30,10 @@ impl<'a> GraphColumns<'a> {
     ///
     /// # Errors
     ///
-    /// As [`Pedigree::try_new`].
+    /// [`Error::LengthMismatch`] when `father`, `twin`, `orig_mother` or
+    /// `orig_father` is not as long as `mother`, then
+    /// [`Error::ValueOutOfRange`] at the first `mother`, `father` or `twin`
+    /// row outside `-1..n`.
     pub fn relationships(
         &self,
         orig_mother: &'a [i64],
@@ -50,24 +53,24 @@ impl<'a> GraphColumns<'a> {
     ///
     /// # Errors
     ///
-    /// As [`KinshipPedigree::try_new`].
+    /// [`Error::LengthMismatch`] when `father`, `twin` or `depth` is not as
+    /// long as `mother`, then [`Error::ValueOutOfRange`] at the first
+    /// `mother`, `father` or `twin` row outside `-1..n`.
     pub fn kinship(&self, depth: &'a [i32]) -> Result<KinshipPedigree<'a>, Error> {
         KinshipPedigree::try_new(self.mother, self.father, self.twin, depth)
     }
 
-    /// The parents-first sweeps' input, trusting construction for the row
-    /// range and `rows_topological`, as [`ParentColumns::validated`] does.
-    /// `depth` may be absent when the rows are topological.
+    /// The parents-first sweeps' input.  The sweeps check the parent rows
+    /// themselves, in passes they already make: with `depth`, where it is
+    /// checked and sorted; without one, in graph order, each parent row
+    /// before its child as it is read.  `depth` may be absent when the rows
+    /// are parents-first, and is ignored when they are and it does not sort.
     ///
     /// # Errors
     ///
-    /// As [`ParentColumns::validated`].
-    pub fn lineage(
-        &self,
-        depth: Option<&'a [i32]>,
-        rows_topological: bool,
-    ) -> Result<ParentColumns<'a>, Error> {
-        ParentColumns::validated(self.mother, self.father, depth, rows_topological)
+    /// [`Error::LengthMismatch`] when `father` is not as long as `mother`.
+    pub fn lineage(&self, depth: Option<&'a [i32]>) -> Result<ParentColumns<'a>, Error> {
+        ParentColumns::try_new(self.mother, self.father, depth)
     }
 }
 
@@ -139,7 +142,118 @@ mod tests {
             twin: &[],
             ..COLUMNS
         };
-        assert!(cols.lineage(None, true).is_ok());
+        assert!(cols.lineage(None).is_ok());
         assert!(cols.relationships(IDS.0, IDS.1).is_err());
+    }
+
+    #[test]
+    fn lineage_checks_the_parent_rows() {
+        let cols = GraphColumns {
+            father: &[-1, -1, 4, 1],
+            ..COLUMNS
+        };
+        // Out of range before a depth error, absent or not.
+        for depth in [None, Some(&[0, 0, 0, 0][..])] {
+            let ped = cols.lineage(depth).unwrap();
+            assert!(matches!(
+                crate::lineage::distinct_ancestor_counts(ped),
+                Err(Error::ValueOutOfRange {
+                    field: "father",
+                    value: 4,
+                    ..
+                })
+            ));
+        }
+    }
+
+    /// Every parents-first sweep refuses rows it cannot sweep, with or
+    /// without a depth, rather than reading out of range, and ignores a
+    /// depth that does not sort when the rows are parents-first.
+    #[test]
+    fn every_sweep_refuses_unreadable_rows_and_ignores_an_unneeded_depth() {
+        use crate::kinship::equivalent_generations;
+        use crate::lineage::{descendant_path_counts, distinct_ancestor_counts};
+        let kinds = |ped: ParentColumns<'_>| {
+            [
+                distinct_ancestor_counts(ped).err(),
+                descendant_path_counts(ped).err(),
+                equivalent_generations(ped).err(),
+            ]
+        };
+        let backwards = GraphColumns {
+            mother: &[1, -1],
+            father: &[-1, -1],
+            twin: &[-1, -1],
+        };
+        let beyond = GraphColumns {
+            mother: &[-1, -1, 0, 0],
+            father: &[-1, -1, 9, 1],
+            ..COLUMNS
+        };
+        for depth in [None, Some(&[0, 0][..]), Some(&[0][..])] {
+            for err in kinds(backwards.lineage(depth).unwrap()) {
+                assert!(
+                    matches!(
+                        err,
+                        Some(Error::LengthMismatch { field: "depth", .. })
+                            | Some(Error::ValueOutOfRange { field: "depth", .. })
+                    ),
+                    "{depth:?} {err:?}"
+                );
+            }
+        }
+        for depth in [None, Some(&[0, 0, 1, 1][..]), Some(&[0, 0, 0, 0][..])] {
+            for err in kinds(beyond.lineage(depth).unwrap()) {
+                assert!(
+                    matches!(
+                        err,
+                        Some(Error::ValueOutOfRange {
+                            field: "father",
+                            value: 9,
+                            ..
+                        })
+                    ),
+                    "{depth:?} {err:?}"
+                );
+            }
+        }
+        for depth in [
+            None,
+            Some(&[0, 0, 1, 1][..]),
+            Some(&[0, 0, 0, 0][..]),
+            Some(&[][..]),
+        ] {
+            assert_eq!(
+                kinds(COLUMNS.lineage(depth).unwrap()),
+                [None, None, None],
+                "{depth:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn lineage_finds_a_child_before_its_parent() {
+        // Row 0 is row 1's child: no longer swept as the rows stand, and with
+        // no depth to sort by the sweep is refused rather than run backwards.
+        let cols = GraphColumns {
+            mother: &[1, -1],
+            father: &[-1, -1],
+            twin: &[-1, -1],
+        };
+        let err =
+            crate::lineage::distinct_ancestor_counts(cols.lineage(None).unwrap()).unwrap_err();
+        assert!(matches!(
+            err,
+            Error::LengthMismatch {
+                field: "depth",
+                expected_length: 2,
+                actual_length: 0,
+            }
+        ));
+        let ok = cols.lineage(Some(&[1, 0])).unwrap();
+        assert_eq!(
+            crate::lineage::distinct_ancestor_counts(ok).unwrap(),
+            vec![1, 0]
+        );
     }
 }

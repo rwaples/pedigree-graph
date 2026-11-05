@@ -6,6 +6,22 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking (Rust): kernel inputs come only from `columns::GraphColumns`**
+  (issue #57). `relationships::Pedigree::try_new`,
+  `kinship::KinshipPedigree::try_new` and `lineage::ParentColumns::try_new`
+  are crate-private, and `ParentColumns::validated` is gone; a Rust host
+  borrows its rows as `GraphColumns` and calls `relationships`, `kinship`
+  or `lineage`. `GraphColumns::lineage` drops its `rows_topological`
+  argument, so a host can no longer hand the lineage sweeps out-of-range
+  rows or a wrong order flag. The sweeps check the parent rows themselves,
+  in passes they already made: with a depth, where it is checked and
+  sorted; without one, in graph order, each parent row before its child,
+  as the sweep reads it. An out-of-range row reports `value_out_of_range`
+  on `mother` or `father` before any depth error. A depth that sorts is
+  now used even when the rows are already parents-first, which gives the
+  same counts. The other projections' checks and errors are unchanged;
+  `PedigreeColumns::try_borrow` stays.
+
 - **Breaking (scientific): Ne_V and Ne_H include Mendelian segregation**
   (issue #36, ADR 0021). `ne_variance_family_size` was `2N/V(k)` at
   constant size; it is now Caballero 1994 (Heredity 73:657) eqs. 17-18,

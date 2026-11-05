@@ -128,10 +128,13 @@ SEAM_CASES = [("lineage_output", "equivalent_generations"), ("founder_means", "f
 def test_a_refused_allocation_raises_a_resource_error(family, product):
     body = f"""
         from pedigree_graph import ResourceError
+        from pedigree_graph._lineage import sweep_depth
         cohort = np.minimum(graph.depth, 3).astype(np.int32)
         column = np.where((graph.mother_rows < 0) & (graph.father_rows < 0), np.arange(n), -1).astype(np.int64)
         calls = {{
-            "equivalent_generations": lambda: _native.equivalent_generations(graph._built, graph.depth),
+            # The depth production passes, so the plant lands in the sweep's
+            # own buffers, not in a sort parents-first rows never need (#57).
+            "equivalent_generations": lambda: _native.equivalent_generations(graph._built, sweep_depth(graph)),
             "founder_contribution_means": lambda: _native.founder_contribution_means(
                 graph._built, graph.depth, cohort, 4, column, n
             ),
