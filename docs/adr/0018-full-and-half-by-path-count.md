@@ -156,8 +156,11 @@ a row. Every cousin shape (`1C`/`H1C`, `1C1R`/`H1C1R`, `1C2R`, `2C`, and the
 parentless ancestor whose children are the rows naming it. The
 classification among the original rows is then the one the pedigree gets
 with each external id made a founder row, which
-`external_parents_as_founder_rows_add_only_lineal_pairs` checks. Sibs, the
-avuncular family and lineal codes already agreed and do not change.
+`external_parents_as_founder_rows_add_only_lineal_pairs` checks. Sib,
+avuncular and lineal paths already agreed and do not change, but the
+closest-category fold moves a pair to a cousin code that is now closer: a
+pair that was `HGGAv` and also shares an external grandparent is `1C`, and
+`GGGP` and `G3GP` pairs can move the same way.
 
 The rejected alternative was to record the gap and restate the founder-row
 property as "the original pairs gain collateral categories only through the
@@ -178,8 +181,8 @@ virtual founder row per external id in the parent CSR, would widen every
 workspace and accumulator by the number of external ids and make every
 lineal and avuncular read skip the virtual rows; it was not built, because
 the hop costs little. On `random_300k` (one thread, five calls each, setup
-subtracted), user-space instructions changed by +1.23% (`pairs`, degree 3),
-+0.84% (`counts`, degree 5), +0.49% (`moments`) and +0.96% (`relatives`).
+subtracted), user-space instructions changed by +0.00% (`pairs`, degree 3),
++1.10% (`counts`, degree 5), -0.10% (`moments`) and -0.56% (`relatives`).
 Wall-time medians on this host could not resolve a few percent: an A/A run
 of the unchanged engine moved single cells by -5% to +17%.
 

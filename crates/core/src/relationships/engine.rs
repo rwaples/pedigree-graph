@@ -97,10 +97,6 @@ pub struct Engine<'p> {
     up: Csr,
     down: Csr,
     sibs: SiblingIndex,
-    /// Per row, bit 0 when its mother id and bit 1 when its father id is
-    /// external (an id with no row): the ids a cousin path walks through
-    /// ([`Engine::below_ancestors`]).
-    external_parent: Vec<u8>,
     max_degree: MaxDegree,
 }
 
@@ -271,19 +267,12 @@ impl<'p> Engine<'p> {
         let up = Csr::from_edges(n, edges)?;
         let down = up.transpose()?;
         let sibs = SiblingIndex::build(ped.orig_mother, ped.orig_father)?;
-        let mut external_parent = alloc::filled(0u8, n, Family::SiblingIndex)?;
-        for (row, flags) in external_parent.iter_mut().enumerate() {
-            let external = |parent: i32, id: i64| u8::from(parent < 0 && id >= 0);
-            *flags = external(ped.mother[row], ped.orig_mother[row])
-                | (external(ped.father[row], ped.orig_father[row]) << 1);
-        }
         Ok(Engine {
             id: NEXT_ENGINE.fetch_add(1, Ordering::Relaxed),
             ped: *ped,
             up,
             down,
             sibs,
-            external_parent,
             max_degree,
         })
     }
@@ -729,10 +718,9 @@ impl<'p> Engine<'p> {
     /// A cousin path counts an external parent id the way a sib link does
     /// (ADR 0018, issue #61): the id is a parentless ancestor with no row,
     /// whose children are the rows naming it, so they join the first hop
-    /// below the ancestors.  It is never a member of a set, and it adds no
-    /// path to a lineal or avuncular category, which already reach it
-    /// through the sibling index.  Without an external parent id among those
-    /// ancestors this is [`chain_down`](Self::chain_down) unchanged.
+    /// below the ancestors.  It is never a member of a set.  Lineal
+    /// categories never reach it, since it has no row, and avuncular ones
+    /// count it through the sibling index, not here.
     fn below_ancestors(
         &self,
         acc: &mut Accumulator,
@@ -746,41 +734,31 @@ impl<'p> Engine<'p> {
             k >= 2 && hops >= 1,
             "a cousin's shared ancestor is at least two hops up and one down"
         );
-        let flags = &self.external_parent;
-        if !up[k - 1].iter().any(|&(x, _)| flags[x as usize] != 0) {
-            return self.chain_down(acc, &up[k], hops, out, tmp);
-        }
-        acc.hop(&self.down, &up[k], tmp)?;
-        let through_external = up[k - 1].iter().flat_map(|&(x, m)| {
-            let roles = flags[x as usize];
-            self.sibs
-                .by_parent_id(x as usize)
-                .into_iter()
-                .enumerate()
-                .filter(move |&(role, _)| roles & (1 << role) != 0)
-                .flat_map(move |(_, children)| children.iter().map(move |&c| (c, m)))
-        });
-        acc.sum(tmp.iter().copied().chain(through_external), out)?;
-        for _ in 1..hops {
-            acc.hop(&self.down, out, tmp)?;
+        let ped = &self.ped;
+        let external = |x: usize| {
+            [
+                ped.mother[x] < 0 && ped.orig_mother[x] >= 0,
+                ped.father[x] < 0 && ped.orig_father[x] >= 0,
+            ]
+        };
+        acc.hop(&self.down, &up[k], out)?;
+        if up[k - 1]
+            .iter()
+            .any(|&(x, _)| external(x as usize).contains(&true))
+        {
+            let through_external = up[k - 1].iter().flat_map(|&(x, m)| {
+                let x = x as usize;
+                self.sibs
+                    .by_parent_id(x)
+                    .into_iter()
+                    .zip(external(x))
+                    .filter(|&(_, is_external)| is_external)
+                    .flat_map(move |(children, _)| children.iter().map(move |&c| (c, m)))
+            });
+            acc.sum(out.iter().copied().chain(through_external), tmp)?;
             std::mem::swap(out, tmp);
         }
-        Ok(())
-    }
-
-    /// `src @ (A^T)^k` with saturated path multiplicity.
-    fn chain_down(
-        &self,
-        acc: &mut Accumulator,
-        src: &Weighted,
-        k: usize,
-        out: &mut Weighted,
-        tmp: &mut Weighted,
-    ) -> Result<(), Error> {
-        out.clear();
-        alloc::reserve(out, src.len(), Family::RowSet)?;
-        out.extend_from_slice(src);
-        for _ in 0..k {
+        for _ in 1..hops {
             acc.hop(&self.down, out, tmp)?;
             std::mem::swap(out, tmp);
         }

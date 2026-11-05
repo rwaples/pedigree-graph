@@ -212,6 +212,19 @@ class TestOrientation:
             for first, second in _oriented(pairs[code]):
                 assert walk.oriented_pair_is_valid(code, first, second), (code, first, second)
 
+    def test_a_deeper_pair_moves_to_a_cousin_code_through_external_grandparents(self):
+        """Issue #61: 6 and 7 are HGGAv through rows, and 1C through the external couple 900 x 901."""
+        graph = PedigreeGraph.from_frame(
+            {
+                "id": [1, 2, 3, 4, 5, 6, 7],
+                "mother": [900, 900, 2, 3, 4, 1, 2],
+                "father": [901, 901, -1, -1, -1, 5, -1],
+            }
+        )
+        pairs = graph.relationship_pairs(max_degree=5)
+        assert _oriented(pairs["1C"]) == [(5, 6)]
+        assert _oriented(pairs["HGGAv"]) == []
+
 
 class TestDualValid:
     """random_1k holds removed cousins joined in both orientations through different paths."""

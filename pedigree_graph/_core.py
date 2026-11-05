@@ -1,7 +1,9 @@
-"""Pedigree relationship extraction via sparse matrix products.
+"""Pedigree relationship extraction by path counts (ADR 0018).
 
-Builds parent→child CSR matrices and extracts relationship categories
-using sparse matrix algebra (A @ A.T for siblings, A² @ (A²).T for cousins, etc.).
+A relationship category is a path shape over parent links: A @ A.T for
+siblings, A² @ (A²).T for first cousins, and so on.  A parent link is a
+represented parent row or a parent id with no row; such an external id is a
+parentless ancestor on every path (issue #61), so it has no row of A of its own.
 
 Each relationship type is parameterised by (up, down, n_ancestors):
   - up:   meioses from individual A up to common ancestor(s), canonicalised up ≤ down
@@ -786,6 +788,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         parent-child edges joins them.  External or missing parents add no
         edge, so two rows naming the same external parent are in different
         components, and MZ co-twins are joined only through their parents.
+        Components therefore do not bound relationship pairs: classification
+        counts an external parent id on every path (ADR 0018), so sibs,
+        avuncular pairs and cousins can span two components.
         The value is the minimum :attr:`ids` over the component, so it does
         not depend on row order.  Computed once and memoised; the call
         commits the package thread budget like every 0.8 operation.

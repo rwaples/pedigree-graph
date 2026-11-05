@@ -14,10 +14,13 @@ live on the corresponding GitHub release pages.
   path now reaches an external id as a parentless ancestor: the
   classification among the original rows is the one the same pedigree gets
   with each external id made a founder row. `1C`/`H1C`, `1C1R`/`H1C1R`,
-  `1C2R` and `2C` (and 2C's shares-a-grandparent exclusion) change; sibs,
-  the avuncular family and lineal codes do not, and neither does
-  `pair_kinship`, which is still 0 through an external id. Pairs only gain
-  a category or move to a closer one. Pair blocks, counts, burden, moments
+  `1C2R` and `2C` (and 2C's shares-a-grandparent exclusion) gain paths.
+  Sib, avuncular and lineal paths do not change, but a pair already in a
+  deeper category moves to a cousin code that is now closer: a pair that was
+  `HGGAv` and also shares an external grandparent is `1C`, and `GGGP`/`G3GP`
+  pairs can move the same way, so those blocks can lose pairs.
+  `pair_kinship` does not change and is still 0 through an external id
+  (#67). Pairs only gain a category or move to a closer one. Pair blocks, counts, burden, moments
   and per-person relatives change on pedigrees where two rows share an
   external parent id and either has descendants: `random_30k` (whose
   co-twins share external ids) moves `1C` 2,250 → 2,287, `1C1R` 8,999 →
@@ -28,7 +31,11 @@ live on the corresponding GitHub release pages.
   35-124% per cousin code. **Consumers:** a view classifies on its full
   graph, so only graphs built from a frame whose parents are missing rows
   change; in simACE that is `analysis/stats/runner.py` without
-  `--pedigree`, and in fitACE `ltm/falconer.py` without `pedigree=`. The
+  `--pedigree`, and in fitACE `ltm/falconer.py` without `pedigree=` and
+  `fitACE_tetraher`'s `build_pairs` on a pedigree frame with external
+  parent ids. Tetraher takes each pair's `r_A` from `pair_kinship`, so the
+  new external-joined cousin pairs enter it with `r_A = 0`, while Falconer
+  gives the same pairs their nominal kinship (#67). The
   relationship-pair, pair-kinship, structure and R goldens and the Rust
   parity counts were regenerated.
 - **Breaking (scientific): Ne_V and Ne_H include Mendelian segregation**
