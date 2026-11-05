@@ -1,10 +1,12 @@
 # Release pipeline for the ADR 0007 maturin wheels and sdist and the R source
-# tarball (slice 16c), gated on the Cargo workspace version.
+# tarball (slice 16c), gated on the Cargo workspace version.  A manual run
+# (workflow_dispatch) builds and tests everything and publishes nothing.
 name: Publish
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -34,7 +36,7 @@ jobs:
             echo "::error file=Cargo.toml::could not read version from the [workspace.package] table"
             exit 1
           fi
-          if [ "$version" != "$tag" ]; then
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$version" != "$tag" ]; then
             echo "::error file=Cargo.toml::tag ${GITHUB_REF_NAME} implies version ${tag}, but [workspace.package].version is ${version}"
             exit 1
           fi
@@ -48,7 +50,7 @@ jobs:
             fi
           done
           echo "version=${version}" >> "$GITHUB_OUTPUT"
-          echo "Workspace version ${version} matches tag ${GITHUB_REF_NAME} and the R package"
+          echo "Workspace version ${version} agrees with the R package (ref ${GITHUB_REF_NAME})"
 
   wheels:
     name: Build ${{ matrix.artifact }}
@@ -198,7 +200,8 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: verify
+    needs: [verify, r-tarball]
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -263,6 +266,7 @@ jobs:
   github-release:
     name: Create the GitHub release with the R tarball
     needs: [check-version, r-tarball, publish]
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
