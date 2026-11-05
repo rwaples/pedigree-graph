@@ -43,7 +43,10 @@ tar -C "$REPO/r" --exclude=src/rust/target --exclude='src/*.o' --exclude='src/*.
   --exclude=src/.cargo -cf - . | tar -C "$PKG" -xf -
 
 # The core: its library sources only, keys the workspace supplied written out,
-# and no [lints] table (clippy's, inherited from a workspace the tarball lacks).
+# no [lints] table (clippy's, inherited from a workspace the tarball lacks), and
+# no [dev-dependencies]: they serve the core's tests, which the tarball omits,
+# and staged under src/rust the core is a member of the binding's workspace, so
+# cargo would resolve them into its lock and `--locked` would refuse.
 CORE="$PKG/src/rust/core"
 mkdir -p "$CORE"
 cp -R "$REPO/crates/core/src" "$CORE/src"
@@ -63,6 +66,7 @@ sed -e "s|^version.workspace = true|version = \"$VERSION\"|" \
     -e "s|^repository.workspace = true|repository = \"$REPOSITORY\"|" \
     -e '/^\[\[bin\]\]/,/^$/d' \
     -e '/^\[lints\]$/,/^$/d' \
+    -e '/^\[dev-dependencies\]$/,/^$/d' \
     "$REPO/crates/core/Cargo.toml" > "$CORE/Cargo.toml"
 if grep -q 'workspace = true' "$CORE/Cargo.toml"; then
   echo "error: an inherited key is left in the staged core Cargo.toml" >&2
