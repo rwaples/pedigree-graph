@@ -1213,8 +1213,8 @@ fn csc_arrays(py: Python<'_>, csc: Csc) -> CscArrays<'_> {
 /// within each column, the diagonal always present (ADR 0006, 0009).
 ///
 /// `pedigree` is the graph's own [`BuiltPedigree`] and `depth` its structural
-/// depth, which must be non-negative and strictly above both parents' for
-/// every row.  The DP runs in depth-major order on the calling thread with
+/// depth, which must be non-negative, strictly above both parents' for
+/// every row and shared by MZ co-twins.  The DP runs in depth-major order on the calling thread with
 /// the GIL released; the arrays are moved out of the core without a copy.
 #[pyfunction]
 #[pyo3(signature = (pedigree, depth, /))]

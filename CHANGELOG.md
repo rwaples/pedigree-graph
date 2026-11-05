@@ -120,6 +120,12 @@ live on the corresponding GitHub release pages.
   now refused (`value_out_of_range`). `PedigreeGraph` always passes the
   structural depth and founder columns only on founders, and was not
   affected.
+- **Fix (Rust, `_native`): the kinship matrices refuse co-twins at two
+  depths** (issue #63). `kinship_csc`, `kinship_csc_upper` and
+  `approximate_kinship_csc` now run the twin check the pairwise walk and
+  the inbreeding sweep already ran, raising `value_out_of_range` on `depth`
+  (or on `twin` for a non-reciprocal pair) instead of writing a column with
+  duplicate rows. `PedigreeGraph` was not affected.
 - **Fix: an empty-selection `relationship_counts` commits the thread
   budget** (issue #52), on a graph and on a view, like every other call and
   like R. A later `configure_threads` with another value now raises.
