@@ -2229,10 +2229,10 @@
     "random_30k": {
       "counts": {
         "approx_support_upper_nnz": 26924109,
-        "view_pairs/1C": 547,
-        "view_pairs/1C1R": 2224,
-        "view_pairs/1C2R": 4706,
-        "view_pairs/2C": 2685,
+        "view_pairs/1C": 560,
+        "view_pairs/1C1R": 2270,
+        "view_pairs/1C2R": 4767,
+        "view_pairs/2C": 2713,
         "view_pairs/Av": 541,
         "view_pairs/FO": 6740,
         "view_pairs/FS": 4,
@@ -2243,8 +2243,8 @@
         "view_pairs/GGGP": 58214,
         "view_pairs/GGP": 37370,
         "view_pairs/GP": 22691,
-        "view_pairs/H1C": 50938,
-        "view_pairs/H1C1R": 174645,
+        "view_pairs/H1C": 50925,
+        "view_pairs/H1C1R": 174599,
         "view_pairs/HAv": 54677,
         "view_pairs/HGAv": 93375,
         "view_pairs/HGGAv": 152573,
@@ -2276,19 +2276,19 @@
           "v0_7_1_sha256": "61585ad7fbb680b24dc2cb373f3f741980330e8287fdd233ee4e641bb77a1d00"
         },
         "view_pairs/1C": {
-          "sha256": "2cc8ed2017d6f81d24b4eb02a30fe93c50bda6326546739243efadffd2afbc72",
+          "sha256": "fdeba4a00cd343e0afb536f5d9fcd4a0a6f71b8b8932f20b300c50675364dbf1",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C1R": {
-          "sha256": "5be5b1dd69b36d9c8926597231a8caaa35c2b7b75b010c289feb560255f912bf",
+          "sha256": "9c591ed15bbaf7a59e859b64ecde27b0adb367fce6a82bb3496ed4c349370cd4",
           "v0_7_1_sha256": null
         },
         "view_pairs/1C2R": {
-          "sha256": "4420dd2f4fdd993eaa31b01d20adf5df4945ecb398e643f013b1349db65e9d45",
+          "sha256": "3e0a7b5b612916ac710e4d9137212c607eaec0e340ae8b6d0b5a6b61780c84ff",
           "v0_7_1_sha256": null
         },
         "view_pairs/2C": {
-          "sha256": "329d386dc8fb740fdd2c464f7158f0555f054e4398b5c6107c4d7938a790587a",
+          "sha256": "b3dd4641de86c7c6417edeaa6b68b3c39ea9d28afee0960760ef3924be9a1caa",
           "v0_7_1_sha256": null
         },
         "view_pairs/Av": {
@@ -2332,11 +2332,11 @@
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C": {
-          "sha256": "704db2824d36a2e9450d8d25b6853816260dae93481d4583ddfa8bf6bd3226ff",
+          "sha256": "05d8a7e68a93dd9831dad40378ce22d7b67b28e20eeb0c1036e36a1cace5f006",
           "v0_7_1_sha256": null
         },
         "view_pairs/H1C1R": {
-          "sha256": "bd7b11556e64e69399734a939f5f41857ede2e5f56b2d9968bceeff2a2ce3829",
+          "sha256": "410a05018809c9e0d2f1fa42f923b02bf272af6c4e07e8742018a8f92fac90d5",
           "v0_7_1_sha256": null
         },
         "view_pairs/HAv": {
@@ -2855,7 +2855,7 @@
   },
   "generator_version": 1,
   "max_degree": 5,
-  "package_commit": "76297f61a34272e3156f5382e0aac3606a475428-dirty",
-  "package_version": "0.13.0",
+  "package_commit": "7c533dd81c245ee996bd73af137e4bd1462c0404-dirty",
+  "package_version": "0.14.0",
   "subsample_seed": 7
 }

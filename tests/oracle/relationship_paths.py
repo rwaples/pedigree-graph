@@ -8,7 +8,9 @@ the registry is read as specification.
 A *path* joins the pair through one shared ancestor.  Upward it follows
 represented parent rows, each route counted once; a sib link counts one path
 per shared known parent id, external ids included, so full sibs are joined
-by two paths and half sibs by one.  A collateral category is *full* when at
+by two paths and half sibs by one.  A cousin path also reaches an external
+parent id, as a parentless ancestor whose children are the rows naming it
+(issue #61), so every collateral shape sees the ids a sib link sees.  A collateral category is *full* when at
 least two paths of its shape join the pair, summed over both orientations,
 and *half* when exactly one does.
 
@@ -23,10 +25,11 @@ and *half* when exactly one does.
   nephew, times the parent ids it shares with the aunt or uncle, minus the
   subtract list.
 * ``1C``/``H1C``: the 2-up by 2-up path product, never a pair sharing a
-  known parent id.
+  known parent id.  Cousin products walk up through external ids too.
 * ``1C1R``/``H1C1R``/``1C2R``: the senior-up by junior-up path product, 2 by
   3 (or 4), junior cousin first, minus the subtract list.
-* ``2C``: the 3-up path product is at least two and no grandparent is shared.
+* ``2C``: the 3-up path product is at least two and no grandparent, external
+  ids included, is shared.
 * A pair joined in both orientations of an asymmetric code takes the lower
   row first; each pair is then reported under its earliest registry code.
 """
@@ -95,15 +98,27 @@ def relationship_paths(
     father_id = [int(v) for v in father]
     mother_row = [row_of.get(v, -1) if v != -1 else -1 for v in mother_id]
     father_row = [row_of.get(v, -1) if v != -1 else -1 for v in father_id]
-    parents = [[p for p in (mother_row[r], father_row[r]) if p != -1] for r in range(n)]
+    # Every external parent id is a node numbered from n: no row, no parents,
+    # and the rows naming it as its children.  Only cousin paths reach it;
+    # lineal codes and avuncular ancestors keep rows (``< n``).
+    external = sorted({v for v in (*mother_id, *father_id) if v != -1 and v not in row_of})
+    node_of = {v: n + k for k, v in enumerate(external)}
+    parents = [
+        [
+            row if row != -1 else node_of[v]
+            for v, row in ((mother_id[r], mother_row[r]), (father_id[r], father_row[r]))
+            if v != -1
+        ]
+        for r in range(n)
+    ] + [[] for _ in external]
 
-    children: list[list[int]] = [[] for _ in range(n)]
+    children: list[list[int]] = [[] for _ in parents]
     for r in range(n):
         for p in parents[r]:
             children[p].append(r)
 
     def levels(r: int, step: list[list[int]]) -> list[Counter]:
-        """``[k]``: the rows k hops from *r* along *step*, each with its number of distinct paths."""
+        """``[k]``: the nodes k hops from *r* along *step*, each with its number of distinct paths."""
         out = [Counter({r: 1})]
         for _ in range(5):
             nxt: Counter = Counter()
@@ -114,7 +129,7 @@ def relationship_paths(
         return out
 
     up = [levels(r, parents) for r in range(n)]
-    down = [levels(r, children) for r in range(n)]
+    down = [levels(r, children) for r in range(len(parents))]
     by_mother: dict[int, list[int]] = {}
     by_father: dict[int, list[int]] = {}
     for r in range(n):
@@ -143,12 +158,14 @@ def relationship_paths(
         """Each aunt or uncle of *niece* at *depth*, with the paths through the niece's ancestors."""
         out: Counter = Counter()
         for a, count in up[niece][depth].items():
+            if a >= n:
+                continue
             for aunt, links in sib_paths(a).items():
                 out[aunt] += count * links
         return out
 
     def cousin_paths(i: int, up_hops: int, down_hops: int) -> Counter:
-        """Each row *down_hops* below an ancestor *up_hops* above *i*, with the paths through those ancestors."""
+        """Each row *down_hops* below an ancestor *up_hops* above *i*, external ids included, with the paths."""
         out: Counter = Counter()
         for ancestor, count in up[i][up_hops].items():
             for j, below in down[ancestor][down_hops].items():
@@ -176,7 +193,7 @@ def relationship_paths(
     raw["MHS"] = {(a, b) for a, b in sibs if shares_mother(a, b) and not full_sib(a, b)}
     raw["PHS"] = {(a, b) for a, b in sibs if shares_father(a, b) and not full_sib(a, b)}
     for code, hops in _LINEAL.items():
-        raw[code] = {(r, ancestor) for r in everyone for ancestor in up[r][hops]}
+        raw[code] = {(r, ancestor) for r in everyone for ancestor in up[r][hops] if ancestor < n}
 
     # Registry order computes every subtracted code before the codes that subtract it.
     for depth, (full, half) in _AVUNCULAR.items():

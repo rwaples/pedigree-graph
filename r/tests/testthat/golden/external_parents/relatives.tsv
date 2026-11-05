@@ -8,9 +8,11 @@ row	code	relatives	rowwise	scalar
 5	FO	1	0	1
 5	Av	1	0	0
 5	HAv	1	0	1
+5	1C	1	0	1
 6	MO	1	0	0
 6	Av	1	1	1
 6	HAv	1	1	1
+6	1C	1	0	1
 7	MO	1	0	1
 7	FO	1	0	1
 7	GP	3	0	2

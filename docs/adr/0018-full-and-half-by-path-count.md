@@ -1,6 +1,7 @@
 # ADR 0018: a collateral category is full when two paths join the pair
 
-**Status:** accepted
+**Status:** accepted; amended 2026-11-05 (issue #61: external parent ids on
+cousin paths)
 **Date:** 2026-10-30
 **Context:** issues #47 (three full/half rules against one documented rule)
 and #48 (revisit ADR 0010's category definitions). Supersedes the section
@@ -39,9 +40,11 @@ label's degree.
 ### One rule: count the paths
 
 A *path* joins two people through one shared ancestor. Upward it follows
-represented parent rows, each route counted once; a sib link counts one path
+represented parent rows, each route counted once, and ends at an external
+parent id (an id with no row) as at a founder; a sib link counts one path
 per parent id the two share, external ids included, so full sibs are joined
-by two paths and half sibs by one. A collateral category is **full** when at
+by two paths and half sibs by one. Every shape sees the same external ids
+(amended for issue #61, below). A collateral category is **full** when at
 least two paths of its shape join the pair and **half** when exactly one
 does:
 
@@ -88,9 +91,10 @@ rejected because consumers read kinship off the label:
 The label stays a two-level summary: one path, or two or more. With more
 than two paths kinship exceeds the nominal value: double first cousins, or
 the children of two half-sib matings within one sibship (four paths through
-one grandparent), have kinship 1/8 and are `1C` (nominal 1/16). A sib link
-through an external parent id is a path with no kinship, as it already is
-for sibs. The exact value is `pair_kinship`.
+one grandparent), have kinship 1/8 and are `1C` (nominal 1/16). A path
+through an external parent id, at any shape, carries no kinship:
+`pair_kinship` follows represented parent rows only. The exact value is
+`pair_kinship`.
 
 ### What does not change
 
@@ -139,6 +143,48 @@ would share its definition defects. Its block helpers (`canonical_keys`,
 * `GLOSSARY.md` "Relationship category" states this rule.
 * pedigree-graph-validate's D1 is an intended difference: verbalisr labels by
   genealogy, pedigree-graph by path count.
+
+## Amendment: an external parent id is on every path (issue #61)
+
+As first written, a sib link counted a shared external parent id but the
+cousin products walked represented rows only, so an external id joined half
+sibs and, through them, avuncular pairs, but never cousins: rows 1 and 2
+sharing the external mother 900, with children 3 and 4, gave `MHS` (1, 2),
+`HAv` (3, 2) and (4, 1), and no pair (3, 4), which became `H1C` once 900 was
+a row. Every cousin shape (`1C`/`H1C`, `1C1R`/`H1C1R`, `1C2R`, `2C`, and the
+2C exclusion of pairs sharing a grandparent) now reaches an external id as a
+parentless ancestor whose children are the rows naming it. The
+classification among the original rows is then the one the pedigree gets
+with each external id made a founder row, which
+`external_parents_as_founder_rows_add_only_lineal_pairs` checks. Sibs, the
+avuncular family and lineal codes already agreed and do not change.
+
+The rejected alternative was to record the gap and restate the founder-row
+property as "the original pairs gain collateral categories only through the
+new rows". It keeps fewer labels whose nominal kinship exceeds
+`pair_kinship` (0 through any external id), but it labels a structure at one
+shape and not the next, and leaves real half cousins out of every
+degree-selected consumer; this ADR already prefers moving pairs closer to
+dropping them.
+
+The engine adds the external hop beside the cousin products
+(`Engine::below_ancestors`): the represented product is computed as before,
+and only when an ancestor `k - 1` up has an external parent id that another
+row also names is a second chain run, from the rows naming that id, and
+merged in. An id only one row names is skipped: its one path runs back down
+through that row, which joins the pair at a closer shape (sibs, a shared
+grandparent, or an avuncular pair), so the pair is excluded or claimed by a
+closer category either way; the founder-row property holds with the skip at
+16,384 cases. The alternative, a virtual founder row per external id in the
+parent CSR, would widen every workspace and accumulator by the number of
+external ids and make every lineal and avuncular read skip the virtual rows;
+it was not built, because the hop costs nothing measurable. On `random_300k`
+(one thread, five calls each), user-space instructions changed by +0.07%
+(`pairs`, degree 3), +0.58% (`counts`, degree 5), +0.17% (`moments`) and
+-1.01% (`relatives`); the relationship-query benchmark's wall-time medians
+moved by a geometric mean of +4.5% against +1.9% for an A/A run of the
+unchanged engine in the same two environments, whose single cells ranged
+from -5% to +17%.
 
 ## Alternatives considered
 

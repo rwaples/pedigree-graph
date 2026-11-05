@@ -1,5 +1,5 @@
 {
-  "core_version": "0.13.0",
+  "core_version": "0.14.0",
   "fixtures": {
     "avuncular_and_cousins": {
       "file": "avuncular_and_cousins.npz",
@@ -305,7 +305,7 @@
       "input_hash": "0df4fd1667577121e2f4e0339b3e4f7da1fdbca3a82cdb8bc0292ec0fb8c76c5",
       "n": 7,
       "pair_hashes": {
-        "1C": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
+        "1C": "4c14e37fc31152a36957eb110cdf548542b469e880f9228f135daff32d82ff9f",
         "1C1R": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
         "1C2R": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
         "2C": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
@@ -334,7 +334,7 @@
       },
       "self_value_hash": "ee703f2c29f1ee1ad1c246d126b809940e95cd89100610ac66176c66e81be70f",
       "value_hashes": {
-        "1C": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
+        "1C": "3d732b0b694dcae8359f366949bc1721ab924080e93fff57c46f723440f1b1ec",
         "1C1R": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "1C2R": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "2C": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
@@ -839,7 +839,7 @@
       "input_hash": "f4d558a6957b9c12efe4a28778448a9b981769a5998c039849bbcec316d0b80d",
       "n": 30300,
       "pair_hashes": {
-        "1C": "4d4e10e55c9399e45bf37b4824e69f725ddeb76d77a8d624fa6ae95cc9cb01ee",
+        "1C": "1bbb543c6d654c6ec033b5e4cc8353b4b283eb95bd4df98177ab5c5ade0ac09f",
         "1C1R": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
         "1C2R": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
         "2C": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
@@ -872,7 +872,7 @@
       },
       "self_value_hash": "5169cebfabdf69f6502b7b2115ccedeb3b262ea45741e06f8516c9be09249501",
       "value_hashes": {
-        "1C": "3ee28203de91cfe7b54fb21fc48aeec8c7ab09b9844f78ee033542259edf73d3",
+        "1C": "986f0b6486b060b8afd5c4d45b24bd8a597dc21927c8d887583587a0847c6478",
         "1C1R": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "1C2R": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "2C": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
@@ -1078,6 +1078,6 @@
   },
   "generator_version": 1,
   "max_degree": 3,
-  "package_commit": "76297f61a34272e3156f5382e0aac3606a475428-dirty",
-  "package_version": "0.13.0"
+  "package_commit": "7c533dd81c245ee996bd73af137e4bd1462c0404-dirty",
+  "package_version": "0.14.0"
 }

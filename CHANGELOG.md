@@ -6,6 +6,31 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking (relationships): cousin paths count shared external parent
+  ids** (issue #61, ADR 0018 as amended). An external parent id (an id with
+  no row) already joined half sibs, and through them avuncular pairs, but no
+  cousin shape, so the children of two external-id half sibs were half
+  aunt/nephew to each other's parents and unrelated to each other. Every
+  path now reaches an external id as a parentless ancestor: the
+  classification among the original rows is the one the same pedigree gets
+  with each external id made a founder row. `1C`/`H1C`, `1C1R`/`H1C1R`,
+  `1C2R` and `2C` (and 2C's shares-a-grandparent exclusion) change; sibs,
+  the avuncular family and lineal codes do not, and neither does
+  `pair_kinship`, which is still 0 through an external id. Pairs only gain
+  a category or move to a closer one. Pair blocks, counts, burden, moments
+  and per-person relatives change on pedigrees where two rows share an
+  external parent id and either has descendants: `random_30k` (whose
+  co-twins share external ids) moves `1C` 2,250 → 2,287, `1C1R` 8,999 →
+  9,097, `1C2R` 19,406 → 19,547 and `2C` 11,112 → 11,168, with `H1C` and
+  `H1C1R` falling by the pairs that became full. A pedigree whose oldest
+  generation's parents are external ids gains far more: two random-mating
+  pedigrees of 2,000 rows per generation with generation 0 dropped gained
+  35-124% per cousin code. **Consumers:** a view classifies on its full
+  graph, so only graphs built from a frame whose parents are missing rows
+  change; in simACE that is `analysis/stats/runner.py` without
+  `--pedigree`, and in fitACE `ltm/falconer.py` without `pedigree=`. The
+  relationship-pair, pair-kinship, structure and R goldens and the Rust
+  parity counts were regenerated.
 - **Breaking (scientific): Ne_V and Ne_H include Mendelian segregation**
   (issue #36, ADR 0021). `ne_variance_family_size` was `2N/V(k)` at
   constant size; it is now Caballero 1994 (Heredity 73:657) eqs. 17-18,

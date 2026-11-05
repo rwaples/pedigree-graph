@@ -794,3 +794,75 @@ fn a_view_is_the_graph_restricted_to_it_on_either_path() {
         },
     );
 }
+
+/// Making every external parent id a founder row changes no pair among the
+/// original rows: every path already counts a shared external parent id,
+/// as a parentless ancestor (ADR 0018, issue #61).  Each new row is in a
+/// pair only as the ancestor of a descendant, in the lineal category of its
+/// fewest meioses up (a founder shares no other ancestor with anyone), and
+/// only up to five meioses.
+#[test]
+fn external_parents_as_founder_rows_add_only_lineal_pairs() {
+    check("externals as founders", 1.0, pedigree(), |ped, checked| {
+        let n = ped.len();
+        let (a, b) = (Built::new(&ped), Built::new(&ped.externals_as_founders()));
+        let (pa, pb) = (blocks(&a, Execution::Speed), blocks(&b, Execution::Speed));
+        for cat in Category::ALL {
+            let original: Vec<_> = pairs(&pb, cat).filter(|&(x, y)| x < n && y < n).collect();
+            prop_assert_eq!(
+                original,
+                pairs(&pa, cat).collect::<Vec<_>>(),
+                "{}",
+                cat.code()
+            );
+        }
+        for founder in n..b.len() {
+            let mut got: HashMap<usize, Category> = HashMap::new();
+            for cat in Category::ALL {
+                for (x, y) in pairs(&pb, cat).filter(|&(x, y)| x == founder || y == founder) {
+                    prop_assert!(
+                        LINEAL.contains(&cat) && y == founder,
+                        "{} ({}, {})",
+                        cat.code(),
+                        x,
+                        y
+                    );
+                    got.insert(x, cat);
+                }
+            }
+            let want: HashMap<usize, Category> = (0..n)
+                .filter_map(|row| {
+                    let d = *ancestors(&b, row).get(&founder)?;
+                    let cat = match d {
+                        1 if b.graph.mother_rows[row] == founder as i32 => Category::MO,
+                        1 => Category::FO,
+                        _ => *LINEAL.iter().find(|cat| u32::from(cat.up()) == d)?,
+                    };
+                    Some((row, cat))
+                })
+                .collect();
+            prop_assert_eq!(&got, &want, "founder row {}", founder);
+            tally(checked, got.len());
+        }
+        Ok(())
+    });
+}
+
+/// Issue #61's minimal case: rows 1 and 2 share the external mother 900,
+/// 3 is 1's child and 4 is 2's, so 3 and 4 are half first cousins, as they
+/// are when 900 is a row.
+#[test]
+fn the_children_of_external_half_sibs_are_half_cousins() {
+    let ped = Ped {
+        ids: vec![1, 2, 3, 4],
+        mother: vec![900, 900, 1, 2],
+        father: vec![-1; 4],
+        twin: vec![-1; 4],
+    };
+    let all = blocks(&Built::new(&ped), Execution::Speed);
+    assert_eq!(pairs(&all, Category::MHS).collect::<Vec<_>>(), [(0, 1)]);
+    assert_eq!(pairs(&all, Category::H1C).collect::<Vec<_>>(), [(2, 3)]);
+    let mut avuncular: Vec<_> = pairs(&all, Category::HAv).collect();
+    avuncular.sort_unstable();
+    assert_eq!(avuncular, [(2, 1), (3, 0)]);
+}

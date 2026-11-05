@@ -125,6 +125,33 @@ impl Ped {
         }
     }
 
+    /// The same pedigree with every external parent id made a founder row,
+    /// appended after the original rows in ascending id order, so the
+    /// original rows keep their row numbers.
+    pub fn externals_as_founders(&self) -> Ped {
+        let rows: BTreeSet<i64> = self.ids.iter().copied().collect();
+        let external: BTreeSet<i64> = self
+            .mother
+            .iter()
+            .chain(&self.father)
+            .copied()
+            .filter(|&p| p >= 0 && !rows.contains(&p))
+            .collect();
+        let k = external.len();
+        let extend = |v: &[i64]| -> Vec<i64> {
+            v.iter()
+                .copied()
+                .chain(std::iter::repeat_n(-1, k))
+                .collect()
+        };
+        Ped {
+            ids: self.ids.iter().copied().chain(external).collect(),
+            mother: extend(&self.mother),
+            father: extend(&self.father),
+            twin: extend(&self.twin),
+        }
+    }
+
     /// The rows in `order`: row `r` of the result is row `order[r]`, ids kept.
     pub fn permuted(&self, order: &[usize]) -> Ped {
         let pick = |v: &[i64]| order.iter().map(|&r| v[r]).collect();

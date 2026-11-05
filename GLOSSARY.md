@@ -101,7 +101,10 @@ _Avoid_: relationship type (when the code is meant), kind, n_ancestors
 One route joining two people through one shared ancestor. A sibling link is
 one path per parent id the two share, so full sibs are joined by two paths
 and half sibs by one. A mated pair of shared ancestors gives two paths, and
-so do one ancestor reached by two routes and two unmated ancestors.
+so do one ancestor reached by two routes and two unmated ancestors. An
+external parent id (an id with no row) is a parentless ancestor on every
+path, so it joins half sibs, avuncular pairs and cousins alike; it carries no
+kinship, since `pair_kinship` follows represented rows only.
 _Avoid_: line (genealogical sense), connection
 
 **Close relative**:

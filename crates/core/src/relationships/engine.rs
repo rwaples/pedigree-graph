@@ -18,10 +18,11 @@
 //! The category definitions are ADR 0018's: a collateral category is full
 //! when at least two paths of its shape join the pair, summed over both
 //! orientations, and half when exactly one does.  A sib link carries one
-//! path per shared parent id.  The first cousin sibling exclusion is "shares
-//! a known parent id", which is wider than the sibling lists the collateral
-//! categories subtract.  Siblings include MZ co-twins (issue #29, ADR 0010 as
-//! amended).
+//! path per shared parent id, and a cousin path reaches a shared external
+//! parent id as a parentless ancestor (issue #61).  The first cousin sibling
+//! exclusion is "shares a known parent id", which is wider than the sibling
+//! lists the collateral categories subtract.  Siblings include MZ co-twins
+//! (issue #29, ADR 0010 as amended).
 //! [`EXCLUSIONS`] is the per-category subtraction table; it is part of each
 //! category's definition.  Each call below reads its category's path shape
 //! from [`Category::up`], [`Category::down`] and [`Category::ancestor_count`]
@@ -96,6 +97,10 @@ pub struct Engine<'p> {
     up: Csr,
     down: Csr,
     sibs: SiblingIndex,
+    /// Per row, bit 0 when its mother id and bit 1 when its father id is
+    /// external and named by another row too: the ids a cousin path walks
+    /// through ([`Engine::below_ancestors`]).
+    shared_external: Vec<u8>,
     max_degree: MaxDegree,
 }
 
@@ -149,6 +154,8 @@ pub struct Workspace {
     avuncular_depth: usize,
     scratch: [Vec<u32>; 4],
     weighted: [Weighted; 3],
+    /// Scratch for the paths through shared external parent ids.
+    external: [Weighted; 2],
     /// Per asymmetric category, the sorted members for whom the current row
     /// carries `first_role`; captured after multiplicity filtering and before
     /// the two arms of a product are unioned.  The avuncular and
@@ -182,6 +189,7 @@ impl Workspace {
             avuncular_depth: 0,
             scratch: Default::default(),
             weighted: Default::default(),
+            external: Default::default(),
             first_arm: vec![Vec::new(); super::category::N_CATEGORIES],
             orient,
             family: None,
@@ -266,12 +274,20 @@ impl<'p> Engine<'p> {
         let up = Csr::from_edges(n, edges)?;
         let down = up.transpose()?;
         let sibs = SiblingIndex::build(ped.orig_mother, ped.orig_father)?;
+        let mut shared_external = alloc::filled(0u8, n, Family::SiblingIndex)?;
+        for (row, flags) in shared_external.iter_mut().enumerate() {
+            let [by_mother, by_father] = sibs.by_parent_id(row);
+            let shared = |parent: i32, group: &[u32]| parent < 0 && group.len() >= 2;
+            *flags = u8::from(shared(ped.mother[row], by_mother))
+                | (u8::from(shared(ped.father[row], by_father)) << 1);
+        }
         Ok(Engine {
             id: NEXT_ENGINE.fetch_add(1, Ordering::Relaxed),
             ped: *ped,
             up,
             down,
             sibs,
+            shared_external,
             max_degree,
         })
     }
@@ -607,8 +623,10 @@ impl<'p> Engine<'p> {
     /// 1C, H1C, and the shared-grandparent support used by 2C.
     ///
     /// 1C and H1C threshold the paths through shared grandparents,
-    /// `A^2 @ (A^2)^T`.  All three depend only on the row's grandparents
-    /// and parent ids, so `reuse` keeps them from the last row.  The support keeps the row
+    /// `A^2 @ (A^2)^T`, external grandparent ids included
+    /// ([`below_ancestors`](Self::below_ancestors)).  All three depend only
+    /// on the row's grandparents and parent ids, so `reuse` keeps them from
+    /// the last row.  The support keeps the row
     /// itself, which shares every one of its grandparents, so that it is
     /// the same for every full sib; 2C drops the row before subtracting it.
     fn cousins(&self, row: usize, ws: &mut Workspace, reuse: bool) -> Result<(), Error> {
@@ -617,7 +635,7 @@ impl<'p> Engine<'p> {
             let ped = &self.ped;
             let [counted, _, tmp] = &mut ws.weighted;
             let gp = GRANDPARENT_DEPTH;
-            self.chain_down(&mut ws.acc, &ws.up[gp], gp, counted, tmp)?;
+            self.below_ancestors(&mut ws.acc, &ws.up, gp, gp, counted, tmp, &mut ws.external)?;
             sets::support_into(counted, &mut ws.shares_grandparent)?;
             // The row and every full sib of it share a known parent id, so
             // the same rows leave whichever sib computes the sets.
@@ -636,7 +654,9 @@ impl<'p> Engine<'p> {
         Ok(())
     }
 
-    /// `A^a @ (A^b)^T` plus its transpose, with path multiplicity, thresholded
+    /// `A^a @ (A^b)^T` plus its transpose, with path multiplicity and
+    /// external ancestor ids as [`below_ancestors`](Self::below_ancestors)
+    /// counts them, thresholded
     /// into `ws.shared` by each category's number of paths; `a` is their
     /// `down` and `b` their `up`, which every category in `cats` shares.
     ///
@@ -659,8 +679,8 @@ impl<'p> Engine<'p> {
             return Ok(());
         }
         let [forward, backward, tmp] = &mut ws.weighted;
-        self.chain_down(&mut ws.acc, &ws.up[a], b, forward, tmp)?;
-        self.chain_down(&mut ws.acc, &ws.up[b], a, backward, tmp)?;
+        self.below_ancestors(&mut ws.acc, &ws.up, a, b, forward, tmp, &mut ws.external)?;
+        self.below_ancestors(&mut ws.acc, &ws.up, b, a, backward, tmp, &mut ws.external)?;
         // Through `backward` the row sits `b > a` meioses from the shared
         // ancestor: it is the junior cousin, which the registry puts first.
         // A pair joined both ways is in this arm too.  Kept whether or not
@@ -689,19 +709,80 @@ impl<'p> Engine<'p> {
         Ok(())
     }
 
-    /// `A^3 @ (A^3)^T >= 2`, minus pairs sharing any grandparent.
+    /// `A^3 @ (A^3)^T >= 2`, minus pairs sharing any grandparent, an
+    /// external grandparent id included.
     fn second_cousins(&self, row: usize, ws: &mut Workspace, reuse: bool) -> Result<(), Error> {
         let cat = Category::C2;
         if !reuse {
             let [product, _, tmp] = &mut ws.weighted;
             let (up, down) = (usize::from(cat.up()), usize::from(cat.down()));
-            self.chain_down(&mut ws.acc, &ws.up[up], down, product, tmp)?;
+            self.below_ancestors(
+                &mut ws.acc,
+                &ws.up,
+                up,
+                down,
+                product,
+                tmp,
+                &mut ws.external,
+            )?;
             select_paths(product, cat, &mut ws.shared[cat.index()])?;
         }
         let set = &mut ws.sets[cat.index()];
         sets::copy_into(set, &ws.shared[cat.index()])?;
         sets::drop_self(set, row);
         sets::subtract(set, &ws.shares_grandparent);
+        Ok(())
+    }
+
+    /// The rows `hops` below the row's ancestors `k` hops up, with saturated
+    /// path multiplicity: `up[k] @ (A^T)^hops`, plus the paths through each
+    /// shared external parent id of an ancestor `k - 1` hops up.
+    ///
+    /// A cousin path counts a shared external parent id the way a sib link
+    /// does (ADR 0018, issue #61): the id is a parentless ancestor with no
+    /// row, whose children are the rows naming it.  It is never a member of
+    /// a set, and it adds no path to a lineal or avuncular category, which
+    /// already reach it through the sibling index.  An external id only one
+    /// row names is skipped: its one path runs back down through that row,
+    /// which joins the same pair at a closer shape, so the pair is excluded
+    /// or claimed by a closer category either way.  `ext` is scratch.
+    #[allow(clippy::too_many_arguments, reason = "disjoint workspace borrows")]
+    fn below_ancestors(
+        &self,
+        acc: &mut Accumulator,
+        up: &[Weighted],
+        k: usize,
+        hops: usize,
+        out: &mut Weighted,
+        tmp: &mut Weighted,
+        ext: &mut [Weighted; 2],
+    ) -> Result<(), Error> {
+        assert!(
+            k >= 2 && hops >= 1,
+            "a cousin's shared ancestor is at least two hops up and one down"
+        );
+        self.chain_down(acc, &up[k], hops, out, tmp)?;
+        let flags = &self.shared_external;
+        if !up[k - 1].iter().any(|&(x, _)| flags[x as usize] != 0) {
+            return Ok(());
+        }
+        let [below, scratch] = ext;
+        let through_external = up[k - 1].iter().flat_map(|&(x, m)| {
+            let roles = flags[x as usize];
+            self.sibs
+                .by_parent_id(x as usize)
+                .into_iter()
+                .enumerate()
+                .filter(move |&(role, _)| roles & (1 << role) != 0)
+                .flat_map(move |(_, children)| children.iter().map(move |&c| (c, m)))
+        });
+        acc.sum(through_external, below)?;
+        for _ in 1..hops {
+            acc.hop(&self.down, below, scratch)?;
+            std::mem::swap(below, scratch);
+        }
+        sets::sum_into(out, below, tmp)?;
+        std::mem::swap(out, tmp);
         Ok(())
     }
 

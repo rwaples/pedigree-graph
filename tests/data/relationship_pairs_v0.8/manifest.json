@@ -296,7 +296,7 @@
     },
     "external_parents": {
       "counts": {
-        "1C": 0,
+        "1C": 1,
         "1C1R": 0,
         "1C2R": 0,
         "2C": 0,
@@ -322,7 +322,7 @@
       },
       "file": "external_parents.npz",
       "hashes": {
-        "1C": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
+        "1C": "4c14e37fc31152a36957eb110cdf548542b469e880f9228f135daff32d82ff9f",
         "1C1R": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
         "1C2R": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
         "2C": "14d24d9ee20a58a4644cc8b1eaf3f8b193232a46103da9ebd1bfcd7bef1eecaf",
@@ -822,10 +822,10 @@
     },
     "random_30k": {
       "counts": {
-        "1C": 2250,
-        "1C1R": 8999,
-        "1C2R": 19406,
-        "2C": 11112,
+        "1C": 2287,
+        "1C1R": 9097,
+        "1C2R": 19547,
+        "2C": 11168,
         "Av": 2140,
         "FO": 27771,
         "FS": 20,
@@ -836,8 +836,8 @@
         "GGGP": 233669,
         "GGP": 149807,
         "GP": 92433,
-        "H1C": 210626,
-        "H1C1R": 719129,
+        "H1C": 210589,
+        "H1C1R": 719031,
         "HAv": 223926,
         "HGAv": 377462,
         "HGGAv": 619047,
@@ -847,10 +847,10 @@
         "PHS": 32785
       },
       "hashes": {
-        "1C": "4d4e10e55c9399e45bf37b4824e69f725ddeb76d77a8d624fa6ae95cc9cb01ee",
-        "1C1R": "b31543493f0b8eb69c2100014b91256bf2551cab40b499b6399badc10c8ce443",
-        "1C2R": "da7d6f2e83593da59bb8690466b3d49ad9b426ef3a774cda9e4ba6f44c4ebaa8",
-        "2C": "9e7b9735a41c65fc4491a74a8f594a0e61defe6115afd8cc8ca4546010cb78d6",
+        "1C": "1bbb543c6d654c6ec033b5e4cc8353b4b283eb95bd4df98177ab5c5ade0ac09f",
+        "1C1R": "bc06b9db2b786db35bce46845bc92ac786958759b4ccfa599e334e7370ac8531",
+        "1C2R": "8da4d994ee37da2322524257d341f45988d0c3871c5edaddea18d9f6e5983e4c",
+        "2C": "708f4840f63ea84e6723e26b13d1911cd02a66192ed9820eb1c90ed5b3f2749a",
         "Av": "6f9b2fe23cd7153374e3ca0d6656d8bc5afb83fdcff219fea339aa0ca06a8a88",
         "FO": "e577d9e11508a083dc3e59b12553f5c84a01166d61ee90a37b1564c0c3c0aa2a",
         "FS": "b6cc4270aac412e3a721a5181c1e17432ae2bc78bb08093d45fcd3bec0dcac8a",
@@ -861,8 +861,8 @@
         "GGGP": "696eab66b68a62d25e5bc621a2a3338879c7241f89c59490806404bbe9d746a6",
         "GGP": "945f96ce317f964afd2ab820322465c435d9e15a740e60638bdfaa0dadcc56f3",
         "GP": "a5edfc418c68efb4dd479cffe3ee50d4a61ce6162c702ff002a910c212e1e0d6",
-        "H1C": "b6cca0b1a4728b99b090b778993f45fac28bab16902a5dfaff724f37dafb3f5b",
-        "H1C1R": "6054f6f03b3e274712ad8bb2af051fb3942936198f0678d9f4dd3e2832312647",
+        "H1C": "e003a54cfd1d79329308feb5bf5abd675a7c84e3f3d29db84592b9fe45aa2489",
+        "H1C1R": "5858dd6778d46aa5336523891fb3daa90a660452bce8fbd9de3b3aaf644a2e46",
         "HAv": "7ac16e92ba9bccc67eebf4001898b837d98fc152418ffff3b05ab4de45299582",
         "HGAv": "51b91aaecf738ee6e05f21adbcaae0b60c5d242f18284664831e949463859144",
         "HGGAv": "c079d4c3d18bd530c61d6bdc1babe1de8babb0ce3a2e9b634ae7d16bd678b4ba",
@@ -1059,6 +1059,6 @@
   },
   "generator_version": 1,
   "max_degree": 5,
-  "package_commit": "76297f61a34272e3156f5382e0aac3606a475428-dirty",
-  "package_version": "0.13.0"
+  "package_commit": "7c533dd81c245ee996bd73af137e4bd1462c0404-dirty",
+  "package_version": "0.14.0"
 }
