@@ -446,24 +446,38 @@ def ne_coancestry(pg: PedigreeGraph) -> NeCoancestryResult:
 
 
 def ne_variance_family_size(pg: PedigreeGraph) -> NeVarianceResult:
-    """Variance-of-family-size Ne (Ne_V) — Caballero 1994 eq. 6.
+    """Variance-of-family-size Ne (Ne_V): Caballero 1994 eqs. 17-18.
 
-    For each observed parent cohort, decompose lifetime offspring counts per
-    parent by offspring sex (``k_mm, k_mf, k_fm, k_ff``).  Skip-gen
-    children (offspring in a later cohort than the next) are attributed to
-    the parent's own cohort, so a parent's k-totals reflect their full
-    reproductive output even when offspring span several cohorts.
+    A. Caballero, *Developments in the prediction of effective population
+    size*, Heredity 73(6):657-679, 1994.  For each observed parent cohort,
+    decompose lifetime offspring counts per parent by offspring sex
+    (``k_mm, k_mf, k_fm, k_ff``).  Skip-gen children (offspring in a later
+    cohort than the next) are attributed to the parent's own cohort, so a
+    parent's counts are their full reproductive output even when offspring
+    span several cohorts.
 
-    ``V(k_m) = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the per-male
-    total-offspring variance built from this decomposition.  Discrete-
-    generation Ne for the cohort is
+    With ``μ_sm``, ``μ_sf`` the mean sons and daughters per parent of sex
+    ``s``, ``S²`` the sample variances (ddof=1) and ``S_sm,sf`` the
+    covariance, eq. 17 at ``α_I = α_O = 0`` (random mating, large
+    population) is ``N_es = 4·N_s / D_s`` with::
 
-        ``ΔF = (V(k_m)/k̄_m) / (4 · N_m · k̄_m) +
-                  (V(k_f)/k̄_f) / (4 · N_f · k̄_f)``,
+        D_s = 1/μ_sm + 1/μ_sf + S²_sm/μ_sm² + 2·S_sm,sf/(μ_sm·μ_sf) + S²_sf/μ_sf²
 
-    with ``Ne_p = 1/(2·ΔF)``.  When ``V(k)/k̄ → 1`` (Poisson) and
-    ``N_m = N_f``, this reduces to Wright's ``4 N_m N_f / (N_m + N_f)``.
-    Aggregate Ne is the harmonic mean across parent cohorts.
+    and eq. 18 combines the sexes: ``1/Ne = 1/(4·N_em) + 1/(4·N_ef)``.  The
+    ``1/μ`` terms are Mendelian segregation.  Aggregate Ne is the harmonic
+    mean across parent cohorts.
+
+    Where each cohort replaces itself (``μ_mm = μ_ff = 1``) this is Hill
+    1979 eq. 9, which Caballero restates as eq. 19, and at ``N_m = N_f =
+    N/2`` it is Hill's eq. 10, ``8N/(σ²_m + σ²_f + 4)``, so a Wright-Fisher
+    population (``σ² = 2``) gives ``N``.  Elsewhere the pathway means scale
+    each parent's offspring to the offspring cohort, so Ne_V is the
+    *variance* effective size, which follows the number of offspring
+    (Caballero eq. 10 vs eq. 14): under Poisson family sizes it is the
+    offspring cohort's ``4·M·F/(M + F)``.
+
+    A cohort whose parents of one sex had no sons or no daughters has no
+    Ne_V; if no cohort has one, ``no_estimate_code="single_sex_offspring"``.
 
     Requires complete generation labels (or none) and complete sex, in
     that order: absent or partly unknown sex raises ``missing_sex``.
@@ -587,50 +601,49 @@ def ne_hill_overlapping(pg: PedigreeGraph, *, vk_scale: bool = False) -> NeHillR
 
     Dispatches on ``pg.birth_year``:
 
-    * **Sentinel branch** (``pg.birth_year is None``): the
-      discrete-generation form of Hill 1979 reduces to Ne_V (Caballero
-      1994 eq. 6 = Hill 1979 eq. 8 under symmetric sexes), so ``ne`` is
-      the :func:`ne_variance_family_size` passthrough and
+    * **Sentinel branch** (``pg.birth_year is None``): Hill 1979 at
+      ``L = 1`` is the discrete-generation Ne, which is Ne_V, so ``ne``
+      is the :func:`ne_variance_family_size` passthrough and
       ``collapses_to_ne_v=True``.  This branch inherits Ne_V's guards:
-      complete generation labels (or none), then complete sex.
+      complete generation labels (or none), then complete sex.  It
+      ignores ``vk_scale``.
     * **Birth-year branch**: ignores generation labels; requires complete
       sex, then a qualifying known-age edge for each parent role
       (:attr:`PedigreeGraph.generation_interval` raises
       ``insufficient_parent_age_data`` otherwise).  Per eligible
-      birth-year cohort, computes
-      sex-specific Ne via Hill 1979 eq. (4)::
+      birth-year cohort, computes sex-specific Ne::
 
-          Ne_s(c) = 4·N1_s(c)·T / (σ²_s(c) + 2)         s ∈ {m, f}
+          Ne_s(c) = 4·N1_s(c)·T / D_s(c)         s ∈ {m, f}
 
-      and combines them with Wright 1938 sex-ratio (paper eq. 3)::
+      and combines them as Hill 1979 eq. 9 does (Caballero 1994 eq. 18)::
 
           1/Ne(c) = 1/(4·Ne_m(c)) + 1/(4·Ne_f(c))
 
-      where ``σ²_m = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` is the
-      per-male lifetime offspring variance reassembled from sex-of-
-      offspring quadrants (Caballero 1994 eq. 6) and ``σ²_f`` is the
-      symmetric female form.  ``N1_s(c)`` is the number of newborns of
-      sex ``s`` in cohort ``c`` (zero-offspring individuals included);
-      ``T = (T_m + T_f) / 2`` from
-      :attr:`PedigreeGraph.generation_interval`.
+      ``D_s`` is Ne_V's Caballero 1994 eq. 17 denominator over the
+      cohort's lifetime family sizes, so where each cohort replaces itself
+      this is Hill eq. 9 with ``L = T``,
+      and the two branches agree on the same edges when ``T = 1``.  In
+      Hill's stable population (each cohort replaces itself, ``N1_m =
+      N1_f = N/2``) it is eq. 10, ``Ne = 8·N·T / (σ²_m + σ²_f + 4)``, with
+      ``σ²_m = V(k_mm) + V(k_mf) + 2·Cov(k_mm, k_mf)`` and ``σ²_f``
+      likewise.  ``N1_s(c)`` is the number of newborns of sex ``s`` in
+      cohort ``c`` (zero-offspring individuals included); ``T = (T_m +
+      T_f) / 2`` from :attr:`PedigreeGraph.generation_interval`.
 
       Scenario-scalar ``ne``, ``Ne_m``, ``Ne_f`` are harmonic means
       across cohorts within
       :func:`~pedigree_graph._cohort_utils.eligible_cohort_range`.
 
-      Under balanced sex (``N1_m ≈ N1_f``) this matches the eq. (10)
-      form ``Ne = 8·N·T / (σ²_m + σ²_f + 4)``; the per-sex form is
-      preferred because it surfaces ``Ne_m`` and ``Ne_f`` directly and
-      handles sex-asymmetric cohorts correctly.
-
     Args:
         pg: Pedigree graph.
-        vk_scale: when ``True``, rescale ``σ²_m`` and ``σ²_f`` per
-            cohort via Waples 2002 eq. (5) so the resulting Ne assumes
-            a constant-N reference (``k̄ = 2``).  Removes demographic
-            non-stationarity from ``Vk`` over populations spanning
-            growth or decline.  Default ``False`` (raw sample
-            variances).
+        vk_scale: when ``True`` (birth-year branch only), rescale ``σ²_m``
+            and ``σ²_f`` per cohort via Waples 2002 eq. (5) to a
+            constant-N reference (``k̄ = 2``) and use Hill eq. 10's
+            ``D_s = σ²_s + 2``, which assumes ``N1_m = N1_f``.  This is
+            the parent-referenced alternative to the default's pathway
+            scaling; the two agree only where each cohort replaces itself with
+            ``N1_m = N1_f``.
+            Default ``False``.
     """
     return _run_one(pg, "ne_hill_overlapping", NeHillResult, hill_vk_scale=vk_scale)
 

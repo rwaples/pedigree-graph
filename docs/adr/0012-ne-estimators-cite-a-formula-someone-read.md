@@ -1,6 +1,6 @@
 # ADR 0012: every named Ne estimator cites a formula someone has read
 
-**Status:** accepted
+**Status:** accepted; amended by ADR 0021 (Ne_V was `2N/V(k)`, not a read formula)
 **Date:** 2026-09-11
 **Context:** issue #15, resolved before the 0.9 scientific contract is frozen;
 refines the effective-size surface of ADR 0006 and the genome-node pedigree of
@@ -251,7 +251,9 @@ Applied:
   generations — which a caller reaches here through `reference=`.
 * **The corrected `ne` has a different downstream expectation, and a simpler
   one.** W&T eq. 31 under their p. 51 relation `σ_r² = V(k)/2` is
-  `4N/(2 + V(k))`, while a Crow-Kimura-form `Ne_V` is `2N/V(k)`. `V(k)` cancels
+  `4N/(2 + V(k))`, while the Ne_V shipped then was `2N/V(k)` (a defect, not
+  Crow-Kimura's form: ADR 0021 makes Ne_V `4N/(2 + V(k))` at constant size, so
+  the expectation below is now Ne_V itself). `V(k)` cancels
   between them, leaving `2/Ne_LTC = 1/N + 1/Ne_V`: the expectation is the
   harmonic mean of the census and variance effective sizes, and no family-size
   variance has to be estimated to state it. The two coincide exactly under

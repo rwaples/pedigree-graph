@@ -190,11 +190,10 @@ def test_toy2_random_mating_NeV_NeSr_match_N():
 def test_toy3_skewed_male_NeV_below_sex_ratio():
     """Single dominant male; N_m=N_f=4, one male sires every offspring.
 
-    Hand: V(k_mm)+V(k_mf)+2·Cov_m for males with k_total = (8,0,0,0):
-        kbar_m = 2; V(k_total)/kbar = 16/2 = 8.
-    Females evenly distributed (each has 2 kids ⇒ V_f = 0):
-        V(k_total)/kbar_f = 0.
-    ΔF = 8/(4·4·2) + 0/(4·4·2) = 8/32 = 0.25 ⇒ Ne_V = 2.
+    Hand: males have k_total = (8,0,0,0), so σ²_m = 16 (ddof=1); each
+    female has one son and one daughter, so σ²_f = 0.  Every pathway mean
+    is 1 (4 sons and 4 daughters from 4 of each sex), Hill 1979's stable
+    case, so eq. 10 applies: Ne_V = 8·8/(16 + 0 + 4) = 3.2.
     Ne_sr at gen 0 = 4·4·4/8 = 8.  Ne_V should be ≪ Ne_sr.
     """
     male_ids = [0, 1, 2, 3]
@@ -224,7 +223,7 @@ def test_toy3_skewed_male_NeV_below_sex_ratio():
     v = ne_variance_family_size(pg)
     # V(k_total) for males: counts (8, 0, 0, 0) → mean 2, var = (36+4+4+4)/3 = 16.
     assert v.ne is not None
-    assert v.ne == pytest.approx(2.0, abs=1e-9)
+    assert v.ne == pytest.approx(3.2, abs=1e-9)
     # Sanity: Ne_V ≪ Ne_sr because variance dominates.
     assert v.ne < sr.ne_per_gen[0]
 

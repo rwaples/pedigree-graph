@@ -6,6 +6,23 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking (scientific): Ne_V and Ne_H include Mendelian segregation**
+  (issue #36, ADR 0021). `ne_variance_family_size` was `2N/V(k)` at
+  constant size; it is now Caballero 1994 (Heredity 73:657) eqs. 17-18,
+  which is Hill 1979 eq. 9, `4N/(2 + V(k))` at equal sexes, so it tracks
+  realized drift (simACE ZTP λ=0.5: 1438 → 1668.5 against 1668 realized).
+  Wright-Fisher pedigrees still give `N`. The old docstring cited
+  "Caballero 1994 eq. 6", which is the no-selfing result. The
+  `ne_hill_overlapping` birth-year branch uses the same per-sex denominators
+  (without `vk_scale`), so both branches agree at a generation interval of
+  1; with `vk_scale=True` it is unchanged. Persisted Ne_V and Ne_H values are
+  not comparable across this change; the golden is regenerated.
+- **Breaking: no-estimate code `no_family_size_variance` is now
+  `single_sex_offspring`** (issue #36). Equal family sizes now give
+  `Ne = 2N`, not "no estimate"; the remaining case is a cohort whose parents
+  of one sex had no sons or no daughters. pedsum maps the old code at its
+  next repin.
+
 - **Breaking (Rust): `FieldValue` gains `Texts`; `unknown_relationship_category`
   is a core error** (issues #54, #60, ADR 0006).
   `Error::UnknownRelationshipCategory { codes }` carries caller-given codes as

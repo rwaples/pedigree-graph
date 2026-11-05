@@ -13,8 +13,8 @@ Estimator coverage:
 
 * :func:`ne_inbreeding`              — regression of ``ln(1 − F̄)`` on the label offset.
 * :func:`ne_coancestry`              — regression of ``ln(1 − θ̄)`` on the label offset.
-* :func:`ne_variance_family_size`    — Caballero 1994 eq. 6 (separate sex,
-  sex-of-offspring covariance).
+* :func:`ne_variance_family_size`    — Caballero 1994 eqs. 17-18 (separate
+  sex, sex-of-offspring covariance; Hill 1979 eq. 9 at constant size).
 * :func:`ne_sex_ratio`               — Wright ``4 N_m N_f / (N_m + N_f)``.
 * :func:`ne_individual_delta_f`      — Gutiérrez 2008 ΔF_i over a reference subpopulation.
 * :func:`ne_long_term_contributions` — W&T 1990 eq. 31 Ne, C&T 2000 eq. 19 N_ef, from
@@ -39,7 +39,8 @@ the code is ``None`` exactly when ``ne`` is set.
   row), ``reference_not_inbred`` (``ΔF̄ ≤ 0``).
 * ``ne_variance_family_size``: ``too_few_parents`` (no parent cohort with
   two of each sex and a positive mean family size),
-  ``no_family_size_variance`` (``ΔF ≤ 0`` wherever estimable).
+  ``single_sex_offspring`` (wherever estimable, the parents of one sex had
+  no sons or no daughters).
 * ``ne_sex_ratio``: ``no_cohort_with_both_sexes``.
 * ``ne_long_term_contributions``: ``no_founders`` (an empty graph).
 * ``ne_hill_overlapping``: Ne_V's code when it collapses to Ne_V;

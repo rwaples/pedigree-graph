@@ -1,7 +1,7 @@
 """Family-size Ne estimators and their shared primitives (PGQ-006).
 
-Owns the sex-of-offspring family-size table and the Caballero 1994 eq. 6
-variance reassembly, plus the evaluators of the two estimators built
+Owns the sex-of-offspring family-size table and its moments, with the
+Caballero 1994 eq. 17 per-sex drift denominators, plus the evaluators of the two estimators built
 directly on them, :func:`~pedigree_graph.effective_size.ne_variance_family_size` (Ne_V) and
 :func:`~pedigree_graph.effective_size.ne_sex_ratio` (Ne_sr), whose public functions run their
 registry rows in ``_ne_estimate``.
@@ -75,18 +75,19 @@ FamilySizeTable = dict[int, FamilySizeEntry]
 
 
 class Sigma2Decomposition(NamedTuple):
-    """Caballero 1994 eq. 6 reassembly terms for one cohort.
+    """Sex-of-offspring family-size moments for one cohort.
 
-    Returned by :func:`_sigma2_from_quadrants`.  Callers reassemble the
-    per-sex lifetime-offspring variance as ``σ²_m = v_mm + v_mf +
-    2·cov_m`` and ``σ²_f = v_fm + v_ff + 2·cov_f``.  Remains
-    tuple-unpackable for positional call sites.
+    Returned by :func:`_sigma2_from_quadrants`.  The per-sex lifetime
+    offspring variance is ``σ²_m = v_mm + v_mf + 2·cov_m`` (Hill 1979 eq.
+    10's definition) and ``σ²_f = v_fm + v_ff + 2·cov_f``; the pathway means
+    ``mu_*`` are Caballero 1994 eq. 17's ``μ_sm``, ``μ_sf``.
 
     Attributes:
         v_mm, v_mf, v_fm, v_ff: sample variances (ddof=1) of the four
             offspring-count quadrants.
         cov_m: ``Cov(k_mm, k_mf)``; ``cov_f``: ``Cov(k_fm, k_ff)``.
-        kbar_m, kbar_f: mean total lifetime offspring per male / female.
+        mu_mm, mu_mf, mu_fm, mu_ff: mean sons / daughters per male, and
+            per female.
         n_m, n_f: cohort male / female counts (each ``≥ 2``).
     """
 
@@ -96,10 +97,59 @@ class Sigma2Decomposition(NamedTuple):
     v_ff: float
     cov_m: float
     cov_f: float
-    kbar_m: float
-    kbar_f: float
+    mu_mm: float
+    mu_mf: float
+    mu_fm: float
+    mu_ff: float
     n_m: int
     n_f: int
+
+    @property
+    def sigma2_m(self) -> float:
+        return self.v_mm + self.v_mf + 2.0 * self.cov_m
+
+    @property
+    def sigma2_f(self) -> float:
+        return self.v_fm + self.v_ff + 2.0 * self.cov_f
+
+    @property
+    def kbar_m(self) -> float:
+        return self.mu_mm + self.mu_mf
+
+    @property
+    def kbar_f(self) -> float:
+        return self.mu_fm + self.mu_ff
+
+    def drift_denominators(self) -> tuple[float, float] | None:
+        """Caballero 1994 eq. 17's per-sex denominators ``(D_m, D_f)``.
+
+        ``N_es = 4·N_s / D_s`` with, at ``α_I = α_O = 0`` (eq. 19's
+        large-population form)::
+
+            D_s = 1/μ_sm + 1/μ_sf + S²_sm/μ_sm² + 2·S_sm,sf/(μ_sm·μ_sf) + S²_sf/μ_sf²
+
+        The first two terms are Mendelian segregation; the rest is the
+        variance of each parent's offspring counts, each pathway scaled by
+        its mean.  Where each cohort replaces itself (``μ_mm = μ_ff = 1``,
+        ``μ_mf = F/M``) this is Hill 1979 eq. 9, and at ``M = F`` eq. 10's
+        ``σ²_s + 2``.  ``None`` when a pathway mean is 0: the cohort's
+        parents of one sex had no sons or no daughters.
+        """
+        if min(self.mu_mm, self.mu_mf, self.mu_fm, self.mu_ff) <= 0:
+            return None
+        # Same-sex pathway first in both, so swapping the sexes swaps D_m
+        # and D_f bit for bit.
+        return (
+            _sex_denominator(self.mu_mm, self.mu_mf, self.v_mm, self.v_mf, self.cov_m),
+            _sex_denominator(self.mu_ff, self.mu_fm, self.v_ff, self.v_fm, self.cov_f),
+        )
+
+
+def _sex_denominator(mu_same: float, mu_other: float, v_same: float, v_other: float, cov: float) -> float:
+    """One sex's ``D_s`` of Caballero 1994 eq. 17 at ``α = 0``."""
+    return (
+        1.0 / mu_same + 1.0 / mu_other + v_same / mu_same**2 + 2.0 * cov / (mu_same * mu_other) + v_other / mu_other**2
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -196,16 +246,11 @@ def _warn_if_uniform_sex(pg: PedigreeGraph, caller: str) -> None:
 
 
 def _sigma2_from_quadrants(entry: FamilySizeEntry) -> Sigma2Decomposition | None:
-    """Caballero 1994 eq. 6 reassembly from sex-of-offspring quadrants.
+    """Sex-of-offspring moments of one :class:`FamilySizeEntry`.
 
-    Computes the per-sex lifetime-offspring variance ``σ²_s = V(k_ss) +
-    V(k_sf) + 2·Cov(k_ss, k_sf)`` and the per-sex offspring-count mean
-    ``k̄_s`` from one :class:`FamilySizeEntry`.  Returns ``None`` when the
-    cohort lacks two of either sex (Ne is undefined for that transition).
-
-    Returns:
-        A :class:`Sigma2Decomposition` (six variance/covariance terms,
-        two means, two cohort sizes), or ``None``.
+    The four quadrant variances (ddof=1), the two within-sex covariances
+    and the four pathway means.  Returns ``None`` when the cohort lacks two
+    of either sex (Ne is undefined for that transition).
     """
     kmm = entry.k_mm
     kmf = entry.k_mf
@@ -215,23 +260,17 @@ def _sigma2_from_quadrants(entry: FamilySizeEntry) -> Sigma2Decomposition | None
     n_f = len(kfm)
     if n_m < 2 or n_f < 2:
         return None
-    kbar_m = float((kmm + kmf).mean())
-    kbar_f = float((kfm + kff).mean())
-    v_mm = float(kmm.var(ddof=1))
-    v_mf = float(kmf.var(ddof=1))
-    v_fm = float(kfm.var(ddof=1))
-    v_ff = float(kff.var(ddof=1))
-    cov_m = float(np.cov(kmm, kmf, ddof=1)[0, 1])
-    cov_f = float(np.cov(kfm, kff, ddof=1)[0, 1])
     return Sigma2Decomposition(
-        v_mm=v_mm,
-        v_mf=v_mf,
-        v_fm=v_fm,
-        v_ff=v_ff,
-        cov_m=cov_m,
-        cov_f=cov_f,
-        kbar_m=kbar_m,
-        kbar_f=kbar_f,
+        v_mm=float(kmm.var(ddof=1)),
+        v_mf=float(kmf.var(ddof=1)),
+        v_fm=float(kfm.var(ddof=1)),
+        v_ff=float(kff.var(ddof=1)),
+        cov_m=float(np.cov(kmm, kmf, ddof=1)[0, 1]),
+        cov_f=float(np.cov(kfm, kff, ddof=1)[0, 1]),
+        mu_mm=float(kmm.mean()),
+        mu_mf=float(kmf.mean()),
+        mu_fm=float(kfm.mean()),
+        mu_ff=float(kff.mean()),
         n_m=n_m,
         n_f=n_f,
     )
@@ -276,29 +315,23 @@ def _variance_from(cohorts: ObservedCohorts, table: FamilySizeTable) -> NeVarian
     any_estimable = False
 
     for b, label in enumerate(cohorts.generations):
-        decomp = _sigma2_from_quadrants(table[int(label)])
-        if decomp is None:
-            continue
-        v_mm_p, v_mf_p, v_fm_p, v_ff_p, cov_m_p, cov_f_p, kbar_m, kbar_f, n_m, n_f = decomp
-        if kbar_m <= 0 or kbar_f <= 0:
+        d = _sigma2_from_quadrants(table[int(label)])
+        if d is None or d.kbar_m <= 0 or d.kbar_f <= 0:
             continue
         any_estimable = True
-        v_mm[b] = v_mm_p
-        v_mf[b] = v_mf_p
-        v_fm[b] = v_fm_p
-        v_ff[b] = v_ff_p
-        cov_m[b] = cov_m_p
-        cov_f[b] = cov_f_p
-        var_km_total = v_mm_p + v_mf_p + 2.0 * cov_m_p
-        var_kf_total = v_fm_p + v_ff_p + 2.0 * cov_f_p
-        df = (var_km_total / kbar_m) / (4.0 * n_m * kbar_m) + (var_kf_total / kbar_f) / (4.0 * n_f * kbar_f)
-        if df > 0:
-            ne_per_t[b] = 1.0 / (2.0 * df)
+        v_mm[b], v_mf[b], v_fm[b], v_ff[b] = d.v_mm, d.v_mf, d.v_fm, d.v_ff
+        cov_m[b], cov_f[b] = d.cov_m, d.cov_f
+        denominators = d.drift_denominators()
+        if denominators is None:
+            continue
+        d_m, d_f = denominators
+        # Caballero 1994 eq. 18 over eq. 17's N_es = 4·N_s/D_s.
+        ne_per_t[b] = 1.0 / (d_m / (16.0 * d.n_m) + d_f / (16.0 * d.n_f))
 
     ne = _harmonic_mean(ne_per_t) if np.isfinite(ne_per_t).any() else None
     no_estimate_code: VarianceNoEstimate | None = None
     if ne is None:
-        no_estimate_code = "no_family_size_variance" if any_estimable else "too_few_parents"
+        no_estimate_code = "single_sex_offspring" if any_estimable else "too_few_parents"
     return NeVarianceResult(
         ne=ne,
         parent_generations=cohorts.generations,

@@ -152,10 +152,10 @@ RateNoEstimate = Literal["too_few_cohorts", "no_positive_rate"]
 ``ln(1 - x)`` term, or the fitted slope is not below ``-1e-12``."""
 IndividualDeltaFNoEstimate = Literal["empty_reference", "reference_not_inbred"]
 """Ne_iΔF: no eligible row in the reference subpopulation, or ``ΔF̄ ≤ 0`` over it."""
-VarianceNoEstimate = Literal["too_few_parents", "no_family_size_variance"]
+VarianceNoEstimate = Literal["too_few_parents", "single_sex_offspring"]
 """Ne_V, and Hill's sentinel branch that passes Ne_V through: no parent
-cohort has two of each sex with a positive mean family size, or ``ΔF ≤ 0``
-at every cohort that does."""
+cohort has two of each sex with a positive mean family size, or at every
+cohort that does, the parents of one sex had no sons or no daughters."""
 SexRatioNoEstimate = Literal["no_cohort_with_both_sexes"]
 """Ne_sr: no observed cohort has both sexes."""
 LTCNoEstimate = Literal["no_founders"]
@@ -394,10 +394,9 @@ class NeGroupCoancestryResult(_FrozenResult):
 class NeVarianceResult(_FrozenResult):
     """Variance-of-family-size (Ne_V) result.
 
-    Caballero 1994 eq. 6 with separate sexes.  ``V(k_m) = V(k_mm) +
-    V(k_mf) + 2·Cov(k_mm, k_mf)`` is the per-male total-offspring
-    variance built from the sex-of-offspring decomposition; symmetrically
-    for females.
+    Caballero 1994 eqs. 17-18 over the sex-of-offspring decomposition (see
+    :func:`~pedigree_graph.effective_size.ne_variance_family_size`); the
+    ``v_*`` and ``cov_*`` arrays are its ``S²`` and ``S_sm,sf`` moments.
 
     Every array is indexed by **parent cohort**: entry ``p`` summarises the
     lifetime reproduction of the cohort labelled ``parent_generations[p]``,
@@ -581,9 +580,8 @@ class NeHillResult(_FrozenResult):
     ``n_eligible_cohorts``:
 
     * **Sentinel** (``collapses_to_ne_v=True``): used when
-      ``pg.birth_year is None``.  Hill 1979 with ``L = 1`` reduces
-      algebraically to Ne_V (Caballero 1994 eq. 6 / Hill 1979 eq. 8 with
-      equal sexes), so ``ne`` is the Ne_V passthrough.  Birth-year diagnostic
+      ``pg.birth_year is None``.  Hill 1979 eq. 9 with ``L = 1`` is Ne_V
+      (Caballero 1994 eq. 19), so ``ne`` is the Ne_V passthrough.  Birth-year diagnostic
       fields retain their ``None`` / ``0`` defaults.
     * **Birth-year empty** (``collapses_to_ne_v=False`` and
       ``n_eligible_cohorts == 0``): birth-year context is present, but no
@@ -591,15 +589,17 @@ class NeHillResult(_FrozenResult):
       summary diagnostics, and per-cohort arrays are ``None``.
     * **Birth-year populated** (``collapses_to_ne_v=False`` and
       ``n_eligible_cohorts > 0``): Ne is computed per eligible birth-year
-      cohort via Hill 1979 eq. (10)::
+      cohort via Hill 1979 eq. 9 in Caballero 1994 eq. 17's form, Ne_V's
+      formula with ``L = T``::
 
-          Ne(c) = 8·N1(c)·T / (σ²_m(c) + σ²_f(c) + 4)
+          1/Ne(c) = D_m(c)/(16·N1_m(c)·T) + D_f(c)/(16·N1_f(c)·T)
 
-      where ``σ²_m`` and ``σ²_f`` are the Caballero 1994 eq. 6
-      sex-of-offspring variance reassemblies, ``N1(c) = N_m(c) + N_f(c)``
-      is the total cohort size, and ``T = (T_m + T_f) / 2`` is the
-      sex-averaged generation interval.  Scenario-scalar ``ne`` is the
-      harmonic mean over eligible cohorts.
+      which is eq. 10, ``8·N1(c)·T / (σ²_m(c) + σ²_f(c) + 4)``, where each
+      cohort replaces itself with equal sexes.  ``T = (T_m + T_f) / 2`` is
+      the sex-averaged generation interval.  With ``vk_scaled`` the
+      denominators are eq. 10's ``σ²_s + 2`` over Waples-rescaled
+      variances instead.  Scenario-scalar ``ne`` is the harmonic mean over
+      eligible cohorts.
 
     Diagnostic fields ``T_m``, ``T_f``, ``N1_m``, ``N1_f``, ``Vk_m``,
     ``Vk_f`` are scenario-level means over eligible cohorts and do not
@@ -627,7 +627,8 @@ class NeHillResult(_FrozenResult):
     kbar_f: float | None = None
     # Sex-decomposed Ne (Wright 1938 / paper eq. 3 combination):
     #   1/Ne = 1/(4·Ne_m) + 1/(4·Ne_f)
-    # Per-cohort Ne_s = 4·N1_s·T/(Vk_s + 2), then harmonic-mean across cohorts.
+    # Per-cohort Ne_s = 4·N1_s·T/D_s, then harmonic-mean across cohorts.
+    # D_s = Vk_s + 2 only where the cohort replaces itself, or with vk_scaled.
     Ne_m: float | None = None
     Ne_f: float | None = None
     # Whether Vk_m/Vk_f were rescaled to constant-N reference via Waples 2002 eq. 5

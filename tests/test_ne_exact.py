@@ -202,16 +202,24 @@ def test_a_disjoint_replicate_scales_each_estimate_by_its_derived_factor(half, n
         theta2.mean_kinship * theta2.pair_counts, 2 * theta1.mean_kinship * theta1.pair_counts, rtol=4 * 2.0**-52
     )
 
-    # Ne_V, a regression pin: the factor below comes from the ddof=1 family-size
-    # variance the implementation uses, which ADR 0012's sources do not fix.
-    # Per sex, ΔF_s ∝ V_s/(N_s·k̄_s²) with k̄ unchanged; duplicating N parents
-    # scales the sample variance by 2(N − 1)/(2N − 1) and N by 2, so with
-    # N_m = N_f = N every term, and Ne_V, scales by (2N − 1)/(N − 1).
+    # Ne_V's family-size moments, a regression pin on the ddof=1 variance the
+    # implementation uses (Caballero 1994's S² carries a Gaussian correction
+    # but sets no per-sex ddof).  Duplicating N parents of each sex keeps
+    # every mean and scales each sample (co)variance by 2(N − 1)/(2N − 1).
+    # Ne_V itself mixes that with the unscaled segregation term, so it has no
+    # single factor; the exact Ne_V tests below cover the formula.
     counts = frame.group_by("generation", "sex").len()
     assert counts["len"].n_unique() == 1
     n = int(counts["len"][0])
     v1, v2 = ne_variance_family_size(one), ne_variance_family_size(two)
-    np.testing.assert_allclose(v2.ne_per_transition, (2 * n - 1) / (n - 1) * v1.ne_per_transition, rtol=8 * 2.0**-52)
+    for name in ("v_mm", "v_mf", "v_fm", "v_ff", "cov_m", "cov_f"):
+        np.testing.assert_allclose(
+            getattr(v2, name),
+            2 * (n - 1) / (2 * n - 1) * getattr(v1, name),
+            rtol=8 * 2.0**-52,
+            atol=1e-15,
+            err_msg=name,
+        )
 
 
 def _mirrored(frame: pl.DataFrame) -> pl.DataFrame:
@@ -276,3 +284,88 @@ def test_every_estimate_is_independent_of_id_values(mapping):
     before = estimate_effective_sizes(PedigreeGraph.from_frame(frame)).to_dict()
     after = estimate_effective_sizes(PedigreeGraph.from_frame(relabelled)).to_dict()
     assert _plain_equal(after, before)
+
+
+def _replacing_population(n_couples: int, n_gens: int, shape: float, seed: int) -> pl.DataFrame:
+    """Monogamous couples whose cohorts replace themselves exactly.
+
+    Every cohort has ``n_couples`` males and ``n_couples`` females, paired
+    once.  Couple family sizes are multinomial over gamma weights, so V(k)
+    exceeds the Wright-Fisher 2 for small ``shape``.  Each cohort has exactly
+    ``n_couples`` sons and ``n_couples`` daughters, so every pathway mean
+    (sons per father, daughters per father, ...) is 1: Hill 1979's stable case.
+    """
+    rng = np.random.default_rng(seed)
+    males = list(range(n_couples))
+    females = list(range(n_couples, 2 * n_couples))
+    rows: list[dict] = [{"id": i, "sex": 1, "generation": 0} for i in males]
+    rows += [{"id": i, "sex": 0, "generation": 0} for i in females]
+    next_id = 2 * n_couples
+    for g in range(1, n_gens + 1):
+        sizes = rng.multinomial(2 * n_couples, rng.dirichlet(np.full(n_couples, shape)))
+        sexes = rng.permutation([1] * n_couples + [0] * n_couples)
+        new_m: list[int] = []
+        new_f: list[int] = []
+        for c, sx in zip(np.repeat(np.arange(n_couples), sizes), sexes, strict=True):
+            rows.append({"id": next_id, "sex": int(sx), "generation": g, "father": males[c], "mother": females[c]})
+            (new_m if sx == 1 else new_f).append(next_id)
+            next_id += 1
+        males, females = new_m, new_f
+    return _df(rows)
+
+
+@pytest.mark.parametrize(("shape", "seed"), [(0.3, 1), (1.0, 2), (50.0, 3)])
+def test_ne_v_is_hill_1979_eq_10_where_cohorts_replace_themselves(shape, seed):
+    # Hill 1979 eq. 10 at L = 1: Ne = 8N/(σ²_m + σ²_f + 4), N the cohort size.
+    # The fixture is the stable case it assumes (M = F = N/2, every pathway
+    # mean 1), and monogamy makes σ²_m = σ²_f = V(k) of the couples.  Rejects
+    # 2N/V(k), which agrees only at V(k) = 2, and a bare "+2" without the
+    # coefficient change, which halves Ne.
+    n_couples = 40
+    frame = _replacing_population(n_couples, n_gens=4, shape=shape, seed=seed)
+    result = ne_variance_family_size(PedigreeGraph.from_frame(frame))
+    for g in range(4):
+        children = frame.filter(pl.col("generation") == g + 1)
+        fathers = frame.filter((pl.col("generation") == g) & (pl.col("sex") == 1))["id"]
+        k = np.array([(children["father"] == f).sum() for f in fathers], dtype=np.float64)
+        expected = 8 * (2 * n_couples) / (2 * k.var(ddof=1) + 4)
+        assert result.ne_per_transition[g] == pytest.approx(expected, rel=1e-12)
+    assert np.isnan(result.ne_per_transition[4])
+
+
+def test_ne_v_weights_the_pathways_by_the_sex_ratio_as_caballero_1994_eq_19():
+    # Two males and four females, replaced by two sons and four daughters.
+    # Fathers 0 and 1 each have one son and two daughters, so every male
+    # moment is 0.  Mothers: k_fm = (1, 0, 1, 0), k_ff = (1, 1, 1, 1), so
+    # S²_fm = 1/3 (ddof=1), S²_ff = 0, S_fm,ff = 0.  Caballero 1994 eq. 19
+    # (= Hill 1979 eq. 9 at L = 1) with N_m = 2, N_f = 4:
+    #   1/Ne = 2/(16·2) + [2 + (4/2)²·(1/3)]/(16·4) = 1/16 + 5/96 = 11/96.
+    # Rejects the unweighted σ²_f, which gives 1/16 + (7/3)/64.
+    rows: list[dict] = [{"id": i, "sex": 1, "generation": 0} for i in (0, 1)]
+    rows += [{"id": i, "sex": 0, "generation": 0} for i in (2, 3, 4, 5)]
+    children = [(0, 2, 1), (0, 2, 0), (0, 3, 0), (1, 4, 1), (1, 4, 0), (1, 5, 0)]
+    rows += [
+        {"id": 6 + j, "sex": sx, "generation": 1, "father": f, "mother": m} for j, (f, m, sx) in enumerate(children)
+    ]
+    result = ne_variance_family_size(PedigreeGraph.from_frame(_df(rows)))
+    assert result.ne_per_transition[0] == pytest.approx(96 / 11, rel=1e-12)
+    assert result.ne == pytest.approx(96 / 11, rel=1e-12)
+
+
+def test_hill_branches_agree_on_the_same_edges_at_unit_generation_interval():
+    # Hill 1979 at L = 1 is the discrete-generation Ne, so dating each cohort
+    # one year after its parents must reproduce Ne_V cohort by cohort.  V(k)
+    # is far from 2 here, where Ne_V's old 2N/V(k) and the birth-year
+    # branch's σ² + 2 disagreed.
+    frame = _replacing_population(30, n_gens=5, shape=0.3, seed=7)
+    v = ne_variance_family_size(PedigreeGraph.from_frame(frame))
+    sentinel = ne_hill_overlapping(PedigreeGraph.from_frame(frame))
+    dated = ne_hill_overlapping(PedigreeGraph.from_frame(frame.with_columns(pl.col("generation").alias("birth_year"))))
+    assert sentinel.collapses_to_ne_v
+    assert sentinel.ne == v.ne
+    assert dated.generation_interval == 1.0
+    assert dated.cohort_years is not None
+    assert dated.ne_per_cohort is not None
+    assert dated.n_eligible_cohorts >= 4
+    for year, ne_c in zip(dated.cohort_years, dated.ne_per_cohort, strict=True):
+        assert ne_c == pytest.approx(v.ne_per_transition[int(year)], rel=1e-12)

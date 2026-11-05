@@ -110,7 +110,7 @@
   "n_excluded_right_censored": 0,
   "n_offspring_pairs": 0,
   "n_unknown_birth_year": 0,
-  "ne": 19.45945945945946,
+  "ne": 19.726027397260275,
   "ne_per_cohort": null,
   "no_estimate_code": null,
   "vk_scaled": false
@@ -246,12 +246,12 @@
    -0.1111111111111111,
    null
   ],
-  "ne": 19.45945945945946,
+  "ne": 19.726027397260275,
   "ne_per_transition": [
-   22.499999999999996,
-   17.142857142857142,
-   20.000000000000004,
-   18.947368421052634,
+   21.176470588235293,
+   18.46153846153846,
+   20.0,
+   19.45945945945946,
    null
   ],
   "no_estimate_code": null,

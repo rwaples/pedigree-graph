@@ -99,7 +99,7 @@
   "n_excluded_right_censored": 0,
   "n_offspring_pairs": 0,
   "n_unknown_birth_year": 0,
-  "ne": 18.0,
+  "ne": 4.571428571428571,
   "ne_per_cohort": null,
   "no_estimate_code": null,
   "vk_scaled": false
@@ -220,9 +220,9 @@
    null,
    null
   ],
-  "ne": 18.0,
+  "ne": 4.571428571428571,
   "ne_per_transition": [
-   18.0,
+   4.571428571428571,
    null,
    null,
    null

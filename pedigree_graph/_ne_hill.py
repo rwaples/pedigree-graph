@@ -4,7 +4,7 @@ Owns the parental-age diagnostic table and the evaluators behind
 :func:`~pedigree_graph.effective_size.ne_hill_overlapping`, whose public
 function runs its registry row in ``_ne_estimate``.  They build on the
 family-size primitives in ``_ne_family_size`` (the
-sex-of-offspring table, the Caballero 1994 eq. 6 variance reassembly, and
+sex-of-offspring table, its Caballero 1994 eq. 17 drift denominators, and
 the Waples 2002 Vk rescaling) and on the cohort-eligibility window in
 ``_cohort_utils``.
 """
@@ -107,19 +107,26 @@ def _hill_from(
             continue
         # Need at least 2 of each sex for sample variance (ddof=1) and a
         # meaningful covariance — _sigma2_from_quadrants returns None below.
-        decomp = _sigma2_from_quadrants(entry)
-        if decomp is None:
+        d = _sigma2_from_quadrants(entry)
+        if d is None:
             continue
-        v_mm, v_mf, v_fm, v_ff, cov_m, cov_f, kbar_m, kbar_f, n_m, n_f = decomp
-        sigma2_m = v_mm + v_mf + 2.0 * cov_m  # Hill 1979 σ²_m
-        sigma2_f = v_fm + v_ff + 2.0 * cov_f
+        kbar_m, kbar_f, n_m, n_f = d.kbar_m, d.kbar_f, d.n_m, d.n_f
+        sigma2_m, sigma2_f = d.sigma2_m, d.sigma2_f
 
         if vk_scale:
+            # Waples 2002 eq. 5 rescales σ² to k̄ = 2, after which Hill
+            # eq. 10's σ²_s + 2 applies per sex.
             sigma2_m = _waples_vk2_expectation(sigma2_m, kbar_m)
             sigma2_f = _waples_vk2_expectation(sigma2_f, kbar_f)
-
-        denom_m = sigma2_m + 2.0
-        denom_f = sigma2_f + 2.0
+            denom_m = sigma2_m + 2.0
+            denom_f = sigma2_f + 2.0
+        else:
+            # Hill 1979 eq. 9, in Caballero 1994 eq. 17's form, which is
+            # also Ne_V's: the two branches agree at T = 1.
+            denominators = d.drift_denominators()
+            if denominators is None:
+                continue
+            denom_m, denom_f = denominators
         if denom_m <= 0 or denom_f <= 0:
             continue
         ne_m_c = 4.0 * n_m * T / denom_m

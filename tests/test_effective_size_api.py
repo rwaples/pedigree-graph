@@ -679,8 +679,13 @@ def test_a_parent_and_its_child_in_one_label_group_still_run():
 def test_variance_keeps_the_maximum_parent_cohort():
     result = effective_size.ne_variance_family_size(_two_cohort_reproduction_pedigree())
     assert np.array_equal(result.parent_generations, [0, 1])
-    assert np.isnan(result.ne_per_transition[0])
-    assert result.ne_per_transition[1] == pytest.approx(4.0)
+    # Cohort 0: every parent has one son and one daughter, so only
+    # segregation drifts: Hill 1979 eq. 10, 8N/(0 + 0 + 4) = 2N = 8.
+    # Cohort 1: k_mm = (1, 0, 0), k_mf = (0, 1, 0), mirrored for females, so
+    # μ = 1/3, S² = 1/3, S_mm,mf = −1/6 and Caballero 1994 eq. 17 gives
+    # D_s = 3 + 3 + 3 − 3 + 3 = 9; 1/Ne = 2·9/(16·3) = 3/8.
+    assert result.ne_per_transition[0] == pytest.approx(8.0)
+    assert result.ne_per_transition[1] == pytest.approx(8.0 / 3.0)
     assert result.v_mm == pytest.approx([0.0, 1.0 / 3.0])
     for name, value in _array_fields(result).items():
         assert value.shape == (2,), name

@@ -350,17 +350,30 @@ def test_a_bad_delta_f_reference_is_refused_before_the_label_guard():
 def _uniform_families_graph():
     """Two unrelated couples, each with one son and one daughter, who have no children.
 
-    Every parent has the same family size, so Ne_V's ΔF is 0 rather than
-    unestimable, and the outbred children's individual ΔF is exactly 0.
+    The outbred children's individual ΔF is exactly 0.
     """
-    columns = {
-        "id": np.arange(8),
-        "mother": np.array([-1, -1, -1, -1, 1, 1, 3, 3]),
-        "father": np.array([-1, -1, -1, -1, 0, 0, 2, 2]),
-        "sex": np.array([1, 0, 1, 0, 1, 0, 1, 0]),
-        "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1]),
-    }
-    return PedigreeGraph.from_frame(columns)
+    return _two_couples(child_sex=[1, 0, 1, 0])
+
+
+def _sons_only_graph():
+    """Two unrelated couples, each with two sons.
+
+    Both parent sexes have a zero daughter pathway, so Caballero 1994 eq. 17
+    has no reproductive weight for a daughter's gene and Ne_V has no estimate.
+    """
+    return _two_couples(child_sex=[1, 1, 1, 1])
+
+
+def _two_couples(child_sex: list[int]) -> PedigreeGraph:
+    return PedigreeGraph.from_frame(
+        {
+            "id": np.arange(8),
+            "mother": np.array([-1, -1, -1, -1, 1, 1, 3, 3]),
+            "father": np.array([-1, -1, -1, -1, 0, 0, 2, 2]),
+            "sex": np.array([1, 0, 1, 0, *child_sex]),
+            "generation": np.array([0, 0, 0, 0, 1, 1, 1, 1]),
+        }
+    )
 
 
 def _outcrossed_line_graph():
@@ -404,11 +417,11 @@ _NO_ESTIMATE_CASES = {
     ),
     "uniform_families": (
         _uniform_families_graph,
-        {
-            "ne_variance_family_size": "no_family_size_variance",
-            "ne_individual_delta_f": "reference_not_inbred",
-            "ne_hill_overlapping": "no_family_size_variance",
-        },
+        {"ne_individual_delta_f": "reference_not_inbred"},
+    ),
+    "sons_only": (
+        _sons_only_graph,
+        {"ne_variance_family_size": "single_sex_offspring", "ne_hill_overlapping": "single_sex_offspring"},
     ),
     "chain_with_birth_years": (
         lambda: _chain_graph(birth_year=CHAIN_BIRTH),
