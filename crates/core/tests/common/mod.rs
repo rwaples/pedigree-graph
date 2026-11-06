@@ -421,14 +421,23 @@ pub fn relabelled_pedigree() -> impl Strategy<Value = (Ped, Vec<usize>, i64)> {
 /// Cases per property in an ordinary run.
 const CASES: u32 = 256;
 
-/// Cases per property: `PROPTEST_CASES` when set (proptest's own variable,
-/// which its config would ignore here because the runner sets `cases`),
-/// else [`CASES`].
+/// The positive integer in environment variable `name`, `None` when it is
+/// unset; any other value fails the run rather than being ignored.
+fn env_count(name: &str) -> Option<u32> {
+    let value = std::env::var(name).ok()?;
+    let n = value.parse::<u32>().unwrap_or(0);
+    assert!(n > 0, "{name}={value:?}: expected a positive integer");
+    Some(n)
+}
+
+/// Cases per property: [`CASES`] times `PROPTEST_SCALE` (default 1;
+/// `test-rust-thorough` sets 64, as the Python suite's `property_budget`
+/// scales its budgets).  `PROPTEST_CASES`, proptest's own variable, which
+/// its config would ignore here because the runner sets `cases`, overrides
+/// both with one count for every property.
 fn cases() -> u32 {
-    std::env::var("PROPTEST_CASES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(CASES)
+    env_count("PROPTEST_CASES")
+        .unwrap_or_else(|| CASES.saturating_mul(env_count("PROPTEST_SCALE").unwrap_or(1)))
 }
 
 /// Run `test` on [`cases()`] draws of `strategy`, then require that it found

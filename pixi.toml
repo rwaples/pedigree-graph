@@ -36,12 +36,15 @@ build-dev = "maturin develop --release --features test-hooks"
 test = { cmd = "pytest -n 6 --dist worksteal -m 'not slow'", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
 test-all = { cmd = "pytest -n 6 --dist worksteal", depends-on = ["build-dev"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1" } }
 test-rust = "cargo test --release"
-# The core's property tests at release depth: 64x the 256 cases per property
-# an ordinary test-rust run draws (crates/core/tests/common/mod.rs), ~40 s.
-test-rust-thorough = { cmd = "cargo test --release -p pedigree-graph-core --test kinship_properties --test pair_properties", env = { PROPTEST_CASES = "16384" } }
+# The core's property tests at release depth: PROPTEST_SCALE=64 multiplies the
+# 256 cases per property an ordinary test-rust run draws
+# (crates/core/tests/common/mod.rs), ~40 s.  PROPTEST_CASES=N instead sets one
+# count for every property.  --no-fail-fast so one failing binary does not
+# hide the other.
+test-rust-thorough = { cmd = "cargo test --release --no-fail-fast -p pedigree-graph-core --test kinship_properties --test pair_properties", env = { PROPTEST_SCALE = "64" } }
 # Release depth: the whole Python suite, slow tests included, with every
 # Hypothesis budget ten times its ordinary size (tests/_support.py
-# property_budget), then the Rust property tests at 16384 cases.
+# property_budget), then the Rust property tests at 64x their cases.
 test-thorough = { cmd = "pytest -n 6 --dist worksteal", depends-on = ["build-dev", "test-rust-thorough"], env = { PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS = "1", HYPOTHESIS_PROFILE = "thorough" } }
 # `ci-local` runs the checks the CI push jobs run (.github/workflows/ci.yml calls
 # these tasks, except in the R job, which has no pixi), before a push. CI-only: the offline R tarball check (needs sudo unshare), the
