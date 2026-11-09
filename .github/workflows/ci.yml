@@ -39,7 +39,7 @@ jobs:
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@v0.10.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.84.1
           locked: true
 
       - name: Check Rust formatting and Clippy
@@ -64,7 +64,7 @@ jobs:
       - name: Set up pixi
         uses: prefix-dev/setup-pixi@v0.10.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.84.1
           locked: true
           environments: msrv
 
@@ -144,7 +144,7 @@ jobs:
       - name: Set up pixi and install the package editable
         uses: prefix-dev/setup-pixi@v0.10.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.84.1
           locked: true
 
       - name: Lint, format check and type check
@@ -168,7 +168,7 @@ jobs:
       - name: Set up pixi and install the package editable
         uses: prefix-dev/setup-pixi@v0.10.2
         with:
-          pixi-version: v0.82.0
+          pixi-version: v0.84.1
           locked: true
 
       - name: Run the slow test suite

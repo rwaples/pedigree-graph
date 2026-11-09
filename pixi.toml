@@ -6,7 +6,7 @@
 name = "pedigree-graph"
 channels = ["conda-forge"]
 platforms = ["linux-64"]
-requires-pixi = ">=0.82,<0.83"
+requires-pixi = ">=0.84.1,<0.85"
 
 [dependencies]
 python = "3.14.*"
