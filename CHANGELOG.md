@@ -25,12 +25,21 @@ live on the corresponding GitHub release pages.
   shared external id returns the same bits as before.
   Values only rise. The support of `approximate_kinship_matrix` above
   threshold 0 is still the one the graph's own sweep order gives. The
-  distinct ancestor counts, equivalent complete generations and founder
-  contributions still read represented parents only, so
-  `ne_individual_delta_f` now pairs an `F` that counts external founders
-  with equivalent generations that do not, and reads low on such
-  pedigrees. Each kinship call on a pedigree with external parent ids also
-  pays a fixed cost to find the shared ones (ADR 0009).
+  distinct ancestor counts and founder contributions still read
+  represented parents only. Each kinship call on a pedigree with external
+  parent ids also pays a fixed cost to find the shared ones (ADR 0009).
+
+- **Breaking (scientific): equivalent complete generations count external
+  parents** (issue #67). An external parent id is a known parent with no
+  known ancestry and adds 1/2, the value it has as a founder row. It was
+  counted as unknown, which was consistent while `F` ignored external ids;
+  with `F` now counting the shared ones, `ne_individual_delta_f` would
+  have paired a larger `F` with too few generations and read low (4.0
+  against 5.87 on the issue's example with reference row 5). Every external
+  id counts, named once or not, so equivalent generations rise, and
+  `ne_individual_delta_f` and its `mean_eqg_per_gen` change, on any
+  pedigree with an external parent id; a pedigree with none is unchanged.
+  **Rust hosts:** `kinship::equivalent_generations` takes the parent ids.
   **Consumers:** a view computes on its full graph, so only graphs built
   from a frame whose parents are missing rows change (a trimmed or subset
   pedigree, registry data); simACE's full pedigrees have `-1` founders and

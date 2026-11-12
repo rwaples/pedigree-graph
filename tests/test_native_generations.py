@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-from _support import CHILD_PRELUDE, _run_child
+from _support import CHILD_PRELUDE, _run_child, every_external_parent_a_row
 from conftest import FIXTURE_NAMES, parity_graph
 from oracle.eqg import _compute_eqg
 from oracle.founder_means import _per_gen_founder_means as _oracle_founder_means
@@ -41,9 +41,9 @@ def _cohort_sets(graph: PedigreeGraph) -> dict[str, ObservedCohorts]:
 def test_equivalent_generations_match_the_oracle(name, seed, record_property):
     graph = parity_graph(name, seed)
     native = _native.equivalent_generations(graph._built, graph.depth)
-    oracle = _compute_eqg(
-        np.asarray(graph.mother_rows), np.asarray(graph.father_rows), np.asarray(graph.depth), graph.n_individuals
-    )
+    # An external parent is a known parent: the oracle reads it as a row.
+    mother, father, depth = every_external_parent_a_row(graph)
+    oracle = _compute_eqg(mother, father, depth, len(depth))[: graph.n_individuals]
     np.testing.assert_allclose(native, oracle, rtol=RTOL, atol=ATOL)
     record_property("bit_identical", native.tobytes() == oracle.tobytes())
 

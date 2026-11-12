@@ -142,6 +142,15 @@ a peel tie differently, so the two agree to the bit while `d_a + d_b <= 22`
 and inside the envelope above beyond it, at the depths of the founder-row
 pedigree.
 
+Equivalent complete generations follow: an external parent id is a known
+parent with no known ancestry and adds 1/2, as it does as a founder row.
+Every external id counts there, named once or not, since one named once is
+still a known ancestor; it only cannot carry kinship. Left as it was, the
+individual-increase-in-inbreeding estimator would have paired an `F` that
+counts external founders with generations that do not: 4.0 against 5.87 on
+the example above with the inbred child as reference. The distinct ancestor
+counts and the founder contributions still read rows.
+
 Rejected: structural depth of the extended pedigree as the peel depth. It
 makes the equivalence bit-exact at every depth, but it reorders the rows
 under an external parent against the rest, moves bits on pairs that share no

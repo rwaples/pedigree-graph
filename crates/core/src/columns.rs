@@ -184,10 +184,11 @@ mod tests {
         use crate::kinship::equivalent_generations;
         use crate::lineage::{descendant_path_counts, distinct_ancestor_counts};
         let kinds = |ped: ParentColumns<'_>| {
+            let no_ids = vec![-1; ped.len()];
             [
                 distinct_ancestor_counts(ped).err(),
                 descendant_path_counts(ped).err(),
-                equivalent_generations(ped).err(),
+                equivalent_generations(ped, &no_ids, &no_ids).err(),
             ]
         };
         let backwards = GraphColumns {

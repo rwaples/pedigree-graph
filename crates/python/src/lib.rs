@@ -1326,6 +1326,7 @@ fn descendant_path_counts<'py>(
 }
 
 /// Equivalent complete generations per graph row, float64 (Maignel 1996).
+/// An external parent id is a known parent with no known ancestry.
 #[pyfunction]
 #[pyo3(signature = (pedigree, depth, /))]
 fn equivalent_generations<'py>(
@@ -1336,8 +1337,10 @@ fn equivalent_generations<'py>(
     let columns = BuiltColumns::borrow(py, pedigree);
     let depth = depth.as_ref().map(|d| d.as_slice()).transpose()?;
     let ped = columns.lineage(py, depth)?;
+    let mother_ids = columns.mother_ids.as_slice()?;
+    let father_ids = columns.father_ids.as_slice()?;
     let values = py
-        .detach(|| kinship::equivalent_generations(ped))
+        .detach(|| kinship::equivalent_generations(ped, mother_ids, father_ids))
         .map_err(|e| to_pyerr(py, e))?;
     Ok(values.into_pyarray(py))
 }

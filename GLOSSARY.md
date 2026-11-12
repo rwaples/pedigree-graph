@@ -203,7 +203,8 @@ _Avoid_: reference population, target cohort, sample
 
 **Equivalent complete generations**:
 The pedigree depth of one individual: the sum over its known ancestors of
-`(1/2)^n` for meiotic distance `n`.
+`(1/2)^n` for meiotic distance `n`. An ancestor is known when it has an id,
+so an external parent counts and its own parents do not.
 _Avoid_: generation number, pedigree completeness, structural depth
 
 **Individual increase in inbreeding**:

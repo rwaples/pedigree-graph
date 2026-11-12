@@ -222,6 +222,28 @@ def founder_row_columns(graph: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, n
     return columns[0], columns[1], twin, depth.astype(np.int32)
 
 
+def every_external_parent_a_row(graph: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Mother rows, father rows and structural depth with every external parent id a parentless row after the graph's.
+
+    The pedigree equivalent complete generations are counted on: an external
+    parent is known, its own parents are not.  Unlike
+    :func:`founder_row_columns` it takes every external id, named once or not.
+    """
+    n = graph.n_individuals
+    parents = [
+        (np.array(graph.mother_rows), np.asarray(graph.mother_ids)),
+        (np.array(graph.father_rows), np.asarray(graph.father_ids)),
+    ]
+    external = np.unique(np.concatenate([ids[(rows < 0) & (ids >= 0)] for rows, ids in parents]))
+    absent = np.full(len(external), -1, dtype=np.int32)
+    columns = []
+    for rows, ids in parents:
+        named = (rows < 0) & (ids >= 0)
+        rows[named] = n + np.searchsorted(external, ids[named])
+        columns.append(np.concatenate([rows, absent]))
+    return columns[0], columns[1], np.asarray(structural_depth(columns[0], columns[1]))
+
+
 def float32_ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Integer-view ULP distance between two nonnegative float32 arrays."""
     ia = np.asarray(a, dtype=np.float32).view(np.int32).astype(np.int64)
