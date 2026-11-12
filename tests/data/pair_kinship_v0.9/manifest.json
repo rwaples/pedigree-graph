@@ -1,5 +1,5 @@
 {
-  "core_version": "0.14.0",
+  "core_version": "0.15.0",
   "fixtures": {
     "avuncular_and_cousins": {
       "file": "avuncular_and_cousins.npz",
@@ -332,29 +332,29 @@
       "params": {
         "kind": "motif"
       },
-      "self_value_hash": "ee703f2c29f1ee1ad1c246d126b809940e95cd89100610ac66176c66e81be70f",
+      "self_value_hash": "bcffe104a3f706da1e2a6e7da5f65189a60eae344fb98cf18dcb844ea2037eab",
       "value_hashes": {
-        "1C": "3d732b0b694dcae8359f366949bc1721ab924080e93fff57c46f723440f1b1ec",
+        "1C": "2f8e6d1ac990279704c1f848104469923a95ddb021675e7a29c13dd6a7f0ddae",
         "1C1R": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "1C2R": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "2C": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
-        "Av": "3b2bf968528efe1f87fae5e875f1fded8f3b1bdc9fe9e3fb2dd43811ba7e442f",
-        "FO": "b40af11429c031bd1ef5102fb19987ce5e05ceaa2720078e102ab3b7c65a6c9f",
-        "FS": "3d732b0b694dcae8359f366949bc1721ab924080e93fff57c46f723440f1b1ec",
+        "Av": "7d0bcc5d282236fcc7e5fce9259b79e613b36272a7cae5af7a81775a4fced4ca",
+        "FO": "5bd3ead17fb96fd90d567d92a7c484a4cf2b28d11281afc0cc238494975ea19a",
+        "FS": "ba3eac91de685e03f11f2157663a9a3025b2fee8245c880055d8a0ed93f71c1f",
         "G3Av": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "G3GP": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
-        "GAv": "3d732b0b694dcae8359f366949bc1721ab924080e93fff57c46f723440f1b1ec",
+        "GAv": "2f8e6d1ac990279704c1f848104469923a95ddb021675e7a29c13dd6a7f0ddae",
         "GGAv": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "GGGP": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "GGP": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
-        "GP": "4acde809e6407d1b7221e329b2ea34323af872beea3f7237931c6c0ee0dea977",
+        "GP": "7ff3d85b5f1e16636b0ad32ea6ccd04a6d1813b4da488d0399f76c362619d00c",
         "H1C": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "H1C1R": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
-        "HAv": "3b2bf968528efe1f87fae5e875f1fded8f3b1bdc9fe9e3fb2dd43811ba7e442f",
+        "HAv": "df8cfe7b56adf2f8e2a199ac9053c7c1869719277ce414a972c2aad1776758a8",
         "HGAv": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "HGGAv": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
-        "MHS": "3b2bf968528efe1f87fae5e875f1fded8f3b1bdc9fe9e3fb2dd43811ba7e442f",
-        "MO": "399cabf8eccd3f6179813de2c74543cf9acf61e69f314f5dd851c02a45fbba69",
+        "MHS": "7d0bcc5d282236fcc7e5fce9259b79e613b36272a7cae5af7a81775a4fced4ca",
+        "MO": "53e46e35fa3da6bd68b9f1ea18a7931478afdbf6225d198e0fc42cf5b3c3661d",
         "MZ": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c",
         "PHS": "c9dda96f84e8c682be0dbedfa8de284476fd7068ce632bd79ceeecb2add6be4c"
       }
@@ -1078,6 +1078,6 @@
   },
   "generator_version": 1,
   "max_degree": 3,
-  "package_commit": "7c533dd81c245ee996bd73af137e4bd1462c0404-dirty",
-  "package_version": "0.14.0"
+  "package_commit": "1561125cfa6613c88518e4b01af7678de380468c",
+  "package_version": "0.15.0"
 }
