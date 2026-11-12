@@ -14,7 +14,14 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from _support import _PAIRWISE_FIXTURES, ADR_0008_FIXTURES, CHILD_PRELUDE, _mz_frame, _run_child
+from _support import (
+    _PAIRWISE_FIXTURES,
+    ADR_0008_FIXTURES,
+    CHILD_PRELUDE,
+    _mz_frame,
+    _run_child,
+    founder_row_columns,
+)
 from conftest import FIXTURE_NAMES, parity_graph
 from oracle.inbreeding import _compute_F_meuwissen_luo
 from oracle.remap import build_topology
@@ -28,15 +35,16 @@ RTOL, ATOL = 1e-9, 1e-12
 
 
 def _oracle_F(graph: PedigreeGraph) -> np.ndarray:
-    topo = build_topology(graph.depth)
+    mother, father, twin, depth = founder_row_columns(graph)
+    topo = build_topology(depth)
     F = _compute_F_meuwissen_luo(
-        topo.to_topological(graph.mother_rows),
-        topo.to_topological(graph.father_rows),
-        topo.to_topological(graph.twin_rows),
-        topo.gather(graph.depth),
-        graph.n_individuals,
+        topo.to_topological(mother),
+        topo.to_topological(father),
+        topo.to_topological(twin),
+        topo.gather(depth),
+        len(depth),
     )
-    return topo.per_row_to_graph(F)
+    return topo.per_row_to_graph(F)[: graph.n_individuals]
 
 
 def _walk_F(graph: PedigreeGraph) -> np.ndarray:

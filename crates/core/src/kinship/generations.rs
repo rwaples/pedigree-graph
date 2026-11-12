@@ -9,6 +9,7 @@
 //! expression the 0.9.3 NumPy and Numba code used, in the same order.
 
 use super::depth_order::{readable, unread, Buckets, DepthOrder, ParentsFirst};
+use super::external::ExternalFounders;
 use super::inbreeding::{genome_node, GenomePedigree};
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
@@ -245,6 +246,31 @@ pub fn generation_kinship_sums(
             maximum: n_buckets as i64,
         });
     }
+    // An external founder is in no bucket and is not inbred.
+    let founders = ExternalFounders::of(&ped, SUMS)?;
+    let more = founders.founders();
+    if more == 0 {
+        return kinship_sums(ped, inbreeding, labels, n_buckets);
+    }
+    let (mut all_f, mut all_labels) = (Vec::new(), Vec::new());
+    alloc::extend(&mut all_f, inbreeding.iter().copied(), SUMS)?;
+    alloc::extend(&mut all_f, std::iter::repeat_n(0.0, more), SUMS)?;
+    alloc::extend(&mut all_labels, labels.iter().copied(), SUMS)?;
+    let no_bucket = std::iter::repeat_n(n_buckets as i32, more);
+    alloc::extend(&mut all_labels, no_bucket, SUMS)?;
+    kinship_sums(founders.pedigree(), &all_f, &all_labels, n_buckets)
+}
+
+/// [`generation_kinship_sums`] on checked inputs, `ped` with no external
+/// parent left to find.
+fn kinship_sums(
+    ped: KinshipPedigree<'_>,
+    inbreeding: &[f64],
+    labels: &[i32],
+    n_buckets: usize,
+) -> Result<Vec<f64>, Error> {
+    const SUMS: Family = Family::KinshipSums;
+    let n = ped.len();
     let genome = GenomePedigree::build(&ped, SUMS)?;
     let d_var = genome.mendelian_variances(inbreeding, SUMS)?;
     let (twin, depth) = (ped.twin(), ped.depth());

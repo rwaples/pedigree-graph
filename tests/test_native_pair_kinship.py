@@ -14,7 +14,14 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 import pytest
-from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, ENVELOPE_UNIT, _run_child, float32_ulp_distance
+from _support import (
+    _PAIRWISE_FIXTURES,
+    CHILD_PRELUDE,
+    ENVELOPE_UNIT,
+    _run_child,
+    float32_ulp_distance,
+    founder_row_columns,
+)
 from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, parity_graph
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
 
@@ -35,7 +42,7 @@ def _native_kinship(graph: PedigreeGraph, first, second) -> np.ndarray:
 
 
 def _oracle(graph: PedigreeGraph, first, second) -> np.ndarray:
-    return oracle_pair_kinship(graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, first, second)
+    return oracle_pair_kinship(*founder_row_columns(graph), first, second)
 
 
 @pytest.mark.parametrize("name", FIXTURE_NAMES)

@@ -32,6 +32,7 @@
 //! genome parents but can count different ancestor rows.
 
 use super::depth_order::{check_twins, DepthOrder};
+use super::external::ExternalFounders;
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -101,6 +102,10 @@ fn sweep(
     ped: KinshipPedigree<'_>,
     pool: Option<&rayon::ThreadPool>,
 ) -> Result<(Vec<f64>, Vec<i32>), Error> {
+    // The walk runs over the pedigree's rows and then its external founders,
+    // which are ancestors of the genome but not rows to count.
+    let founders = ExternalFounders::of(&ped, WALK)?;
+    let (ped, n_rows) = (founders.pedigree(), founders.rows());
     let n = ped.len();
     let mut genome = GenomePedigree::build(&ped, WALK)?;
     let (twin, row_mother, row_father) = (ped.twin(), ped.mother(), ped.father());
@@ -125,6 +130,7 @@ fn sweep(
         row_father,
         twin,
         depth: ped.depth(),
+        external_founders: n > n_rows,
     };
 
     let mut f = alloc::filled(0.0f64, n, WALK)?;
@@ -156,7 +162,10 @@ fn sweep(
                 match (s >= 0, p >= 0) {
                     (false, false) => {}
                     (true, false) | (false, true) => {
-                        ancestors[i] = ancestors[s.max(p) as usize] + 1;
+                        let parent = s.max(p) as usize;
+                        if parent < n_rows {
+                            ancestors[i] = ancestors[parent] + 1;
+                        }
                     }
                     (true, true) => targets.push(rows[k]),
                 }
@@ -181,6 +190,8 @@ fn sweep(
             }
         }
     }
+    f.truncate(n_rows);
+    ancestors.truncate(n_rows);
     Ok((f, ancestors))
 }
 
@@ -236,6 +247,9 @@ struct Nodes<'a> {
     row_father: &'a [i32],
     twin: &'a [i32],
     depth: &'a [i32],
+    /// Whether the pedigree ends in external founders.  They are then its
+    /// only nodes at depth 0, every row being one deeper.
+    external_founders: bool,
 }
 
 /// One walk's result.
@@ -308,9 +322,19 @@ impl Walker {
         head[di] = 0;
         alloc::push(touched, row, WALK)?;
         let mut both_twins = 0usize;
+        let mut founders = 0usize;
 
         for k in (0..=di).rev() {
             let mut pos = head[k];
+            if k == 0 && nodes.external_founders {
+                // The depth-0 frontier is complete: every node of it is an
+                // external founder, an ancestor that is not a row.
+                let mut at = pos;
+                while at != NIL {
+                    founders += 1;
+                    at = next[at as usize];
+                }
+            }
             while pos != NIL {
                 let a = touched[pos as usize] as usize;
                 let t_a = t[a];
@@ -356,7 +380,7 @@ impl Walker {
         let walked = Walked {
             row,
             f: sum - 1.0,
-            ancestors: (touched.len() - 1 + both_twins) as i32,
+            ancestors: (touched.len() - 1 + both_twins - founders) as i32,
         };
 
         for &j in touched.iter() {

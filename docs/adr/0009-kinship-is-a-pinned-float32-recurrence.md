@@ -1,6 +1,7 @@
 # ADR 0009: kinship is one pinned float32 recurrence, returned recurrence-only
 
-**Status:** accepted
+**Status:** accepted; amended 2026-11-12 (issue #67: shared external parent
+ids are founders of the recurrence)
 **Date:** 2026-09-04
 **Context:** resolves issue #6 and the `pair_kinship` dtype question deferred by ADR 0006; supersedes ADR 0005's float64 and cached-matrix clauses
 
@@ -92,6 +93,76 @@ Consequences of that definition:
   with a Python float compares in float32, which can admit a pair one float32
   ulp below the cutoff. fitACE's pair export widens to float64 before its
   `min_kinship` comparison.
+
+## Amendment: a shared external parent id is a founder (issue #67)
+
+As first written the recurrence followed parent *rows*, so a parent id with
+no row was a missing parent and contributed 0. Classification counts such an
+id on every path (ADR 0018, issue #61), so a pair could be labelled `MHS` or
+`H1C` and have kinship 0: rows 1 and 2 sharing the external mother 900 had
+`pair_kinship` 0 where 900 as a row gives 1/8, their children 0 for 1/32,
+and a child of 1 and 2 had `F = 0` for 1/8. Consumers read both sources
+(nominal kinship off the label, and the matrix), so the same pair got two
+answers.
+
+**An external parent id that two or more rows name is a founder of the
+recurrence**: self-kinship 1/2, no parents, no co-twin, unrelated to
+everything except through the rows that name it. The definition above is
+otherwise unchanged and is evaluated on the pedigree's rows followed by one
+founder per such id, in ascending id:
+
+* Every founder is shallower than every row. The kernels place the founders
+  at depth 0 and each row one deeper than its structural depth, so the peel
+  order among the rows, depth then row, is the one this ADR pinned. A key
+  between a row and a founder always peels the row.
+* An id that one row names stays a missing parent, and so does one that
+  only the two co-twins of an MZ pair name, since they are one genome. Its
+  founder would be related only to that genome and its descendants, and the
+  recurrence asks for a founder's kinship only with an endpoint no deeper
+  than the founder's child, so every value is the one a missing parent
+  gives. Leaving it out keeps every bit on such pedigrees and costs them
+  nothing: a trimmed pedigree can have about as many such ids as rows, and
+  the `random_30k` and `random_300k` fixtures share external ids only
+  within twin pairs.
+* A pedigree with no shared external id is evaluated exactly as before, to
+  the bit.
+* The founders are not rows of any output: `kinship_matrix` and the
+  approximate matrix have the pedigree's rows and columns only,
+  `pair_kinship` takes rows only, and the generation kinship sums bucket
+  rows only.
+
+The equivalence the tests hold (`kinship_and_inbreeding_equal_the_founder_row_pedigree`):
+kinship and `F` among the rows equal those of the same pedigree with every
+external id given a founder row. That pedigree's structural depth can break
+a peel tie differently, so the two agree to the bit while `d_a + d_b <= 22`
+and inside the envelope above beyond it, at the depths of the founder-row
+pedigree.
+
+Rejected: structural depth of the extended pedigree as the peel depth. It
+makes the equivalence bit-exact at every depth, but it reorders the rows
+under an external parent against the rest, moves bits on pairs that share no
+external id, and discards a depth the host supplied. Also rejected: a rule
+per kernel for an external parent in its inner loop, which is four rules to
+keep in parity and a cost on every pedigree; the extension is built once per
+call (`crates/core/src/kinship/external.rs`) and costs a pedigree without
+shared external ids one scan of its parent columns.
+
+Cost on pedigrees it does not change, as user-space instructions per kernel
+call against `main` at e5e270b (one thread, three interleaved repetitions,
+fixture setup subtracted; the host was too loaded for wall-time medians to
+resolve anything): `pair_kinship` 1.002 on `baseline100K` (536k rows, no
+external id) and 1.000 on `random_30k`; the approximate matrix 1.010;
+`inbreeding` 1.011 and 1.021 (`random_300k`); the kinship sums 1.023 on
+`baseline100K` and 1.11 on `random_30k`, where collecting 622 external
+references is a tenth of a kernel that small; `inbreeding` and the sums
+together, the native work of `mean_kinship_by_generation`, 1.012 and 1.013.
+Peak RSS does not move: the 4 to 5 MiB the build gate reported is also there
+with `main`'s own native library loaded in the candidate's environment. A
+pedigree that does gain founders pays 16 bytes a row for the extended
+columns and walks the rows it used to shortcut.
+
+Bit parity within a graph, zero being exact, and the envelope between row
+orders all hold as stated, with the founders counted.
 
 ## Considered options
 

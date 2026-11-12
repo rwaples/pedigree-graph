@@ -1,7 +1,7 @@
 # ADR 0018: a collateral category is full when two paths join the pair
 
 **Status:** accepted; amended 2026-11-05 (issue #61: external parent ids on
-cousin paths)
+cousin paths) and 2026-11-12 (issue #67: those paths carry kinship, ADR 0009)
 **Date:** 2026-10-30
 **Context:** issues #47 (three full/half rules against one documented rule)
 and #48 (revisit ADR 0010's category definitions). Supersedes the section
@@ -92,9 +92,10 @@ The label stays a two-level summary: one path, or two or more. With more
 than two paths kinship exceeds the nominal value: double first cousins, or
 the children of two half-sib matings within one sibship (four paths through
 one grandparent), have kinship 1/8 and are `1C` (nominal 1/16). A path
-through an external parent id, at any shape, carries no kinship:
-`pair_kinship` follows represented parent rows only. The exact value is
-`pair_kinship`.
+through an external parent id carries the kinship it would through a row:
+the recurrence takes an external id that two rows name as a founder (ADR
+0009, amended for issue #67; until then such a path carried none). The exact
+value is `pair_kinship`.
 
 ### What does not change
 
@@ -165,7 +166,8 @@ pair that was `HGGAv` and also shares an external grandparent is `1C`, and
 The rejected alternative was to record the gap and restate the founder-row
 property as "the original pairs gain collateral categories only through the
 new rows". It keeps fewer labels whose nominal kinship exceeds
-`pair_kinship` (0 through any external id), but it labels a structure at one
+`pair_kinship` (0 through any external id at the time; issue #67 has since
+closed that gap from the kinship side), but it labels a structure at one
 shape and not the next, and leaves real half cousins out of every
 degree-selected consumer; this ADR already prefers moving pairs closer to
 dropping them.

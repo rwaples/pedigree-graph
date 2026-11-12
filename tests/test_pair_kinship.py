@@ -22,6 +22,7 @@ from _support import (
     _ped_inbred_mz,
     _ped_mz_twins_with_descendants,
     _ped_sib_mating,
+    founder_row_columns,
 )
 from conftest import FIXTURE_NAMES, FIXTURES, parity_columns, parity_graph
 from oracle.pair_kinship import pair_kinship as oracle_pair_kinship
@@ -156,7 +157,7 @@ class TestWithinGraphParity:
     def test_kernel_matches_the_python_oracle(self, name):
         graph = parity_graph(name)
         first, second = np.triu_indices(graph.n_individuals)
-        oracle = oracle_pair_kinship(graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, first, second)
+        oracle = oracle_pair_kinship(*founder_row_columns(graph), first, second)
         assert graph.pair_kinship(first, second).tobytes() == oracle.tobytes()
 
     def test_relationship_pairs_of_a_reordered_graph_match_its_own_matrix(self):

@@ -15,7 +15,8 @@
 use pedigree_graph_core::columns::GraphColumns;
 use pedigree_graph_core::error::Error;
 use pedigree_graph_core::kinship::{
-    kinship_csc, kinship_csc_upper, pair_kinship, support_values, Csc, KinshipPedigree, MAX_CSC_NNZ,
+    kinship_csc, kinship_csc_upper, pair_kinship, support_values, Csc, ExternalFounders,
+    KinshipPedigree, MAX_CSC_NNZ,
 };
 use pedigree_graph_core::relationships::PedigreeColumns;
 use pedigree_graph_core::topology::structural_depth;
@@ -29,7 +30,7 @@ fn kinship_input<'a>(cols: &'a PedigreeColumns, depth: &'a [i32]) -> KinshipPedi
         father: &cols.father,
         twin: &cols.twin,
     }
-    .kinship(depth)
+    .kinship(depth, &cols.orig_mother, &cols.orig_father)
     .unwrap()
 }
 
@@ -131,11 +132,16 @@ fn the_walk_matches_the_oracle_on_every_fixture() {
         let depth = structural_depth(&cols.mother, &cols.father);
         let ped = kinship_input(&cols, &depth);
         let (first, second) = query(cols.mother.len());
+        // The oracle states the recurrence, not where its founders come
+        // from: it reads the rows followed by the external founders (ADR
+        // 0009), whose construction `kinship::external` tests by itself.
+        let founders = ExternalFounders::new(&ped).unwrap();
+        let extended = founders.pedigree();
         let mut oracle = Oracle {
-            mother: &cols.mother,
-            father: &cols.father,
-            twin: &cols.twin,
-            depth: &depth,
+            mother: extended.mother(),
+            father: extended.father(),
+            twin: extended.twin(),
+            depth: extended.depth(),
             memo: HashMap::new(),
         };
         let expected: Vec<u32> = first

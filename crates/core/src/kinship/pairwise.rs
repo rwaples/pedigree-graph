@@ -28,6 +28,7 @@
 
 use super::ancestry::AncestorSignatures;
 use super::depth_order::{check_structural, check_twins};
+use super::external::ExternalFounders;
 use super::memo::PairMemo;
 use crate::alloc::{self, Family};
 use crate::error::{Error, PAIR_FIRST, PAIR_SECOND};
@@ -43,6 +44,9 @@ pub struct KinshipPedigree<'a> {
     father: &'a [i32],
     twin: &'a [i32],
     depth: &'a [i32],
+    /// The mother and father id per row, `-1` when missing, when the host
+    /// lent them: an id whose parent row is `-1` is an external parent.
+    parent_ids: Option<(&'a [i64], &'a [i64])>,
 }
 
 impl<'a> KinshipPedigree<'a> {
@@ -68,12 +72,48 @@ impl<'a> KinshipPedigree<'a> {
         check_row_range("mother", mother, n)?;
         check_row_range("father", father, n)?;
         check_row_range("twin", twin, n)?;
-        Ok(KinshipPedigree {
+        Ok(KinshipPedigree::from_checked(mother, father, twin, depth))
+    }
+
+    /// Checked columns with no parent ids, so no external parent.
+    pub(super) fn from_checked(
+        mother: &'a [i32],
+        father: &'a [i32],
+        twin: &'a [i32],
+        depth: &'a [i32],
+    ) -> KinshipPedigree<'a> {
+        KinshipPedigree {
             mother,
             father,
             twin,
             depth,
+            parent_ids: None,
+        }
+    }
+
+    /// The pedigree with its parent ids, `-1` when missing.  An id whose
+    /// parent row is `-1` is an external parent, and one that two or more
+    /// rows name is a founder of the recurrence
+    /// ([`super::ExternalFounders`]).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::LengthMismatch`] when either column is not one per row.
+    pub(crate) fn with_parent_ids(
+        self,
+        orig_mother: &'a [i64],
+        orig_father: &'a [i64],
+    ) -> Result<KinshipPedigree<'a>, Error> {
+        check_column_length("orig_mother", orig_mother.len(), self.len())?;
+        check_column_length("orig_father", orig_father.len(), self.len())?;
+        Ok(KinshipPedigree {
+            parent_ids: Some((orig_mother, orig_father)),
+            ..self
         })
+    }
+
+    pub(super) fn parent_ids(&self) -> Option<(&'a [i64], &'a [i64])> {
+        self.parent_ids
     }
 
     pub fn len(&self) -> usize {
@@ -226,10 +266,14 @@ impl KinshipRows {
 pub struct KinshipIndex {
     rows: KinshipRows,
     signatures: AncestorSignatures,
+    /// The pedigree's own rows, which come before any external founder.
+    len: usize,
 }
 
 impl KinshipIndex {
-    /// The signatures and packed rows of `ped`.
+    /// The signatures and packed rows of `ped` with its shared external
+    /// parent ids as founders ([`ExternalFounders`]).  A walker resolves
+    /// pairs of `ped`'s rows only.
     ///
     /// # Errors
     ///
@@ -241,18 +285,24 @@ impl KinshipIndex {
     /// assumes the parents are acyclic, and a depth that orders every row
     /// proves it, so a cyclic pedigree is refused instead of walked.
     pub fn new(ped: &KinshipPedigree<'_>) -> Result<Self, Error> {
-        let rows = KinshipRows::new(ped)?;
-        let signatures = AncestorSignatures::build(ped)?;
-        Ok(KinshipIndex { rows, signatures })
+        let founders = ExternalFounders::of(ped, Family::KinshipColumns)?;
+        let ped = founders.pedigree();
+        let rows = KinshipRows::new(&ped)?;
+        let signatures = AncestorSignatures::build(&ped)?;
+        Ok(KinshipIndex {
+            rows,
+            signatures,
+            len: founders.rows(),
+        })
     }
 
-    /// The rows indexed.
+    /// The rows indexed, external founders left out.
     pub fn len(&self) -> usize {
-        self.rows.0.len()
+        self.len
     }
 
     pub fn is_empty(&self) -> bool {
-        self.rows.0.is_empty()
+        self.len == 0
     }
 
     /// A walker over this pedigree with an empty memo.
@@ -264,14 +314,17 @@ impl KinshipIndex {
         Ok(Walker {
             rows: &self.rows.0,
             signatures: &self.signatures,
-            memo: PairMemo::new(self.len())?,
+            memo: PairMemo::new(self.rows.0.len())?,
             stack: Vec::new(),
+            len: self.len,
         })
     }
 }
 
 /// One memo and one stack over a [`KinshipIndex`]: the state of one worker.
 pub struct Walker<'a> {
+    /// The pedigree's rows it resolves pairs of, a prefix of `rows`.
+    len: usize,
     rows: &'a [Row],
     signatures: &'a AncestorSignatures,
     memo: PairMemo,
@@ -354,7 +407,7 @@ impl Walker<'_> {
     /// resolves one pair, so the error's position is always 0; a caller
     /// walking many pairs knows which one it passed.
     pub fn resolve(&mut self, a: i32, b: i32) -> Result<f32, Error> {
-        let n = self.rows.len();
+        let n = self.len;
         for (argument, row) in [(PAIR_FIRST, a), (PAIR_SECOND, b)] {
             if row < 0 || row as usize >= n {
                 return Err(Error::PairRowOutOfRange {

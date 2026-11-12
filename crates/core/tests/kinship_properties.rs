@@ -22,7 +22,11 @@ mod common;
 use common::{
     check, non_inbred_pedigree, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped,
 };
-use pedigree_graph_core::kinship::{inbreeding, pair_kinship};
+use pedigree_graph_core::kinship::{
+    approximate_kinship_csc, generation_kinship_sums, inbreeding, inbreeding_and_ancestor_counts,
+    pair_kinship, Csc,
+};
+use pedigree_graph_core::lineage::distinct_ancestor_counts;
 use pedigree_graph_core::relationships::query::{self, Receiver};
 use pedigree_graph_core::relationships::{CategorySet, Progress};
 use proptest::prelude::*;
@@ -64,11 +68,13 @@ fn the_matrix_is_symmetric_and_bounded() {
 
 /// A row without parent rows has self-kinship 1/2 and no kinship with
 /// another such row unless they are co-twins, whose kinship is the
-/// self-kinship.
+/// self-kinship.  Stated on the founder-row pedigree, where no parent is
+/// external; `kinship_and_inbreeding_equal_the_founder_row_pedigree` carries
+/// it to the pedigree as drawn.
 #[test]
 fn founders_are_unrelated_with_self_kinship_one_half() {
     check("founders", 2.0, pedigree(), |ped, checked| {
-        let b = Built::new(&ped);
+        let b = Built::new(&ped.externals_as_founders());
         let k = b.dense_kinship();
         let founders: Vec<usize> = (0..b.len())
             .filter(|&r| b.parent_rows(r).next().is_none())
@@ -129,11 +135,12 @@ fn parent_offspring_is_one_quarter_when_not_inbred() {
 /// (deeper, or a depth tie with `i` the greater row, ADR 0009); the float64
 /// sum of two float32 values is exact, so the cast is that one rounding.  A
 /// tie it peels from `j` reaches the same rational by `j`'s parents: equal
-/// while every value is exact, inside the two-path envelope beyond.
+/// while every value is exact, inside the two-path envelope beyond.  Stated
+/// on the founder-row pedigree, where every parent is a row or missing.
 #[test]
 fn the_kinship_recursion_holds() {
     check("recursion", 30.0, pedigree(), |ped, checked| {
-        let b = Built::new(&ped);
+        let b = Built::new(&ped.externals_as_founders());
         let k = b.dense_kinship();
         let d = &b.depth;
         for i in 0..b.len() {
@@ -285,11 +292,12 @@ fn inbreeding_is_the_matrix_diagonal() {
     });
 }
 
-/// `F` is the kinship of the parents, and 0 without two parent rows.
+/// `F` is the kinship of the parents, and 0 without two parent rows, on the
+/// founder-row pedigree, where every parent is a row or missing.
 #[test]
 fn inbreeding_is_the_parents_kinship() {
     check("inbreeding parents", 0.8, pedigree(), |ped, checked| {
-        let b = Built::new(&ped);
+        let b = Built::new(&ped.externals_as_founders());
         assert_inbreeding_is_parent_kinship(&b, checked)
     });
 }
@@ -423,4 +431,157 @@ fn full_sib_mating_inbreeds_one_quarter() {
     let checked = AtomicUsize::new(0);
     assert_inbreeding_is_parent_kinship(&b, &checked).expect("F is the parents' kinship");
     assert_eq!(checked.into_inner(), 3);
+}
+
+/// Per bucket, the kinship summed over its pairs, every row of `b` past
+/// `labels` in no bucket.
+fn kinship_sums(b: &Built, f: &[f64], labels: &[i32], n_buckets: usize) -> Vec<f64> {
+    let mut all = labels.to_vec();
+    all.resize(b.len(), n_buckets as i32);
+    let mut f = f.to_vec();
+    f.resize(b.len(), 0.0);
+    generation_kinship_sums(b.kinship(), &f, &all, n_buckets).expect("kinship sums")
+}
+
+/// An external parent id that two or more rows name is a founder of the
+/// recurrence (issue #67): kinship and inbreeding among the rows are those
+/// of the pedigree with every external id made a founder row, in every
+/// kernel.  That pedigree's depths break peel ties differently, so past the
+/// exact depths the two agree inside the envelope.  The ancestor counts
+/// beside `F` still count rows only.
+#[test]
+fn kinship_and_inbreeding_equal_the_founder_row_pedigree() {
+    check("external founders", 0.5, pedigree(), |ped, checked| {
+        let n = ped.len();
+        let (a, b) = (Built::new(&ped), Built::new(&ped.externals_as_founders()));
+        let (ka, kb) = (a.dense_kinship(), b.dense_kinship());
+        let (fa, counts) = inbreeding_and_ancestor_counts(a.kinship()).expect("inbreeding");
+        let fb = inbreeding(b.kinship()).expect("inbreeding");
+        prop_assert_eq!(
+            counts,
+            distinct_ancestor_counts(a.lineage()).expect("ancestor counts")
+        );
+        let approximate = dense(
+            &approximate_kinship_csc(a.kinship(), 0.0).expect("approximate matrix"),
+            n,
+        );
+        let (mut first, mut second) = (Vec::new(), Vec::new());
+        for x in 0..n {
+            let d = b.depth[x];
+            if d <= EXACT_F_DEPTH {
+                prop_assert_eq!(fa[x], fb[x], "F of row {}", x);
+            } else {
+                let bound = 2.0 * f64::from(2 * d + 1) * ENVELOPE_UNIT;
+                prop_assert!((fa[x] - fb[x]).abs() <= bound, "F of row {x}");
+            }
+            for y in 0..n {
+                let depth_sum = b.depth[x] + b.depth[y];
+                if depth_sum <= EXACT_DEPTH_SUM {
+                    prop_assert_eq!(ka[x][y].to_bits(), kb[x][y].to_bits(), "({}, {})", x, y);
+                } else {
+                    let bound = 2.0 * f64::from(depth_sum + 1) * ENVELOPE_UNIT;
+                    prop_assert!((f64::from(ka[x][y]) - f64::from(kb[x][y])).abs() <= bound);
+                }
+                prop_assert_eq!(
+                    approximate[x][y].to_bits(),
+                    ka[x][y].to_bits(),
+                    "approximate ({}, {})",
+                    x,
+                    y
+                );
+                first.push(x as i32);
+                second.push(y as i32);
+            }
+        }
+        let phi = pair_kinship(a.kinship(), &first, &second).expect("rows in range");
+        for ((&x, &y), p) in first.iter().zip(&second).zip(phi) {
+            let entry = ka[x as usize][y as usize];
+            prop_assert_eq!(p.to_bits(), entry.to_bits(), "pair ({}, {})", x, y);
+        }
+        // Rows bucketed by depth parity: the sums see every pair of a bucket.
+        let labels: Vec<i32> = a.depth.iter().map(|d| d % 2).collect();
+        let (sa, sb) = (
+            kinship_sums(&a, &fa, &labels, 2),
+            kinship_sums(&b, &fb, &labels, 2),
+        );
+        for (bucket, (x, y)) in sa.iter().zip(&sb).enumerate() {
+            prop_assert!((x - y).abs() <= 1e-9 * (1.0 + y.abs()), "bucket {bucket}");
+        }
+        // External ids that two genomes or more name: the founders.
+        let mut named = std::collections::HashMap::new();
+        for r in (0..n).filter(|&r| a.twin_of(r).is_none_or(|t| t > r)) {
+            for (row, id) in [
+                (a.graph.mother_rows[r], ped.mother[r]),
+                (a.graph.father_rows[r], ped.father[r]),
+            ] {
+                if row < 0 && id >= 0 {
+                    *named.entry(id).or_insert(0usize) += 1;
+                }
+            }
+        }
+        tally(checked, named.values().filter(|&&rows| rows >= 2).count());
+        Ok(())
+    });
+}
+
+/// A CSC as a dense matrix of `n` rows.
+fn dense(csc: &Csc, n: usize) -> Vec<Vec<f32>> {
+    assert_eq!(csc.indptr.len(), n + 1);
+    let mut k = vec![vec![0f32; n]; n];
+    for (col, span) in csc.indptr.windows(2).enumerate() {
+        for at in span[0] as usize..span[1] as usize {
+            k[csc.indices[at] as usize][col] = csc.data[at];
+        }
+    }
+    k
+}
+
+/// Issue #67's example.  Rows 1 and 2 share the external mother 900; 3 is
+/// 1's child and 4 is 2's; 5 is the child of 1 and 2.  The half sibs have
+/// kinship 1/8, their children 1/32, and 5 is inbred by 1/8.
+#[test]
+fn half_sibs_by_an_external_mother_are_related() {
+    let ped = Ped {
+        ids: vec![1, 2, 3, 4, 5],
+        mother: vec![900, 900, 1, -1, 1],
+        father: vec![-1, -1, -1, 2, 2],
+        twin: vec![-1; 5],
+    };
+    let b = Built::new(&ped);
+    let phi = pair_kinship(b.kinship(), &[0, 2, 4, 0], &[1, 3, 4, 0]).expect("rows in range");
+    assert_eq!(phi, [0.125, 0.03125, 0.5625, 0.5]);
+    let (f, ancestors) = inbreeding_and_ancestor_counts(b.kinship()).expect("inbreeding");
+    assert_eq!(f, [0.0, 0.0, 0.0, 0.0, 0.125]);
+    assert_eq!(ancestors, [0, 0, 1, 1, 2]);
+    let k = b.dense_kinship();
+    assert_eq!((k[0][1], k[2][3], k[4][4]), (0.125, 0.03125, 0.5625));
+    assert_eq!(k.len(), 5);
+    // One bucket of all five rows: every off-diagonal pair once.
+    let total: f64 = (0..5)
+        .flat_map(|x| (0..x).map(move |y| (x, y)))
+        .map(|(x, y)| f64::from(k[x][y]))
+        .sum();
+    assert_eq!(kinship_sums(&b, &f, &[0; 5], 1), [total]);
+}
+
+/// An external id that one row names is still a missing parent: no value
+/// moves when it is dropped.
+#[test]
+fn an_external_id_named_once_changes_nothing() {
+    let named = Ped {
+        ids: vec![1, 2, 3, 4],
+        mother: vec![900, 901, 1, 1],
+        father: vec![-1, -1, 2, 2],
+        twin: vec![-1; 4],
+    };
+    let dropped = Ped {
+        mother: vec![-1, -1, 1, 1],
+        ..named.clone()
+    };
+    let (a, b) = (Built::new(&named), Built::new(&dropped));
+    assert_eq!(a.dense_kinship(), b.dense_kinship());
+    assert_eq!(
+        inbreeding(a.kinship()).expect("inbreeding"),
+        inbreeding(b.kinship()).expect("inbreeding")
+    );
 }

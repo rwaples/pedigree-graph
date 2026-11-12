@@ -26,6 +26,7 @@
 //! column's rows come out ascending without a sort.
 
 use super::depth_order::{check_twins, Buckets, DepthOrder};
+use super::external::ExternalFounders;
 use super::pairwise::KinshipPedigree;
 use super::rows::Owned;
 use crate::alloc::{self, Family};
@@ -43,9 +44,13 @@ pub struct Csc {
 
 const SCRATCH: Family = Family::KinshipScratch;
 
-/// The pedigree gathered into stable depth-major space.
+/// The pedigree gathered into stable depth-major space, its shared external
+/// parent ids founder rows after its own ([`ExternalFounders`]).
 struct Topo {
+    /// Rows the DP runs over, the external founders included.
     n: usize,
+    /// The pedigree's own rows, the first `rows` graph rows: the matrix's.
+    rows: usize,
     /// Graph row at each depth-major position.
     order: Vec<u32>,
     /// Depth-major position of each graph row.
@@ -59,6 +64,8 @@ struct Topo {
 
 impl Topo {
     fn build(ped: &KinshipPedigree<'_>) -> Result<Topo, Error> {
+        let founders = ExternalFounders::of(ped, SCRATCH)?;
+        let (ped, rows) = (&founders.pedigree(), founders.rows());
         let n = ped.len();
         check_twins(ped.twin(), ped.depth())?;
         let DepthOrder { order, starts } =
@@ -85,6 +92,7 @@ impl Topo {
         let twin = gather(ped.twin())?;
         Ok(Topo {
             n,
+            rows,
             order,
             inverse,
             mother,
@@ -370,19 +378,23 @@ impl Triangle {
 /// Symmetric row storage in depth-major space, assembled into a CSC in
 /// graph rows.  Graph rows are visited in order and each stored column is
 /// translated through `order`, so rows within every output column ascend.
+/// An external founder's row and column are left out.
 fn assemble<'a>(
     topo: &Topo,
     row: impl Fn(usize) -> (&'a [u32], &'a [f32]),
     triangle: Triangle,
     max_nnz: usize,
 ) -> Result<Csc, Error> {
-    let n = topo.n;
+    let n = topo.rows;
     let mut counts = alloc::filled(0usize, n, Family::KinshipCsc)?;
-    for r in 0..n {
+    for r in 0..topo.n {
         let graph_row = topo.order[r] as usize;
+        if graph_row >= n {
+            continue;
+        }
         for &c in row(r).0 {
             let column = topo.order[c as usize] as usize;
-            if triangle.keeps(graph_row, column) {
+            if column < n && triangle.keeps(graph_row, column) {
                 counts[column] += 1;
             }
         }
@@ -399,7 +411,7 @@ fn assemble<'a>(
         let (cols, vals) = row(topo.inverse[i] as usize);
         for (&c, &v) in cols.iter().zip(vals) {
             let column = topo.order[c as usize] as usize;
-            if !triangle.keeps(i, column) {
+            if column >= n || !triangle.keeps(i, column) {
                 continue;
             }
             let pos = cursor[column];

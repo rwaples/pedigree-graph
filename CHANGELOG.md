@@ -4,6 +4,50 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Breaking (kinship): a shared external parent id is a founder of the
+  recurrence** (issue #67, ADR 0009 as amended; ADR 0008, 0016, 0018).
+  `pair_kinship`, `kinship_matrix`, `approximate_kinship_matrix`,
+  `relationship_kinship_matrix`, `inbreeding`, `mean_kinship_by_generation`
+  and every Ne estimator built on them followed parent rows only, so they
+  gave 0 through an external parent id (an id with no row), while
+  classification has counted those ids on every path since 0.15.0. Two rows
+  sharing the external mother 900 were `MHS` with kinship 0, their children
+  `H1C` with kinship 0, and a child of the two had `F = 0`. An external
+  parent id that two or more rows name is now a founder: unrelated,
+  non-inbred, with no row in any output. The same rows give 1/8, 1/32 and
+  `F = 1/8`, the values the pedigree gives with 900 as a row. Kinship and
+  `F` among the rows equal those of the pedigree with every external id made
+  a founder row (bit for bit while float32 is exact, inside the ADR 0009
+  envelope beyond). An external id that one row names, or only the two
+  co-twins of an MZ pair, changes nothing, and a pedigree with no other
+  shared external id returns the same bits as before.
+  Values only rise. The distinct ancestor counts, equivalent complete
+  generations and founder contributions still read represented parents only.
+  **Consumers:** a view computes on its full graph, so only graphs built
+  from a frame whose parents are missing rows change (a trimmed or subset
+  pedigree, registry data); simACE's full pedigrees have `-1` founders and
+  do not.
+  - fitACE_tetraher `build_pairs` (`adapter.py:149-150, 183`): the
+    external-joined pairs 0.15.0 added now enter the regression with their
+    `r_A`, not 0, and agree with Falconer's nominal kinship.
+  - PA-FGRS and the sparse GRM (fitACE `kinship/`,
+    `relationship_kinship_matrix`): entries through a shared external id
+    are now nonzero, so relatives joined that way carry weight.
+  - The Ne estimators (`effective_size`, simACE
+    `analysis/effective_size.py`): mean kinship and `F` rise on such
+    pedigrees, so inbreeding and coancestry Ne fall.
+  - pedsum's `kinship` column now agrees with its relationship label on
+    these pairs.
+  - **Rust hosts:** `GraphColumns::kinship` takes the parent ids
+    (`kinship(depth, orig_mother, orig_father)`). A host that reads the
+    kinship columns itself beside a `KinshipIndex`, as pg-phenotype's
+    PA-FGRS preparation does (`pafgrs/prep.rs`), must read the extended
+    pedigree, or its own recurrence and the walker disagree:
+    `let founders = ExternalFounders::new(&ped)?; let ped = founders.pedigree();`
+    then cut every per-row output to `founders.rows()`.
+
 ## v0.15.0
 
 - **Breaking (relationships): cousin paths count shared external parent

@@ -211,7 +211,7 @@ impl Built {
 
     pub fn kinship(&self) -> KinshipPedigree<'_> {
         self.columns()
-            .kinship(&self.depth)
+            .kinship(&self.depth, &self.graph.mother_ids, &self.graph.father_ids)
             .expect("built columns are a kinship input")
     }
 

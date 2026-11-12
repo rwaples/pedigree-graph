@@ -9,6 +9,12 @@
 //! the row storage of [`rows`]; every entry they produce is the bit the
 //! pairwise walk returns for the same pair.
 //!
+//! The kinship kernels, the inbreeding walk and the kinship sums run on the
+//! pedigree's rows followed by its external founders, the external parent
+//! ids that two or more rows name ([`ExternalFounders`]), and return the
+//! rows' values only.  Equivalent generations and the founder means read
+//! represented parents alone.
+//!
 //! Beside them live the sweeps that share the DP's stable depth-major order
 //! (`depth_order`) but not its values: the Meuwissen-Luo inbreeding walk
 //! ([`inbreeding()`]) and the Ne prerequisites of [`generations`], among
@@ -17,6 +23,7 @@
 
 pub(crate) mod ancestry;
 pub(crate) mod depth_order;
+pub mod external;
 pub mod generations;
 pub mod inbreeding;
 pub mod matrix;
@@ -24,6 +31,7 @@ pub mod memo;
 pub mod pairwise;
 pub mod rows;
 
+pub use external::ExternalFounders;
 pub use generations::{
     equivalent_generations, founder_contribution_means, generation_kinship_sums,
 };

@@ -709,7 +709,9 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         commits the package thread budget
         (:func:`~pedigree_graph.configure_threads`) like every 0.8 operation.
 
-        The walk follows represented parent edges only, so *F* derives from
+        The walk follows represented parent edges, and an external parent id
+        that two or more rows name as a founder (ADR 0009): the child of two
+        rows that share an external mother is inbred.  *F* derives from
         structural depth; supplied generation labels never enter it.
 
         Returns:
@@ -788,9 +790,10 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         parent-child edges joins them.  External or missing parents add no
         edge, so two rows naming the same external parent are in different
         components, and MZ co-twins are joined only through their parents.
-        Components therefore do not bound relationship pairs: classification
-        counts an external parent id on every path (ADR 0018), so sibs,
-        avuncular pairs and cousins can span two components.
+        Components therefore bound neither relationship pairs nor kinship:
+        classification and the kinship recurrence both count a shared
+        external parent id (ADR 0018, 0009), so sibs, avuncular pairs and
+        cousins can span two components and have kinship above zero.
         The value is the minimum :attr:`ids` over the component, so it does
         not depend on row order.  Computed once and memoised; the call
         commits the package thread budget like every 0.8 operation.
@@ -829,9 +832,11 @@ class PedigreeGraph(PedigreeProperties, PedigreeMatrixMethods):
         commits the package thread budget like every 0.8 operation and runs
         in its pool; every budget returns the same bits.
 
-        The recurrence follows represented parent edges alone, so every value
-        derives from structural depth; supplied generation labels never enter
-        it.
+        The recurrence follows represented parent edges, and takes an
+        external parent id that two or more rows name as a founder (ADR
+        0009), so two rows that share an external mother have kinship 1/8.
+        Every value derives from structural depth; supplied generation labels
+        never enter it.
 
         The recurrence runs in the Rust core with one memo per pool worker,
         shared across the pairs that worker takes and freed before the call

@@ -66,7 +66,7 @@ def _pairs(n: int) -> tuple[np.ndarray, np.ndarray]:
 def _assert_equals_exact(got: np.ndarray, first: np.ndarray, second: np.ndarray, exact: ExactKinship) -> None:
     """Each kernel value is the rational where float32 is exact, else inside ``(D + 1) * 2**-25``."""
     unit = 1 << (exact.shift - 25)
-    depth, numerator = exact.depth, exact.numerator
+    depth, numerator = exact.peel_depth, exact.numerator
     for a, b, value in zip(first.tolist(), second.tolist(), exact.scaled(got), strict=True):
         want = numerator[a][b]
         depth_sum = depth[a] + depth[b]
@@ -109,7 +109,7 @@ def _with_a_twin(columns: dict, data) -> tuple[dict, int, int]:
 
 
 def _closed_sets(columns: dict) -> list[frozenset[int]]:
-    """Each row's genome and its represented ancestors' genomes, co-twins as the lower row."""
+    """Each row's genome and its ancestors' genomes: co-twins as the lower row, an external parent as ``-1 - id``."""
     ids = columns["id"].tolist()
     row_of = {v: r for r, v in enumerate(ids)}
     genome = [min(r, row_of[t]) if t != -1 else r for r, t in enumerate(columns["twin"].tolist())]
@@ -118,9 +118,11 @@ def _closed_sets(columns: dict) -> list[frozenset[int]]:
     def visit(row: int) -> frozenset[int]:
         if row not in closed:
             members = {genome[row]}
-            for parent in (columns["mother"][row], columns["father"][row]):
-                if int(parent) in row_of:
-                    members |= visit(row_of[int(parent)])
+            for parent in (int(columns["mother"][row]), int(columns["father"][row])):
+                if parent in row_of:
+                    members |= visit(row_of[parent])
+                elif parent != -1:
+                    members.add(-1 - parent)
             closed[row] = frozenset(members)
         return closed[row]
 
@@ -130,15 +132,15 @@ def _closed_sets(columns: dict) -> list[frozenset[int]]:
 @_SETTINGS
 @given(pedigree_columns())
 def test_kinship_and_inbreeding_equal_the_exact_rational(columns):
-    # Rejects a recurrence defect the copied oracles share: a missing or
-    # external parent counted as 1/2, the MZ self branch applied to the pair
-    # only, a one-parent row peeled as a founder.
+    # Rejects a recurrence defect the copied oracles share: a missing parent
+    # counted as 1/2, a shared external parent counted as missing, the MZ self
+    # branch applied to the pair only, a one-parent row peeled as a founder.
     graph = PedigreeGraph.from_frame(columns)
     exact = exact_kinship(columns["id"], columns["mother"], columns["father"], columns["twin"])
     assert np.asarray(graph.depth).tolist() == exact.depth
     first, second = _pairs(graph.n_individuals)
     _assert_equals_exact(graph.pair_kinship(first, second), first, second, exact)
-    rows = [row for row in range(graph.n_individuals) if exact.depth[row] <= EXACT_F_DEPTH]
+    rows = [row for row in range(graph.n_individuals) if exact.peel_depth[row] <= EXACT_F_DEPTH]
     inbreeding = exact.scaled(graph.inbreeding()[rows])
     for row, value in zip(rows, inbreeding, strict=True):
         assert value == 2 * exact.numerator[row][row] - (1 << exact.shift), row
@@ -175,8 +177,13 @@ def test_zero_kinship_is_exactly_disjoint_ancestry(columns):
     row_of = {v: r for r, v in enumerate(columns["id"].tolist())}
     inbreeding = graph.inbreeding()
     for row in range(n):
-        m, f = row_of.get(int(columns["mother"][row])), row_of.get(int(columns["father"][row]))
-        inbred = m is not None and f is not None and not closed[m].isdisjoint(closed[f])
+        # A parent's set: a row's closed set, or an external parent's own genome.
+        sides = [
+            closed[row_of[p]] if p in row_of else {-1 - p}
+            for p in (int(columns["mother"][row]), int(columns["father"][row]))
+            if p != -1
+        ]
+        inbred = len(sides) == 2 and not sides[0].isdisjoint(sides[1])
         assert (inbreeding[row] != 0) == inbred, row
 
 
@@ -366,3 +373,38 @@ def test_approximate_support_shrinks_as_the_threshold_rises(columns, thresholds)
     supports = [_support(graph.approximate_kinship_matrix(min_propagated_kinship=t)) for t in sorted(thresholds)]
     for looser, stricter in itertools.pairwise(supports):
         assert stricter <= looser <= complete
+
+
+def test_rows_sharing_an_external_parent_are_related_through_it():
+    # Issue #67's example: rows 1 and 2 share the external mother 900, 3 is
+    # 1's child, 4 is 2's, and 5 is the child of 1 and 2.  Every kinship
+    # product gives the values 900 gives as a row, and none grows a row for it.
+    columns = {
+        "id": np.array([1, 2, 3, 4, 5]),
+        "mother": np.array([900, 900, 1, -1, 1]),
+        "father": np.array([-1, -1, -1, 2, 2]),
+    }
+    graph = PedigreeGraph.from_frame(columns)
+    want = np.zeros((5, 5), dtype=np.float32)
+    want[np.diag_indices(5)] = [0.5, 0.5, 0.5, 0.5, 0.5625]
+    for (a, b), value in {
+        (0, 1): 0.125,
+        (0, 2): 0.25,
+        (0, 3): 0.0625,
+        (0, 4): 0.3125,
+        (1, 2): 0.0625,
+        (1, 3): 0.25,
+        (1, 4): 0.3125,
+        (2, 3): 0.03125,
+        (2, 4): 0.15625,
+        (3, 4): 0.15625,
+    }.items():
+        want[a, b] = want[b, a] = value
+    first, second = np.indices((5, 5)).reshape(2, -1)
+    assert graph.pair_kinship(first, second).reshape(5, 5).tolist() == want.tolist()
+    assert graph.kinship_matrix().toarray().tolist() == want.tolist()
+    assert graph.approximate_kinship_matrix(min_propagated_kinship=0.0).toarray().tolist() == want.tolist()
+    assert graph.inbreeding().tolist() == [0.0, 0.0, 0.0, 0.0, 0.125]
+    assert graph.distinct_ancestor_counts().tolist() == [0, 0, 1, 1, 2]
+    exact = exact_kinship(columns["id"], columns["mother"], columns["father"], np.full(5, -1))
+    assert exact.scaled(want.ravel()) == [value for line in exact.numerator for value in line]

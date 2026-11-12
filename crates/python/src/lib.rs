@@ -439,13 +439,15 @@ fn checked_pool(py: Python<'_>, threads: usize) -> PyResult<&'static rayon::Thre
     pool::configure(threads).map_err(|e| to_pyerr(py, e))
 }
 
-/// A graph's parent and twin rows, borrowed from its [`BuiltPedigree`] for
-/// one call.  Each kernel input is drawn from them by the core
-/// ([`GraphColumns`]), with the further columns that kernel reads.
+/// A graph's parent and twin rows and its parent ids, borrowed from its
+/// [`BuiltPedigree`] for one call.  Each kernel input is drawn from them by
+/// the core ([`GraphColumns`]), with the further columns that kernel reads.
 struct BuiltColumns<'py> {
     mother_rows: PyReadonlyArray1<'py, i32>,
     father_rows: PyReadonlyArray1<'py, i32>,
     twin_rows: PyReadonlyArray1<'py, i32>,
+    mother_ids: PyReadonlyArray1<'py, i64>,
+    father_ids: PyReadonlyArray1<'py, i64>,
 }
 
 impl<'py> BuiltColumns<'py> {
@@ -454,6 +456,8 @@ impl<'py> BuiltColumns<'py> {
             mother_rows: pedigree.mother_rows.bind(py).readonly(),
             father_rows: pedigree.father_rows.bind(py).readonly(),
             twin_rows: pedigree.twin_rows.bind(py).readonly(),
+            mother_ids: pedigree.mother_ids.bind(py).readonly(),
+            father_ids: pedigree.father_ids.bind(py).readonly(),
         }
     }
 
@@ -466,7 +470,13 @@ impl<'py> BuiltColumns<'py> {
     }
 
     fn kinship<'a>(&'a self, py: Python<'py>, depth: &'a [i32]) -> PyResult<KinshipPedigree<'a>> {
-        self.columns()?.kinship(depth).map_err(|e| to_pyerr(py, e))
+        self.columns()?
+            .kinship(
+                depth,
+                self.mother_ids.as_slice()?,
+                self.father_ids.as_slice()?,
+            )
+            .map_err(|e| to_pyerr(py, e))
     }
 
     fn lineage<'a>(
@@ -476,27 +486,9 @@ impl<'py> BuiltColumns<'py> {
     ) -> PyResult<ParentColumns<'a>> {
         self.columns()?.lineage(depth).map_err(|e| to_pyerr(py, e))
     }
-}
-
-/// A graph's rows and parent ids, the relationship engine's columns.
-struct EngineColumns<'py> {
-    rows: BuiltColumns<'py>,
-    mother_ids: PyReadonlyArray1<'py, i64>,
-    father_ids: PyReadonlyArray1<'py, i64>,
-}
-
-impl<'py> EngineColumns<'py> {
-    fn borrow(py: Python<'py>, pedigree: &BuiltPedigree) -> EngineColumns<'py> {
-        EngineColumns {
-            rows: BuiltColumns::borrow(py, pedigree),
-            mother_ids: pedigree.mother_ids.bind(py).readonly(),
-            father_ids: pedigree.father_ids.bind(py).readonly(),
-        }
-    }
 
     fn relationships(&self, py: Python<'py>) -> PyResult<Pedigree<'_>> {
-        self.rows
-            .columns()?
+        self.columns()?
             .relationships(self.mother_ids.as_slice()?, self.father_ids.as_slice()?)
             .map_err(|e| to_pyerr(py, e))
     }
@@ -533,7 +525,7 @@ fn relationship_counts<'py>(
     let categories = requested_categories(&requested)?;
     let receiver = receiver(&graph_rows, compaction)?;
     let counts = if query::walks(categories, receiver.rows(graph_len(py, pedigree))) {
-        let columns = EngineColumns::borrow(py, pedigree);
+        let columns = BuiltColumns::borrow(py, pedigree);
         let ped = columns.relationships(py)?;
         let pool = checked_pool(py, threads)?;
         run_watched(py, pool, tick, progress, |progress| {
@@ -587,7 +579,7 @@ fn relationship_pairs<'py>(
         // 46 empty arrays would cost more than the rest of the call.
         return Ok(values);
     }
-    let columns = EngineColumns::borrow(py, pedigree);
+    let columns = BuiltColumns::borrow(py, pedigree);
     let ped = columns.relationships(py)?;
     let pool = checked_pool(py, threads)?;
     let blocks = run_watched(py, pool, tick, progress, |progress| {
@@ -713,7 +705,7 @@ fn relationship_moments<'py>(
     // The host checked the inputs against the receiver, so a call with
     // nothing to walk skips the core's O(n) input scan and the graph.
     let moments = if query::walks(categories, receiver.rows(graph_len(py, pedigree))) {
-        let columns = EngineColumns::borrow(py, pedigree);
+        let columns = BuiltColumns::borrow(py, pedigree);
         let ped = columns.relationships(py)?;
         let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
         run_watched(py, pool, tick, progress, |progress| {
@@ -1010,7 +1002,7 @@ fn relationship_burden<'py>(
     progress: Option<Py<PyAny>>,
     tick: f64,
 ) -> PyResult<BurdenArrays<'py>> {
-    let columns = EngineColumns::borrow(py, pedigree);
+    let columns = BuiltColumns::borrow(py, pedigree);
     let ped = columns.relationships(py)?;
     let depth = depth.as_slice()?;
     let pool = checked_pool(py, threads)?;
@@ -1079,7 +1071,7 @@ fn relatives_per_person<'py>(
         .ok_or_else(|| PyValueError::new_err("threads must be at least 1"))?;
     let rows = receiver.rows(graph_len(py, pedigree));
     let relatives = if query::walks(categories, rows) {
-        let engine = EngineColumns::borrow(py, pedigree);
+        let engine = BuiltColumns::borrow(py, pedigree);
         let ped = engine.relationships(py)?;
         let pool = pool::configure(threads).map_err(|e| to_pyerr(py, e))?;
         run_watched(py, pool, tick, progress, |progress| {
