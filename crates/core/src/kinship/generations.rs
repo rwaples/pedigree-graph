@@ -274,12 +274,10 @@ pub fn generation_kinship_sums(
     if more == 0 {
         return kinship_sums(ped, inbreeding, labels, n_buckets);
     }
-    let (mut all_f, mut all_labels) = (Vec::new(), Vec::new());
-    alloc::extend(&mut all_f, inbreeding.iter().copied(), SUMS)?;
-    alloc::extend(&mut all_f, std::iter::repeat_n(0.0, more), SUMS)?;
-    alloc::extend(&mut all_labels, labels.iter().copied(), SUMS)?;
+    let not_inbred = std::iter::repeat_n(0.0, more);
+    let all_f = alloc::collect(inbreeding.iter().copied().chain(not_inbred), SUMS)?;
     let no_bucket = std::iter::repeat_n(n_buckets as i32, more);
-    alloc::extend(&mut all_labels, no_bucket, SUMS)?;
+    let all_labels = alloc::collect(labels.iter().copied().chain(no_bucket), SUMS)?;
     kinship_sums(founders.pedigree(), &all_f, &all_labels, n_buckets)
 }
 

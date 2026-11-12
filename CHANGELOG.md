@@ -39,6 +39,11 @@ live on the corresponding GitHub release pages.
   id counts, named once or not, so equivalent generations rise, and
   `ne_individual_delta_f` and its `mean_eqg_per_gen` change, on any
   pedigree with an external parent id; a pedigree with none is unchanged.
+  A row whose parents are external ids is now eligible for the estimator
+  (`t > 0`) with `F = 0`, so a reference set holding such rows gives a
+  larger Ne than it did. **Consumers:** pedsum computes its own `ecg`
+  column from represented parents (`pedsum/sections.py`), which now
+  differs from this value on any pedigree with an external parent id.
   **Rust hosts:** `kinship::equivalent_generations` takes the parent ids.
   **Consumers:** a view computes on its full graph, so only graphs built
   from a frame whose parents are missing rows change (a trimmed or subset
@@ -55,6 +60,11 @@ live on the corresponding GitHub release pages.
     pedigrees, so inbreeding and coancestry Ne fall.
   - pedsum's `kinship` column now agrees with its relationship label on
     these pairs.
+  - `connected_component_ids` is unchanged, so kinship can now be nonzero
+    between components. fitACE writes those components as the `.grm.id`
+    family id (`fitace/kinship/grm_io.py`, `founder_family_ids`), which
+    LDAK and TetraHer read as family blocks: a GRM from a trimmed pedigree
+    can have entries between two family ids.
   - **Rust hosts:** `GraphColumns::kinship` takes the parent ids
     (`kinship(depth, orig_mother, orig_father)`). A host that reads the
     kinship columns itself beside a `KinshipIndex`, as pg-phenotype's

@@ -97,7 +97,16 @@ def exact_kinship(ids: np.ndarray, mother: np.ndarray, father: np.ndarray, twin:
     parents = [tuple(node_of.get(int(p), -1) for p in pair) for pair in named_parents] + absent
     co_twin = [row_of[int(t)] if t != -1 else -1 for t in twin] + [-1] * (n - rows)
     depth, order = chains(parents)
-    shared = len(named) > len(set(named))
+    # The kernel adds a founder, and so a level, only for an id two genomes
+    # name: the co-twins of an MZ pair count once.
+    by_genome = [
+        int(p)
+        for row, pair in enumerate(named_parents)
+        if co_twin[row] == -1 or co_twin[row] > row
+        for p in pair
+        if p != -1 and int(p) not in row_of
+    ]
+    shared = len(by_genome) > len(set(by_genome))
 
     # 2 d_i + 1 bits hold A; 30 more let a float32 rounding of the deepest
     # kinship be scaled to an integer too.

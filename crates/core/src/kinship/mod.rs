@@ -12,7 +12,8 @@
 //! The kinship kernels, the inbreeding walk and the kinship sums run on the
 //! pedigree's rows followed by its external founders, the external parent
 //! ids that two or more rows name ([`ExternalFounders`]), and return the
-//! rows' values only.  Equivalent generations and the founder means read
+//! rows' values only.  Equivalent generations count every external parent
+//! as a known one; the founder means and the ancestor counts read
 //! represented parents alone.
 //!
 //! Beside them live the sweeps that share the DP's stable depth-major order

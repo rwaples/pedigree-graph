@@ -452,7 +452,8 @@ class NeIndividualDeltaFResult(_FrozenResult):
 
     The individual increase in inbreeding of Gutiérrez et al. 2008 (Genet.
     Sel. Evol. 40:359, eq. 2) is ``ΔF_i = 1 − (1 − F_i)^(1/t_i)``, where
-    ``t_i`` is the individual's equivalent complete generations.  A row is
+    ``t_i`` is the individual's equivalent complete generations, external
+    parents counted as known.  A row is
     eligible when ``t_i > 0``, and when ``F_i < 1`` — the second is this
     package's guard, not the paper's.  Their §2.1 averages ΔF_i over a
     reference subpopulation to give ΔF̄ and reports ``Ne = 1/(2·ΔF̄)``.

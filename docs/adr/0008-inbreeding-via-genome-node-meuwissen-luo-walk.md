@@ -80,11 +80,11 @@ parent id that two or more rows name is a parentless genome node with
 `D = 1`, so the child of two rows that share an external mother has
 `F = 1/8`, as it has when the mother is a row. `F = 2·phi(i, i) − 1` holds as
 before. The founders sit at depth 0 with every row one deeper, so a walk
-meets them last, as its depth-0 frontier.
+meets them last.
 
 The distinct strict ancestor counts the walk returns still count rows: a
-walk takes its depth-0 frontier off the count, and a row whose only parent
-node is an external founder has none. They stay equal to the ancestor-set
+walk leaves each founder it touches out of the count, and a row whose only
+parent node is an external founder has none. They stay equal to the ancestor-set
 sweep of `lineage.rs`, which never sees an external id.
 
 A row with one parent row and one external founder is now walked, where the

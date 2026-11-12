@@ -130,7 +130,7 @@ fn sweep(
         row_father,
         twin,
         depth: ped.depth(),
-        external_founders: n > n_rows,
+        rows: n_rows,
     };
 
     let mut f = alloc::filled(0.0f64, n, WALK)?;
@@ -247,9 +247,9 @@ struct Nodes<'a> {
     row_father: &'a [i32],
     twin: &'a [i32],
     depth: &'a [i32],
-    /// Whether the pedigree ends in external founders.  They are then its
-    /// only nodes at depth 0, every row being one deeper.
-    external_founders: bool,
+    /// The pedigree's own rows; a node at or past it is an external
+    /// founder, an ancestor that is not a row.
+    rows: usize,
 }
 
 /// One walk's result.
@@ -326,15 +326,6 @@ impl Walker {
 
         for k in (0..=di).rev() {
             let mut pos = head[k];
-            if k == 0 && nodes.external_founders {
-                // The depth-0 frontier is complete: every node of it is an
-                // external founder, an ancestor that is not a row.
-                let mut at = pos;
-                while at != NIL {
-                    founders += 1;
-                    at = next[at as usize];
-                }
-            }
             while pos != NIL {
                 let a = touched[pos as usize] as usize;
                 let t_a = t[a];
@@ -364,6 +355,7 @@ impl Walker {
                         alloc::push(next, head[dp], WALK)?;
                         head[dp] = touched.len() as u32;
                         alloc::push(touched, p as u32, WALK)?;
+                        founders += usize::from(p >= nodes.rows);
                     }
                     t[p] += 0.5 * t_a;
                 }
