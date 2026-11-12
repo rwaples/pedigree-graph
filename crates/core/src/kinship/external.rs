@@ -55,9 +55,11 @@ impl<'a> ExternalFounders<'a> {
     ///
     /// # Errors
     ///
-    /// When a founder is added: [`Error::ValueOutOfRange`] on `depth` or
-    /// `twin` as the kernels report an unordered depth, at the host's row
-    /// and value, [`Error::ArithmeticOverflow`] when the rows and founders
+    /// When a founder is added: [`Error::ValueOutOfRange`] on `depth`, then
+    /// on `twin`, as the pairwise walk reports an unordered depth, at the
+    /// host's row and value (the sweeps check `twin` first, so a pedigree
+    /// wrong in both reports `depth` here and `twin` without a founder),
+    /// [`Error::ArithmeticOverflow`] when the rows and founders
     /// together pass int32, and [`Error::AllocationFailed`]
     /// (`kinship_columns`).
     pub fn new(ped: &KinshipPedigree<'a>) -> Result<Self, Error> {
@@ -149,6 +151,28 @@ impl<'a> ExternalFounders<'a> {
     /// founders.  It carries no parent ids, so extending it again borrows it.
     pub fn pedigree(&self) -> KinshipPedigree<'_> {
         KinshipPedigree::from_checked(&self.mother, &self.father, &self.twin, &self.depth)
+    }
+
+    /// Mother row per row of [`Self::pedigree`], `-1` when missing: a row,
+    /// or a founder's row for a shared external mother.
+    pub fn mother(&self) -> &[i32] {
+        &self.mother
+    }
+
+    /// Father row per row, as [`Self::mother`].
+    pub fn father(&self) -> &[i32] {
+        &self.father
+    }
+
+    /// MZ co-twin row per row, `-1` for none and for every founder.
+    pub fn twin(&self) -> &[i32] {
+        &self.twin
+    }
+
+    /// The depth the recurrence peels by: the host's, plus one on every row
+    /// when founders were added, and 0 for a founder.
+    pub fn depth(&self) -> &[i32] {
+        &self.depth
     }
 
     /// The host's rows: the first `rows()` rows of [`Self::pedigree`].

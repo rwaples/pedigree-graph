@@ -120,10 +120,11 @@ founder per such id, in ascending id:
   founder would be related only to that genome and its descendants, and the
   recurrence asks for a founder's kinship only with an endpoint no deeper
   than the founder's child, so every value is the one a missing parent
-  gives. Leaving it out keeps every bit on such pedigrees and costs them
-  nothing: a trimmed pedigree can have about as many such ids as rows, and
-  the `random_30k` and `random_300k` fixtures share external ids only
-  within twin pairs.
+  gives. Leaving it out keeps every bit on such pedigrees and adds no row:
+  a trimmed pedigree can have about as many such ids as rows, and the
+  `random_30k` and `random_300k` fixtures share external ids only within
+  twin pairs. Finding that none is shared is not free: each call collects
+  and sorts the external references (below).
 * A pedigree with no shared external id is evaluated exactly as before, to
   the bit.
 * The founders are not rows of any output: `kinship_matrix` and the
@@ -133,7 +134,10 @@ founder per such id, in ascending id:
 
 The equivalence the tests hold (`kinship_and_inbreeding_equal_the_founder_row_pedigree`):
 kinship and `F` among the rows equal those of the same pedigree with every
-external id given a founder row. That pedigree's structural depth can break
+external id given a founder row. It is about values. The support of
+`approximate_kinship_matrix` above threshold 0 depends on the order rows are
+swept in, as it always has, so it is the support the pinned order gives and
+can differ from the founder-row pedigree's at the pruning boundary. That pedigree's structural depth can break
 a peel tie differently, so the two agree to the bit while `d_a + d_b <= 22`
 and inside the envelope above beyond it, at the depths of the founder-row
 pedigree.
@@ -160,6 +164,15 @@ Peak RSS does not move: the 4 to 5 MiB the build gate reported is also there
 with `main`'s own native library loaded in the candidate's environment. A
 pedigree that does gain founders pays 16 bytes a row for the extended
 columns and walks the rows it used to shortcut.
+
+The founders are found per call, by collecting and sorting every external
+parent reference. That is a fixed cost per call on a pedigree with external
+ids, shared or not, and it shows on a small call: on 2,000,000 parentless
+rows each naming two unique external parents (the worst case; review of
+this change, medians of five at load 7.8), 1,000 pairs of `pair_kinship`
+took 0.28 s against 0.076 s with `-1` parents, and `inbreeding` 0.24 s
+against 0.06 s. Deciding it once at graph build, or caching the extended
+columns on the graph, would remove it; neither is done here.
 
 Bit parity within a graph, zero being exact, and the envelope between row
 orders all hold as stated, with the founders counted.

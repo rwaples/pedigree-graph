@@ -23,8 +23,14 @@ live on the corresponding GitHub release pages.
   envelope beyond). An external id that one row names, or only the two
   co-twins of an MZ pair, changes nothing, and a pedigree with no other
   shared external id returns the same bits as before.
-  Values only rise. The distinct ancestor counts, equivalent complete
-  generations and founder contributions still read represented parents only.
+  Values only rise. The support of `approximate_kinship_matrix` above
+  threshold 0 is still the one the graph's own sweep order gives. The
+  distinct ancestor counts, equivalent complete generations and founder
+  contributions still read represented parents only, so
+  `ne_individual_delta_f` now pairs an `F` that counts external founders
+  with equivalent generations that do not, and reads low on such
+  pedigrees. Each kinship call on a pedigree with external parent ids also
+  pays a fixed cost to find the shared ones (ADR 0009).
   **Consumers:** a view computes on its full graph, so only graphs built
   from a frame whose parents are missing rows change (a trimmed or subset
   pedigree, registry data); simACE's full pedigrees have `-1` founders and
@@ -44,9 +50,11 @@ live on the corresponding GitHub release pages.
     (`kinship(depth, orig_mother, orig_father)`). A host that reads the
     kinship columns itself beside a `KinshipIndex`, as pg-phenotype's
     PA-FGRS preparation does (`pafgrs/prep.rs`), must read the extended
-    pedigree, or its own recurrence and the walker disagree:
-    `let founders = ExternalFounders::new(&ped)?; let ped = founders.pedigree();`
-    then cut every per-row output to `founders.rows()`.
+    pedigree, or its own recurrence and the walker disagree.
+    `KinshipPedigree`'s column accessors are crate-private for that reason:
+    take `mother()`, `father()`, `twin()` and `depth()` from
+    `ExternalFounders::new(&ped)?`, build the index on its `pedigree()`,
+    and cut every per-row output to its `rows()`.
 
 ## v0.15.0
 

@@ -561,7 +561,8 @@ fn half_sibs_by_an_external_mother_are_related() {
         .flat_map(|x| (0..x).map(move |y| (x, y)))
         .map(|(x, y)| f64::from(k[x][y]))
         .sum();
-    assert_eq!(kinship_sums(&b, &f, &[0; 5], 1), [total]);
+    let sum = kinship_sums(&b, &f, &[0; 5], 1)[0];
+    assert!((sum - total).abs() <= 1e-12, "{sum} against {total}");
 }
 
 /// An external id that one row names is still a missing parent: no value

@@ -136,12 +136,11 @@ fn the_walk_matches_the_oracle_on_every_fixture() {
         // from: it reads the rows followed by the external founders (ADR
         // 0009), whose construction `kinship::external` tests by itself.
         let founders = ExternalFounders::new(&ped).unwrap();
-        let extended = founders.pedigree();
         let mut oracle = Oracle {
-            mother: extended.mother(),
-            father: extended.father(),
-            twin: extended.twin(),
-            depth: extended.depth(),
+            mother: founders.mother(),
+            father: founders.father(),
+            twin: founders.twin(),
+            depth: founders.depth(),
             memo: HashMap::new(),
         };
         let expected: Vec<u32> = first

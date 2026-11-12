@@ -124,19 +124,22 @@ impl<'a> KinshipPedigree<'a> {
         self.mother.is_empty()
     }
 
-    pub fn mother(&self) -> &'a [i32] {
+    // The columns are crate-private: they are the host's, without the
+    // external founders the kernels add.  A host that reads the recurrence's
+    // columns takes them from [`ExternalFounders`], which has them.
+    pub(crate) fn mother(&self) -> &'a [i32] {
         self.mother
     }
 
-    pub fn father(&self) -> &'a [i32] {
+    pub(crate) fn father(&self) -> &'a [i32] {
         self.father
     }
 
-    pub fn twin(&self) -> &'a [i32] {
+    pub(crate) fn twin(&self) -> &'a [i32] {
         self.twin
     }
 
-    pub fn depth(&self) -> &'a [i32] {
+    pub(crate) fn depth(&self) -> &'a [i32] {
         self.depth
     }
 }
