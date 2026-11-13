@@ -141,7 +141,7 @@ def warmup() -> float:
     pollutes the measured kernel timings.
     """
     t0 = time.perf_counter()
-    df = run_simulation(seed=0, N=64, G_ped=3, G_sim=4, **SIM_PARAMS)
+    df = run_simulation(seed=0, N=64, G_ped=3, G_sim=4, **SIM_PARAMS).pedigree
     pg = PedigreeGraph.from_frame(df)
     pg.inbreeding()
     pg.mean_kinship_by_generation()
@@ -440,7 +440,7 @@ def main() -> None:
 
     print("[2/4] simulating pedigree ...", flush=True)
     t0 = time.perf_counter()
-    df = run_simulation(seed=args.seed, N=N, G_ped=G_ped, G_sim=G_ped + 2, **SIM_PARAMS)
+    df = run_simulation(seed=args.seed, N=N, G_ped=G_ped, G_sim=G_ped + 2, **SIM_PARAMS).pedigree
     sim_s = time.perf_counter() - t0
     n_ind = len(df)
     n_founders = int(((df["mother"].to_numpy() < 0) & (df["father"].to_numpy() < 0)).sum())
