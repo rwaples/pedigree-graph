@@ -14,7 +14,8 @@ Depends: R (>= 4.2)
 Imports: Matrix, methods, stats
 Suggests: testthat (>= 3.0.0), withr
 Config/testthat/edition: 3
-SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.85)
+SystemRequirements: Cargo (Rust's package manager), rustc (>= 1.85); on
+    Windows, rustc's x86_64-pc-windows-gnu target
 Copyright: Ryan Waples for the package; the bundled Rust crates in
     src/rust/vendor.tar.xz are copyright their authors, listed with their
     licenses in inst/AUTHORS.

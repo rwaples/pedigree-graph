@@ -132,6 +132,63 @@ jobs:
             exit 1
           fi
 
+      - name: Keep the source tarball for the Windows job
+        uses: actions/upload-artifact@v7
+        with:
+          name: r-tarball
+          path: dist-r/pedigreegraph_*.tar.gz
+          retention-days: 7
+
+  r-windows:
+    # CRAN's R with Rtools builds through src/Makevars.win, for the GNU target.
+    # conda-forge's R on Windows is covered by nordic-geno-epimight's Windows
+    # workflow, which builds this package into its pixi environment.
+    name: R binding on Windows (CRAN R, Rtools)
+    needs: r
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Add the Rust GNU target
+        run: rustup target add x86_64-pc-windows-gnu
+
+      - name: Install the R dependencies
+        run: Rscript -e 'install.packages(c("Matrix", "testthat"))'
+
+      - name: Test the checkout build with the test hooks
+        shell: bash
+        env:
+          PG_CARGO_FEATURES: test-hooks
+          PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS: "1"
+        run: |
+          R CMD INSTALL --no-multiarch --preclean r
+          Rscript -e 'testthat::test_local("r", stop_on_failure = TRUE)'
+
+      - name: Get the source tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: r-tarball
+          path: dist-r
+
+      - name: Check the tarball
+        # Offline in the sense that matters: the vendored build passes
+        # --offline to cargo. The runner has no network namespace to drop.
+        working-directory: dist-r
+        shell: bash
+        run: |
+          tarball="$(ls pedigreegraph_*.tar.gz)"
+          _R_CHECK_CRAN_INCOMING_REMOTE_=false R CMD check --no-manual "$tarball"
+          if grep -q '^Status:.*\(ERROR\|WARNING\)' pedigreegraph.Rcheck/00check.log; then
+            echo "::error::R CMD check reported an ERROR or WARNING"
+            exit 1
+          fi
+
   python:
     name: Python lint, types, and fast tests
     runs-on: ubuntu-latest
