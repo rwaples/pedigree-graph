@@ -4,6 +4,7 @@ test_that("the budget defaults to 1", {
 })
 
 test_that("an empty PEDIGREE_GRAPH_THREADS is a usage error, as in Python", {
+  skip_on_os("windows") # setting a variable to "" there removes it
   out <- run_rscript(
     "e <- tryCatch(thread_budget(), pedigree_graph_usage_error = function(e) 'usage'); cat(e)",
     env = "PEDIGREE_GRAPH_THREADS="

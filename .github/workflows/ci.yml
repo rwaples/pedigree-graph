@@ -149,6 +149,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: read
+    env:
+      # testthat's progress reporter quits after 10 failures; report them all.
+      TESTTHAT_MAX_FAILS: Inf
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
