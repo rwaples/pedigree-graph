@@ -78,10 +78,11 @@
 .pg_watch <- function(handle, report, call = sys.call(-1L)) {
   repeat {
     state <- .pg_call(.native_wait(handle, .pg_tick()), call = call)
-    # Services pending events: R raises a pending Ctrl-C or time limit here,
-    # which a loop of .Call()s alone never does.
-    Sys.sleep(.pg_event_sleep)
     if (state$finished) break
+    # Services pending events: R raises a pending Ctrl-C or time limit here,
+    # which a loop of .Call()s alone never does. A finished call skips it, so
+    # the sleep Windows needs never delays a result.
+    Sys.sleep(.pg_event_sleep)
     if (!is.null(report)) report(state)
   }
   .pg_call(.native_collect(handle), call = call)

@@ -145,7 +145,6 @@ jobs:
     # conda-forge's R on Windows is covered by nordic-geno-epimight's Windows
     # workflow, which builds this package into its pixi environment.
     name: R binding on Windows (CRAN R, Rtools)
-    needs: r
     runs-on: windows-latest
     permissions:
       contents: read
@@ -173,6 +172,24 @@ jobs:
         run: |
           R CMD INSTALL --no-multiarch --preclean r
           Rscript -e 'testthat::test_local("r", stop_on_failure = TRUE)'
+
+  r-windows-tarball:
+    # The r job's source tarball, built offline from its vendored crates on
+    # Windows; only this check waits for the Linux job.
+    name: R source tarball on Windows (CRAN R, Rtools)
+    needs: r
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Add the Rust GNU target
+        run: rustup target add x86_64-pc-windows-gnu
+
+      - name: Install the R dependencies
+        run: Rscript -e 'install.packages(c("Matrix", "testthat", "withr"))'
 
       - name: Get the source tarball
         uses: actions/download-artifact@v7

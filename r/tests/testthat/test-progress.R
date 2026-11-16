@@ -244,7 +244,9 @@ test_that("progress must be TRUE, FALSE or a function, and its default is the op
 })
 
 test_that("Ctrl-C interrupts a long call, and the next call works", {
-  skip_on_os("windows") # kill_soon sends SIGINT with sh's kill
+  # kill_soon sends SIGINT with sh's kill, which Windows lacks, so Ctrl-C on
+  # Windows is untested; the time-limit test below covers the same event check.
+  skip_on_os("windows")
   out <- run_rscript(c(
     child_code,
     "configure_threads(1)",
@@ -266,7 +268,9 @@ test_that("Ctrl-C interrupts a long call, and the next call works", {
 })
 
 test_that("an uncaught interrupt halts Rscript", {
-  skip_on_os("windows") # kill_soon sends SIGINT with sh's kill
+  # kill_soon sends SIGINT with sh's kill, which Windows lacks, so Ctrl-C on
+  # Windows is untested; the time-limit test below covers the same event check.
+  skip_on_os("windows")
   out <- suppressWarnings(run_rscript(c(
     child_code,
     "configure_threads(1)",
