@@ -9,6 +9,10 @@
 # Seconds between two looks at a running call; tests make it small.
 .pg_tick <- function() 1
 .pg_clock <- function() proc.time()[["elapsed"]]
+# The Sys.sleep() .pg_watch() services events with. Unix's always checks for
+# events once; Windows' rounds to whole milliseconds and checks only after
+# sleeping, so there it sleeps the 1 ms that makes it check.
+.pg_event_sleep <- if (.Platform$OS.type == "windows") 0.001 else 0
 # Seconds between two default progress lines, and before the first.
 .pg_log_interval <- 30
 
@@ -76,7 +80,7 @@
     state <- .pg_call(.native_wait(handle, .pg_tick()), call = call)
     # Services pending events: R raises a pending Ctrl-C or time limit here,
     # which a loop of .Call()s alone never does.
-    Sys.sleep(0)
+    Sys.sleep(.pg_event_sleep)
     if (state$finished) break
     if (!is.null(report)) report(state)
   }
