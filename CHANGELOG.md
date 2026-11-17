@@ -14,7 +14,10 @@ live on the corresponding GitHub release pages.
   `generation_kinship_sums`, and the parent-ordering error, at another
   `position`, from `pair_kinship`; every kernel now reports the parent
   ordering. `founder_contribution_means` now refuses co-twins at two depths,
-  which it accepted because it reads no twin; its values are unchanged. Only
+  which it accepted because it reads no twin; its values are unchanged. And
+  `pair_kinship`, the view `pair_kinship` and `support_values` check the
+  depth when asked for no pair or support entry, where they returned empty
+  unchecked; the check reads the columns once and allocates nothing. Only
   a depth handed to the core or the `_native` bindings directly can fail
   either check; `PedigreeGraph` and the R binding pass the structural depth,
   which passes both.

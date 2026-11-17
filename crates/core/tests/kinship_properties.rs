@@ -614,12 +614,15 @@ fn every_kernel_accepts_or_refuses_a_depth_alike() {
             let rows: Vec<i32> = (0..n as i32).collect();
             let diagonal: Vec<i64> = (0..=n as i64).collect();
             let pair = pair_kinship(ped, &rows, &rows).err();
-            // A call with no pair or entry checks nothing and pays nothing
-            // (ADR 0016), so only calls with work are compared.
             let others = [
+                ("pair_kinship, no pair", pair_kinship(ped, &[], &[]).err()),
                 (
                     "support_values",
                     support_values(ped, &diagonal, &rows).err(),
+                ),
+                (
+                    "support_values, no entry",
+                    support_values(ped, &vec![0; n + 1], &[]).err(),
                 ),
                 ("kinship_csc", kinship_csc(ped).err()),
                 (

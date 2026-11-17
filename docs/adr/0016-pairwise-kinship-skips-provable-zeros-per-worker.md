@@ -112,6 +112,10 @@ about 14% slower at full scale.
   > columns (57 MB at 3.58M rows). A call with no pairs or support entries
   > builds no columns.
 
+  > Amended 2026-11-17: a call with no pairs or support entries still
+  > checks the depth, one read of the columns with no allocation, so it
+  > refuses the depths every other kinship kernel refuses (issue #65).
+
   > Amended 2026-10-18: the memo's row vector is now 12 bytes a row (43 MB
   > at 3.58M rows). A row's table of up to 1024 slots is carved from the
   > worker's pool of 512 KiB chunks, so it costs its 8-byte slots and no

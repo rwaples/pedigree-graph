@@ -582,7 +582,9 @@ pub fn check_pair_rows(n: usize, first: &[i32], second: &[i32]) -> Result<(), Er
 /// # Errors
 ///
 /// [`Error::PairRowOutOfRange`] at the first endpoint outside `0..n`,
-/// `first`'s before `second`'s; then [`Error::PairLengthMismatch`]; then
+/// `first`'s before `second`'s; then [`Error::PairLengthMismatch`];
+/// [`Error::ValueOutOfRange`] on `depth` or `twin` as
+/// [`inbreeding()`](super::inbreeding()) reports them, with no pair too; and
 /// [`Error::AllocationFailed`] for the memo, the stack or the output.
 pub fn pair_kinship(
     ped: KinshipPedigree<'_>,
@@ -609,6 +611,7 @@ pub fn view_pair_kinship(
 ) -> Result<Vec<f32>, Error> {
     check_pair_rows(graph_rows.len(), first, second)?;
     if first.is_empty() {
+        check_kinship_depth(&ped)?;
         return Ok(Vec::new());
     }
     let n = ped.len();
@@ -635,6 +638,9 @@ fn resolve_pairs(
     graph_row: impl Fn(i32) -> i32 + Sync,
 ) -> Result<Vec<f32>, Error> {
     if first.is_empty() {
+        // Nothing to walk or allocate, but the depth is refused as the walk
+        // refuses it: one read of the columns (issue #65).
+        check_kinship_depth(&ped)?;
         return Ok(Vec::new());
     }
     let out = SharedOutput::new(first.len())?;
@@ -664,6 +670,7 @@ fn support_with(
     indices: &[i32],
 ) -> Result<Vec<f32>, Error> {
     if indices.is_empty() {
+        check_kinship_depth(&ped)?;
         return Ok(Vec::new());
     }
     let n = ped.len();
@@ -857,17 +864,19 @@ mod tests {
         // parent's, the walk would peel the parent and return 0.
         let (mother, father, twin) = (vec![1, -1], vec![-1, -1], vec![-1, -1]);
         let flat = KinshipPedigree::try_new(&mother, &father, &twin, &[0, 0]).unwrap();
-        assert!(pair_kinship(flat, &[], &[]).unwrap().is_empty());
-        let err = pair_kinship(flat, &[0], &[1]).unwrap_err();
-        assert!(matches!(
-            err,
-            Error::ValueOutOfRange {
-                field: "depth",
-                value: 0,
-                minimum: 1,
-                ..
-            }
-        ));
+        // Refused with no pair too, so one depth gets one answer (#65).
+        for (first, second) in [(&[][..], &[][..]), (&[0][..], &[1][..])] {
+            let err = pair_kinship(flat, first, second).unwrap_err();
+            assert!(matches!(
+                err,
+                Error::ValueOutOfRange {
+                    field: "depth",
+                    value: 0,
+                    minimum: 1,
+                    ..
+                }
+            ));
+        }
         let ped = KinshipPedigree::try_new(&mother, &father, &twin, &[1, 0]).unwrap();
         assert!((pair_kinship(ped, &[0], &[1]).unwrap()[0] - 0.25).abs() < 1e-6);
     }
