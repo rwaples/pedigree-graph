@@ -745,11 +745,7 @@ def parity_fixture(name: str, *, label: str) -> Fixture:
     """
 
     def _params() -> dict[str, Any]:
-        pedigrees = _parity_module()
-        for table in (pedigrees.RANDOM_FIXTURES, pedigrees.LARGE_FIXTURES, pedigrees.RELEASE_FIXTURES):
-            if name in table:
-                return table[name]
-        raise KeyError(f"{name!r} is not a parity fixture")
+        return _parity_module().fixture_params(name)
 
     def build() -> Any:
         from pedigree_graph import PedigreeGraph

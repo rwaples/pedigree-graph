@@ -367,6 +367,14 @@ RELEASE_FIXTURES: dict[str, dict] = {
 }
 
 
+def fixture_params(name: str) -> dict:
+    """The parameters of the random fixture *name*, from whichever table holds it."""
+    for table in (RANDOM_FIXTURES, LARGE_FIXTURES, RELEASE_FIXTURES):
+        if name in table:
+            return table[name]
+    raise KeyError(f"{name!r} is not a parity fixture")
+
+
 def build_random(name: str, params: dict) -> dict[str, np.ndarray]:
     p = dict(params)
     kind = p.pop("kind", "random")
@@ -374,8 +382,7 @@ def build_random(name: str, params: dict) -> dict[str, np.ndarray]:
         return deep_inbred_pedigree(p.pop("seed"), **p)
     if kind == "external_founders":
         of = p.pop("of")
-        tables = (RANDOM_FIXTURES, LARGE_FIXTURES, RELEASE_FIXTURES)
-        fx = build_random(of, next(t[of] for t in tables if of in t))
+        fx = build_random(of, fixture_params(of))
         return external_founder_parents(fx, p.pop("founder_seed"), **p)
     return random_pedigree(p.pop("seed"), **p)
 

@@ -173,7 +173,7 @@ degree-selected consumer; this ADR already prefers moving pairs closer to
 dropping them.
 
 The engine adds the external hop where the cousin products start
-(`Engine::below_ancestors`): when an ancestor `k - 1` up has an external
+(`Engine::fill_below`): when an ancestor `k - 1` up has an external
 parent id, the rows naming that id join the first hop below the ancestors
 `k` up, and the chain continues from there; otherwise the product is the
 represented chain unchanged. Every external id counts, including one that a

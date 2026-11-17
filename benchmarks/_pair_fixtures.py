@@ -30,10 +30,10 @@ EXECUTIONS = ("speed", "memory")
 
 def fixture_params(name: str) -> dict:
     """Parameters of a ``tests/parity`` fixture, never re-declared here."""
-    for table in (pedigrees.RANDOM_FIXTURES, pedigrees.LARGE_FIXTURES, pedigrees.RELEASE_FIXTURES):
-        if name in table:
-            return table[name]
-    raise SystemExit(f"unknown parity fixture {name!r}")
+    try:
+        return pedigrees.fixture_params(name)
+    except KeyError as error:
+        raise SystemExit(f"unknown parity fixture {name!r}") from error
 
 
 class Inputs:
