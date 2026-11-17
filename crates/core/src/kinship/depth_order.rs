@@ -285,7 +285,8 @@ pub(crate) fn check_parent_rows(mother: &[i32], father: &[i32]) -> Result<(), Er
 /// pairwise walk, which checks rows as it packs them, and the external
 /// founders call it directly.  The founder means read no twin but keep the
 /// same requirement, so one input gets one answer from every kernel
-/// (issue #65).
+/// (issue #65).  A pairwise call with no pair or support entry checks
+/// nothing and returns empty, so that it pays nothing (ADR 0016).
 ///
 /// # Errors
 ///

@@ -6,16 +6,18 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
-- **Kinship kernels check a depth in one order** (issue #65). Every kinship
-  kernel checks first that the depth orders the parents, then that MZ
-  co-twins name each other and share a depth. A depth wrong in both ways
-  got the co-twin error from the matrices, `inbreeding` and
+- **Breaking (core API): kinship kernels check a depth in one order**
+  (issue #65). Every kinship kernel checks first that the depth orders the
+  parents, then that MZ co-twins name each other and share a depth. On a
+  pedigree with no shared external parent id, a depth wrong in both ways got
+  the co-twin error from the matrices, `inbreeding` and
   `generation_kinship_sums`, and the parent-ordering error, at another
-  `position`, from `pair_kinship`. Every kernel now reports the parent
-  ordering. `founder_contribution_means` also refuses co-twins at two
-  depths, which it accepted because it reads no twin. Only a depth handed to
-  the `_native` bindings directly can fail either check; `PedigreeGraph`
-  passes the structural depth, which passes both.
+  `position`, from `pair_kinship`; every kernel now reports the parent
+  ordering. `founder_contribution_means` now refuses co-twins at two depths,
+  which it accepted because it reads no twin; its values are unchanged. Only
+  a depth handed to the core or the `_native` bindings directly can fail
+  either check; `PedigreeGraph` and the R binding pass the structural depth,
+  which passes both.
 
 - **Breaking (kinship): a shared external parent id is a founder of the
   recurrence** (issue #67, ADR 0009 as amended; ADR 0008, 0016, 0018).

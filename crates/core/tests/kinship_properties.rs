@@ -23,8 +23,8 @@ use common::{
     check, non_inbred_pedigree, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped,
 };
 use pedigree_graph_core::kinship::{
-    approximate_kinship_csc, generation_kinship_sums, inbreeding, inbreeding_and_ancestor_counts,
-    kinship_csc, pair_kinship, Csc,
+    approximate_kinship_csc, founder_contribution_means, generation_kinship_sums, inbreeding,
+    inbreeding_and_ancestor_counts, kinship_csc, pair_kinship, support_values, Csc,
 };
 use pedigree_graph_core::lineage::distinct_ancestor_counts;
 use pedigree_graph_core::relationships::query::{self, Receiver};
@@ -612,8 +612,15 @@ fn every_kernel_accepts_or_refuses_a_depth_alike() {
             let ped = b.kinship_at(&depth);
             let n = b.len();
             let rows: Vec<i32> = (0..n as i32).collect();
+            let diagonal: Vec<i64> = (0..=n as i64).collect();
             let pair = pair_kinship(ped, &rows, &rows).err();
+            // A call with no pair or entry checks nothing and pays nothing
+            // (ADR 0016), so only calls with work are compared.
             let others = [
+                (
+                    "support_values",
+                    support_values(ped, &diagonal, &rows).err(),
+                ),
                 ("kinship_csc", kinship_csc(ped).err()),
                 (
                     "approximate_kinship_csc",
@@ -623,6 +630,10 @@ fn every_kernel_accepts_or_refuses_a_depth_alike() {
                 (
                     "generation_kinship_sums",
                     generation_kinship_sums(ped, &vec![0.0; n], &vec![0; n], 1).err(),
+                ),
+                (
+                    "founder_contribution_means",
+                    founder_contribution_means(ped, &vec![0; n], 1, &vec![-1; n], 0).err(),
                 ),
             ];
             for (name, err) in others {
