@@ -4,9 +4,11 @@
 #
 # R on Windows compiles and links with MinGW gcc (Rtools for CRAN's R,
 # conda-forge's gcc for conda's), so the crate builds for the GNU target
-# whatever rustc's host is. That target's standard library comes from
-# `rustup target add x86_64-pc-windows-gnu` or conda-forge's
-# rust-std-x86_64-pc-windows-gnu.
+# whatever rustc's host is. The host decides what links cargo's build scripts
+# and proc-macros: a windows-gnu host (rustup's stable-x86_64-pc-windows-gnu)
+# links them with that same MinGW gcc and needs nothing else, while an MSVC
+# host, rustup's default and conda-forge's rust, needs Visual Studio's
+# link.exe and `rustup target add x86_64-pc-windows-gnu`.
 #
 # cargo is taken from PATH as it is: make's $(PATH) is in Windows form here,
 # so the recipes can't append ~/.cargo/bin to it as Makevars does. A source
@@ -29,8 +31,17 @@ $(SHLIB): $(STATLIB)
 
 $(STATLIB):
 	@command -v cargo >/dev/null 2>&1 || \
-	  { echo "cargo not found: install Rust from https://rustup.rs (rustc >= 1.85), then run rustup target add $(TARGET)"; exit 1; }
+	  { echo "cargo not found: install Rust (rustc >= 1.85) from https://rustup.rs with the MinGW host:"; \
+	    echo "  rustup-init.exe -y --default-host $(TARGET) --profile minimal"; exit 1; }
 	@echo "using $$(rustc --version)"
+	@host=$$(rustc -vV | sed -n 's/^host: //p'); \
+	case "$$host" in \
+	  *-windows-gnu*) ;; \
+	  *) echo "note: rustc's host is $$host; its build scripts link with Visual Studio's link.exe."; \
+	     echo "  Without Visual Studio Build Tools (C++ workload), switch to the MinGW host:"; \
+	     echo "  rustup toolchain install stable-$(TARGET) --profile minimal"; \
+	     echo "  rustup default stable-$(TARGET)" ;; \
+	esac
 	@echo "using $$(cargo --version)"
 	if [ -f ./rust/vendor.tar.xz ]; then \
 	  "$(R_HOME)/bin/Rscript" ../tools/vendor_config.R && \
