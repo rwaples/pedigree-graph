@@ -138,6 +138,7 @@ jobs:
         with:
           name: r-tarball
           path: dist-r/pedigreegraph_*.tar.gz
+          if-no-files-found: error
           retention-days: 7
 
   r-windows:
