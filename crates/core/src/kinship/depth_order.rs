@@ -108,8 +108,12 @@ pub(crate) fn unread(p: i32, ordered: &mut bool) {
 /// Graph rows in stable depth-major order, bucketed by depth.
 ///
 /// Only this module builds one, so every order has had its depth checked:
-/// a kinship kernel's through [`DepthOrder::for_kinship`], a parents-first
-/// sweep's through [`ParentsFirst::of`].
+/// a kinship kernel's, co-twins included, through
+/// [`DepthOrder::for_kinship`], the only constructor that takes a
+/// [`KinshipPedigree`]; a parents-first sweep's, structural only, through
+/// [`ParentsFirst::of`], which takes bare parent columns with no twin.  The
+/// marker proves a check ran, not which one: a kernel that reads `twin`
+/// takes its order from a [`KinshipPedigree`].
 pub(crate) struct DepthOrder {
     /// Graph row at each depth-major position.
     pub(crate) order: Vec<u32>,

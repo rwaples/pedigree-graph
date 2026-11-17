@@ -60,8 +60,9 @@ const CHUNK: usize = 64;
 ///
 /// # Errors
 ///
-/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
-/// not above both parents', then on `twin` when a row's MZ co-twin does not
+/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative,
+/// above `n - 1` or not above both parents', then on `twin` when a row's MZ
+/// co-twin does not
 /// name it back or on `depth` when it is not its co-twin's, the order every
 /// kinship kernel checks in, and [`Error::AllocationFailed`] for any
 /// buffer.

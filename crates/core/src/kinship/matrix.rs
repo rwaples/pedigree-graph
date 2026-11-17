@@ -535,8 +535,9 @@ fn approximate_with(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
 ///
 /// # Errors
 ///
-/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
-/// not above both parents', then on `twin` when a pair is not reciprocal or
+/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative,
+/// above `n - 1` or not above both parents', then on `twin` when a pair is
+/// not reciprocal or
 /// on `depth` when it is not its co-twin's, as
 /// [`inbreeding()`](super::inbreeding()) reports them, [`Error::CscIndexOverflow`] when the entry count
 /// exceeds int32, and [`Error::AllocationFailed`] for any buffer.
