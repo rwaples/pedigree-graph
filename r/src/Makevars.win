@@ -1,0 +1,65 @@
+# Builds the extendr crate under rust/ into a static library on Windows; Makevars
+# is the build everywhere else and documents what the two share. A change to
+# either recipe belongs in both.
+#
+# R on Windows compiles and links with MinGW gcc (Rtools for CRAN's R,
+# conda-forge's gcc for conda's), so the crate builds for the GNU target
+# whatever rustc's host is. The host decides what links cargo's build scripts
+# and proc-macros: a windows-gnu host (rustup's stable-x86_64-pc-windows-gnu)
+# links them with that same MinGW gcc and needs nothing else, while an MSVC
+# host, rustup's default and conda-forge's rust, needs Visual Studio's
+# link.exe and `rustup target add x86_64-pc-windows-gnu`.
+#
+# cargo is taken from PATH as it is: make's $(PATH) is in Windows form here,
+# so the recipes can't append ~/.cargo/bin to it as Makevars does. A source
+# tarball unpacks its vendored crates with R (tools/vendor_config.R), which
+# needs no tar program and writes the vendor path in the Windows form cargo
+# reads; CARGO_HOME stays inside the build, as in Makevars.
+TARGET = x86_64-pc-windows-gnu
+TARGET_DIR = ./rust/target
+LIBDIR = $(TARGET_DIR)/$(TARGET)/release
+STATLIB = $(LIBDIR)/libpedigreegraph.a
+# rustc 1.99's `--print native-static-libs` for this target, less -lR, which R
+# adds, plus advapi32 and bcrypt, which older std releases link (rustc 1.85 is
+# the floor). An unused import library costs nothing.
+PKG_LIBS = -L$(LIBDIR) -lpedigreegraph -lkernel32 -lntdll -luserenv -lws2_32 \
+  -ldbghelp -lsynchronization -ladvapi32 -lbcrypt
+
+all: $(SHLIB) rust_clean
+
+$(SHLIB): $(STATLIB)
+
+$(STATLIB):
+	@command -v cargo >/dev/null 2>&1 || \
+	  { echo "cargo not found: install Rust (rustc >= 1.85) from https://rustup.rs with the MinGW host:"; \
+	    echo "  rustup-init.exe -y --default-host $(TARGET) --profile minimal"; exit 1; }
+	@echo "using $$(rustc --version)"
+	@host=$$(rustc -vV | sed -n 's/^host: //p'); \
+	case "$$host" in \
+	  *-windows-gnu*) ;; \
+	  *) echo "note: rustc's host is $$host; its build scripts link with Visual Studio's link.exe."; \
+	     echo "  Without Visual Studio Build Tools (C++ workload), switch to the MinGW host:"; \
+	     echo "  rustup toolchain install stable-$(TARGET) --profile minimal"; \
+	     echo "  rustup default stable-$(TARGET)" ;; \
+	esac
+	@echo "using $$(cargo --version)"
+	if [ -f ./rust/vendor.tar.xz ]; then \
+	  "$(R_HOME)/bin/Rscript" ../tools/vendor_config.R && \
+	  export CARGO_HOME=.cargo && \
+	  cargo build -j 2 --offline --locked --lib --release --target $(TARGET) \
+	    --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR); \
+	else \
+	  cargo build -j 2 --lib --release --target $(TARGET) \
+	    $${PG_CARGO_FEATURES:+--features "$$PG_CARGO_FEATURES"} \
+	    --manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR); \
+	fi
+
+# Only a tarball build removes what it unpacked and built; a checkout keeps
+# its target dir for incremental builds.
+rust_clean: $(SHLIB)
+	if [ -f ./rust/vendor.tar.xz ]; then rm -Rf .cargo ./rust/vendor $(TARGET_DIR); fi
+
+clean:
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS) .cargo ./rust/vendor
+
+.PHONY: all rust_clean clean $(STATLIB)

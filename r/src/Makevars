@@ -7,6 +7,7 @@
 # jobs are capped at 2 as CRAN asks, and rustc's version is logged first.
 # PG_CARGO_FEATURES (the dev and CI test installs set `test-hooks`) applies to
 # the checkout build only; the vendored tarball build never takes features.
+# Makevars.win is the Windows build: a change to either recipe belongs in both.
 TARGET_DIR = ./rust/target
 LIBDIR = $(TARGET_DIR)/release
 STATLIB = $(LIBDIR)/libpedigreegraph.a

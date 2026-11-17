@@ -24,11 +24,16 @@ expect_pg_error <- function(expr, class, code = NULL) {
   invisible(err)
 }
 
-# Run R code in a fresh process, for state committed once per process.
+# Run R code in a fresh process, for state committed once per process. `env`
+# holds NAME=value strings, set here for the child to inherit: system2's own
+# env argument goes through sh, and on Windows lands on the command line.
 run_rscript <- function(code, env = character(), timeout = 60) {
   script <- tempfile(fileext = ".R")
   on.exit(unlink(script))
   writeLines(c("library(pedigreegraph)", code), script)
-  system2(file.path(R.home("bin"), "Rscript"), script, stdout = TRUE, stderr = TRUE, env = env,
+  if (length(env) > 0) {
+    withr::local_envvar(stats::setNames(sub("^[^=]*=", "", env), sub("=.*$", "", env)))
+  }
+  system2(file.path(R.home("bin"), "Rscript"), script, stdout = TRUE, stderr = TRUE,
           timeout = timeout)
 }
