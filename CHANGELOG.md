@@ -6,6 +6,18 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Performance: the cousin products share their downward levels** (issue
+  #66). At `max_degree=5` a row walked the rows below its ancestors once per
+  cousin product, 16 hops where the distinct levels need 9, and merged the
+  rows naming each external parent id into every walk. Each level is now
+  filled once per row and read by every product, and the first hop takes the
+  external sibships in the same pass. `relationship_counts(max_degree=5)`
+  runs 13% fewer user-space instructions on `random_300k` and 16% fewer on
+  `random_300k_extfounders`, a new benchmark pedigree whose oldest
+  generation's parents are shared external ids. At degree 3, where only the
+  first cousin product runs, `relationship_pairs` runs about 1% more. The
+  counts and pairs are unchanged.
+
 - **Breaking (kinship): a shared external parent id is a founder of the
   recurrence** (issue #67, ADR 0009 as amended; ADR 0008, 0016, 0018).
   `pair_kinship`, `kinship_matrix`, `approximate_kinship_matrix`,

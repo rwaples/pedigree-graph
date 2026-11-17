@@ -155,12 +155,27 @@ impl Accumulator {
 
     /// One hop of `src` through `adj`, summing path multiplicities.
     pub fn hop(&mut self, adj: &Csr, src: &[(u32, Mult)], out: &mut Weighted) -> Result<(), Error> {
+        self.hop_with(adj, src, std::iter::empty(), out)
+    }
+
+    /// One hop of `src` through `adj`, with the weighted rows of `extra`
+    /// summed in the same pass.
+    pub fn hop_with(
+        &mut self,
+        adj: &Csr,
+        src: &[(u32, Mult)],
+        extra: impl Iterator<Item = (u32, Mult)>,
+        out: &mut Weighted,
+    ) -> Result<(), Error> {
         self.begin();
         for &(s, v) in src {
             let (cols, vals) = adj.row(s as usize);
             for (&c, &w) in cols.iter().zip(vals) {
                 self.add(c, v * w);
             }
+        }
+        for (j, m) in extra {
+            self.add(j, m);
         }
         self.drain(out)
     }
