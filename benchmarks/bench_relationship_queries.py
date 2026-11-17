@@ -151,6 +151,7 @@ FIXTURES = (
     parity_fixture("random_30k", label="`random_30k`"),
     parity_fixture("random_300k", label="`random_300k`"),
     parity_fixture("random_1k", label="`random_1k`"),
+    parity_fixture("random_300k_extfounders", label="`random_300k` with external founder parents"),
 )
 
 SUITE = Suite(
@@ -158,7 +159,12 @@ SUITE = Suite(
     note=Path(__file__).with_suffix(".md"),
     fixtures=FIXTURES,
     arms=ARMS,
-    cells=tuple(f"{fixture.name}/{arm.name}" for fixture in FIXTURES[:2] for arm in ARMS),
+    # The external-founder pedigree only for counts at degree 5, where the
+    # cousin products merge external sibships (issue #66).
+    cells=(
+        *(f"{fixture.name}/{arm.name}" for fixture in FIXTURES[:2] for arm in ARMS),
+        "random_300k_extfounders/counts_graph_d5",
+    ),
     gate=None,
     order=RunOrder.GROUPED,
     timeout_s=3600.0,

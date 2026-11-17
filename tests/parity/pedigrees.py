@@ -325,6 +325,27 @@ def deep_inbred_pedigree(
     )
 
 
+def external_founder_parents(
+    fx: dict[str, np.ndarray], seed: int, *, n_sires: int, dam_group: int
+) -> dict[str, np.ndarray]:
+    """*fx* with the parentless rows given shared external parent ids.
+
+    Mothers come in groups of about *dam_group* rows and fathers from
+    *n_sires* sires, as in a herd whose oldest recorded generation has
+    unrecorded dams and AI sires.  Nearly every row then reaches an external
+    sibship within a few hops, the case where the cousin products merge the
+    rows naming an external id (issue #61, #66).
+    """
+    founders = np.flatnonzero((fx["mother"] < 0) & (fx["father"] < 0))
+    rng = np.random.default_rng(seed)
+    base = 2 * EXTERNAL_ID_BASE
+    n_dams = -(-len(founders) // dam_group)
+    mother, father = fx["mother"].copy(), fx["father"].copy()
+    mother[founders] = base + rng.integers(0, n_dams, len(founders))
+    father[founders] = base + n_dams + rng.integers(0, n_sires, len(founders))
+    return {**fx, "mother": mother, "father": father}
+
+
 RANDOM_FIXTURES: dict[str, dict] = {
     "random_1k": {"seed": 1001, "n_founders": 60, "n_generations": 6, "per_generation": 160},
     "deep_inbred_60g": {"seed": 1002, "kind": "deep", "n_founders": 8, "n_generations": 60, "per_generation": 12},
@@ -336,6 +357,13 @@ LARGE_FIXTURES: dict[str, dict] = {
 
 RELEASE_FIXTURES: dict[str, dict] = {
     "random_300k": {"seed": 300_000, "n_founders": 15_000, "n_generations": 8, "per_generation": 36_000},
+    "random_300k_extfounders": {
+        "kind": "external_founders",
+        "of": "random_300k",
+        "founder_seed": 66,
+        "n_sires": 300,
+        "dam_group": 3,
+    },
 }
 
 
@@ -344,6 +372,11 @@ def build_random(name: str, params: dict) -> dict[str, np.ndarray]:
     kind = p.pop("kind", "random")
     if kind == "deep":
         return deep_inbred_pedigree(p.pop("seed"), **p)
+    if kind == "external_founders":
+        of = p.pop("of")
+        tables = (RANDOM_FIXTURES, LARGE_FIXTURES, RELEASE_FIXTURES)
+        fx = build_random(of, next(t[of] for t in tables if of in t))
+        return external_founder_parents(fx, p.pop("founder_seed"), **p)
     return random_pedigree(p.pop("seed"), **p)
 
 
