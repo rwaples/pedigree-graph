@@ -25,7 +25,7 @@
 //! translates stored columns through the permutation, so every output
 //! column's rows come out ascending without a sort.
 
-use super::depth_order::{check_twins, Buckets, DepthOrder};
+use super::depth_order::{Buckets, DepthOrder};
 use super::external::ExternalFounders;
 use super::pairwise::KinshipPedigree;
 use super::rows::Owned;
@@ -67,9 +67,7 @@ impl Topo {
         let founders = ExternalFounders::of(ped, SCRATCH)?;
         let (ped, rows) = (&founders.pedigree(), founders.rows());
         let n = ped.len();
-        check_twins(ped.twin(), ped.depth())?;
-        let DepthOrder { order, starts } =
-            DepthOrder::build(ped.mother(), ped.father(), ped.depth(), SCRATCH)?;
+        let DepthOrder { order, starts, .. } = DepthOrder::for_kinship(ped, SCRATCH)?;
         let mut inverse = alloc::filled(0u32, n, SCRATCH)?;
         for (position, &row) in order.iter().enumerate() {
             inverse[row as usize] = position as u32;
@@ -537,9 +535,10 @@ fn approximate_with(topo: &Topo, threshold: f64) -> Result<Csc, Error> {
 ///
 /// # Errors
 ///
-/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative,
-/// not above both parents' or not its co-twin's, on `twin` when a pair is
-/// not reciprocal, [`Error::CscIndexOverflow`] when the entry count
+/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
+/// not above both parents', then on `twin` when a pair is not reciprocal or
+/// on `depth` when it is not its co-twin's, as
+/// [`inbreeding()`](super::inbreeding()) reports them, [`Error::CscIndexOverflow`] when the entry count
 /// exceeds int32, and [`Error::AllocationFailed`] for any buffer.
 pub fn kinship_csc(ped: KinshipPedigree<'_>) -> Result<Csc, Error> {
     let topo = Topo::build(&ped)?;

@@ -104,7 +104,9 @@ fn generations_in<const CHECKED: bool>(
 /// [`Error::LengthMismatch`] when `cohort` or `founder_column` is not one
 /// per row, [`Error::ValueOutOfRange`] on either of them (on
 /// `founder_column` also for a row with a parent), on `n_cohorts`
-/// past int32 or on `depth`,
+/// past int32, or on `twin` or `depth` as [`inbreeding()`](super::inbreeding())
+/// reports them, co-twins at two depths included though the means read no
+/// twin,
 /// [`Error::ArithmeticOverflow`] when `n_cohorts * n_genomes` exceeds the
 /// address space, and [`Error::AllocationFailed`] for any buffer.
 pub fn founder_contribution_means(
@@ -167,7 +169,7 @@ pub fn founder_contribution_means(
             operation: "founder_means",
             dtype: "float64",
         })?;
-    let sweep = DepthOrder::build(ped.mother(), ped.father(), ped.depth(), MEANS)?;
+    let sweep = DepthOrder::for_kinship(&ped, MEANS)?;
     let (mother, father, depth) = (ped.mother(), ped.father(), ped.depth());
 
     let mut size = alloc::filled(0usize, n_cohorts + 1, MEANS)?;

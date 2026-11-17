@@ -8,6 +8,7 @@
 //! the order [`crate::topology::depth_major_order`] and a NumPy
 //! `flatnonzero(depth == d)` both give.
 
+use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
 use crate::error::Error;
 use crate::relationships::{check_column_length, check_row_range};
@@ -105,34 +106,65 @@ pub(crate) fn unread(p: i32, ordered: &mut bool) {
 }
 
 /// Graph rows in stable depth-major order, bucketed by depth.
+///
+/// Only this module builds one, so every order has had its depth checked:
+/// a kinship kernel's through [`DepthOrder::for_kinship`], a parents-first
+/// sweep's through [`ParentsFirst::of`].
 pub(crate) struct DepthOrder {
     /// Graph row at each depth-major position.
     pub(crate) order: Vec<u32>,
     /// Rows at depth `d` are `order[starts[d]..starts[d + 1]]`.
     pub(crate) starts: Vec<usize>,
+    /// Private, so no order is built outside this module unchecked.
+    _checked: Checked,
 }
 
+/// Proof that a [`DepthOrder`]'s depth was checked: only this module makes one.
+struct Checked;
+
 impl DepthOrder {
-    /// Check `depth` is structural and sort the rows by it, reserving
-    /// through `family`.
+    /// Check `ped`'s depth as [`check_kinship_depth`] does and sort its rows
+    /// by it, reserving through `family`.  Every kinship kernel that sweeps
+    /// in depth-major order gets its order here.
     ///
     /// # Errors
     ///
-    /// [`Error::ValueOutOfRange`] on `mother` or `father` at the first row
-    /// outside `-1..n`, then on `depth` when a row's depth is negative,
-    /// above `n - 1` or not above both parents', before anything is
-    /// allocated, and
+    /// As [`check_kinship_depth`], before anything is allocated, then
     /// [`Error::AllocationFailed`] for either array.
-    pub(crate) fn build(
+    pub(crate) fn for_kinship(
+        ped: &KinshipPedigree<'_>,
+        family: Family,
+    ) -> Result<DepthOrder, Error> {
+        check_kinship_depth(ped)?;
+        DepthOrder::sorted(ped.depth(), family)
+    }
+
+    /// Check `depth` is structural and sort the rows by it, reserving
+    /// through `family`: the parents-first sweeps' order, which read no twin.
+    ///
+    /// # Errors
+    ///
+    /// As [`check_structural`], before anything is allocated, then
+    /// [`Error::AllocationFailed`] for either array.
+    fn build(
         mother: &[i32],
         father: &[i32],
         depth: &[i32],
         family: Family,
     ) -> Result<DepthOrder, Error> {
         check_structural(mother, father, depth)?;
+        DepthOrder::sorted(depth, family)
+    }
+
+    /// Sort the rows by a `depth` already checked structural.
+    fn sorted(depth: &[i32], family: Family) -> Result<DepthOrder, Error> {
         let max_depth = depth.iter().copied().max().unwrap_or(0) as usize;
         let Buckets { order, starts } = Buckets::by(depth, max_depth + 1, family)?;
-        Ok(DepthOrder { order, starts })
+        Ok(DepthOrder {
+            order,
+            starts,
+            _checked: Checked,
+        })
     }
 
     pub(crate) fn max_depth(&self) -> usize {
@@ -235,13 +267,39 @@ pub(crate) fn check_parent_rows(mother: &[i32], father: &[i32]) -> Result<(), Er
     check_row_range("father", father, mother.len())
 }
 
+/// The depth every kinship kernel requires, checked in one order: first that
+/// `depth` is structural ([`check_structural`]), then that co-twins name
+/// each other and share a depth ([`check_twins`]).
+///
+/// Parents come first because a depth that does not order the parents is
+/// no depth of the pedigree and may hide a cycle, while level co-twins are
+/// a further condition on a depth that does: a structural depth always
+/// meets it, since co-twins share their parents.  On input with both faults
+/// every kernel reports the parent ordering.
+///
+/// A depth-major kernel calls it through [`DepthOrder::for_kinship`]; the
+/// pairwise walk, which checks rows as it packs them, and the external
+/// founders call it directly.  The founder means read no twin but keep the
+/// same requirement, so one input gets one answer from every kernel
+/// (issue #65).
+///
+/// # Errors
+///
+/// [`Error::ValueOutOfRange`] as [`check_structural`] reports it, then on
+/// `twin` or `depth` as [`check_twins`] does.
+pub(crate) fn check_kinship_depth(ped: &KinshipPedigree<'_>) -> Result<(), Error> {
+    check_structural(ped.mother(), ped.father(), ped.depth())?;
+    check_twins(ped.twin(), ped.depth())
+}
+
 /// Co-twins are one node, at one depth: each names the other, and they
 /// share a depth.  Graph construction refuses a non-reciprocal pair, and
 /// structural depth always puts co-twins at one depth, since they share
 /// their parents; a raised depth handed to the bindings need not.
 ///
-/// `twin` must already be `-1` or rows of the pedigree.
-pub(crate) fn check_twins(twin: &[i32], depth: &[i32]) -> Result<(), Error> {
+/// `twin` must already be `-1` or rows of the pedigree.  Private: a kernel
+/// checks twins through [`check_kinship_depth`], after the parent ordering.
+fn check_twins(twin: &[i32], depth: &[i32]) -> Result<(), Error> {
     for (row, &t) in twin.iter().enumerate() {
         if t < 0 {
             continue;
@@ -268,4 +326,117 @@ pub(crate) fn check_twins(twin: &[i32], depth: &[i32]) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::kinship::{
+        approximate_kinship_csc, founder_contribution_means, generation_kinship_sums, inbreeding,
+        kinship_csc, kinship_csc_upper, pair_kinship, support_values, view_pair_kinship,
+        ExternalFounders, KinshipIndex, MAX_CSC_NNZ,
+    };
+
+    /// Rows 0-2 founders, 1 and 2 MZ co-twins, 3 a child of 0.  Rows 0 and 3
+    /// name external father 99, a founder of the recurrence when ids are lent.
+    const MOTHER: [i32; 4] = [-1, -1, -1, 0];
+    const FATHER: [i32; 4] = [-1; 4];
+    const TWIN: [i32; 4] = [-1, 2, 1, -1];
+    const ORIG_MOTHER: [i64; 4] = [-1, -1, -1, 0];
+    const ORIG_FATHER: [i64; 4] = [99, -1, -1, 99];
+
+    /// Every kinship kernel's error on `depth`, with and without the parent
+    /// ids that add an external founder.
+    fn every_kernel(depth: &[i32; 4]) -> Vec<(&'static str, Error)> {
+        let plain = KinshipPedigree::try_new(&MOTHER, &FATHER, &TWIN, depth).unwrap();
+        let lent = plain.with_parent_ids(&ORIG_MOTHER, &ORIG_FATHER).unwrap();
+        let mut errors = Vec::new();
+        for ped in [plain, lent] {
+            // The pooled inbreeding entry shares `inbreeding`'s checks.
+            let kernels: [(&'static str, Result<(), Error>); 11] = [
+                ("pair_kinship", pair_kinship(ped, &[0], &[3]).map(drop)),
+                (
+                    "view_pair_kinship",
+                    view_pair_kinship(ped, &[0, 3], &[0], &[1]).map(drop),
+                ),
+                (
+                    "support_values",
+                    support_values(ped, &[0, 1, 2, 3, 4], &[0, 1, 2, 3]).map(drop),
+                ),
+                ("KinshipIndex::new", KinshipIndex::new(&ped).map(drop)),
+                ("kinship_csc", kinship_csc(ped).map(drop)),
+                (
+                    "kinship_csc_upper",
+                    kinship_csc_upper(ped, MAX_CSC_NNZ).map(drop),
+                ),
+                (
+                    "approximate_kinship_csc",
+                    approximate_kinship_csc(ped, 0.0).map(drop),
+                ),
+                ("inbreeding", inbreeding(ped).map(drop)),
+                (
+                    "generation_kinship_sums",
+                    generation_kinship_sums(ped, &[0.0; 4], &[0; 4], 1).map(drop),
+                ),
+                (
+                    "founder_contribution_means",
+                    founder_contribution_means(ped, &[0; 4], 1, &[0, 1, 2, -1], 3).map(drop),
+                ),
+                (
+                    "DepthOrder::for_kinship",
+                    DepthOrder::for_kinship(&ped, Family::KinshipScratch).map(drop),
+                ),
+            ];
+            for (name, result) in kernels {
+                errors.push((name, result.expect_err(name)));
+            }
+        }
+        errors
+    }
+
+    fn assert_every_kernel_reports(depth: &[i32; 4], want: &Error) {
+        for (name, err) in every_kernel(depth) {
+            assert_eq!(&err, want, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_lent_ids_add_a_founder() {
+        let level = [0, 0, 0, 1];
+        let ped = KinshipPedigree::try_new(&MOTHER, &FATHER, &TWIN, &level)
+            .unwrap()
+            .with_parent_ids(&ORIG_MOTHER, &ORIG_FATHER)
+            .unwrap();
+        assert_eq!(ExternalFounders::new(&ped).unwrap().founders(), 1);
+    }
+
+    #[test]
+    fn every_kernel_reports_the_parent_ordering_before_the_co_twins() {
+        // Co-twins 1 and 2 at two depths (row 1) and row 3 not below its
+        // mother (row 3): every kernel reports the parent ordering (#65).
+        assert_every_kernel_reports(
+            &[0, 0, 1, 0],
+            &Error::ValueOutOfRange {
+                field: "depth",
+                position: 3.into(),
+                value: 0,
+                minimum: 1,
+                maximum: 3,
+            },
+        );
+    }
+
+    #[test]
+    fn every_kernel_reports_co_twins_at_two_depths() {
+        assert_every_kernel_reports(
+            &[0, 0, 1, 1],
+            &Error::ValueOutOfRange {
+                field: "depth",
+                position: 1.into(),
+                value: 0,
+                minimum: 1,
+                maximum: 1,
+            },
+        );
+    }
 }

@@ -27,7 +27,7 @@
 //! output is the same bits for every thread count.
 
 use super::ancestry::AncestorSignatures;
-use super::depth_order::{check_structural, check_twins};
+use super::depth_order::check_kinship_depth;
 use super::external::ExternalFounders;
 use super::memo::PairMemo;
 use crate::alloc::{self, Family};
@@ -256,8 +256,7 @@ impl KinshipRows {
             Family::KinshipColumns,
         )?;
         if !ordered {
-            check_structural(ped.mother, ped.father, depth)?;
-            check_twins(twin, depth)?;
+            check_kinship_depth(ped)?;
         }
         Ok(KinshipRows(rows))
     }

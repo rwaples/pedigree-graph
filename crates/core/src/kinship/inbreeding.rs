@@ -31,7 +31,7 @@
 //! graph-row parents, not the genome nodes: children of co-twin mothers share
 //! genome parents but can count different ancestor rows.
 
-use super::depth_order::{check_twins, DepthOrder};
+use super::depth_order::DepthOrder;
 use super::external::ExternalFounders;
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
@@ -60,9 +60,10 @@ const CHUNK: usize = 64;
 ///
 /// # Errors
 ///
-/// [`Error::ValueOutOfRange`] on `twin` when a row's MZ co-twin does not name
-/// it back, on `depth` when a row's depth is negative, not above both
-/// parents', or not its MZ co-twin's, and [`Error::AllocationFailed`] for any
+/// [`Error::ValueOutOfRange`] on `depth` when a row's depth is negative or
+/// not above both parents', then on `twin` when a row's MZ co-twin does not
+/// name it back or on `depth` when it is not its co-twin's, the order every
+/// kinship kernel checks in, and [`Error::AllocationFailed`] for any
 /// buffer.
 pub fn inbreeding(ped: KinshipPedigree<'_>) -> Result<Vec<f64>, Error> {
     Ok(inbreeding_and_ancestor_counts(ped)?.0)
@@ -433,8 +434,7 @@ impl<'a> GenomePedigree<'a> {
     ///
     /// As [`inbreeding()`], with every buffer reserved under `family`.
     pub(super) fn build(ped: &KinshipPedigree<'a>, family: Family) -> Result<Self, Error> {
-        check_twins(ped.twin(), ped.depth())?;
-        let sweep = DepthOrder::build(ped.mother(), ped.father(), ped.depth(), family)?;
+        let sweep = DepthOrder::for_kinship(ped, family)?;
         let has_twins = ped.twin().iter().any(|&t| t >= 0);
         let (mother, father) = genome_parents(ped, has_twins, family)?;
         Ok(GenomePedigree {
