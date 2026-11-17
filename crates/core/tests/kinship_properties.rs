@@ -23,8 +23,8 @@ use common::{
     check, non_inbred_pedigree, pedigree, relabelled_pedigree, shuffled_pedigree, Built, Ped,
 };
 use pedigree_graph_core::kinship::{
-    approximate_kinship_csc, generation_kinship_sums, inbreeding, inbreeding_and_ancestor_counts,
-    pair_kinship, Csc,
+    approximate_kinship_csc, founder_contribution_means, generation_kinship_sums, inbreeding,
+    inbreeding_and_ancestor_counts, kinship_csc, pair_kinship, support_values, Csc,
 };
 use pedigree_graph_core::lineage::distinct_ancestor_counts;
 use pedigree_graph_core::relationships::query::{self, Receiver};
@@ -584,5 +584,66 @@ fn an_external_id_named_once_changes_nothing() {
     assert_eq!(
         inbreeding(a.kinship()).expect("inbreeding"),
         inbreeding(b.kinship()).expect("inbreeding")
+    );
+}
+
+/// A pedigree with its structural depth moved by -1, 0 or +1 at some rows.
+fn perturbed_depth() -> impl Strategy<Value = (Ped, Vec<i32>)> {
+    pedigree().prop_flat_map(|ped| {
+        let shift = prop_oneof![12 => Just(0), 1 => Just(-1), 1 => Just(1)];
+        let n = ped.len();
+        (Just(ped), proptest::collection::vec(shift, n))
+    })
+}
+
+/// Every kinship kernel refuses a depth with the same error, or none
+/// (issue #65).  The pairwise walk decides with its own inline predicate
+/// and asks the shared check only for the error, so this is what holds the
+/// two to one contract.
+#[test]
+fn every_kernel_accepts_or_refuses_a_depth_alike() {
+    check(
+        "depth contract",
+        0.2,
+        perturbed_depth(),
+        |(ped, shift), checked| {
+            let b = Built::new(&ped);
+            let depth: Vec<i32> = b.depth.iter().zip(&shift).map(|(d, s)| d + s).collect();
+            let ped = b.kinship_at(&depth);
+            let n = b.len();
+            let rows: Vec<i32> = (0..n as i32).collect();
+            let diagonal: Vec<i64> = (0..=n as i64).collect();
+            let pair = pair_kinship(ped, &rows, &rows).err();
+            let others = [
+                ("pair_kinship, no pair", pair_kinship(ped, &[], &[]).err()),
+                (
+                    "support_values",
+                    support_values(ped, &diagonal, &rows).err(),
+                ),
+                (
+                    "support_values, no entry",
+                    support_values(ped, &vec![0; n + 1], &[]).err(),
+                ),
+                ("kinship_csc", kinship_csc(ped).err()),
+                (
+                    "approximate_kinship_csc",
+                    approximate_kinship_csc(ped, 0.0).err(),
+                ),
+                ("inbreeding", inbreeding(ped).err()),
+                (
+                    "generation_kinship_sums",
+                    generation_kinship_sums(ped, &vec![0.0; n], &vec![0; n], 1).err(),
+                ),
+                (
+                    "founder_contribution_means",
+                    founder_contribution_means(ped, &vec![0; n], 1, &vec![-1; n], 0).err(),
+                ),
+            ];
+            for (name, err) in others {
+                prop_assert_eq!(&err, &pair, "{} against pair_kinship", name);
+            }
+            tally(checked, usize::from(pair.is_some()));
+            Ok(())
+        },
     );
 }

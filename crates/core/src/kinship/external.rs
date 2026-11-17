@@ -20,7 +20,7 @@
 //! to the first [`ExternalFounders::rows`] rows.  A pedigree with no shared
 //! external id borrows the host's columns and costs one scan of them.
 
-use super::depth_order::{check_structural, check_twins};
+use super::depth_order::check_kinship_depth;
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
 use crate::error::Error;
@@ -55,11 +55,10 @@ impl<'a> ExternalFounders<'a> {
     ///
     /// # Errors
     ///
-    /// When a founder is added: [`Error::ValueOutOfRange`] on `depth`, then
-    /// on `twin`, as the pairwise walk reports an unordered depth, at the
-    /// host's row and value (the sweeps check `twin` first, so a pedigree
-    /// wrong in both reports `depth` here and `twin` without a founder),
-    /// [`Error::ArithmeticOverflow`] when the rows and founders
+    /// When a founder is added: [`Error::ValueOutOfRange`] on `depth` or
+    /// `twin` as every kinship kernel reports a depth it cannot use, at the
+    /// host's row and value, so a kernel's error is the same with a founder
+    /// and without one; [`Error::ArithmeticOverflow`] when the rows and founders
     /// together pass int32, and [`Error::AllocationFailed`]
     /// (`kinship_columns`).
     pub fn new(ped: &KinshipPedigree<'a>) -> Result<Self, Error> {
@@ -118,8 +117,7 @@ impl<'a> ExternalFounders<'a> {
         if founders == 0 {
             return Ok(borrowed());
         }
-        check_structural(mother, father, ped.depth())?;
-        check_twins(ped.twin(), ped.depth())?;
+        check_kinship_depth(ped)?;
         if i32::try_from(n + founders).is_err() {
             return Err(Error::ArithmeticOverflow {
                 operation: "kinship_external_founders",
