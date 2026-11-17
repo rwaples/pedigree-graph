@@ -539,7 +539,9 @@ mod tests {
             "inbreeding" => inbreeding(ped).map(|v| v.len()),
             "ancestors" => distinct_ancestor_counts(cols).map(|v| v.len()),
             "descendants" => descendant_path_counts(cols).map(|v| v.len()),
-            "generations" => equivalent_generations(cols).map(|v| v.len()),
+            "generations" => {
+                equivalent_generations(cols, &c.orig_mother, &c.orig_father).map(|v| v.len())
+            }
             _ => founder_contribution_means(ped, &cohort, 4, &column, n).map(|v| v.len()),
         };
         // The floor aims the plant at an input-sized buffer.

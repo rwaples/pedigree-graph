@@ -366,6 +366,35 @@ def test_ne_individual_delta_f_averages_delta_f_over_the_reference_subpopulation
     assert _harmonic_mean(res.ne_per_gen) == pytest.approx(4.843069778788811, abs=1e-9)
 
 
+def test_an_external_parent_is_a_known_ancestor_of_the_delta_f_estimator():
+    """``F`` and equivalent generations count the same ancestors (issue #67).
+
+    Rows 1 and 2 share the external mother 900, 3 is 1's child, 4 is 2's and
+    5 is the child of 1 and 2.  ``F`` takes 900 as a founder, so equivalent
+    generations must count it as a known parent, or the estimator pairs
+    ``F = 1/8`` with one generation too few.  Hand-derived: rows 1 and 2 have
+    one known parent each, 1/2; rows 3 and 4 have ``1/2 + 1/4``; row 5 has
+    ``2 (1/2 + 1/4)``.  The same pedigree with 900 as a row gives the same
+    values and the same estimate.
+    """
+    columns = {
+        "id": np.array([1, 2, 3, 4, 5]),
+        "mother": np.array([900, 900, 1, -1, 1]),
+        "father": np.array([-1, -1, -1, 2, 2]),
+    }
+    as_row = {key: np.append(value, 900 if key == "id" else -1) for key, value in columns.items()}
+    external, with_row = PedigreeGraph.from_frame(columns), PedigreeGraph.from_frame(as_row)
+
+    assert _equivalent_generations(external).tolist() == [0.5, 0.5, 0.75, 0.75, 1.5]
+    assert _equivalent_generations(with_row)[:5].tolist() == [0.5, 0.5, 0.75, 0.75, 1.5]
+
+    reference = np.array([4])
+    res = ne_individual_delta_f(external, reference=reference)
+    delta_f = 1.0 - (1.0 - 0.125) ** (1.0 / 1.5)
+    assert res.ne == pytest.approx(1.0 / (2.0 * delta_f), abs=1e-12)
+    assert res.ne == pytest.approx(ne_individual_delta_f(with_row, reference=reference).ne, abs=1e-12)
+
+
 @pytest.mark.parametrize(("n_per_gen", "n_gens", "seed"), [(60, 12, 7), (200, 16, 3)])
 def test_ne_individual_delta_f_tracks_the_census_size_under_random_mating(n_per_gen, n_gens, seed):
     """Last-cohort reference tracks N on an idealised population, carrying its own upward bias.

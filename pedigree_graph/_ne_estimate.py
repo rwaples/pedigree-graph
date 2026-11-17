@@ -513,8 +513,11 @@ def ne_individual_delta_f(pg: PedigreeGraph, *, reference: object | None = None)
 
     where ``t_i`` is the individual's equivalent complete generations, the sum
     over its known ancestors of ``(1/2)^n`` for meiotic distance ``n``
-    (:func:`_equivalent_generations`).  A row is eligible
-    when ``t_i > 0``: a founder has ``t = 0`` and no rate.  Rows with
+    (:func:`_equivalent_generations`).  An ancestor is known when it has an
+    id, so an external parent counts as one.  A row is eligible
+    when ``t_i > 0``: a row with no parent id has ``t = 0`` and no rate, while
+    a row whose parents are external ids has ``t > 0`` and is eligible with
+    whatever ``F`` it has, 0 unless they are shared.  Rows with
     ``F_i = 1`` are dropped as well, which is this package's guard and not the
     paper's — eq. 2 is finite there and would report ``ΔF_i = 1``.
 

@@ -30,19 +30,33 @@ def _hashes(entry: dict) -> dict[str, str]:
     return {key: record["sha256"] for key, record in entry["keys"].items()}
 
 
+#: Carried keys that no longer reproduce 0.7.1, each a deliberate contract
+#: change.  Issue #67: the kinship matrices of ``external_parents`` have
+#: entries through its shared external parent ids, which 0.7.1 left at zero.
+DEPARTED = {
+    ("external_parents", "approx_support"),
+    ("external_parents", "complete_support"),
+    ("external_parents", "complete_values"),
+}
+
+
 def test_carried_keys_still_equal_their_0_7_1_digests():
-    carried = 0
+    carried, departed = 0, set()
     for name, entry in FIXTURES.items():
         for key, record in entry["keys"].items():
             if record["v0_7_1_sha256"] is None:
                 assert key not in CARRIED_KEYS or key.startswith("complete_"), (name, key)
                 continue
             assert key in CARRIED_KEYS, (name, key)
-            assert record["sha256"] == record["v0_7_1_sha256"], (name, key)
+            if record["sha256"] != record["v0_7_1_sha256"]:
+                departed.add((name, key))
+                continue
             carried += 1
+    assert departed == DEPARTED
     # 17 small fixtures x 7 keys, less deep_inbred_60g's overflowed n_descendants,
-    # plus random_30k's depth, lineage counts, approx support and selection.
-    assert carried == 123
+    # plus random_30k's depth, lineage counts, approx support and selection,
+    # less the departed keys.
+    assert carried == 123 - len(DEPARTED)
 
 
 @pytest.mark.parametrize("name", SMALL)

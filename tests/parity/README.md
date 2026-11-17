@@ -19,7 +19,10 @@ their arrays in one `.npz` each; `random_30k` keeps counts and hashes only.
 Every key in `manifest.json` records its `sha256` and `v0_7_1_sha256`: the
 digest the 0.7.1 baseline (`v0.7.1`, `9469a3c`) held for the same key, or
 `null` for `view_pairs/*`.  All 123 carried digests were equal when the lock was
-captured; `tests/test_structure_golden.py` re-asserts that, replays the small
+captured.  Three have since departed on purpose and are named in the test's
+`DEPARTED`: the matrix supports and values of `external_parents`, which gained
+entries through shared external parent ids (issue #67).
+`tests/test_structure_golden.py` re-asserts the rest, replays the small
 fixtures array for array, and replays `random_30k` by hash under
 `@pytest.mark.slow`.
 

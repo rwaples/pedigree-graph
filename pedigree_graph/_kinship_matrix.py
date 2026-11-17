@@ -119,8 +119,9 @@ class PedigreeMatrixMethods:
         It is a SciPy CSC matrix with float32 data, int32 indices and indptr,
         sorted rows per column, and read-only cached arrays.  Every coefficient
         is bit-identical to :meth:`pair_kinship` for the same graph rows.
-        Values follow represented parent edges alone, so they derive from
-        structural depth and supplied generation labels never enter them.
+        Values follow represented parent edges and shared external parent
+        ids, as :meth:`pair_kinship` does.  They derive from structural depth,
+        and supplied generation labels never enter them.
 
         Returns:
             The complete ``n_individuals × n_individuals`` kinship matrix.

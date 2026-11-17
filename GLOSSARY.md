@@ -46,6 +46,14 @@ _Avoid_: generation label, cohort
 An individual with no represented mother or father, even when known biological parents have IDs external to the represented rows.
 _Avoid_: founder (when biological founder status could be inferred), generation-0 individual
 
+**External founder**:
+An external parent id that two or more rows name, taken as one unrelated,
+non-inbred individual with no row wherever kinship or inbreeding is computed.
+A represented founder can be the child of one. An external id that a single
+row names, or only the two co-twins of an MZ pair, is not one: nothing can be
+related through it.
+_Avoid_: virtual founder, phantom parent, counting it among represented founders
+
 **Represented founder genome**:
 A genome node with no represented parental genome node, so parentless MZ co-twins are two represented founders sharing one ancestry source.
 _Avoid_: founder row, treating MZ co-twins as independent genetic sources
@@ -103,8 +111,8 @@ one path per parent id the two share, so full sibs are joined by two paths
 and half sibs by one. A mated pair of shared ancestors gives two paths, and
 so do one ancestor reached by two routes and two unmated ancestors. An
 external parent id (an id with no row) is a parentless ancestor on every
-path, so it joins half sibs, avuncular pairs and cousins alike; it carries no
-kinship, since `pair_kinship` follows represented rows only.
+path, so it joins half sibs, avuncular pairs and cousins alike, and the
+path carries kinship as it would through a row.
 _Avoid_: line (genealogical sense), connection
 
 **Close relative**:
@@ -176,7 +184,8 @@ _Avoid_: exact kinship, pedigree-expected kinship
 The kinship coefficient the package returns for a particular pair of
 individuals: the value of the pinned float32 recurrence (ADR 0009) over all
 pedigree paths, including inbreeding, MZ co-coalescence (shared genome nodes),
-and duplicate relationship paths such as double cousins. Within one graph the
+duplicate relationship paths such as double cousins, and paths through an
+**external founder**. Within one graph the
 pair and matrix values are bit-identical.
 _Avoid_: nominal kinship, exact kinship, pedigree-specific kinship
 
@@ -194,7 +203,8 @@ _Avoid_: reference population, target cohort, sample
 
 **Equivalent complete generations**:
 The pedigree depth of one individual: the sum over its known ancestors of
-`(1/2)^n` for meiotic distance `n`.
+`(1/2)^n` for meiotic distance `n`. An ancestor is known when it has an id,
+so an external parent counts and its own parents do not.
 _Avoid_: generation number, pedigree completeness, structural depth
 
 **Individual increase in inbreeding**:

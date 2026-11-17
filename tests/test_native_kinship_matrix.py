@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child
+from _support import _PAIRWISE_FIXTURES, CHILD_PRELUDE, _run_child, founder_row_columns
 from conftest import FIXTURE_NAMES, parity_graph
 from oracle.kinship_dp.dp import KinshipDPConfig, _build_kinship_csc, _run_dp_core
 
@@ -42,9 +42,16 @@ def _oracle_csc(graph: PedigreeGraph, threshold: float) -> tuple[bytes, bytes, b
     and the values are the pinned recurrence.  At threshold 0 the DP's own
     values are already exact and are compared as they are.
     """
-    indptr, indices, data = _build_kinship_csc(
-        graph.n_individuals, graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth, threshold
-    )
+    n = graph.n_individuals
+    mother, father, twin, depth = founder_row_columns(graph)
+    indptr, indices, data = _build_kinship_csc(len(depth), mother, father, twin, depth, threshold)
+    if len(depth) > n:
+        # The matrix leaves out the rows and columns of the external founders.
+        column = np.repeat(np.arange(len(depth)), np.diff(indptr))
+        keep = (indices < n) & (column < n)
+        counts = np.bincount(column[keep], minlength=n)
+        indptr = np.concatenate([[0], np.cumsum(counts)]).astype(indptr.dtype)
+        indices, data = indices[keep], data[keep]
     if threshold > 0.0:
         data = _native.kinship_support_values(
             graph._built, graph.depth, indptr.astype(np.int64), indices, threads=thread_budget()
@@ -53,15 +60,18 @@ def _oracle_csc(graph: PedigreeGraph, threshold: float) -> tuple[bytes, bytes, b
 
 
 def _oracle_sums(graph: PedigreeGraph, dense: np.ndarray, n_buckets: int) -> np.ndarray:
+    mother, father, twin, depth = founder_row_columns(graph)
+    # An external founder is in the sentinel bucket, the last, which joins none.
+    founders = np.full(len(depth) - graph.n_individuals, n_buckets - 1, dtype=dense.dtype)
     result = _run_dp_core(
-        graph.n_individuals,
-        graph.mother_rows,
-        graph.father_rows,
-        graph.twin_rows,
-        graph.depth,
+        len(depth),
+        mother,
+        father,
+        twin,
+        depth,
         0.0,
         None,
-        labels=dense,
+        labels=np.concatenate([dense, founders]),
         config=KinshipDPConfig(retire=True, lazy=True, debug_asserts=False),
     )
     # The oracle sizes its accumulator by the largest label present, so an
@@ -140,6 +150,8 @@ def test_a_parentless_row_above_depth_zero_keeps_its_diagonal():
         mother_rows = graph.mother_rows
         father_rows = graph.father_rows
         twin_rows = graph.twin_rows
+        mother_ids = graph.mother_ids
+        father_ids = graph.father_ids
         _built = graph._built
 
     Raised.depth = depth

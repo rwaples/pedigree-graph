@@ -70,6 +70,9 @@ pub struct Native {
     depth: Typed<i32>,
 }
 
+/// A graph's mother ids and father ids, one per row.
+type ParentIds = (Vec<i64>, Vec<i64>);
+
 /// An int64 field's values.
 fn int64(field: &Typed<f64>) -> Vec<i64> {
     field.slice().iter().map(|v| v.to_bits() as i64).collect()
@@ -108,13 +111,18 @@ impl Native {
         }
     }
 
-    fn kinship(&self) -> HostResult<KinshipPedigree<'_>> {
+    /// The mother and father ids, which a kinship input borrows.
+    fn parent_ids(&self) -> ParentIds {
+        (int64(&self.mother_ids), int64(&self.father_ids))
+    }
+
+    fn kinship<'a>(&'a self, ids: &'a ParentIds) -> HostResult<KinshipPedigree<'a>> {
         let columns = GraphColumns {
             mother: self.mother_rows.slice(),
             father: self.father_rows.slice(),
             twin: self.twin_rows.slice(),
         };
-        Ok(columns.kinship(self.depth.slice())?)
+        Ok(columns.kinship(self.depth.slice(), &ids.0, &ids.1)?)
     }
 
     /// The ids at `rows` in the graph's id type, as R vectors of that type.
@@ -513,7 +521,8 @@ pub fn pair_kinship(native: &Robj, seal: &Robj, first: &Robj, second: &Robj) -> 
     // Before the pool, so rejected rows leave the thread budget uncommitted.
     kinship::check_pair_rows(n, &first, &second)?;
     let (_, pool) = package_pool()?;
-    let ped = graph.kinship()?;
+    let ids = graph.parent_ids();
+    let ped = graph.kinship(&ids)?;
     let values = pool.install(|| kinship::pair_kinship(ped, &first, &second))?;
     Ok(Doubles::from_values(values.into_iter().map(f64::from)).into_robj())
 }
@@ -522,7 +531,8 @@ pub fn pair_kinship(native: &Robj, seal: &Robj, first: &Robj, second: &Robj) -> 
 pub fn inbreeding(native: &Robj, seal: &Robj) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
     let (_, pool) = package_pool()?;
-    let ped = graph.kinship()?;
+    let ids = graph.parent_ids();
+    let ped = graph.kinship(&ids)?;
     let (f, _) = kinship::inbreeding_and_ancestor_counts_in(ped, pool)?;
     Ok(Doubles::from_values(f).into_robj())
 }
@@ -531,8 +541,10 @@ pub fn inbreeding(native: &Robj, seal: &Robj) -> HostResult<Robj> {
 /// (0-based `i`, int32 `p`, double `x`) and the ids as dimnames.
 pub fn kinship_matrix(native: &Robj, seal: &Robj, max_nnz: Option<usize>) -> HostResult<Robj> {
     let graph = Native::verified(native, seal)?;
-    let csc =
-        kinship::kinship_csc_upper(graph.kinship()?, max_nnz.unwrap_or(kinship::MAX_CSC_NNZ))?;
+    let ids = graph.parent_ids();
+    let ped = graph.kinship(&ids)?;
+    let csc = kinship::kinship_csc_upper(ped, max_nnz.unwrap_or(kinship::MAX_CSC_NNZ))?;
+    drop(ids);
     let i = Integers::from_values(csc.indices.iter().copied()).into_robj();
     drop(csc.indices);
     let p = Integers::from_values(csc.indptr.iter().copied()).into_robj();

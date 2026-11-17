@@ -48,16 +48,26 @@ impl<'a> GraphColumns<'a> {
         )
     }
 
-    /// The kinship recurrence's input.  Whether `depth` orders the rows is
-    /// checked where a kernel reads it.
+    /// The kinship recurrence's input; `orig_mother` and `orig_father` are
+    /// the parent ids, `-1` when missing, by which the kernels find the
+    /// external parents that rows share
+    /// ([`crate::kinship::ExternalFounders`]).  Whether `depth` orders the
+    /// rows is checked where a kernel reads it.
     ///
     /// # Errors
     ///
     /// [`Error::LengthMismatch`] when `father`, `twin` or `depth` is not as
     /// long as `mother`, then [`Error::ValueOutOfRange`] at the first
-    /// `mother`, `father` or `twin` row outside `-1..n`.
-    pub fn kinship(&self, depth: &'a [i32]) -> Result<KinshipPedigree<'a>, Error> {
-        KinshipPedigree::try_new(self.mother, self.father, self.twin, depth)
+    /// `mother`, `father` or `twin` row outside `-1..n`, then
+    /// [`Error::LengthMismatch`] on `orig_mother` or `orig_father`.
+    pub fn kinship(
+        &self,
+        depth: &'a [i32],
+        orig_mother: &'a [i64],
+        orig_father: &'a [i64],
+    ) -> Result<KinshipPedigree<'a>, Error> {
+        KinshipPedigree::try_new(self.mother, self.father, self.twin, depth)?
+            .with_parent_ids(orig_mother, orig_father)
     }
 
     /// The parents-first sweeps' input.  The sweeps check the parent rows
@@ -94,7 +104,7 @@ mod tests {
     #[test]
     fn kinship_accepts_any_depth_ordering() {
         for depth in [[0, 0, 1, 1], [0, 1, 3, 2]] {
-            let ped = COLUMNS.kinship(&depth).unwrap();
+            let ped = COLUMNS.kinship(&depth, IDS.0, IDS.1).unwrap();
             let got = pair_kinship(ped, &[0, 2], &[2, 3]).unwrap();
             assert!(close(&got, &[0.25, 0.25]), "{got:?}");
         }
@@ -102,7 +112,7 @@ mod tests {
 
     #[test]
     fn a_kinship_walk_refuses_a_child_at_its_parents_depth() {
-        let ped = COLUMNS.kinship(&[0, 0, 1, 0]).unwrap();
+        let ped = COLUMNS.kinship(&[0, 0, 1, 0], IDS.0, IDS.1).unwrap();
         let err = pair_kinship(ped, &[3], &[2]).unwrap_err();
         assert!(matches!(
             err,
@@ -122,7 +132,7 @@ mod tests {
             ..COLUMNS
         };
         for err in [
-            cols.kinship(&[0, 0, 0, 0]).unwrap_err(),
+            cols.kinship(&[0, 0, 0, 0], IDS.0, IDS.1).unwrap_err(),
             cols.relationships(IDS.0, IDS.1).unwrap_err(),
         ] {
             assert!(matches!(
@@ -174,10 +184,11 @@ mod tests {
         use crate::kinship::equivalent_generations;
         use crate::lineage::{descendant_path_counts, distinct_ancestor_counts};
         let kinds = |ped: ParentColumns<'_>| {
+            let no_ids = vec![-1; ped.len()];
             [
                 distinct_ancestor_counts(ped).err(),
                 descendant_path_counts(ped).err(),
-                equivalent_generations(ped).err(),
+                equivalent_generations(ped, &no_ids, &no_ids).err(),
             ]
         };
         let backwards = GraphColumns {

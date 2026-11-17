@@ -157,16 +157,17 @@ def test_a_classified_pair_is_at_least_as_related_as_its_code(columns):
             assert exact.numerator[a][b] >= nominal, (code, a, b)
 
 
-def test_siblings_by_a_shared_external_parent_are_full_sibs_with_zero_kinship():
-    # Pinned so a change to this semantic is deliberate (plan open question 1):
-    # siblings are grouped by original parent id, and a person with only
-    # external parents is a represented founder.
+def test_siblings_by_shared_external_parents_are_full_sibs_with_full_sib_kinship():
+    # Siblings are grouped by original parent id, and an external parent id
+    # that two rows name is a founder of the kinship recurrence (issue #67),
+    # so the label and the kinship agree.
     graph = PedigreeGraph.from_frame(
         {"id": np.array([10, 11]), "mother": np.array([900, 900]), "father": np.array([901, 901])}
     )
     pairs = graph.relationship_pairs(max_degree=1)
     assert _pair_sets(pairs)["FS"] == {(0, 1)}
-    assert graph.pair_kinship(np.array([0]), np.array([1])).tolist() == [0.0]
+    assert graph.pair_kinship(np.array([0]), np.array([1])).tolist() == [0.25]
+    assert graph.inbreeding().tolist() == [0.0, 0.0]
 
 
 #: Two half connections of one shape (issue #47), each as (id, mother, father)

@@ -1,6 +1,7 @@
 # ADR 0008: `inbreeding()` is the Meuwissen–Luo walk over the genome-node pedigree
 
-**Status:** accepted
+**Status:** accepted; amended 2026-11-12 (issue #67: shared external parent
+ids are genome nodes of the walk)
 **Date:** 2026-09-04
 **Context:** resolves issue #8, a blocker named by ADR 0006 for the 0.8.0 kinship slice
 
@@ -71,6 +72,24 @@ without loops, founder twins, and inbred twins.
   previous serial walk's bits. The sharing key is the graph-row parents, not
   the genome nodes: children of co-twin mothers share genome parents but can
   count different ancestor rows.
+
+## Amendment: shared external parent ids (issue #67)
+
+The walk follows the founders ADR 0009 now gives the recurrence: an external
+parent id that two or more rows name is a parentless genome node with
+`D = 1`, so the child of two rows that share an external mother has
+`F = 1/8`, as it has when the mother is a row. `F = 2·phi(i, i) − 1` holds as
+before. The founders sit at depth 0 with every row one deeper, so a walk
+meets them last.
+
+The distinct strict ancestor counts the walk returns still count rows: a
+walk leaves each founder it touches out of the count, and a row whose only
+parent node is an external founder has none. They stay equal to the ancestor-set
+sweep of `lineage.rs`, which never sees an external id.
+
+A row with one parent row and one external founder is now walked, where the
+one-parent shortcut used to give it `F = 0` without a walk. A pedigree with
+no shared external id runs the walk as before, to the bit.
 
 ## Alternatives considered
 

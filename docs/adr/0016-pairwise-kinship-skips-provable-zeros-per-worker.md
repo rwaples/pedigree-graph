@@ -56,6 +56,14 @@ allocation family, `kinship_signatures`, so the seam tests of
 > from one 16-byte record built once per call and shared by its workers,
 > reserved through its own family, `kinship_columns`, for the same reason.
 
+> Amended 2026-11-12 (issue #67): the walk runs on the pedigree's rows
+> followed by its external founders (ADR 0009), and the signatures, packed
+> columns and memo row vectors are sized by both. A founder has its own
+> hashed bit, which every row below it inherits, so disjoint signatures still
+> prove a zero: two rows that share only an external parent overlap in its
+> bit. An external id that one row or one MZ pair names has no founder and
+> no bit, and nothing is related through it.
+
 ## Measurements
 
 Whole `relationship_kinship_matrix` build and the fill inside it, medians of

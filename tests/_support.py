@@ -187,6 +187,63 @@ EXACT_DEPTH_SUM = 22
 EXACT_F_DEPTH = 25
 
 
+def founder_row_columns(graph: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """The mother, father, twin and depth columns the kinship recurrence runs on (ADR 0009, issue #67).
+
+    They are the graph's rows, then one parentless row per external parent id
+    that two or more rows name (the co-twins of an MZ pair counting once), in
+    ascending id; those rows' parent rows point at it, it sits at depth 0, and
+    every graph row is one deeper.  A graph
+    with no such id gets its own columns back.  A row-space oracle fed these
+    gives the graph's kinship on the first ``n_individuals`` rows.
+    """
+    n = graph.n_individuals
+    parents = [
+        (np.array(graph.mother_rows), np.asarray(graph.mother_ids)),
+        (np.array(graph.father_rows), np.asarray(graph.father_ids)),
+    ]
+    # A co-twin with the higher row adds nothing to the count of its twin's id.
+    twin = np.asarray(graph.twin_rows)
+    genome = (twin < 0) | (twin > np.arange(n))
+    external = np.concatenate([ids[(rows < 0) & (ids >= 0) & genome] for rows, ids in parents])
+    named, count = np.unique(external, return_counts=True)
+    shared = named[count >= 2]
+    if len(shared) == 0:
+        return graph.mother_rows, graph.father_rows, graph.twin_rows, graph.depth
+    absent = np.full(len(shared), -1, dtype=np.int32)
+    columns = []
+    for rows, ids in parents:
+        at = np.minimum(np.searchsorted(shared, ids), len(shared) - 1)
+        founder = (rows < 0) & (shared[at] == ids)
+        rows[founder] = n + at[founder]
+        columns.append(np.concatenate([rows, absent]))
+    twin = np.concatenate([np.asarray(graph.twin_rows), absent])
+    depth = np.concatenate([np.asarray(graph.depth) + 1, np.zeros(len(shared), dtype=np.int32)])
+    return columns[0], columns[1], twin, depth.astype(np.int32)
+
+
+def every_external_parent_a_row(graph: PedigreeGraph) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Mother rows, father rows and structural depth with every external parent id a parentless row after the graph's.
+
+    The pedigree equivalent complete generations are counted on: an external
+    parent is known, its own parents are not.  Unlike
+    :func:`founder_row_columns` it takes every external id, named once or not.
+    """
+    n = graph.n_individuals
+    parents = [
+        (np.array(graph.mother_rows), np.asarray(graph.mother_ids)),
+        (np.array(graph.father_rows), np.asarray(graph.father_ids)),
+    ]
+    external = np.unique(np.concatenate([ids[(rows < 0) & (ids >= 0)] for rows, ids in parents]))
+    absent = np.full(len(external), -1, dtype=np.int32)
+    columns = []
+    for rows, ids in parents:
+        named = (rows < 0) & (ids >= 0)
+        rows[named] = n + np.searchsorted(external, ids[named])
+        columns.append(np.concatenate([rows, absent]))
+    return columns[0], columns[1], np.asarray(structural_depth(columns[0], columns[1]))
+
+
 def float32_ulp_distance(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     """Integer-view ULP distance between two nonnegative float32 arrays."""
     ia = np.asarray(a, dtype=np.float32).view(np.int32).astype(np.int64)

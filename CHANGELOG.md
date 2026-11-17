@@ -4,6 +4,77 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Breaking (kinship): a shared external parent id is a founder of the
+  recurrence** (issue #67, ADR 0009 as amended; ADR 0008, 0016, 0018).
+  `pair_kinship`, `kinship_matrix`, `approximate_kinship_matrix`,
+  `relationship_kinship_matrix`, `inbreeding`, `mean_kinship_by_generation`
+  and every Ne estimator built on them followed parent rows only, so they
+  gave 0 through an external parent id (an id with no row), while
+  classification has counted those ids on every path since 0.15.0. Two rows
+  sharing the external mother 900 were `MHS` with kinship 0, their children
+  `H1C` with kinship 0, and a child of the two had `F = 0`. An external
+  parent id that two or more rows name is now a founder: unrelated,
+  non-inbred, with no row in any output. The same rows give 1/8, 1/32 and
+  `F = 1/8`, the values the pedigree gives with 900 as a row. Kinship and
+  `F` among the rows equal those of the pedigree with every external id made
+  a founder row (bit for bit while float32 is exact, inside the ADR 0009
+  envelope beyond). An external id that one row names, or only the two
+  co-twins of an MZ pair, changes nothing, and a pedigree with no other
+  shared external id returns the same bits as before.
+  Values only rise. The support of `approximate_kinship_matrix` above
+  threshold 0 is still the one the graph's own sweep order gives. The
+  distinct ancestor counts and founder contributions still read
+  represented parents only. Each kinship call on a pedigree with external
+  parent ids also pays a fixed cost to find the shared ones (ADR 0009).
+
+- **Breaking (scientific): equivalent complete generations count external
+  parents** (issue #67). An external parent id is a known parent with no
+  known ancestry and adds 1/2, the value it has as a founder row. It was
+  counted as unknown, which was consistent while `F` ignored external ids;
+  with `F` now counting the shared ones, `ne_individual_delta_f` would
+  have paired a larger `F` with too few generations and read low (4.0
+  against 5.87 on the issue's example with reference row 5). Every external
+  id counts, named once or not, so equivalent generations rise, and
+  `ne_individual_delta_f` and its `mean_eqg_per_gen` change, on any
+  pedigree with an external parent id; a pedigree with none is unchanged.
+  A row whose parents are external ids is now eligible for the estimator
+  (`t > 0`) with `F = 0`, so a reference set holding such rows gives a
+  larger Ne than it did. **Consumers:** pedsum computes its own `ecg`
+  column from represented parents (`pedsum/sections.py`), which now
+  differs from this value on any pedigree with an external parent id.
+  **Rust hosts:** `kinship::equivalent_generations` takes the parent ids.
+  **Consumers:** a view computes on its full graph, so only graphs built
+  from a frame whose parents are missing rows change (a trimmed or subset
+  pedigree, registry data); simACE's full pedigrees have `-1` founders and
+  do not.
+  - fitACE_tetraher `build_pairs` (`adapter.py:149-150, 183`): the
+    external-joined pairs 0.15.0 added now enter the regression with their
+    `r_A`, not 0, and agree with Falconer's nominal kinship.
+  - PA-FGRS and the sparse GRM (fitACE `kinship/`,
+    `relationship_kinship_matrix`): entries through a shared external id
+    are now nonzero, so relatives joined that way carry weight.
+  - The Ne estimators (`effective_size`, simACE
+    `analysis/effective_size.py`): mean kinship and `F` rise on such
+    pedigrees, so inbreeding and coancestry Ne fall.
+  - pedsum's `kinship` column now agrees with its relationship label on
+    these pairs.
+  - `connected_component_ids` is unchanged, so kinship can now be nonzero
+    between components. fitACE writes those components as the `.grm.id`
+    family id (`fitace/kinship/grm_io.py`, `founder_family_ids`), which
+    LDAK and TetraHer read as family blocks: a GRM from a trimmed pedigree
+    can have entries between two family ids.
+  - **Rust hosts:** `GraphColumns::kinship` takes the parent ids
+    (`kinship(depth, orig_mother, orig_father)`). A host that reads the
+    kinship columns itself beside a `KinshipIndex`, as pg-phenotype's
+    PA-FGRS preparation does (`pafgrs/prep.rs`), must read the extended
+    pedigree, or its own recurrence and the walker disagree.
+    `KinshipPedigree`'s column accessors are crate-private for that reason:
+    take `mother()`, `father()`, `twin()` and `depth()` from
+    `ExternalFounders::new(&ped)?`, build the index on its `pedigree()`,
+    and cut every per-row output to its `rows()`.
+
 ## v0.15.0
 
 - **Breaking (relationships): cousin paths count shared external parent

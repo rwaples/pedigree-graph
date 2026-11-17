@@ -9,6 +9,7 @@
 //! expression the 0.9.3 NumPy and Numba code used, in the same order.
 
 use super::depth_order::{readable, unread, Buckets, DepthOrder, ParentsFirst};
+use super::external::ExternalFounders;
 use super::inbreeding::{genome_node, GenomePedigree};
 use super::pairwise::KinshipPedigree;
 use crate::alloc::{self, Family};
@@ -20,20 +21,35 @@ use crate::relationships::check_column_length;
 /// every graph row: `sum over known parents p of (1/2 + eqg[p] / 2)`, so a
 /// founder is 0 and a row with two founder parents is 1.
 ///
+/// A parent is known when it has an id.  `orig_mother` and `orig_father` are
+/// the parent ids, `-1` when missing; an external parent, an id with no row,
+/// is a known parent with no known ancestry and adds 1/2.  That is the value
+/// the pedigree gives with every external id made a founder row, the
+/// pedigree `F` is computed on (ADR 0009), so the two agree about what an
+/// ancestor is.
+///
 /// # Errors
 ///
 /// When the rows need sorting, [`Error::LengthMismatch`] or
 /// [`Error::ValueOutOfRange`] on `depth` as
 /// [`crate::lineage::distinct_ancestor_counts`] reports them;
-/// [`Error::AllocationFailed`] for any buffer.
-pub fn equivalent_generations(ped: ParentColumns<'_>) -> Result<Vec<f64>, Error> {
+/// [`Error::LengthMismatch`] when `orig_mother` or `orig_father` is not one
+/// per row; [`Error::AllocationFailed`] for any buffer.
+pub fn equivalent_generations(
+    ped: ParentColumns<'_>,
+    orig_mother: &[i64],
+    orig_father: &[i64],
+) -> Result<Vec<f64>, Error> {
+    check_column_length("orig_mother", orig_mother.len(), ped.len())?;
+    check_column_length("orig_father", orig_father.len(), ped.len())?;
+    let ids = (orig_mother, orig_father);
     match ped.parents_first(Family::LineageOutput) {
         ParentsFirst::Rows { depth_error } => ped.ordered(
-            generations_in::<false>(&ped, 0..ped.len() as u32)?,
+            generations_in::<false>(&ped, ids, 0..ped.len() as u32)?,
             depth_error,
         ),
         ParentsFirst::DepthMajor(sweep) => {
-            Ok(generations_in::<true>(&ped, sweep.order.iter().copied())?.0)
+            Ok(generations_in::<true>(&ped, ids, sweep.order.iter().copied())?.0)
         }
     }
 }
@@ -41,6 +57,7 @@ pub fn equivalent_generations(ped: ParentColumns<'_>) -> Result<Vec<f64>, Error>
 /// The values, and whether every parent met was readable ([`readable`]).
 fn generations_in<const CHECKED: bool>(
     ped: &ParentColumns<'_>,
+    (orig_mother, orig_father): (&[i64], &[i64]),
     rows: impl Iterator<Item = u32>,
 ) -> Result<(Vec<f64>, bool), Error> {
     let (mother, father) = (ped.mother(), ped.father());
@@ -50,10 +67,16 @@ fn generations_in<const CHECKED: bool>(
         let i = row as usize;
         let parents = readable::<CHECKED, _>(&eqg, row);
         let mut v = 0.0f64;
-        for p in [mother[i], father[i]] {
+        for (p, id) in [(mother[i], orig_mother[i]), (father[i], orig_father[i])] {
             match parents.get(p as usize) {
                 Some(&e) => v += 0.5 + 0.5 * e,
-                None => unread(p, &mut ordered),
+                None => {
+                    unread(p, &mut ordered);
+                    // An external parent: known, with no known ancestry.
+                    if p == -1 && id >= 0 {
+                        v += 0.5;
+                    }
+                }
             }
         }
         eqg[i] = v;
@@ -245,6 +268,29 @@ pub fn generation_kinship_sums(
             maximum: n_buckets as i64,
         });
     }
+    // An external founder is in no bucket and is not inbred.
+    let founders = ExternalFounders::of(&ped, SUMS)?;
+    let more = founders.founders();
+    if more == 0 {
+        return kinship_sums(ped, inbreeding, labels, n_buckets);
+    }
+    let not_inbred = std::iter::repeat_n(0.0, more);
+    let all_f = alloc::collect(inbreeding.iter().copied().chain(not_inbred), SUMS)?;
+    let no_bucket = std::iter::repeat_n(n_buckets as i32, more);
+    let all_labels = alloc::collect(labels.iter().copied().chain(no_bucket), SUMS)?;
+    kinship_sums(founders.pedigree(), &all_f, &all_labels, n_buckets)
+}
+
+/// [`generation_kinship_sums`] on checked inputs, `ped` with no external
+/// parent left to find.
+fn kinship_sums(
+    ped: KinshipPedigree<'_>,
+    inbreeding: &[f64],
+    labels: &[i32],
+    n_buckets: usize,
+) -> Result<Vec<f64>, Error> {
+    const SUMS: Family = Family::KinshipSums;
+    let n = ped.len();
     let genome = GenomePedigree::build(&ped, SUMS)?;
     let d_var = genome.mendelian_variances(inbreeding, SUMS)?;
     let (twin, depth) = (ped.twin(), ped.depth());
@@ -309,8 +355,16 @@ mod tests {
     fn equivalent_generations_count_known_generations() {
         // 0..3 found; 4 = (0, 1), 5 = (2, 3), 6 = (4, 5), 7 = (4, -1).
         let (m, f) = ([-1, -1, -1, -1, 0, 2, 4, 4], [-1, -1, -1, -1, 1, 3, 5, -1]);
-        let eqg = equivalent_generations(ParentColumns::try_new(&m, &f, None).unwrap()).unwrap();
+        let ped = ParentColumns::try_new(&m, &f, None).unwrap();
+        let ids = (m.map(i64::from), f.map(i64::from));
+        let eqg = equivalent_generations(ped, &ids.0, &ids.1).unwrap();
         assert_eq!(eqg, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 2.0, 1.0]);
+        // Rows 0 and 1 name the external mother 900, and row 7 an external
+        // father 800: each is half a generation, passed on by halves.
+        let mother_ids = [900, 900, -1, -1, 0, 2, 4, 4];
+        let father_ids = [-1, -1, -1, -1, 1, 3, 5, 800];
+        let eqg = equivalent_generations(ped, &mother_ids, &father_ids).unwrap();
+        assert_eq!(eqg, vec![0.5, 0.5, 0.0, 0.0, 1.5, 1.0, 2.25, 1.75]);
     }
 
     #[test]

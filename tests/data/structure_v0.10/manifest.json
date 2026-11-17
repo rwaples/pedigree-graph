@@ -803,8 +803,8 @@
     },
     "external_parents": {
       "counts": {
-        "approx_support_upper_nnz": 15,
-        "complete_upper_nnz": 15,
+        "approx_support_upper_nnz": 24,
+        "complete_upper_nnz": 24,
         "view_pairs/1C": 0,
         "view_pairs/1C1R": 0,
         "view_pairs/1C2R": 0,
@@ -833,15 +833,15 @@
       "input_hash": "0df4fd1667577121e2f4e0339b3e4f7da1fdbca3a82cdb8bc0292ec0fb8c76c5",
       "keys": {
         "approx_support": {
-          "sha256": "32bdcd10cbb00c64f34f4558b2e1f9592d2e55b70e2154f761a0d3ce16f52a9c",
+          "sha256": "66ff930892bc6f4e9383d33a7fe28c04bf5768a920f8b075cfbce607a3edae04",
           "v0_7_1_sha256": "32bdcd10cbb00c64f34f4558b2e1f9592d2e55b70e2154f761a0d3ce16f52a9c"
         },
         "complete_support": {
-          "sha256": "32bdcd10cbb00c64f34f4558b2e1f9592d2e55b70e2154f761a0d3ce16f52a9c",
+          "sha256": "66ff930892bc6f4e9383d33a7fe28c04bf5768a920f8b075cfbce607a3edae04",
           "v0_7_1_sha256": "32bdcd10cbb00c64f34f4558b2e1f9592d2e55b70e2154f761a0d3ce16f52a9c"
         },
         "complete_values": {
-          "sha256": "2d24a8b50cac178a0d70a2bcc256267f3ba81cc5ba535081bef2328d58b96c29",
+          "sha256": "b62731d68fadb71dd14ffa4a391a53161f3deba7b5297d5ef944691ffdfb9690",
           "v0_7_1_sha256": "2d24a8b50cac178a0d70a2bcc256267f3ba81cc5ba535081bef2328d58b96c29"
         },
         "depth": {
@@ -2855,7 +2855,7 @@
   },
   "generator_version": 1,
   "max_degree": 5,
-  "package_commit": "7c533dd81c245ee996bd73af137e4bd1462c0404-dirty",
-  "package_version": "0.14.0",
+  "package_commit": "1561125cfa6613c88518e4b01af7678de380468c",
+  "package_version": "0.15.0",
   "subsample_seed": 7
 }

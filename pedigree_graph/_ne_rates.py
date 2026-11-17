@@ -220,7 +220,10 @@ def _equivalent_generations(pg: PedigreeGraph) -> np.ndarray:
     """Maignel 1996 equivalent complete generations per graph row, read-only float64.
 
     ``EqG_i = Σ over known parents p of (1/2 + EqG_p / 2)``: 0 for a founder,
-    1 with two known founder parents.  A Rust core sweep over structural depth.
+    1 with two known founder parents.  A parent is known when it has an id:
+    an external parent adds 1/2, as it does as a founder row, so EqG counts
+    the ancestors ``F`` is computed over (ADR 0009).  A Rust core sweep over
+    structural depth.
     """
     return _own_native(_native.equivalent_generations(pg._built, sweep_depth(pg)), np.float64)
 
