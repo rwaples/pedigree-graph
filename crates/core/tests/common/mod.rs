@@ -210,8 +210,14 @@ impl Built {
     }
 
     pub fn kinship(&self) -> KinshipPedigree<'_> {
+        self.kinship_at(&self.depth)
+    }
+
+    /// The kinship input with `depth` in place of the structural depth,
+    /// unchecked: the kernels check it.
+    pub fn kinship_at<'a>(&'a self, depth: &'a [i32]) -> KinshipPedigree<'a> {
         self.columns()
-            .kinship(&self.depth, &self.graph.mother_ids, &self.graph.father_ids)
+            .kinship(depth, &self.graph.mother_ids, &self.graph.father_ids)
             .expect("built columns are a kinship input")
     }
 

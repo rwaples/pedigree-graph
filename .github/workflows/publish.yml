@@ -242,19 +242,7 @@ jobs:
 
       - name: Check the tarball with the network disabled
         working-directory: dist-r
-        run: |
-          # ADR 0007: the tarball compiles offline. A network namespace drops
-          # every interface; the check itself runs as the runner user. Both
-          # sudos keep the environment, or R_LIBS_USER (where setup-r
-          # installed testthat and Matrix) is lost.
-          sudo --preserve-env unshare --net -- sudo --preserve-env -u "$(id -un)" \
-            env _R_CHECK_CRAN_INCOMING_REMOTE_=false \
-            "$(command -v R)" CMD check --as-cran --no-manual \
-            "pedigreegraph_${{ needs.check-version.outputs.version }}.tar.gz"
-          if grep -q '^Status:.*\(ERROR\|WARNING\)' pedigreegraph.Rcheck/00check.log; then
-            echo "::error::R CMD check reported an ERROR or WARNING"
-            exit 1
-          fi
+        run: ../tools/r_check_offline.sh "pedigreegraph_${{ needs.check-version.outputs.version }}.tar.gz"
 
       - name: Upload the tarball
         uses: actions/upload-artifact@v7

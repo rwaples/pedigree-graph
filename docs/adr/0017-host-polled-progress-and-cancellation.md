@@ -176,7 +176,10 @@ budget, copies its inputs and spawns the engine call on the package pool
 (`ThreadPool::spawn`). It returns an `ExternalPtr` handle. `.pg_watch()` in
 `r/R/progress.R` then loops: `.native_wait(handle, tick)` blocks until the
 job ends or a tick (1 s) passes, `Sys.sleep(0)` lets R raise a pending
-Ctrl-C or time limit with its own condition class, and the reporter runs.
+Ctrl-C or time limit with its own condition class, also on the tick the job
+finishes, and the reporter runs. Windows sleeps 1 ms instead: its
+`Sys.sleep()` rounds to whole milliseconds and checks for events only after
+sleeping, so `Sys.sleep(0)` there checks nothing.
 `.native_collect()` builds the result on the R thread. An `on.exit` calls
 `.native_cancel()`, so Ctrl-C, a time limit or an error from the callback
 unwinds the loop natively and the cancel joins the job. Nothing is

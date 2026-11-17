@@ -244,6 +244,10 @@ test_that("progress must be TRUE, FALSE or a function, and its default is the op
 })
 
 test_that("Ctrl-C interrupts a long call, and the next call works", {
+  # kill_soon sends SIGINT with sh's kill, which Windows lacks, so Ctrl-C on
+  # Windows is checked by hand (an 8-generation relationship_counts stopped at
+  # once, 2026-11-17); the time-limit test below covers the same event check.
+  skip_on_os("windows")
   out <- run_rscript(c(
     child_code,
     "configure_threads(1)",
@@ -265,6 +269,10 @@ test_that("Ctrl-C interrupts a long call, and the next call works", {
 })
 
 test_that("an uncaught interrupt halts Rscript", {
+  # kill_soon sends SIGINT with sh's kill, which Windows lacks, so Ctrl-C on
+  # Windows is checked by hand (an 8-generation relationship_counts stopped at
+  # once, 2026-11-17); the time-limit test below covers the same event check.
+  skip_on_os("windows")
   out <- suppressWarnings(run_rscript(c(
     child_code,
     "configure_threads(1)",
@@ -351,6 +359,20 @@ test_that("cancel is a no-op twice and after collect; a second collect is refuse
   expect_null(.pg_call(.native_cancel(running)))
   expect_true(.native_wait(running, 0.01)$finished)
   expect_pg_error(.pg_call(.native_collect(running)), "usage")
+})
+
+test_that("events are serviced on the tick a job finishes, before its result is collected", {
+  scripted <- hook("scripted_job_for_test")
+  local_mocked_bindings(.pg_tick = function() 0.02, .package = "pedigreegraph")
+  handle <- .Call(scripted)
+  on.exit(.native_cancel(handle))
+  .Call(hook("release_for_test"))
+  while (!.native_wait(handle, 0.02)$finished) NULL
+  # The job has finished, so the first wait in .pg_watch() reports it finished:
+  # a pending Ctrl-C or time limit must still be raised there.
+  local_mocked_bindings(.pg_service_events = function() stop("serviced"),
+                        .package = "pedigreegraph")
+  expect_error(.pg_watch(handle, NULL), "serviced")
 })
 
 test_that("a bad tick or handle is a usage error", {

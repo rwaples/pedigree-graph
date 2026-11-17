@@ -118,15 +118,87 @@ jobs:
 
       - name: Check the tarball with the network disabled
         working-directory: dist-r
+        run: ../tools/r_check_offline.sh "$(ls pedigreegraph_*.tar.gz)"
+
+      - name: Keep the source tarball for the Windows job
+        uses: actions/upload-artifact@v7
+        with:
+          name: r-tarball
+          path: dist-r/pedigreegraph_*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  r-windows:
+    # CRAN's R with Rtools builds through src/Makevars.win, for the GNU target.
+    # conda-forge's R on Windows is covered by nordic-geno-epimight's Windows
+    # workflow, which builds this package into its pixi environment.
+    name: R binding on Windows (CRAN R, Rtools)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      # testthat's progress reporter quits after 10 failures; report them all.
+      TESTTHAT_MAX_FAILS: Inf
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Use the MinGW Rust host, which needs no Visual Studio
         run: |
-          # ADR 0007: the tarball compiles offline. A network namespace drops
-          # every interface; the check itself runs as the runner user. Both
-          # sudos keep the environment, or R_LIBS_USER (where setup-r
-          # installed testthat and Matrix) is lost.
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+          rustup default stable-x86_64-pc-windows-gnu
+          rustc -vV
+
+      - name: Install the R dependencies
+        run: Rscript -e 'install.packages(c("Matrix", "testthat"))'
+
+      - name: Test the checkout build with the test hooks
+        shell: bash
+        env:
+          PG_CARGO_FEATURES: test-hooks
+          PEDIGREE_GRAPH_REQUIRE_TEST_HOOKS: "1"
+        run: |
+          R CMD INSTALL --no-multiarch --preclean r
+          Rscript -e 'testthat::test_local("r", stop_on_failure = TRUE)'
+
+  r-windows-tarball:
+    # The r job's source tarball, built offline from its vendored crates on
+    # Windows; only this check waits for the Linux job.
+    name: R source tarball on Windows (CRAN R, Rtools)
+    needs: r
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Use the MinGW Rust host, which needs no Visual Studio
+        run: |
+          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
+          rustup default stable-x86_64-pc-windows-gnu
+          rustc -vV
+
+      - name: Install the R dependencies
+        run: Rscript -e 'install.packages(c("Matrix", "testthat", "withr"))'
+
+      - name: Get the source tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: r-tarball
+          path: dist-r
+
+      - name: Check the tarball
+        # Offline in the sense that matters: the vendored build passes
+        # --offline to cargo. The runner has no network namespace to drop.
+        working-directory: dist-r
+        shell: bash
+        run: |
           tarball="$(ls pedigreegraph_*.tar.gz)"
-          sudo --preserve-env unshare --net -- sudo --preserve-env -u "$(id -un)" \
-            env _R_CHECK_CRAN_INCOMING_REMOTE_=false \
-            "$(command -v R)" CMD check --as-cran --no-manual "$tarball"
+          _R_CHECK_CRAN_INCOMING_REMOTE_=false R CMD check --no-manual "$tarball"
           if grep -q '^Status:.*\(ERROR\|WARNING\)' pedigreegraph.Rcheck/00check.log; then
             echo "::error::R CMD check reported an ERROR or WARNING"
             exit 1

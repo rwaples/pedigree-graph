@@ -6,6 +6,22 @@ live on the corresponding GitHub release pages.
 
 ## Unreleased
 
+- **Breaking (core API): kinship kernels check a depth in one order**
+  (issue #65). Every kinship kernel checks first that the depth orders the
+  parents, then that MZ co-twins name each other and share a depth. On a
+  pedigree with no shared external parent id, a depth wrong in both ways got
+  the co-twin error from the matrices, `inbreeding` and
+  `generation_kinship_sums`, and the parent-ordering error, at another
+  `position`, from `pair_kinship`; every kernel now reports the parent
+  ordering. `founder_contribution_means` now refuses co-twins at two depths,
+  which it accepted because it reads no twin; its values are unchanged. And
+  `pair_kinship`, the view `pair_kinship` and `support_values` check the
+  depth when asked for no pair or support entry, where they returned empty
+  unchecked; the check reads the columns once and allocates nothing. Only
+  a depth handed to the core or the `_native` bindings directly can fail
+  either check; `PedigreeGraph` and the R binding pass the structural depth,
+  which passes both.
+
 - **Performance: the cousin products share their downward levels** (issue
   #66). At `max_degree=5` a row walked the rows below its ancestors once per
   cousin product, 16 hops where the distinct levels need 9, and merged the
