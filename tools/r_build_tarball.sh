@@ -39,7 +39,7 @@ REPOSITORY="$(workspace_key repository)"
 
 # The package, without build products.
 mkdir -p "$PKG"
-tar -C "$REPO/r" --exclude=src/rust/target --exclude='src/*.o' --exclude='src/*.so' --exclude='src/*.dll' \
+tar -C "$REPO/r" --exclude=src/rust/target --exclude='src/*.o' --exclude='src/*.so' \
   --exclude=src/.cargo -cf - . | tar -C "$PKG" -xf -
 
 # The core: its library sources only, keys the workspace supplied written out,

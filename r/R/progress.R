@@ -80,7 +80,8 @@
     state <- .pg_call(.native_wait(handle, .pg_tick()), call = call)
     # Services pending events: R raises a pending Ctrl-C or time limit here,
     # which a loop of .Call()s alone never does. A finished call checks too,
-    # so one that lands in the last tick stops the call, not later code.
+    # so one pending at the last tick stops the call; one that arrives while
+    # .native_collect() builds the result is raised by R's next event check.
     Sys.sleep(.pg_event_sleep)
     if (state$finished) break
     if (!is.null(report)) report(state)
