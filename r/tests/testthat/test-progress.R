@@ -359,6 +359,20 @@ test_that("cancel is a no-op twice and after collect; a second collect is refuse
   expect_pg_error(.pg_call(.native_collect(running)), "usage")
 })
 
+test_that("events are serviced on the tick a job finishes, before its result is collected", {
+  scripted <- hook("scripted_job_for_test")
+  local_mocked_bindings(.pg_tick = function() 0.02, .package = "pedigreegraph")
+  handle <- .Call(scripted)
+  on.exit(.native_cancel(handle))
+  .Call(hook("release_for_test"))
+  while (!.native_wait(handle, 0.02)$finished) NULL
+  # The job has finished, so the first wait in .pg_watch() reports it finished:
+  # a pending Ctrl-C or time limit must still be raised there.
+  local_mocked_bindings(.pg_service_events = function() stop("serviced"),
+                        .package = "pedigreegraph")
+  expect_error(.pg_watch(handle, NULL), "serviced")
+})
+
 test_that("a bad tick or handle is a usage error", {
   scripted <- hook("scripted_job_for_test")
   handle <- .Call(scripted)
