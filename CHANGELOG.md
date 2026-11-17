@@ -4,7 +4,7 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
-## Unreleased
+## v0.16.0
 
 - **Breaking (core API): kinship kernels check a depth in one order**
   (issue #65). Every kinship kernel checks first that the depth orders the
@@ -102,6 +102,16 @@ live on the corresponding GitHub release pages.
     take `mother()`, `father()`, `twin()` and `depth()` from
     `ExternalFounders::new(&ped)?`, build the index on its `pedigree()`,
     and cut every per-row output to its `rows()`.
+
+- **R: builds on Windows.** `src/Makevars.win` builds the crate for
+  `x86_64-pc-windows-gnu`, which MinGW gcc links under both Rtools and
+  conda-forge's R, from a checkout or the source tarball (whose vendored
+  crates `tools/vendor_config.R` unpacks without `tar`). The Rust host must
+  be windows-gnu unless Visual Studio Build Tools are installed; the build
+  prints the rustup commands that switch to it. Ctrl-C and time limits now
+  interrupt a long call on Windows, where they waited for it to finish. A
+  new `r-windows` CI job builds and tests the checkout and checks the
+  tarball under CRAN's R and Rtools.
 
 ## v0.15.0
 
