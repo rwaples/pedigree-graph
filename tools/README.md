@@ -42,6 +42,12 @@ first path assertion.
 - `r_parity.py` with `r_parity.R` — runs the larger fixtures and the simACE
   study pedigrees through both hosts and compares every product byte for byte.
 
+## Formal verification
+
+- The TLA+ models of the watched relationship calls (ADR 0017) live in the
+  private companion repo formal-validate; `tests/test_watched_calls_conformance.py`
+  ties them to this code.
+
 ## Profiling
 
 - `pg_tskit_profile.py` — fresh-process time and RSS for compact views and
