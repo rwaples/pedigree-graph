@@ -5,7 +5,8 @@
 **Context:** issue #37 ("relationship_counts gives no progress feedback on
 long runs"). Plan: simACE `plans/pedigree-graph-37-progress.md`
 (session-local draft). Amended the same day for issue #39 (the R binding;
-plan `plans/pedigree-graph-39-r-progress.md`, session-local draft). Amends ADR 0006 (a `progress=` keyword and the
+plan `plans/pedigree-graph-39-r-progress.md`, session-local draft). Amended
+2026-11-19 for issue #68 (the R cancel guard). Amends ADR 0006 (a `progress=` keyword and the
 `RelationshipProgress` root export). Keeps ADR 0007's host-neutral core.
 
 ## Context
@@ -180,12 +181,39 @@ Ctrl-C or time limit with its own condition class, also on the tick the job
 finishes, and the reporter runs. Windows sleeps 1 ms instead: its
 `Sys.sleep()` rounds to whole milliseconds and checks for events only after
 sleeping, so `Sys.sleep(0)` there checks nothing.
-`.native_collect()` builds the result on the R thread. An `on.exit` calls
-`.native_cancel()`, so Ctrl-C, a time limit or an error from the callback
-unwinds the loop natively and the cancel joins the job. Nothing is
-re-signalled and no FFI is declared by hand. The cancel bound is the
-Python one: at most one tick, plus each worker's current 64 rows or
+`.native_collect()` builds the result on the R thread. Ctrl-C, a time
+limit or an error from the callback unwinds the loop natively, and the
+cancel guard joins the job. Nothing is re-signalled. The cancel bound is
+the Python one: at most one tick, plus each worker's current 64 rows or
 uninterruptible step.
+
+**The cancel guard (issue #68).** `.pg_run()` calls
+`.External(pg_run_guarded, start, watch)` (`r/src/guard.c`). The guard runs
+`start()` and then `watch(handle)` under `R_ExecWithCleanup`. As soon as
+`start()` returns, the guard stores the handle in a box that its frame
+protects, and no R code runs in between. The cleanup cancels the job
+through the binding's own `.Call` routine, `wrap__job_cancel`. R runs it
+natively, as the context's `cend`, on a normal return (where it is a no-op
+after the collect) and on every jump through the context (R 4.5.3
+`src/main/context.c:128`, `:909`).
+
+The first form, an R `on.exit` that called `.native_cancel()`, could skip
+the cancel. R evaluates an on.exit expression with `eval()`, which may
+raise a pending interrupt before the cancel runs. R clears the expression
+before it evaluates it and never runs the rest (`context.c:139`, `:155`;
+`eval.c:1091`). So a Ctrl-C pending while a callback error unwound the
+frame left the job running until the GC finalizer. The TLA+ model of this
+lifecycle (formal-validate `models/watched_calls/RJob.tla`) found the path,
+and `r/tests/testthat/test-progress.R` reproduces it. Before the guard, 44
+of 3,303 swept trials orphaned the job; with the guard, none did.
+
+The guard is the package's one hand-written C file next to extendr's
+`entrypoint.c`, and it uses only R's public API. `entrypoint.c` registers
+it as a `.External` routine. `R_registerRoutines` replaces only the tables
+it is given, so extendr's `.Call` table stays, and dynamic lookup stays off.
+The guard declares `wrap__job_cancel` by hand. That is extendr's generated
+entry point, which reports failures as data and never jumps. The Rust
+crate still has no `unsafe`.
 
 **The job owns its inputs.** It outlives the `.Call` that starts it, so it
 copies `mother_rows`, `father_rows` and `twin_rows` (int32) and `depth` for
@@ -200,7 +228,7 @@ the slot to `Collected` first, then resumes a panic on the R thread
 (extendr turns it into an R error), converts a core error to the classed R
 error, or runs the R-side `finish`. A second collect is a usage error.
 `cancel` sets the cancel flag, waits only while `Running`, and drops the
-outcome, so the `on.exit` after a collect never waits. The handle's GC
+outcome, so the guard's cancel after a collect never waits. The handle's GC
 finalizer is `cancel`. A callback that starts another call spawns a second
 job on the same pool; the R thread is never a pool worker, so this can't
 deadlock, even at one thread.
@@ -250,7 +278,17 @@ changed by -0.1% to +0.5%.
   time limit.
 * **R: a C shim with `R_UnwindProtect` and `setjmp`** that resumes the unwind
   after the Rust frames return. Resuming from a later frame is unverified,
-  and it is the subtlest FFI of the options.
+  and it is the subtlest FFI of the options. The cancel guard (#68) is not
+  this: the guard never catches or resumes a jump, no Rust frame is on the
+  stack between the guard and R, and R itself runs the cleanup while it
+  unwinds.
+* **R (#68): `suspendInterrupts()` around the on.exit expression.** It
+  cannot close the window, because `eval()` checks for interrupts on entry,
+  before the wrapped expression runs.
+* **R (#68): the cancel guard in Rust, through extendr's FFI
+  (`R_ExecWithCleanup` or `R_UnwindProtect`).** A jump would then cross
+  Rust frames, which is undefined behaviour unless those frames run no
+  destructors.
 * **R: raw `'static` slices over R memory**, kept alive by the handle,
   instead of owned copies. It saves 12 bytes per individual for an `unsafe`
   lifetime.

@@ -4,7 +4,7 @@ TLC checks the models ``RJob.tla`` and ``PyWatched.tla`` (``models/watched_calls
 in the private companion repo formal-validate, ``external/formal-validate`` in
 the simACE umbrella), not the code; these tests pin each model action to the
 code it stands for, in the model's order. They read the source, because the
-order of a store and a notify, or of an ``on.exit`` and a start, is what the
+order of a store and a notify, or of a start and its cancel guard, is what the
 models depend on and what a timing test rarely sees. When one fails, the code
 no longer matches the model: update the model (or the code), rerun
 ``pixi run watched-calls`` in formal-validate (with ``PEDIGREE_GRAPH_ROOT``
@@ -32,6 +32,8 @@ WRAPPERS_R = ROOT / "r" / "R" / "wrappers.R"
 KERNEL_R = (ROOT / "r" / "R" / "kernels.R", ROOT / "r" / "R" / "moments.R")
 PYTHON_LIB_RS = ROOT / "crates" / "python" / "src" / "lib.rs"
 CORE_PROGRESS_RS = ROOT / "crates" / "core" / "src" / "relationships" / "progress.rs"
+GUARD_C = ROOT / "r" / "src" / "guard.c"
+ENTRYPOINT_C = ROOT / "r" / "src" / "entrypoint.c"
 
 _RUST_CHAR = re.compile(r"'(?:\\u\{[0-9a-fA-F]+\}|\\.|[^\\'])'")
 
@@ -45,7 +47,7 @@ class Source:
     """
 
     def __init__(self, path: Path) -> None:
-        rust = path.suffix == ".rs"
+        rust = path.suffix in {".rs", ".c"}  # C comments, strings and chars
         text = path.read_text(encoding="utf-8")
         code: list[str] = []
         mask: list[str] = []
@@ -145,14 +147,50 @@ def _r_fn(name: str) -> str:
 # --- RJob.tla ----------------------------------------------------------------
 
 
-def test_begin_register_start_pgcall():
-    """Begin, Register, Start, PgCall: on.exit holds the cancel before the start."""
+def test_begin_guard_start_pgcall():
+    """Begin, Start, PgCall: the native guard runs the start and then the watch (#68)."""
+    body = _r_fn(".pg_run")
     _in_order(
-        _r_fn(".pg_run"),
-        "handle <- NULL",
-        'on.exit(if (typeof(handle) == "externalptr") .native_cancel(handle))',
-        "handle <- start()",
-        ".pg_watch(.pg_call(handle, call = call)",
+        body,
+        "report <- .pg_progress(progress, label, call = call)",
+        ".External(pg_run_guarded, start, function(handle) {",
+        ".pg_watch(.pg_call(handle, call = call), report, call = call)",
+    )
+    assert "on.exit" not in body, "the cancel must not depend on an R on.exit (#68)"
+
+
+def test_guard_stores_the_handle_and_cancels_natively():
+    """Start, Exit, CancelFlag: the handle is stored as start() returns; the cleanup is native.
+
+    R runs R_ExecWithCleanup's cleanup as the context's `cend`, without
+    eval(), on return and on every jump (R 4.5.3 src/main/context.c:128,
+    :909), so no interrupt can skip the cancel. No R code runs between
+    `start()` returning and the handle landing in the protected box.
+    """
+    src = Source(GUARD_C)
+    _in_order(
+        src.block("static SEXP run(void *data)"),
+        "SET_VECTOR_ELT(g->box, 0, Rf_eval(start, R_GlobalEnv));",
+        "Rf_lang2(g->watch, VECTOR_ELT(g->box, 0))",
+        "Rf_eval(watch, R_GlobalEnv)",
+    )
+    _in_order(
+        src.block("static void cancel(void *data)"),
+        "if (TYPEOF(handle) == EXTPTRSXP) { wrap__job_cancel(handle); }",
+    )
+    _in_order(
+        src.block("SEXP pg_run_guarded(SEXP args)"),
+        "g.box = PROTECT(Rf_allocVector(VECSXP, 1));",
+        "R_ExecWithCleanup(run, &g, cancel, &g)",
+        "UNPROTECT(1);",
+    )
+    entry = Source(ENTRYPOINT_C)
+    assert entry.find('{"pg_run_guarded", (DL_FUNC) &pg_run_guarded, 2}') >= 0
+    _in_order(
+        entry.block("void R_init_pedigreegraph(void *dll)"),
+        "R_init_pedigreegraph_extendr(dll);",
+        "R_registerRoutines(dll, NULL, NULL, NULL, external_routines);",
+        "R_useDynamicSymbols(dll, FALSE);",
     )
 
 
@@ -291,7 +329,7 @@ def test_cancel_sets_the_flag_then_waits():
 
 
 def test_job_cancel_and_drop_cancel_the_task():
-    """CancelCall (.native_cancel) and GcFlag (the finalizer) both run Task::cancel."""
+    """CancelFlag (the guard's wrap__job_cancel) and GcFlag (the finalizer) both run Task::cancel."""
     src = Source(JOB_RS)
     _in_order(src.block("pub fn cancel(handle: &Robj)"), "of(handle)?.cancel();")
     _in_order(src.block("pub fn cancel(&self)", within="impl Job {"), "self.task.cancel();")

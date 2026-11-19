@@ -344,6 +344,45 @@ test_that("a call is cancelled when anything after its start fails", {
   expect_true(.Call(cancelled))
 })
 
+test_that("an interrupt raised while a call unwinds still cancels its job (#68)", {
+  # A callback error unwinds .pg_run with a Ctrl-C pending. R checks for
+  # interrupts on every 1001st eval() and 1024th bytecode check, two separate
+  # counters, so the callback pads each to sweep where the check lands; some
+  # phases put it in the unwind's cleanup. The job must be cancelled before
+  # .pg_run returns every time, never left for the GC finalizer.
+  skip_on_os("windows")  # sends SIGINT with tools::pskill
+  hook("cancellable_job_for_test")
+  out <- run_rscript(c(
+    "ns <- asNamespace('pedigreegraph')",
+    "start <- get('wrap__cancellable_job_for_test', ns)",
+    "cancelled <- get('wrap__was_cancelled_for_test', ns)",
+    "assignInNamespace('.pg_tick', function() 1e-4, 'pedigreegraph')",
+    "configure_threads(1)",
+    "callback <- function(bc, ev) function(state) {",
+    "  i <- 0L; while (i < bc) i <- i + 1L",
+    "  j <- 0L; while (j < ev) { eval(NULL); j <- j + 1L }",
+    "  tools::pskill(Sys.getpid(), tools::SIGINT)",
+    "  stop('callback error')",
+    "}",
+    "trial <- function(bc, ev) tryCatch({",
+    "  tryCatch(ns$.pg_run(callback(bc, ev), 'test', function() .Call(start)),",
+    "           interrupt = function(e) NULL, error = function(e) NULL)",
+    "  i <- 0L; while (i < 5000L) i <- i + 1L",
+    "}, interrupt = function(e) NULL)",
+    "phases <- c(lapply(0:1100, function(bc) c(bc, 0L)), lapply(0:1100, function(ev) c(0L, ev)),",
+    "            lapply(0:1100, function(bc) c(bc, 3L)))",
+    "orphaned <- 0L",
+    "for (p in phases) {",
+    "  tryCatch(trial(p[[1]], p[[2]]), interrupt = function(e) NULL)",
+    "  if (!.Call(cancelled)) { orphaned <- orphaned + 1L; gc() }",
+    "}",
+    "cat('TRIALS', length(phases), 'ORPHANED', orphaned, '\\n')"
+  ), timeout = 300)
+  info <- paste(out, collapse = "\n")
+  expect_null(attr(out, "status"))
+  expect_true(any(grepl("^TRIALS [0-9]+ ORPHANED 0 $", out)), info = info)
+})
+
 test_that("cancel is a no-op twice and after collect; a second collect is refused", {
   scripted <- hook("scripted_job_for_test")
   local_mocked_bindings(.pg_tick = function() 0.02, .package = "pedigreegraph")

@@ -4,7 +4,8 @@
 # handle; .pg_watch() then waits on it a tick at a time from R, so progress
 # lines and callbacks run as ordinary R code under the caller's handlers,
 # and Ctrl-C, time limits and callback errors unwind the loop.  .pg_run()
-# ties the two together and cancels the call on exit.
+# ties the two together under a native guard that cancels the call however
+# it exits.
 
 # Seconds between two looks at a running call; tests make it small.
 .pg_tick <- function() 1
@@ -66,15 +67,16 @@
 }
 
 # Start a call with `start()`, a start routine's value, and return its
-# result.  The cancel is registered before the start, so an interrupt or
-# time limit that lands before the first wait still stops the job rather
-# than leaving it to the garbage collector.
+# result.  The native guard (r/src/guard.c) runs the start and the watch and
+# cancels the job natively once either has started it, on return or on any
+# unwind: an interrupt, a time limit or an error cannot skip the cancel and
+# leave the job to the garbage collector, as an on.exit expression could
+# (issue #68).
 .pg_run <- function(progress, label, start, call = sys.call(-1L)) {
   report <- .pg_progress(progress, label, call = call)
-  handle <- NULL
-  on.exit(if (typeof(handle) == "externalptr") .native_cancel(handle))
-  handle <- start()
-  .pg_watch(.pg_call(handle, call = call), report, call = call)
+  .External(pg_run_guarded, start, function(handle) {
+    .pg_watch(.pg_call(handle, call = call), report, call = call)
+  })
 }
 
 # Wait for a started call, reporting each tick, and return its result.

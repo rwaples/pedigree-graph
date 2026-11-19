@@ -4,6 +4,17 @@ This file tracks public-API changes per release.  For per-commit
 history, see `git log`.  Historical release notes prior to v0.5.0
 live on the corresponding GitHub release pages.
 
+## Unreleased
+
+- **Fix (R): an interrupt while a call unwinds no longer orphans its job**
+  (issue #68). Suppose a progress callback raised an error while a Ctrl-C
+  or time limit was pending. R could then raise the interrupt inside
+  `.pg_run()`'s `on.exit`, before the cancel ran, and the call returned with
+  its job still running on the pool until the GC finalizer stopped it. At
+  one thread, the next call waited behind that job. The cancel now runs in
+  a native cleanup that R runs on every unwind (`r/src/guard.c`, ADR 0017).
+  Results and the R API are unchanged.
+
 ## v0.16.0
 
 - **Breaking (core API): kinship kernels check a depth in one order**
